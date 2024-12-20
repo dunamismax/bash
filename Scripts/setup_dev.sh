@@ -7,6 +7,7 @@ sudo apt update && sudo apt install -y \
     python3-pip \
     python3-venv \
     build-essential \
+    make \
     git \
     curl \
     wget \
@@ -24,6 +25,10 @@ sudo apt update && sudo apt install -y \
     libnss3-dev \
     liblzma-dev \
     zlib1g-dev \
+    xz-utils \
+    llvm \
+    libxml2-dev \
+    libxmlsec1-dev \
     default-jdk \
     nodejs \
     npm \
@@ -31,6 +36,7 @@ sudo apt update && sudo apt install -y \
     postgresql \
     postgresql-contrib \
     pipx \
+    tk-dev \
     nginx
 
 # Ensure that pipx's bin directory is on PATH for the current shell
@@ -40,8 +46,6 @@ export PATH="$PATH:$HOME/.local/bin"
 pipx upgrade pipx
 
 # A curated set of useful global Python CLI tools installed via pipx.
-# These cover linting, formatting, testing, packaging, and other dev utilities,
-# as well as handy general-purpose commands.
 PIPX_TOOLS=(
     # From your original list:
     ansible-core       # Automation and configuration management
