@@ -7,6 +7,14 @@ sudo apt update && sudo apt install -y \
     python3-pip \
     python3-venv \
     build-essential \
+    g++ \
+    clang \
+    cmake \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    gdb \
     make \
     git \
     curl \
@@ -38,6 +46,7 @@ sudo apt update && sudo apt install -y \
     pipx \
     tk-dev \
     nginx
+
 
 # Ensure that pipx's bin directory is on PATH for the current shell
 export PATH="$PATH:$HOME/.local/bin"
