@@ -42,9 +42,6 @@ sudo apt update && sudo apt install -y \
 # Ensure that pipx's bin directory is on PATH for the current shell
 export PATH="$PATH:$HOME/.local/bin"
 
-# Upgrade pipx itself
-pipx upgrade pipx
-
 # A curated set of useful global Python CLI tools installed via pipx.
 PIPX_TOOLS=(
     # From your original list:
