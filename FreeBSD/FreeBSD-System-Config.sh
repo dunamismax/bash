@@ -43,7 +43,7 @@ PACKAGES=(
     # Essential Shells and Editors
     "vim" "bash" "zsh" "tmux" "mc" "nano" "fish" "screen"
     # Version Control and Scripting
-    "git" "perl5" "python3"
+    "git" "perl5" "lang/python"        # Install "lang/python" so "python" -> latest python3
     # Network and Internet Utilities
     "curl" "wget" "netcat" "tcpdump" "rsync" "rsnapshot"
     # System Monitoring and Management
@@ -361,6 +361,112 @@ EOF
     log "Shell and environment configured for $USERNAME."
 }
 
+# --------------------------------------
+# CONFIGURE VIRTUALIZATION
+# --------------------------------------
+configure_virtualization() {
+    echo "[INFO] Configuring virtualization and bhyve..."
+
+    # 1) Enable and start libvirtd
+    sysrc libvirtd_enable=YES
+    service libvirtd start
+
+    # 2) Add your user to relevant groups for KVM, polkit, etc.
+    pw groupmod operator -m "$USERNAME"
+
+    # 3) Create and set up the ZFS dataset for vm-bhyve
+    #    Before setting "vm_dir=zfs:myzpool/vm", make sure the dataset exists:
+    if ! zfs list myzpool/vm >/dev/null 2>&1; then
+        echo "[INFO] Creating ZFS dataset myzpool/vm with mountpoint /vm..."
+        zfs create -o mountpoint=/vm myzpool/vm
+    fi
+
+    # 4) Enable and configure vm-bhyve
+    sysrc vm_enable=YES
+    sysrc vm_dir="zfs:myzpool/vm"
+    # Initialize vm-bhyve (create /vm/.config, /vm/.templates, etc.)
+    echo "[INFO] Running vm init..."
+    vm init
+
+    echo "[INFO] Virtualization configuration complete."
+}
+
+# ------------------------------------------------------
+# Configure and enable Caddy on FreeBSD
+# ------------------------------------------------------
+
+configure_caddy() {
+    echo "[INFO] Enabling and configuring Caddy..."
+
+    # 1) Enable Caddy at system startup
+    sysrc caddy_enable="YES"
+
+    # 2) Create/update the main config file at /usr/local/etc/caddy/Caddyfile
+    #    (Make sure the directory exists; if not, create it)
+    [ ! -d /usr/local/etc/caddy ] && mkdir -p /usr/local/etc/caddy
+
+    cat << 'EOF' > /usr/local/etc/caddy/Caddyfile
+# The Caddyfile is an easy way to configure your Caddy web server.
+#
+# Unless the file starts with a global options block, the first
+# uncommented line is always the address of your site.
+#
+# To use your own domain name (with automatic HTTPS), first make
+# sure your domain's A/AAAA DNS records are properly pointed to
+# this machine's public IP, then replace ":80" below with your
+# domain name.
+
+{
+    # Use this email for Let's Encrypt notifications
+    email dunamismax@tutamail.com
+
+    # Global logging: captures all events (including errors during startup)
+    log {
+        output file /var/log/caddy/caddy.log
+    }
+}
+
+# Redirect www to non-www
+www.dunamismax.com {
+    redir https://dunamismax.com{uri}
+}
+
+# Main website
+dunamismax.com {
+    # Serve the static files from your Hugo output folder
+    root * /home/sawyer/GitHub/Hugo/dunamismax.com/public
+    file_server
+
+    # Deny hidden files (dotfiles like .git, .htaccess, etc.)
+    @hiddenFiles {
+        path_regexp hiddenFiles ^/\.
+    }
+    respond @hiddenFiles 404
+
+    # Per-site logging: captures site-specific access and error logs
+    log {
+        output file /var/log/caddy/dunamismax_access.log
+    }
+}
+
+# Nextcloud
+cloud.dunamismax.com {
+    reverse_proxy 127.0.0.1:8080
+}
+
+# Refer to the Caddy docs for more information:
+# https://caddyserver.com/docs/caddyfile
+EOF
+
+    # 3) Optionally create the log directory if it doesn't exist
+    [ ! -d /var/log/caddy ] && mkdir -p /var/log/caddy
+
+    # 4) Start the Caddy service
+    service caddy start
+
+    echo "[INFO] Caddy has been enabled and started."
+}
+
 # Function to finalize configuration
 finalize_configuration() {
     log "Finalizing configuration (pkg upgrade, clean)..."
@@ -404,7 +510,13 @@ configure_sudoers
 # 5. Set Bash as default shell for $USERNAME
 set_default_shell_and_env
 
-# 6. Finalize config (upgrade, clean, enable Plex)
+# 6. Configure and enable Virtualization
+configure_virtualization
+
+# 7 Configure and enable Caddy
+configure_caddy
+
+# 8. Finalize config (upgrade, clean, enable Plex)
 finalize_configuration
 
 log "Configuration script finished successfully."
