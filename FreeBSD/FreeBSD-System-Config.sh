@@ -7,21 +7,34 @@
 # includes:
 #   • Bootstrapping and updating the pkg system, then installing a suite of
 #     essential packages.
-#   • Dynamically identifying the primary network adapter for Internet access.
-#   • Configuring system settings via /etc/rc.conf, including hostname, DHCP on
-#     the primary interface, and enabling necessary services.
-#   • Updating DNS settings in /etc/resolv.conf with specified nameservers.
-#   • Granting sudo privileges to user 'sawyer' by adding them to the wheel group
-#     and configuring sudoers accordingly.
-#   • Hardening SSH by updating /etc/ssh/sshd_config with secure parameters.
-#   • Setting up and configuring PF firewall with custom rules and logging of
-#     blocked inbound traffic.
-#   • Employing robust error handling and detailed logging throughout the
-#     configuration process to /var/log/freebsd_setup.log.
-#   • Finalizing the setup by upgrading installed packages and cleaning caches.
+#   • Dynamically identifying the primary network adapter for Internet access
+#     and configuring DHCP settings automatically.
+#   • Configuring system settings via /etc/rc.conf to enable essential services,
+#     improve system performance, and enhance security.
+#   • Updating DNS settings in /etc/resolv.conf with specified nameservers or
+#     enabling local_unbound for dynamic DNS resolution.
+#   • Granting sudo privileges to designated users by adding them to the wheel
+#     group and configuring sudoers with secure defaults.
+#   • Hardening SSH by updating /etc/ssh/sshd_config with secure parameters,
+#     such as disabling root login and limiting authentication attempts.
+#   • Setting up and configuring PF firewall with custom rules, including stateful
+#     connections, SSH rate-limiting, and logging of blocked inbound traffic.
+#   • Automating the creation and population of user environment files
+#     (.bashrc, .bash_profile) with optimized settings and aliases.
+#   • Employing robust error handling, dynamic configuration backups, and
+#     detailed logging throughout the process to /var/log/freebsd_setup.log.
+#   • Enabling and configuring graphical environments with X11, SLiM, and i3,
+#     including post-setup configurations for desktop environments.
+#   • Finalizing the setup by upgrading installed packages, cleaning caches,
+#     and validating configurations for stability.
 #
 # Usage: Execute this script as root on a fresh FreeBSD install to automate the
-#        initial system configuration process.
+#        initial system configuration process or to reapply system policies.
+#
+# Notes:
+#   • This script assumes a basic FreeBSD installation with network access.
+#   • Review and customize variables and settings before execution to align
+#     with specific system requirements and preferences.
 #===============================================================================
 
 # --------------------------------------
