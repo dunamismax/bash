@@ -145,14 +145,12 @@ if ! command -v pkg &>/dev/null; then
 fi
 
 pkg update -f || error_exit "pkg update failed."
-for pkg in "${PACKAGES[@]}"; do
-  if ! pkg info -e "$pkg"; then
-    log "Installing package: $pkg"
-    pkg install -y "$pkg" || log "Failed to install package: $pkg"
-  else
-    log "Package $pkg already installed."
-  fi
-done
+
+# Install all packages in parallel
+log "Installing all base packages in parallel."
+pkg install -y "${PACKAGES[@]}" || log "Failed to install one or more packages."
+
+log "Base packages installation completed."
 
 # Configure system settings
 log "Configuring sysctl and loader.conf settings."
@@ -262,7 +260,7 @@ if [[ ! -f "${pf_conf}.bak" ]]; then
 fi
 
 cat <<EOF > "$pf_conf"
-# /etc/pf.conf - Minimal pf ruleset
+# /etc/pf.conf - Minimal pf ruleset with SSH rate-limiting
 
 # Skip filtering on the loopback interface
 set skip on lo0
@@ -276,8 +274,11 @@ block in log all
 # Allow all outbound traffic, keeping stateful connections
 pass out all keep state
 
-# Allow incoming SSH connections on primary interface ${primary_iface}
-pass in quick on ${primary_iface} proto tcp to port 22 keep state
+# Rate-limiting for SSH: Max 10 connections per 5 seconds, burstable to 15
+table <ssh_limited> persist
+block in quick on ${primary_iface} proto tcp to port 22
+pass in quick on ${primary_iface} proto tcp to port 22 keep state \
+    (max-src-conn 10, max-src-conn-rate 15/5, overload <ssh_limited> flush global)
 
 # Allow PlexMediaServer traffic
 pass in quick on ${primary_iface} proto tcp to port 32400 keep state
@@ -442,6 +443,12 @@ log "Finalizing system configuration."
 pkg upgrade -y || log "Package upgrade failed."
 pkg clean -y || log "Package clean failed."
 
+# Enable and start PlexMediaServer service
+log "Enabling and starting PlexMediaServer service."
+sysrc plexmediaserver_enable="YES" || log "Failed to enable PlexMediaServer service."
+service plexmediaserver start || log "Failed to start PlexMediaServer service."
+log "PlexMediaServer service enabled and started successfully."
+
 # --------------------------------------
 # POST-INSTALL CONFIGURATION FOR X11, i3, and SLiM
 # --------------------------------------
@@ -454,7 +461,7 @@ sysrc slim_enable="YES" || log "Failed to enable SLiM in rc.conf."
 # Configure .xinitrc for i3 window manager
 log "Configuring .xinitrc to start i3."
 
-xinitrc_file="$HOME/.xinitrc"
+xinitrc_file="/home/sawyer/.xinitrc"
 
 if [[ ! -f "$xinitrc_file" ]]; then
   cat <<'EOF' > "$xinitrc_file"
