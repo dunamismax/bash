@@ -374,17 +374,15 @@ configure_virtualization() {
     # 2) Add your user to relevant groups for KVM, polkit, etc.
     pw groupmod operator -m "$USERNAME"
 
-    # 3) Create and set up the ZFS dataset for vm-bhyve
-    #    Before setting "vm_dir=zfs:myzpool/vm", make sure the dataset exists:
-    if ! zfs list myzpool/vm >/dev/null 2>&1; then
-        echo "[INFO] Creating ZFS dataset myzpool/vm with mountpoint /vm..."
-        zfs create -o mountpoint=/vm myzpool/vm
-    fi
-
-    # 4) Enable and configure vm-bhyve
+    # 3) Enable and configure vm-bhyve to use a standard directory instead of ZFS
     sysrc vm_enable=YES
-    sysrc vm_dir="zfs:myzpool/vm"
-    # Initialize vm-bhyve (create /vm/.config, /vm/.templates, etc.)
+    # Use a normal directory path, e.g. /vm
+    sysrc vm_dir="/vm"
+
+    # Create the directory if it doesn't already exist
+    [ ! -d "/vm" ] && mkdir -p /vm
+
+    # 4) Initialize vm-bhyve (create /vm/.config, /vm/.templates, etc.)
     echo "[INFO] Running vm init..."
     vm init
 
