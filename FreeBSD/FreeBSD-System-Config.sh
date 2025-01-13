@@ -94,12 +94,16 @@ check_root() {
 # Identify primary network adapter
 identify_primary_iface() {
   log "Identifying primary network adapter for Internet connection."
-  primary_iface=$(route get default 2>/dev/null | awk '/interface:/ {print $2}')
+
+  # Extract the interface name using route and awk
+  primary_iface=$(route get default 2>/dev/null | awk '/interface:/{print $2}')
+
   if [[ -z "$primary_iface" ]]; then
     error_exit "Primary network interface not found. Aborting configuration."
   else
     log "Primary network adapter identified as: $primary_iface"
   fi
+  log "Primary interface for PF: ${primary_iface}"
 }
 
 # Bootstrap pkg and install packages
@@ -213,14 +217,24 @@ configure_ssh() {
     fi
   done
 
-  service sshd reload || log "Failed to reload SSH service."
-  log "SSH service reloaded with updated configuration."
+  # Adjust ownership and permissions if needed
+  chown root:wheel "$sshd_config" || log "Failed to set ownership for ${sshd_config}."
+  chmod 600 "$sshd_config" || log "Failed to set permissions for ${sshd_config}."
+
+  service sshd restart || log "Failed to restart SSH service."
+  log "SSH service restarted with updated configuration."
 }
 
 # Configure PF firewall
 configure_pf() {
   log "Configuring PF firewall."
   local pf_conf="/etc/pf.conf"
+
+  if [[ -z "${primary_iface:-}" ]]; then
+    log "Primary interface not set. Attempting to identify primary interface."
+    identify_primary_iface
+  fi
+
   if [[ ! -f "${pf_conf}.bak" ]]; then
     cp "$pf_conf" "${pf_conf}.bak" || log "Failed to backup pf.conf."
     log "Backup of pf.conf created at ${pf_conf}.bak."
