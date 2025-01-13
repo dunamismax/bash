@@ -306,9 +306,6 @@ finalize_configuration() {
   apt-get autoremove -y 2>&1 | tee -a "$LOG_FILE"
   apt-get autoclean -y 2>&1 | tee -a "$LOG_FILE"
 
-  systemctl enable plexmediaserver
-  systemctl start plexmediaserver
-
   log "Final configuration steps completed."
 }
 
