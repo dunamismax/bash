@@ -15,7 +15,6 @@
 #          (as the default shell), ~/.bashrc, and ~/.bash_profile for that user.
 #       5) Completing final tasks (e.g., pkg upgrade, cleaning caches, and
 #          enabling Plex).
-#       6) Installing and configuring GNOME with Wayland support.
 #
 # Notes:
 #   • All log output is appended to /var/log/freebsd_setup.log.
@@ -52,7 +51,7 @@ PACKAGES=(
     "fd" "jq" "iftop" "nmap" "tree" "fzf" "lynx" "curlie" "ncdu"
     "gcc" "lighttpd" "smartmontools"
     # Database and Media Services
-    "plexmediaserver" "caddy" "go"
+    "plexmediaserver"
     # System Tools and Backup
     "duplicity" "ffmpeg" "restic" "syslog-ng"
     # Virtualization and VM Support
@@ -396,80 +395,6 @@ configure_virtualization() {
     echo "[INFO] Virtualization configuration complete."
 }
 
-# ------------------------------------------------------
-# Configure and enable Caddy on FreeBSD
-# ------------------------------------------------------
-configure_caddy() {
-    echo "[INFO] Enabling and configuring Caddy..."
-
-    # 1) Enable Caddy at system startup
-    sysrc caddy_enable="YES"
-
-    # 2) Create/update the main config file at /usr/local/etc/caddy/Caddyfile
-    [ ! -d /usr/local/etc/caddy ] && mkdir -p /usr/local/etc/caddy
-
-    cat << 'EOF' > /usr/local/etc/caddy/Caddyfile
-# The Caddyfile is an easy way to configure your Caddy web server.
-#
-# Unless the file starts with a global options block, the first
-# uncommented line is always the address of your site.
-#
-# To use your own domain name (with automatic HTTPS), first make
-# sure your domain's A/AAAA DNS records are properly pointed to
-# this machine's public IP, then replace ":80" below with your
-# domain name.
-
-{
-    # Use this email for Let's Encrypt notifications
-    email dunamismax@tutamail.com
-
-    # Global logging: captures all events (including errors during startup)
-    log {
-        output file /var/log/caddy/caddy.log
-    }
-}
-
-# Redirect www to non-www
-www.dunamismax.com {
-    redir https://dunamismax.com{uri}
-}
-
-# Main website
-dunamismax.com {
-    # Serve the static files from your Hugo output folder
-    root * /home/sawyer/GitHub/Hugo/dunamismax.com/public
-    file_server
-
-    # Deny hidden files (dotfiles like .git, .htaccess, etc.)
-    @hiddenFiles {
-        path_regexp hiddenFiles ^/\.
-    }
-    respond @hiddenFiles 404
-
-    # Per-site logging: captures site-specific access and error logs
-    log {
-        output file /var/log/caddy/dunamismax_access.log
-    }
-}
-
-# Nextcloud
-cloud.dunamismax.com {
-    reverse_proxy 127.0.0.1:8080
-}
-
-# Refer to the Caddy docs for more information:
-# https://caddyserver.com/docs/caddyfile
-EOF
-
-    # 3) Optionally create the log directory if it doesn't exist
-    [ ! -d /var/log/caddy ] && mkdir -p /var/log/caddy
-
-    # 4) Start the Caddy service
-    service caddy start
-
-    echo "[INFO] Caddy has been enabled and started."
-}
-
 # Function to finalize configuration
 finalize_configuration() {
     log "Finalizing configuration (pkg upgrade, clean)..."
@@ -482,36 +407,6 @@ finalize_configuration() {
     service plexmediaserver start 2>&1 | tee -a "$LOG_FILE"
 
     log "Final configuration completed."
-}
-
-# ------------------------------------------------------
-# Configure GNOME and Wayland
-# ------------------------------------------------------
-configure_gnome_wayland() {
-    log "Installing GNOME, Wayland, and related packages..."
-    pkg install -y wayland xwayland gnome gnome-tweaks gnome-shell-extensions gnome-games gnome-system-monitor
-
-    log "Enabling required services for GNOME..."
-    sysrc gdm_enable="YES"
-    sysrc gnome_enable="YES"
-    sysrc dbus_enable="YES"
-    sysrc hald_enable="YES"
-
-    log "Configuring /etc/ttys for GDM..."
-    # Replace or set ttyv8 line to run GDM
-    if grep -q '^ttyv8' /etc/ttys; then
-        sed -i '' 's|^ttyv8.*|ttyv8 "/usr/local/sbin/gdm" xterm on secure|' /etc/ttys
-    else
-        echo 'ttyv8 "/usr/local/sbin/gdm" xterm on secure' >> /etc/ttys
-    fi
-
-    log "Optional: Starting GNOME services now..."
-    service dbus start
-    service hald start
-    service gdm start
-
-    log "GNOME with Wayland setup complete. A reboot is recommended."
-    log "After reboot, at the GDM login screen, click the gear icon and choose 'GNOME on Wayland'."
 }
 
 # --------------------------------------
@@ -531,11 +426,6 @@ identify_primary_iface
 # 2. Bootstrap pkg + install packages
 bootstrap_and_install_pkgs
 
-# ------------------------------------------------
-# 2a. Install and configure GNOME with Wayland
-# ------------------------------------------------
-configure_gnome_wayland
-
 # 3. Overwrite key config files
 overwrite_pf_conf
 overwrite_rc_conf
@@ -551,10 +441,7 @@ set_default_shell_and_env
 # 6. Configure and enable Virtualization
 configure_virtualization
 
-# 7 Configure and enable Caddy
-configure_caddy
-
-# 8. Finalize config (upgrade, clean, enable Plex)
+# 7. Finalize config (upgrade, clean, enable Plex)
 finalize_configuration
 
 log "Configuration script finished successfully."
