@@ -3,28 +3,30 @@
 # FreeBSD Automated System Configuration Script
 #===============================================================================
 # This script fully configures a new FreeBSD installation based on predefined
-# system policies and best practices. It performs a comprehensive setup that
+# system policies and best practices. It automates a comprehensive setup, which
 # includes:
+#
 #   • Bootstrapping and updating the pkg system, then installing a suite of
-#     essential packages.
+#     essential packages for system management, development, and utilities.
 #   • Dynamically identifying the primary network adapter for Internet access
 #     and configuring DHCP settings automatically.
 #   • Configuring system settings via /etc/rc.conf to enable essential services,
-#     improve system performance, and enhance security.
+#     improve performance, and enhance security.
 #   • Updating DNS settings in /etc/resolv.conf with specified nameservers or
 #     enabling local_unbound for dynamic DNS resolution.
-#   • Granting sudo privileges to designated users by adding them to the wheel
-#     group and configuring sudoers with secure defaults.
+#   • Dynamically detecting users with home directories in /home and:
+#       - Configuring Bash as their default shell (if not already set).
+#       - Setting up optimized environment files (.bashrc, .bash_profile).
+#   • Granting sudo privileges to detected users with an optional `nopasswd`
+#     setting, ensuring secure defaults in the sudoers configuration.
 #   • Hardening SSH by updating /etc/ssh/sshd_config with secure parameters,
 #     such as disabling root login and limiting authentication attempts.
-#   • Setting up and configuring PF firewall with custom rules, including stateful
-#     connections, SSH rate-limiting, and logging of blocked inbound traffic.
-#   • Automating the creation and population of user environment files
-#     (.bashrc, .bash_profile) with optimized settings and aliases.
-#   • Employing robust error handling, dynamic configuration backups, and
-#     detailed logging throughout the process to /var/log/freebsd_setup.log.
-#   • Enabling and configuring graphical environments with X11, SLiM, and i3,
-#     including post-setup configurations for desktop environments.
+#   • Setting up and configuring the PF firewall with custom rules, including
+#     stateful connections, SSH rate-limiting, and traffic logging.
+#   • Enabling and configuring graphical environments (X11, SLiM, i3) for
+#     specified users, including automated .xinitrc setup.
+#   • Employing robust error handling, configuration backups, and detailed
+#     logging throughout the process to /var/log/freebsd_setup.log.
 #   • Finalizing the setup by upgrading installed packages, cleaning caches,
 #     and validating configurations for stability.
 #
@@ -71,10 +73,16 @@ PACKAGES=(
 # FUNCTIONS
 # --------------------------------------
 
-# Logging function with timestamp and log levels
 log() {
   local level="${1:-INFO}"  # Default log level is INFO
-  local msg="${2:-}"        # Log message
+  local msg="${2:-}"
+
+  # If only one argument is passed, treat it as the message with INFO as the level
+  if [[ -z "$msg" ]]; then
+    msg="$level"
+    level="INFO"
+  fi
+
   local timestamp
   timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
 
@@ -216,36 +224,44 @@ bootstrap_and_install_pkgs() {
   # Check if pkg is available; bootstrap if not
   if ! command -v pkg &>/dev/null; then
     log "pkg not found. Bootstrapping pkg..."
-    env ASSUME_ALWAYS_YES=yes pkg bootstrap || error_exit "Failed to bootstrap pkg."
+    if ! env ASSUME_ALWAYS_YES=yes pkg bootstrap; then
+      log "ERROR" "Failed to bootstrap pkg. Continuing without exiting."
+      return 1
+    fi
   fi
 
   # Force-update the package database
-  pkg update -f || error_exit "pkg update failed."
+  if ! pkg update -f; then
+    log "ERROR" "pkg update failed. Continuing without exiting."
+    return 1
+  fi
 
   # Install packages dynamically
   log "Installing packages if not already installed."
   local failed_packages=()
   for pkg in "${packages[@]}"; do
     if ! pkg info -q "$pkg"; then
-      log "Installing package: $pkg"
+      log "INFO" "Installing package: $pkg"
       if pkg install -y "$pkg"; then
-        log "Successfully installed $pkg."
+        log "INFO" "Successfully installed $pkg."
       else
-        log "Failed to install $pkg."
+        log "ERROR" "Failed to install package: $pkg."
         failed_packages+=("$pkg")
       fi
     else
-      log "Package $pkg is already installed, skipping."
+      log "INFO" "Package $pkg is already installed, skipping."
     fi
   done
 
-  # Check for failed installations
+  # Log failed installations but do not exit
   if [[ ${#failed_packages[@]} -gt 0 ]]; then
-    log "The following packages failed to install: ${failed_packages[*]}"
-    return 1
+    log "WARN" "The following packages failed to install: ${failed_packages[*]}"
+    log "WARN" "Continuing script execution despite package installation failures."
+  else
+    log "INFO" "All packages installed successfully."
   fi
 
-  log "Package installation process completed successfully."
+  return 0  # Always return success to allow script continuation
 }
 
 # Configure /etc/rc.conf settings
@@ -479,16 +495,14 @@ configure_pf() {
   cat <<EOF > "$pf_conf"
 # /etc/pf.conf - Minimal pf ruleset with SSH rate-limiting
 
-# Skip filtering on the loopback interface
+# General options (must come first)
 set skip on lo0
+set loginterface ${primary_iface}
 
 # Normalize and scrub incoming packets
 scrub in all
 
-# Enable logging on primary interface
-set loginterface ${primary_iface}
-
-# Block all inbound traffic by default and log blocked packets
+# Block inbound traffic by default and log blocked packets
 block in log all
 
 # Allow all outbound traffic on the primary interface, keeping stateful connections
@@ -508,22 +522,25 @@ EOF
   # Validate the new PF rules before applying them
   if ! pfctl -n -f "$pf_conf" 2>&1 | tee -a "$LOG_FILE"; then
     log "PF rule validation failed. Check syntax using 'pfctl -nf $pf_conf' or see the logs for details."
-    error_exit "Failed to validate PF rules. Aborting."
+    log "Continuing without applying invalid rules."
+    return 1
   fi
 
-  # Enable and restart PF service
+  # Enable PF in rc.conf
   if sysrc pf_enable="YES" >/dev/null 2>&1; then
     log "PF enabled in rc.conf."
   else
     log "Failed to enable PF in rc.conf."
   fi
 
+  # Set the rules path in rc.conf
   if sysrc pf_rules="/etc/pf.conf" >/dev/null 2>&1; then
     log "PF rules path set to /etc/pf.conf in rc.conf."
   else
     log "Failed to set PF rules path in rc.conf."
   fi
 
+  # Enable and restart the PF service
   if service pf enable >/dev/null 2>&1; then
     log "PF service enabled."
   else
@@ -533,10 +550,10 @@ EOF
   if service pf restart >/dev/null 2>&1; then
     log "PF service restarted successfully."
   else
-    error_exit "Failed to restart PF service. Aborting."
+    log "Failed to restart PF service. Continuing with the script."
   fi
 
-  log "PF firewall configured and restarted with custom rules."
+  log "PF firewall configuration process completed."
 }
 
 # Set default shell and configure environment
