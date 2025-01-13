@@ -107,7 +107,6 @@ identify_primary_iface() {
     log "No primary network interface was detected."
 }
 
-# Function to bootstrap and install packages
 bootstrap_and_install_pkgs() {
     log "Bootstrapping pkg and installing packages..."
 
@@ -121,16 +120,23 @@ bootstrap_and_install_pkgs() {
     pkg update -f 2>&1 | tee -a "$LOG_FILE"
     log "pkg update -f completed."
 
-    # Install packages if not present
+    # Gather packages not yet installed
+    local packages_to_install=()
     for pkg in "${PACKAGES[@]}"; do
         if ! pkg info -q "$pkg"; then
-            log "Installing package: $pkg"
-            pkg install -y "$pkg" 2>&1 | tee -a "$LOG_FILE"
-            log "Finished attempt to install $pkg"
+            packages_to_install+=("$pkg")
         else
             log "Package $pkg is already installed."
         fi
     done
+
+    # Install all missing packages in one batch if any
+    if [ ${#packages_to_install[@]} -gt 0 ]; then
+        log "Installing packages: ${packages_to_install[*]}"
+        pkg install -y "${packages_to_install[@]}" 2>&1 | tee -a "$LOG_FILE"
+    else
+        log "All packages already installed. No action needed."
+    fi
 
     log "Package installation process completed."
 }
