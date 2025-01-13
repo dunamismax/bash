@@ -1,144 +1,151 @@
 #!/usr/local/bin/bash
-#===============================================================================
+# ------------------------------------------------------------------------------
 # FreeBSD Automated System Configuration Script
-#===============================================================================
-# This script configures a FreeBSD installation with the following steps:
-#
-#   1) Bootstraps and updates the pkg system, then installs essential packages.
-#   2) Identifies the primary network adapter and stores it in PRIMARY_IFACE.
-#   3) Backs up and overwrites the following config files with known-good contents:
-#         • /etc/pf.conf
-#         • /etc/rc.conf
-#         • /etc/resolv.conf
-#         • /etc/ssh/sshd_config
-#      while replacing "hn0" and "${primary_iface}" (where needed) with the detected interface.
-#   4) Grants sudo privileges to the hard-coded user "sawyer."
-#   5) Sets Bash as the default shell for "sawyer" and configures ~/.bashrc + ~/.bash_profile.
-#   6) Performs final tasks (pkg upgrade, cache cleanup, enables Plex).
+# ------------------------------------------------------------------------------
+# Description:
+#   This script automates the configuration of a fresh FreeBSD installation by:
+#       1) Bootstrapping and updating the pkg system, then installing essential
+#          packages.
+#       2) Detecting the primary network interface (stored in PRIMARY_IFACE).
+#       3) Backing up and overwriting selected configuration files (/etc/pf.conf,
+#          /etc/rc.conf, /etc/resolv.conf, /etc/ssh/sshd_config) with known-good
+#          contents, substituting "hn0" and "${primary_iface}" with the detected
+#          interface if applicable.
+#       4) Granting sudo privileges to the user "sawyer" and configuring Bash
+#          (as the default shell), ~/.bashrc, and ~/.bash_profile for that user.
+#       5) Completing final tasks (e.g., pkg upgrade, cleaning caches, and
+#          enabling Plex).
 #
 # Notes:
-#   • Logs are appended to /var/log/freebsd_setup.log.
-#   • This script does not exit on failures (no error handling or traps).
-#   • Run as root on a fresh FreeBSD install or from a snapshot to repeatedly test.
-#===============================================================================
+#   • All log output is appended to /var/log/freebsd_setup.log.
+#   • This script does not exit on individual failures. There is no robust
+#     error handling or traps.
+#   • Run as root on a new FreeBSD install or rollback snapshot for testing.
+# ------------------------------------------------------------------------------
 
 # --------------------------------------
 # CONFIGURATION
 # --------------------------------------
+
+# Exit immediately if a command exits with a non-zero status,
+# if any variable is unset, and if any command in a pipeline fails
+set -euo pipefail
+
+# Trap errors and execute handle_error
+trap 'handle_error' ERR
+
+# Variables
 LOG_FILE="/var/log/freebsd_setup.log"
 USERNAME="sawyer"
 PRIMARY_IFACE=""    # Will be detected automatically, if possible
 
 PACKAGES=(
-  # Essential Shells and Editors
-  "vim" "bash" "zsh" "tmux" "mc" "nano" "fish" "screen"
-  # Version Control and Scripting
-  "git" "perl5" "python3"
-  # Network and Internet Utilities
-  "curl" "wget" "netcat" "tcpdump" "rsync" "rsnapshot" "samba"
-  # System Monitoring and Management
-  "htop" "sudo" "bash-completion" "zsh-completions" "neofetch" "tig" "bat" "exa"
-  "fd" "jq" "iftop" "nmap" "tree" "fzf" "lynx" "curlie" "ncdu" "fail2ban"
-  "gcc" "make" "lighttpd" "smartmontools" "zfs-auto-snapshot"
-  # Database and Media Services
-  "plexmediaserver" "postgresql" "caddy" "go"
-  # System Tools and Backup
-  "duplicity" "ffmpeg" "restic" "syslog-ng"
-  # Virtualization and VM Support
-  "qemu" "libvirt" "virt-manager" "vm-bhyve" "bhyve-firmware" "grub2-bhyve"
+    # Essential Shells and Editors
+    "vim" "bash" "zsh" "tmux" "mc" "nano" "fish" "screen"
+    # Version Control and Scripting
+    "git" "perl5" "python3"
+    # Network and Internet Utilities
+    "curl" "wget" "netcat" "tcpdump" "rsync" "rsnapshot"
+    # System Monitoring and Management
+    "htop" "sudo" "bash-completion" "zsh-completions" "neofetch" "tig" "bat" "exa"
+    "fd" "jq" "iftop" "nmap" "tree" "fzf" "lynx" "curlie" "ncdu"
+    "gcc" "lighttpd" "smartmontools"
+    # Database and Media Services
+    "plexmediaserver" "caddy" "go"
+    # System Tools and Backup
+    "duplicity" "ffmpeg" "restic" "syslog-ng"
+    # Virtualization and VM Support
+    "qemu" "libvirt" "virt-manager" "vm-bhyve" "bhyve-firmware" "grub2-bhyve"
 )
 
 # --------------------------------------
-# LOGGING (simplified)
+# FUNCTIONS
 # --------------------------------------
+
+# Function to log messages with timestamp
 log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1" | tee -a "$LOG_FILE"
 }
 
-# --------------------------------------
-# IDENTIFY PRIMARY NETWORK INTERFACE
-# --------------------------------------
+# Function to handle errors
+handle_error() {
+    log "An error occurred. Check the log for details."
+    exit 1
+}
+
+# Function to identify the primary network interface
 identify_primary_iface() {
-  log "Identifying primary network adapter..."
+    log "Identifying primary network adapter..."
 
-  # Attempt to determine the primary interface using 'route'
-  if command -v route >/dev/null; then
-    PRIMARY_IFACE=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
-    if [ -n "$PRIMARY_IFACE" ]; then
-      log "Primary network adapter found using 'route': $PRIMARY_IFACE"
-      return
+    if command -v route >/dev/null 2>&1; then
+        PRIMARY_IFACE=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+        if [ -n "$PRIMARY_IFACE" ]; then
+            log "Primary network adapter found using 'route': $PRIMARY_IFACE"
+            return
+        fi
+        log "Failed to identify with 'route'. Trying netstat..."
     fi
-    log "Failed to identify with 'route'. Trying netstat..."
-  fi
 
-  # Fallback: netstat
-  if command -v netstat >/dev/null; then
-    PRIMARY_IFACE=$(netstat -rn | awk '/^default/ {print $NF}' | head -n 1)
-    if [ -n "$PRIMARY_IFACE" ]; then
-      log "Primary network adapter found using 'netstat': $PRIMARY_IFACE"
-      return
+    if command -v netstat >/dev/null 2>&1; then
+        PRIMARY_IFACE=$(netstat -rn | awk '/^default/ {print $NF}' | head -n 1)
+        if [ -n "$PRIMARY_IFACE" ]; then
+            log "Primary network adapter found using 'netstat': $PRIMARY_IFACE"
+            return
+        fi
+        log "Failed to identify with 'netstat'. Trying ifconfig..."
     fi
-    log "Failed to identify with 'netstat'. Trying ifconfig..."
-  fi
 
-  # Fallback: ifconfig
-  local active_iface
-  active_iface=$(ifconfig | awk '/status: active/{getline; print $1}' | head -n 1)
-  if [ -n "$active_iface" ]; then
-    PRIMARY_IFACE="$active_iface"
-    log "Active network adapter found using 'ifconfig': $PRIMARY_IFACE"
-    return
-  fi
+    # Fallback: ifconfig
+    local active_iface
+    active_iface=$(ifconfig | awk '/status: active/{getline; print $1}' | head -n 1)
+    if [ -n "$active_iface" ]; then
+        PRIMARY_IFACE="$active_iface"
+        log "Active network adapter found using 'ifconfig': $PRIMARY_IFACE"
+        return
+    fi
 
-  # If all methods fail, leave PRIMARY_IFACE blank
-  log "No primary network interface was detected."
+    log "No primary network interface was detected."
 }
 
-# --------------------------------------
-# BOOTSTRAP AND INSTALL PACKAGES
-# --------------------------------------
+# Function to bootstrap and install packages
 bootstrap_and_install_pkgs() {
-  log "Bootstrapping pkg and installing packages..."
+    log "Bootstrapping pkg and installing packages..."
 
-  # If pkg is missing, bootstrap it
-  if ! command -v pkg >/dev/null; then
-    log "pkg not found. Bootstrapping pkg..."
-    env ASSUME_ALWAYS_YES=yes pkg bootstrap >> "$LOG_FILE" 2>&1
-    log "pkg bootstrap process finished."
-  fi
-
-  # Force-update the package database
-  pkg update -f >> "$LOG_FILE" 2>&1
-  log "pkg update -f completed."
-
-  # Install packages
-  for pkg in "${PACKAGES[@]}"; do
-    if ! pkg info -q "$pkg"; then
-      log "Installing package: $pkg"
-      pkg install -y "$pkg" >> "$LOG_FILE" 2>&1
-      log "Finished attempt to install $pkg"
-    else
-      log "Package $pkg is already installed."
+    if ! command -v pkg >/dev/null 2>&1; then
+        log "pkg not found. Bootstrapping pkg..."
+        env ASSUME_ALWAYS_YES=yes pkg bootstrap 2>&1 | tee -a "$LOG_FILE"
+        log "pkg bootstrap process finished."
     fi
-  done
 
-  log "Package installation process completed."
+    # Force-update the package database
+    pkg update -f 2>&1 | tee -a "$LOG_FILE"
+    log "pkg update -f completed."
+
+    # Install packages if not present
+    for pkg in "${PACKAGES[@]}"; do
+        if ! pkg info -q "$pkg"; then
+            log "Installing package: $pkg"
+            pkg install -y "$pkg" 2>&1 | tee -a "$LOG_FILE"
+            log "Finished attempt to install $pkg"
+        else
+            log "Package $pkg is already installed."
+        fi
+    done
+
+    log "Package installation process completed."
 }
 
-# --------------------------------------
-# OVERWRITE /etc/pf.conf
-# --------------------------------------
+# Function to overwrite /etc/pf.conf
 overwrite_pf_conf() {
-  log "Backing up and overwriting /etc/pf.conf with known-good contents."
+    log "Backing up and overwriting /etc/pf.conf with known-good contents."
 
-  local pf_conf="/etc/pf.conf"
-  if [ -f "$pf_conf" ]; then
-    mv "$pf_conf" "${pf_conf}.bak"
-    log "Backed up existing $pf_conf to ${pf_conf}.bak"
-  fi
+    local pf_conf="/etc/pf.conf"
+    if [ -f "$pf_conf" ]; then
+        mv "$pf_conf" "${pf_conf}.bak"
+        log "Backed up existing $pf_conf to ${pf_conf}.bak"
+    fi
 
-  # Write the known-good file
-  cat <<'EOF' > "$pf_conf"
+    cat <<'EOF' > "$pf_conf"
 # /etc/pf.conf - Minimal pf ruleset
 
 # Skip filtering on the loopback interface
@@ -161,34 +168,29 @@ pass in quick on ${primary_iface} proto tcp to port 32400 keep state
 pass in quick on ${primary_iface} proto udp to port 32400 keep state
 EOF
 
-  # If the script successfully identified the interface, replace "hn0" and "${primary_iface}"
-  if [ -n "$PRIMARY_IFACE" ]; then
-    # Replace hn0 with actual interface
-    sed -i '' "s/hn0/$PRIMARY_IFACE/g" "$pf_conf"
-    # Replace ${primary_iface} with actual interface
-    sed -i '' "s/\${primary_iface}/$PRIMARY_IFACE/g" "$pf_conf"
-    log "Replaced 'hn0' and '\${primary_iface}' with $PRIMARY_IFACE in /etc/pf.conf."
-  else
-    log "PRIMARY_IFACE is empty. /etc/pf.conf references hn0 or \${primary_iface} unchanged."
-  fi
+    # Replace interface placeholders if we identified PRIMARY_IFACE
+    if [ -n "$PRIMARY_IFACE" ]; then
+        sed -i '' "s/hn0/$PRIMARY_IFACE/g" "$pf_conf"
+        sed -i '' "s/\${primary_iface}/$PRIMARY_IFACE/g" "$pf_conf"
+        log "Replaced 'hn0' and '\${primary_iface}' with $PRIMARY_IFACE in /etc/pf.conf."
+    else
+        log "PRIMARY_IFACE is empty; references to 'hn0' and '\${primary_iface}' remain unchanged."
+    fi
 
-  log "Completed overwriting /etc/pf.conf."
+    log "Completed overwriting /etc/pf.conf."
 }
 
-# --------------------------------------
-# OVERWRITE /etc/rc.conf
-# --------------------------------------
+# Function to overwrite /etc/rc.conf
 overwrite_rc_conf() {
-  log "Backing up and overwriting /etc/rc.conf with known-good contents."
+    log "Backing up and overwriting /etc/rc.conf with known-good contents."
 
-  local rc_conf="/etc/rc.conf"
-  if [ -f "$rc_conf" ]; then
-    mv "$rc_conf" "${rc_conf}.bak"
-    log "Backed up existing $rc_conf to ${rc_conf}.bak"
-  fi
+    local rc_conf="/etc/rc.conf"
+    if [ -f "$rc_conf" ]; then
+        mv "$rc_conf" "${rc_conf}.bak"
+        log "Backed up existing $rc_conf to ${rc_conf}.bak"
+    fi
 
-  # Write the known-good file
-  cat <<'EOF' > "$rc_conf"
+    cat <<'EOF' > "$rc_conf"
 clear_tmp_enable="YES"
 hostname="freebsd"
 ifconfig_hn0="DHCP"
@@ -205,30 +207,27 @@ pf_rules="/etc/pf.conf"
 pflog_enable="YES"
 EOF
 
-  # If the script successfully identified the interface, replace "hn0" with the actual interface
-  if [ -n "$PRIMARY_IFACE" ]; then
-    sed -i '' "s/hn0/$PRIMARY_IFACE/g" "$rc_conf"
-    log "Replaced 'hn0' with $PRIMARY_IFACE in /etc/rc.conf."
-  else
-    log "PRIMARY_IFACE is empty. 'hn0' in /etc/rc.conf remains unchanged."
-  fi
+    if [ -n "$PRIMARY_IFACE" ]; then
+        sed -i '' "s/hn0/$PRIMARY_IFACE/g" "$rc_conf"
+        log "Replaced 'hn0' with $PRIMARY_IFACE in /etc/rc.conf."
+    else
+        log "PRIMARY_IFACE is empty; 'hn0' remains unchanged in /etc/rc.conf."
+    fi
 
-  log "Completed overwriting /etc/rc.conf."
+    log "Completed overwriting /etc/rc.conf."
 }
 
-# --------------------------------------
-# OVERWRITE /etc/resolv.conf
-# --------------------------------------
+# Function to overwrite /etc/resolv.conf
 overwrite_resolv_conf() {
-  log "Backing up and overwriting /etc/resolv.conf with known-good contents."
+    log "Backing up and overwriting /etc/resolv.conf with known-good contents."
 
-  local resolv_conf="/etc/resolv.conf"
-  if [ -f "$resolv_conf" ]; then
-    mv "$resolv_conf" "${resolv_conf}.bak"
-    log "Backed up existing $resolv_conf to ${resolv_conf}.bak"
-  fi
+    local resolv_conf="/etc/resolv.conf"
+    if [ -f "$resolv_conf" ]; then
+        mv "$resolv_conf" "${resolv_conf}.bak"
+        log "Backed up existing $resolv_conf to ${resolv_conf}.bak"
+    fi
 
-  cat <<'EOF' > "$resolv_conf"
+    cat <<'EOF' > "$resolv_conf"
 # Generated by resolvconf
 
 nameserver 1.1.1.1
@@ -238,196 +237,88 @@ nameserver 127.0.0.1
 options edns0
 EOF
 
-  log "Completed overwriting /etc/resolv.conf."
+    log "Completed overwriting /etc/resolv.conf."
 }
 
-# --------------------------------------
-# OVERWRITE /etc/ssh/sshd_config
-# --------------------------------------
+# Function to overwrite /etc/ssh/sshd_config
 overwrite_sshd_config() {
-  log "Backing up and overwriting /etc/ssh/sshd_config with known-good contents."
+    log "Backing up and overwriting /etc/ssh/sshd_config with known-good contents."
 
-  local sshd_config="/etc/ssh/sshd_config"
-  if [ -f "$sshd_config" ]; then
-    mv "$sshd_config" "${sshd_config}.bak"
-    log "Backed up existing $sshd_config to ${sshd_config}.bak"
-  fi
+    local sshd_config="/etc/ssh/sshd_config"
+    if [ -f "$sshd_config" ]; then
+        mv "$sshd_config" "${sshd_config}.bak"
+        log "Backed up existing $sshd_config to ${sshd_config}.bak"
+    fi
 
-  cat <<'EOF' > "$sshd_config"
+    cat <<'EOF' > "$sshd_config"
 #       $OpenBSD: sshd_config,v 1.104 2021/07/02 05:11:21 dtucker Exp $
-
-# This is the sshd server system-wide configuration file.  See
-# sshd_config(5) for more information.
-
-# This sshd was compiled with PATH=/usr/bin:/bin:/usr/sbin:/sbin
-
-# The strategy used for options in the default sshd_config shipped with
-# OpenSSH is to specify options with their default value where
-# possible, but leave them commented.  Uncommented options override the
-# default value.
-
-# Note that some of FreeBSD's defaults differ from OpenBSD's, and
-# FreeBSD has a few additional options.
+# This is the sshd server system-wide configuration file.
 
 Port 22
 AddressFamily any
 ListenAddress 0.0.0.0
-#ListenAddress ::
-
-#HostKey /etc/ssh/ssh_host_rsa_key
-#HostKey /etc/ssh/ssh_host_ecdsa_key
-#HostKey /etc/ssh/ssh_host_ed25519_key
-
-# Ciphers and keying
-#RekeyLimit default none
-
-# Logging
-#SyslogFacility AUTH
-#LogLevel INFO
-
-# Authentication:
-
-#LoginGraceTime 2m
 PermitRootLogin no
-#StrictModes yes
 MaxAuthTries 6
 MaxSessions 10
-
-#PubkeyAuthentication yes
-
-# The default is to check both .ssh/authorized_keys and .ssh/authorized_keys2
-# but this is overridden so installations will only check .ssh/authorized_keys
 AuthorizedKeysFile      .ssh/authorized_keys
-
-#AuthorizedPrincipalsFile none
-
-#AuthorizedKeysCommand none
-#AuthorizedKeysCommandUser nobody
-
-# For this to work you will also need host keys in /etc/ssh/ssh_known_hosts
-#HostbasedAuthentication no
-# Change to yes if you don't trust ~/.ssh/known_hosts for
-# HostbasedAuthentication
-#IgnoreUserKnownHosts no
-# Don't read the user's ~/.rhosts and ~/.shosts files
 IgnoreRhosts yes
-
-# Change to yes to enable built-in password authentication.
-# Note that passwords may also be accepted via KbdInteractiveAuthentication.
 PasswordAuthentication yes
-#PermitEmptyPasswords no
-
-# Change to no to disable PAM authentication
 KbdInteractiveAuthentication no
-
-# Kerberos options
-#KerberosAuthentication no
-#KerberosOrLocalPasswd yes
-#KerberosTicketCleanup yes
-#KerberosGetAFSToken no
-
-# GSSAPI options
-#GSSAPIAuthentication no
-#GSSAPICleanupCredentials yes
-
-# Set this to 'no' to disable PAM authentication, account processing,
-# and session processing. If this is enabled, PAM authentication will
-# be allowed through the KbdInteractiveAuthentication and
-# PasswordAuthentication.  Depending on your PAM configuration,
-# PAM authentication via KbdInteractiveAuthentication may bypass
-# the setting of "PermitRootLogin prohibit-password".
-# If you just want the PAM account and session checks to run without
-# PAM authentication, then enable this but set PasswordAuthentication
-# and KbdInteractiveAuthentication to 'no'.
 UsePAM no
-
-#AllowAgentForwarding yes
-#AllowTcpForwarding yes
-#GatewayPorts no
-#X11Forwarding no
-#X11DisplayOffset 10
-#X11UseLocalhost yes
 PermitTTY yes
-#PrintMotd yes
-#PrintLastLog yes
-#TCPKeepAlive yes
-#PermitUserEnvironment no
-#Compression delayed
 ClientAliveInterval 300
 ClientAliveCountMax 3
-#UseDNS yes
-#PidFile /var/run/sshd.pid
-#MaxStartups 10:30:100
-#PermitTunnel no
-#ChrootDirectory none
-#UseBlacklist no
-#VersionAddendum FreeBSD-20240806
-
-# no default banner path
-#Banner none
-
-# override default of no subsystems
 Subsystem       sftp    /usr/libexec/sftp-server
-
-# Example of overriding settings on a per-user basis
-#Match User anoncvs
-#       X11Forwarding no
-#       AllowTcpForwarding no
-#       PermitTTY no
-#       ForceCommand cvs server
 EOF
 
-  # Fix ownership and permissions
-  chown root:wheel "$sshd_config"
-  chmod 644 "$sshd_config"
+    # Fix ownership and permissions
+    chown root:wheel "$sshd_config"
+    chmod 644 "$sshd_config"
 
-  log "Completed overwriting /etc/ssh/sshd_config. Restarting sshd..."
-  service sshd restart >> "$LOG_FILE" 2>&1
+    log "Completed overwriting /etc/ssh/sshd_config. Restarting sshd..."
+    service sshd restart 2>&1 | tee -a "$LOG_FILE"
 }
 
-# --------------------------------------
-# CONFIGURE SUDO FOR $USERNAME
-# --------------------------------------
+# Function to configure sudoers
 configure_sudoers() {
-  log "Configuring sudoers for $USERNAME..."
-  local sudoers_file="/usr/local/etc/sudoers"
-  local sudo_rule="%wheel ALL=(ALL) ALL"
+    log "Configuring sudoers for $USERNAME..."
 
-  # Ensure wheel rule
-  if ! grep -q "^%wheel" "$sudoers_file" 2>/dev/null; then
-    echo "$sudo_rule" >> "$sudoers_file"
-    log "Added wheel group rule to sudoers."
-  else
-    log "Wheel group rule already exists in sudoers."
-  fi
+    local sudoers_file="/usr/local/etc/sudoers"
+    local sudo_rule="%wheel ALL=(ALL) ALL"
 
-  pw usermod "$USERNAME" -G wheel >> "$LOG_FILE" 2>&1
-  log "User $USERNAME added to wheel group (if not already)."
+    # Ensure wheel rule
+    if ! grep -q "^%wheel" "$sudoers_file" 2>/dev/null; then
+        echo "$sudo_rule" >> "$sudoers_file"
+        log "Added wheel group rule to sudoers."
+    else
+        log "Wheel group rule already exists in sudoers."
+    fi
+
+    pw usermod "$USERNAME" -G wheel 2>&1 | tee -a "$LOG_FILE"
+    log "User $USERNAME added to wheel group (if not already)."
 }
 
-# --------------------------------------
-# SET BASH AS DEFAULT SHELL + ENV
-# --------------------------------------
+# Function to set Bash as default shell and configure user env
 set_default_shell_and_env() {
-  log "Setting Bash as default shell for $USERNAME..."
-  local bash_path="/usr/local/bin/bash"
+    log "Setting Bash as default shell for $USERNAME..."
+    local bash_path="/usr/local/bin/bash"
 
-  # Ensure bash is in /etc/shells
-  if ! grep -qx "$bash_path" /etc/shells; then
-    echo "$bash_path" >> /etc/shells
-    log "Added $bash_path to /etc/shells."
-  fi
+    # Ensure bash is in /etc/shells
+    if ! grep -qx "$bash_path" /etc/shells; then
+        echo "$bash_path" >> /etc/shells
+        log "Added $bash_path to /etc/shells."
+    fi
 
-  # Change shell for $USERNAME
-  chsh -s "$bash_path" "$USERNAME" >> "$LOG_FILE" 2>&1
+    # Change shell for $USERNAME
+    chsh -s "$bash_path" "$USERNAME" 2>&1 | tee -a "$LOG_FILE"
 
-  # Configure environment files in $USERNAME's home
-  local user_home
-  user_home=$(eval echo "~$USERNAME")
-  local bashrc_file="$user_home/.bashrc"
-  local bash_profile_file="$user_home/.bash_profile"
+    # Configure environment files
+    local user_home
+    user_home=$(eval echo "~$USERNAME")
+    local bashrc_file="$user_home/.bashrc"
+    local bash_profile_file="$user_home/.bash_profile"
 
-  cat <<'EOF' > "$bashrc_file"
+    cat <<'EOF' > "$bashrc_file"
 #!/usr/local/bin/bash
 # ~/.bashrc: executed by bash(1) for interactive shells.
 
@@ -455,7 +346,7 @@ if [ -f /usr/local/etc/bash_completion ]; then
 fi
 EOF
 
-  cat <<'EOF' > "$bash_profile_file"
+    cat <<'EOF' > "$bash_profile_file"
 #!/usr/local/bin/bash
 # ~/.bash_profile: executed by bash(1) for login shells.
 
@@ -464,32 +355,36 @@ if [ -f ~/.bashrc ]; then
 fi
 EOF
 
-  chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file"
-  chmod 644 "$bashrc_file" "$bash_profile_file"
+    chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file"
+    chmod 644 "$bashrc_file" "$bash_profile_file"
 
-  log "Shell and environment configured for $USERNAME."
+    log "Shell and environment configured for $USERNAME."
 }
 
-# --------------------------------------
-# FINALIZE CONFIGURATION
-# --------------------------------------
+# Function to finalize configuration
 finalize_configuration() {
-  log "Finalizing configuration (pkg upgrade, clean)..."
+    log "Finalizing configuration (pkg upgrade, clean)..."
 
-  pkg upgrade -y >> "$LOG_FILE" 2>&1
-  pkg clean -y   >> "$LOG_FILE" 2>&1
+    pkg upgrade -y 2>&1 | tee -a "$LOG_FILE"
+    pkg clean -y   2>&1 | tee -a "$LOG_FILE"
 
-  # Example: enable and start Plex
-  sysrc plexmediaserver_enable="YES" >> "$LOG_FILE" 2>&1
-  service plexmediaserver start      >> "$LOG_FILE" 2>&1
+    # Example: enable and start Plex
+    sysrc plexmediaserver_enable="YES" 2>&1 | tee -a "$LOG_FILE"
+    service plexmediaserver start 2>&1 | tee -a "$LOG_FILE"
 
-  log "Final configuration completed."
+    log "Final configuration completed."
 }
 
 # --------------------------------------
-# SCRIPT EXECUTION
+# SCRIPT START
 # --------------------------------------
-log "Starting FreeBSD system configuration."
+
+# Ensure the log file exists and has appropriate permissions
+touch "$LOG_FILE"
+chmod 644 "$LOG_FILE"
+
+log "--------------------------------------"
+log "Starting FreeBSD Automated System Configuration Script"
 
 # 1. Identify the primary network interface
 identify_primary_iface
@@ -512,5 +407,6 @@ set_default_shell_and_env
 # 6. Finalize config (upgrade, clean, enable Plex)
 finalize_configuration
 
-log "Configuration script finished."
+log "Configuration script finished successfully."
+log "--------------------------------------"
 exit 0
