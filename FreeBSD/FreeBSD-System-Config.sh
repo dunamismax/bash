@@ -1,37 +1,33 @@
 #!/usr/local/bin/bash
 #===============================================================================
-# FreeBSD Automated System Configuration Script (Refactored)
+# FreeBSD Automated System Configuration Script
 #===============================================================================
-# This script configures a FreeBSD installation following simplified requirements:
+# This script configures a FreeBSD installation with the following steps:
 #
-#   • Bootstraps and updates the pkg system, then installs a collection of
-#     essential packages for system management, development, and utilities.
-#   • Identifies the primary network adapter for DHCP configuration (if possible).
-#   • Configures system settings in /etc/rc.conf.
-#   • Updates DNS settings ( /etc/resolv.conf ) with default or custom nameservers.
-#   • Grants sudo privileges to the hard-coded user "sawyer".
-#   • Sets Bash as the default shell for "sawyer" and configures environment files.
-#   • Hardens SSH configuration by disabling root login and limiting auth attempts.
-#   • Sets up and enables the PF firewall with simple SSH rate-limiting.
-#   • Performs package upgrades, cleans caches, and enables configured services.
+#   1) Bootstraps and updates the pkg system, then installs essential packages.
+#   2) Identifies the primary network adapter and stores it in PRIMARY_IFACE.
+#   3) Backs up and overwrites the following config files with known-good contents:
+#         • /etc/pf.conf
+#         • /etc/rc.conf
+#         • /etc/resolv.conf
+#         • /etc/ssh/sshd_config
+#      while replacing "hn0" and "${primary_iface}" (where needed) with the detected interface.
+#   4) Grants sudo privileges to the hard-coded user "sawyer."
+#   5) Sets Bash as the default shell for "sawyer" and configures ~/.bashrc + ~/.bash_profile.
+#   6) Performs final tasks (pkg upgrade, cache cleanup, enables Plex).
 #
-# Logging:
-#   • All output is appended directly to the log file.
-#   • No error handling or traps are present—this script does not exit on failures.
-#
-# Usage:
-#   • Run as root on a fresh FreeBSD install to bootstrap and configure the system.
-#   • Modify variables as needed to suit your environment.
-#
+# Notes:
+#   • Logs are appended to /var/log/freebsd_setup.log.
+#   • This script does not exit on failures (no error handling or traps).
+#   • Run as root on a fresh FreeBSD install or from a snapshot to repeatedly test.
 #===============================================================================
 
 # --------------------------------------
 # CONFIGURATION
 # --------------------------------------
-
 LOG_FILE="/var/log/freebsd_setup.log"
-USERNAME="sawyer"  # Hard-coded username
-PRIMARY_IFACE=""   # Will be detected automatically, if possible
+USERNAME="sawyer"
+PRIMARY_IFACE=""    # Will be detected automatically, if possible
 
 PACKAGES=(
   # Essential Shells and Editors
@@ -130,56 +126,267 @@ bootstrap_and_install_pkgs() {
 }
 
 # --------------------------------------
-# CONFIGURE /etc/rc.conf
+# OVERWRITE /etc/pf.conf
 # --------------------------------------
-configure_rc_conf() {
-  log "Configuring /etc/rc.conf..."
-  local rc_conf="/etc/rc.conf"
-  local hostname="freebsd"
+overwrite_pf_conf() {
+  log "Backing up and overwriting /etc/pf.conf with known-good contents."
 
-  # Apply some common rc.conf settings
-  sysrc clear_tmp_enable="YES"          >> "$LOG_FILE" 2>&1
-  sysrc hostname="$hostname"            >> "$LOG_FILE" 2>&1
-  sysrc local_unbound_enable="YES"      >> "$LOG_FILE" 2>&1
-  sysrc sshd_enable="YES"               >> "$LOG_FILE" 2>&1
-  sysrc moused_enable="NO"              >> "$LOG_FILE" 2>&1
-  sysrc ntpd_enable="YES"               >> "$LOG_FILE" 2>&1
-  sysrc powerd_enable="YES"             >> "$LOG_FILE" 2>&1
-  sysrc dumpdev="AUTO"                  >> "$LOG_FILE" 2>&1
-  sysrc zfs_enable="YES"                >> "$LOG_FILE" 2>&1
-
-  # Configure the primary network interface for DHCP
-  if [ -n "$PRIMARY_IFACE" ]; then
-    sysrc ifconfig_"$PRIMARY_IFACE"="DHCP" >> "$LOG_FILE" 2>&1
-    log "Set DHCP for $PRIMARY_IFACE in /etc/rc.conf."
-  else
-    log "No primary network interface set. Skipping interface config."
+  local pf_conf="/etc/pf.conf"
+  if [ -f "$pf_conf" ]; then
+    mv "$pf_conf" "${pf_conf}.bak"
+    log "Backed up existing $pf_conf to ${pf_conf}.bak"
   fi
 
-  log "/etc/rc.conf configuration complete."
+  # Write the known-good file
+  cat <<'EOF' > "$pf_conf"
+# /etc/pf.conf - Minimal pf ruleset
+
+# Skip filtering on the loopback interface
+set skip on lo0
+
+# Normalize and scrub incoming packets
+scrub in all
+
+# Block all inbound traffic by default
+block in all
+
+# Allow all outbound traffic, keeping stateful connections
+pass out all keep state
+
+# Allow incoming SSH connections on your primary interface hn0
+pass in quick on hn0 proto tcp to port 22 keep state
+
+# Allow PlexMediaServer traffic
+pass in quick on ${primary_iface} proto tcp to port 32400 keep state
+pass in quick on ${primary_iface} proto udp to port 32400 keep state
+EOF
+
+  # If the script successfully identified the interface, replace "hn0" and "${primary_iface}"
+  if [ -n "$PRIMARY_IFACE" ]; then
+    # Replace hn0 with actual interface
+    sed -i '' "s/hn0/$PRIMARY_IFACE/g" "$pf_conf"
+    # Replace ${primary_iface} with actual interface
+    sed -i '' "s/\${primary_iface}/$PRIMARY_IFACE/g" "$pf_conf"
+    log "Replaced 'hn0' and '\${primary_iface}' with $PRIMARY_IFACE in /etc/pf.conf."
+  else
+    log "PRIMARY_IFACE is empty. /etc/pf.conf references hn0 or \${primary_iface} unchanged."
+  fi
+
+  log "Completed overwriting /etc/pf.conf."
 }
 
 # --------------------------------------
-# CONFIGURE DNS
+# OVERWRITE /etc/rc.conf
 # --------------------------------------
-configure_dns() {
-  log "Configuring DNS..."
+overwrite_rc_conf() {
+  log "Backing up and overwriting /etc/rc.conf with known-good contents."
+
+  local rc_conf="/etc/rc.conf"
+  if [ -f "$rc_conf" ]; then
+    mv "$rc_conf" "${rc_conf}.bak"
+    log "Backed up existing $rc_conf to ${rc_conf}.bak"
+  fi
+
+  # Write the known-good file
+  cat <<'EOF' > "$rc_conf"
+clear_tmp_enable="YES"
+hostname="freebsd"
+ifconfig_hn0="DHCP"
+local_unbound_enable="NO"
+sshd_enable="YES"
+moused_enable="NO"
+ntpd_enable="YES"
+powerd_enable="YES"
+# Set dumpdev to "AUTO" to enable crash dumps, "NO" to disable
+dumpdev="AUTO"
+zfs_enable="YES"
+pf_enable="YES"
+pf_rules="/etc/pf.conf"
+pflog_enable="YES"
+EOF
+
+  # If the script successfully identified the interface, replace "hn0" with the actual interface
+  if [ -n "$PRIMARY_IFACE" ]; then
+    sed -i '' "s/hn0/$PRIMARY_IFACE/g" "$rc_conf"
+    log "Replaced 'hn0' with $PRIMARY_IFACE in /etc/rc.conf."
+  else
+    log "PRIMARY_IFACE is empty. 'hn0' in /etc/rc.conf remains unchanged."
+  fi
+
+  log "Completed overwriting /etc/rc.conf."
+}
+
+# --------------------------------------
+# OVERWRITE /etc/resolv.conf
+# --------------------------------------
+overwrite_resolv_conf() {
+  log "Backing up and overwriting /etc/resolv.conf with known-good contents."
+
   local resolv_conf="/etc/resolv.conf"
-  local nameservers=("1.1.1.1" "9.9.9.9")
+  if [ -f "$resolv_conf" ]; then
+    mv "$resolv_conf" "${resolv_conf}.bak"
+    log "Backed up existing $resolv_conf to ${resolv_conf}.bak"
+  fi
 
-  # Remove existing nameserver lines
-  sed -i '' '/^\s*nameserver\s/d' "$resolv_conf" >> "$LOG_FILE" 2>&1
+  cat <<'EOF' > "$resolv_conf"
+# Generated by resolvconf
 
-  for ns in "${nameservers[@]}"; do
-    echo "nameserver $ns" >> "$resolv_conf"
-    log "Added nameserver $ns to $resolv_conf"
-  done
+nameserver 1.1.1.1
+nameserver 9.9.9.9
 
-  log "DNS configuration complete."
+nameserver 127.0.0.1
+options edns0
+EOF
+
+  log "Completed overwriting /etc/resolv.conf."
 }
 
 # --------------------------------------
-# CONFIGURE SUDOERS (for $USERNAME)
+# OVERWRITE /etc/ssh/sshd_config
+# --------------------------------------
+overwrite_sshd_config() {
+  log "Backing up and overwriting /etc/ssh/sshd_config with known-good contents."
+
+  local sshd_config="/etc/ssh/sshd_config"
+  if [ -f "$sshd_config" ]; then
+    mv "$sshd_config" "${sshd_config}.bak"
+    log "Backed up existing $sshd_config to ${sshd_config}.bak"
+  fi
+
+  cat <<'EOF' > "$sshd_config"
+#       $OpenBSD: sshd_config,v 1.104 2021/07/02 05:11:21 dtucker Exp $
+
+# This is the sshd server system-wide configuration file.  See
+# sshd_config(5) for more information.
+
+# This sshd was compiled with PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# The strategy used for options in the default sshd_config shipped with
+# OpenSSH is to specify options with their default value where
+# possible, but leave them commented.  Uncommented options override the
+# default value.
+
+# Note that some of FreeBSD's defaults differ from OpenBSD's, and
+# FreeBSD has a few additional options.
+
+Port 22
+AddressFamily any
+ListenAddress 0.0.0.0
+#ListenAddress ::
+
+#HostKey /etc/ssh/ssh_host_rsa_key
+#HostKey /etc/ssh/ssh_host_ecdsa_key
+#HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Ciphers and keying
+#RekeyLimit default none
+
+# Logging
+#SyslogFacility AUTH
+#LogLevel INFO
+
+# Authentication:
+
+#LoginGraceTime 2m
+PermitRootLogin no
+#StrictModes yes
+MaxAuthTries 6
+MaxSessions 10
+
+#PubkeyAuthentication yes
+
+# The default is to check both .ssh/authorized_keys and .ssh/authorized_keys2
+# but this is overridden so installations will only check .ssh/authorized_keys
+AuthorizedKeysFile      .ssh/authorized_keys
+
+#AuthorizedPrincipalsFile none
+
+#AuthorizedKeysCommand none
+#AuthorizedKeysCommandUser nobody
+
+# For this to work you will also need host keys in /etc/ssh/ssh_known_hosts
+#HostbasedAuthentication no
+# Change to yes if you don't trust ~/.ssh/known_hosts for
+# HostbasedAuthentication
+#IgnoreUserKnownHosts no
+# Don't read the user's ~/.rhosts and ~/.shosts files
+IgnoreRhosts yes
+
+# Change to yes to enable built-in password authentication.
+# Note that passwords may also be accepted via KbdInteractiveAuthentication.
+PasswordAuthentication yes
+#PermitEmptyPasswords no
+
+# Change to no to disable PAM authentication
+KbdInteractiveAuthentication no
+
+# Kerberos options
+#KerberosAuthentication no
+#KerberosOrLocalPasswd yes
+#KerberosTicketCleanup yes
+#KerberosGetAFSToken no
+
+# GSSAPI options
+#GSSAPIAuthentication no
+#GSSAPICleanupCredentials yes
+
+# Set this to 'no' to disable PAM authentication, account processing,
+# and session processing. If this is enabled, PAM authentication will
+# be allowed through the KbdInteractiveAuthentication and
+# PasswordAuthentication.  Depending on your PAM configuration,
+# PAM authentication via KbdInteractiveAuthentication may bypass
+# the setting of "PermitRootLogin prohibit-password".
+# If you just want the PAM account and session checks to run without
+# PAM authentication, then enable this but set PasswordAuthentication
+# and KbdInteractiveAuthentication to 'no'.
+UsePAM no
+
+#AllowAgentForwarding yes
+#AllowTcpForwarding yes
+#GatewayPorts no
+#X11Forwarding no
+#X11DisplayOffset 10
+#X11UseLocalhost yes
+PermitTTY yes
+#PrintMotd yes
+#PrintLastLog yes
+#TCPKeepAlive yes
+#PermitUserEnvironment no
+#Compression delayed
+ClientAliveInterval 300
+ClientAliveCountMax 3
+#UseDNS yes
+#PidFile /var/run/sshd.pid
+#MaxStartups 10:30:100
+#PermitTunnel no
+#ChrootDirectory none
+#UseBlacklist no
+#VersionAddendum FreeBSD-20240806
+
+# no default banner path
+#Banner none
+
+# override default of no subsystems
+Subsystem       sftp    /usr/libexec/sftp-server
+
+# Example of overriding settings on a per-user basis
+#Match User anoncvs
+#       X11Forwarding no
+#       AllowTcpForwarding no
+#       PermitTTY no
+#       ForceCommand cvs server
+EOF
+
+  # Fix ownership and permissions
+  chown root:wheel "$sshd_config"
+  chmod 644 "$sshd_config"
+
+  log "Completed overwriting /etc/ssh/sshd_config. Restarting sshd..."
+  service sshd restart >> "$LOG_FILE" 2>&1
+}
+
+# --------------------------------------
+# CONFIGURE SUDO FOR $USERNAME
 # --------------------------------------
 configure_sudoers() {
   log "Configuring sudoers for $USERNAME..."
@@ -191,70 +398,11 @@ configure_sudoers() {
     echo "$sudo_rule" >> "$sudoers_file"
     log "Added wheel group rule to sudoers."
   else
-    log "Wheel group rule exists in sudoers."
+    log "Wheel group rule already exists in sudoers."
   fi
 
-  # Add user to wheel group
   pw usermod "$USERNAME" -G wheel >> "$LOG_FILE" 2>&1
-  log "User $USERNAME added to wheel (or already present)."
-}
-
-# --------------------------------------
-# CONFIGURE SSH
-# --------------------------------------
-configure_ssh() {
-  log "Configuring SSH..."
-  local sshd_config="/etc/ssh/sshd_config"
-
-  # Basic SSH settings
-  sed -i '' 's/^#\?\s*Port .*/Port 22/'  "$sshd_config" >> "$LOG_FILE" 2>&1
-  sed -i '' 's/^#\?\s*AddressFamily .*/AddressFamily any/' "$sshd_config" >> "$LOG_FILE" 2>&1
-  sed -i '' 's/^#\?\s*ListenAddress .*/ListenAddress 0.0.0.0/' "$sshd_config" >> "$LOG_FILE" 2>&1
-  sed -i '' 's/^#\?\s*MaxAuthTries .*/MaxAuthTries 6/' "$sshd_config" >> "$LOG_FILE" 2>&1
-  sed -i '' 's/^#\?\s*MaxSessions .*/MaxSessions 10/' "$sshd_config" >> "$LOG_FILE" 2>&1
-  sed -i '' 's/^#\?\s*PermitRootLogin .*/PermitRootLogin no/' "$sshd_config" >> "$LOG_FILE" 2>&1
-
-  chown root:wheel "$sshd_config"
-  chmod 644 "$sshd_config"
-
-  service sshd restart >> "$LOG_FILE" 2>&1
-  log "SSH configuration and restart complete."
-}
-
-# --------------------------------------
-# CONFIGURE PF FIREWALL
-# --------------------------------------
-configure_pf() {
-  log "Configuring PF firewall..."
-  local pf_conf="/etc/pf.conf"
-
-  # Write minimal pf.conf
-  cat <<EOF > "$pf_conf"
-# /etc/pf.conf - Minimal pf ruleset with SSH rate-limiting
-set skip on lo0
-set loginterface $PRIMARY_IFACE
-scrub in all
-block in log all
-pass out on $PRIMARY_IFACE all keep state
-
-# SSH rate-limiting
-table <ssh_limited> persist
-block in quick on $PRIMARY_IFACE proto tcp to port 22
-pass in quick on $PRIMARY_IFACE proto tcp to port 22 keep state \
-    (max-src-conn 10, max-src-conn-rate 15/5, overload <ssh_limited> flush global)
-
-# Plex (example)
-pass in quick on $PRIMARY_IFACE proto tcp to port 32400 keep state
-pass in quick on $PRIMARY_IFACE proto udp to port 32400 keep state
-EOF
-
-  # Enable PF and declare rules
-  sysrc pf_enable="YES"   >> "$LOG_FILE" 2>&1
-  sysrc pf_rules="/etc/pf.conf" >> "$LOG_FILE" 2>&1
-  service pf enable       >> "$LOG_FILE" 2>&1
-  service pf restart      >> "$LOG_FILE" 2>&1
-
-  log "PF firewall configuration complete."
+  log "User $USERNAME added to wheel group (if not already)."
 }
 
 # --------------------------------------
@@ -279,7 +427,6 @@ set_default_shell_and_env() {
   local bashrc_file="$user_home/.bashrc"
   local bash_profile_file="$user_home/.bash_profile"
 
-  # .bashrc
   cat <<'EOF' > "$bashrc_file"
 #!/usr/local/bin/bash
 # ~/.bashrc: executed by bash(1) for interactive shells.
@@ -308,7 +455,6 @@ if [ -f /usr/local/etc/bash_completion ]; then
 fi
 EOF
 
-  # .bash_profile
   cat <<'EOF' > "$bash_profile_file"
 #!/usr/local/bin/bash
 # ~/.bash_profile: executed by bash(1) for login shells.
@@ -343,33 +489,27 @@ finalize_configuration() {
 # --------------------------------------
 # SCRIPT EXECUTION
 # --------------------------------------
-log "Starting FreeBSD system configuration (Refactored)."
+log "Starting FreeBSD system configuration."
 
-# Identify primary network interface
+# 1. Identify the primary network interface
 identify_primary_iface
 
-# Bootstrap pkg + install packages
+# 2. Bootstrap pkg + install packages
 bootstrap_and_install_pkgs
 
-# Configure rc.conf
-configure_rc_conf
+# 3. Overwrite key config files
+overwrite_pf_conf
+overwrite_rc_conf
+overwrite_resolv_conf
+overwrite_sshd_config
 
-# Configure DNS
-configure_dns
-
-# Configure sudoers for $USERNAME
+# 4. Configure sudo for $USERNAME
 configure_sudoers
 
-# Set Bash as default for $USERNAME
+# 5. Set Bash as default shell for $USERNAME
 set_default_shell_and_env
 
-# SSH Hardening
-configure_ssh
-
-# PF Firewall
-configure_pf
-
-# Finalize with package upgrade and cleaning
+# 6. Finalize config (upgrade, clean, enable Plex)
 finalize_configuration
 
 log "Configuration script finished."
