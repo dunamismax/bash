@@ -171,15 +171,33 @@ identify_primary_iface() {
     log "Command 'netstat' not found. Skipping netstat-based detection."
   fi
 
+  # Fallback to active interfaces using ifconfig
+  active_iface=$(ifconfig | awk '/status: active/{getline; print $1}' | head -n 1)
+  if [[ -n "$active_iface" ]]; then
+    log "Active network adapter identified using ifconfig: $active_iface"
+    primary_iface="$active_iface"
+    export primary_iface
+    return
+  else
+    log "No active network adapter found using ifconfig."
+  fi
+
   # Fallback to a default interface (if specified)
   local default_iface="${1:-}"
   if [[ -n "$default_iface" ]]; then
-    log "Falling back to the default interface: $default_iface"
-    primary_iface="$default_iface"
-    export primary_iface
-  else
-    error_exit "Primary network interface not found. Aborting configuration."
+    # Validate that the default interface exists and is up
+    if ifconfig "$default_iface" &>/dev/null && ifconfig "$default_iface" | grep -q "status: active"; then
+      log "Falling back to the default interface: $default_iface"
+      primary_iface="$default_iface"
+      export primary_iface
+      return
+    else
+      log "Default interface $default_iface is either inactive or does not exist."
+    fi
   fi
+
+  # If all methods fail, exit with an error
+  error_exit "Primary network interface not found. Aborting configuration."
 }
 
 # Bootstrap pkg and install packages
@@ -262,15 +280,21 @@ configure_rc_conf() {
 
   # Apply general settings
   for key in "${!settings[@]}"; do
-    sysrc "$key=${settings[$key]}" || log "Failed to set $key=${settings[$key]} in rc.conf."
+    if sysrc "$key=${settings[$key]}" >/dev/null 2>&1; then
+      log "Successfully set $key=${settings[$key]} in rc.conf."
+    else
+      log "Failed to set $key=${settings[$key]} in rc.conf. Please check manually."
+    fi
   done
 
   # Configure network interfaces
   if [[ -n "${interfaces[*]}" ]]; then
     for iface in "${interfaces[@]}"; do
-      sysrc "ifconfig_${iface}=DHCP" \
-        && log "Configured network interface $iface with DHCP." \
-        || log "Failed to configure network interface $iface."
+      if sysrc "ifconfig_${iface}=DHCP" >/dev/null 2>&1; then
+        log "Configured network interface $iface with DHCP."
+      else
+        log "Failed to configure network interface $iface with DHCP. Please check manually."
+      fi
     done
   else
     log "No network interfaces provided or detected. Skipping network configuration."
@@ -322,28 +346,16 @@ configure_dns() {
   log "/etc/resolv.conf has been successfully updated with new nameserver entries."
 }
 
-# Grant sudo privileges to a user
+# Grant sudo privileges to one or more users
 configure_sudoers() {
-  local user="${1:-sawyer}"     # Default to 'sawyer' if no user is provided
   local sudoers_file="/usr/local/etc/sudoers"
-  local nopasswd="${2:-false}"  # Default is to require a password
+  local nopasswd="${1:-false}"  # Default is to require a password
+  shift                        # Remove the first argument (nopasswd flag)
+  local users=("$@")           # Remaining arguments are user names
 
-  # Ensure the user exists
-  if ! pw usershow "$user" > /dev/null 2>&1; then
-    log "User '$user' does not exist. Aborting sudo configuration."
+  if [[ ${#users[@]} -eq 0 ]]; then
+    log "No users specified for sudo configuration. Aborting."
     return 1
-  fi
-
-  # Add user to the wheel group if not already a member
-  if pw groupshow wheel | grep -qw "$user"; then
-    log "User '$user' is already a member of the wheel group. Skipping group modification."
-  else
-    if pw usermod "$user" -G wheel; then
-      log "User '$user' added to the wheel group for sudo privileges."
-    else
-      log "Failed to add user '$user' to the wheel group."
-      return 1
-    fi
   fi
 
   # Ensure the sudoers file exists
@@ -352,22 +364,47 @@ configure_sudoers() {
     return 1
   fi
 
-  # Enable wheel group in sudoers
+  # Define the sudo rule for the wheel group
+  local sudo_rule="%wheel ALL=(ALL) ALL"
+  if [[ "$nopasswd" == "true" ]]; then
+    sudo_rule="%wheel ALL=(ALL) NOPASSWD: ALL"
+  fi
+
+  # Ensure wheel group rule exists in sudoers
   if ! grep -q "^%wheel" "$sudoers_file"; then
-    log "Enabling wheel group in sudoers."
-    local sudo_rule="%wheel ALL=(ALL) ALL"
-    if [[ "$nopasswd" == "true" ]]; then
-      sudo_rule="%wheel ALL=(ALL) NOPASSWD: ALL"
-    fi
+    log "Adding wheel group rule to sudoers."
     if echo "$sudo_rule" >> "$sudoers_file"; then
-      log "Sudoers file updated to grant wheel group privileges (${nopasswd:+NOPASSWD})."
+      log "Sudoers file updated to include wheel group rule (${nopasswd:+NOPASSWD})."
     else
-      log "Failed to update sudoers file for wheel group."
+      log "Failed to update sudoers file for wheel group. Aborting."
       return 1
     fi
   else
-    log "Wheel group privileges are already configured in sudoers. Skipping."
+    log "Wheel group rule already exists in sudoers. Skipping modification."
   fi
+
+  # Process each user
+  for user in "${users[@]}"; do
+    log "Configuring sudo privileges for user: $user"
+
+    # Ensure the user exists
+    if ! pw usershow "$user" > /dev/null 2>&1; then
+      log "User '$user' does not exist. Skipping."
+      continue
+    fi
+
+    # Add user to the wheel group if not already a member
+    if pw groupshow wheel | grep -qw "$user"; then
+      log "User '$user' is already a member of the wheel group. Skipping group modification."
+    else
+      if pw usermod "$user" -G wheel; then
+        log "User '$user' added to the wheel group for sudo privileges."
+      else
+        log "Failed to add user '$user' to the wheel group. Skipping."
+        continue
+      fi
+    fi
+  done
 }
 
 # Hardening SSH configuration
@@ -405,7 +442,7 @@ configure_ssh() {
 
   # Ensure ownership and permissions are correct
   chown root:wheel "$sshd_config" || log "Failed to set ownership for $sshd_config."
-  chmod 600 "$sshd_config" || log "Failed to set permissions for $sshd_config."
+  chmod 644 "$sshd_config" || log "Failed to set permissions for $sshd_config."
 
   # Restart the SSH service
   if service sshd restart; then
@@ -460,7 +497,7 @@ pass out on ${primary_iface} all keep state
 # Rate-limiting for SSH: Max 10 connections per 5 seconds, burstable to 15
 table <ssh_limited> persist
 block in quick on ${primary_iface} proto tcp to port 22
-pass in quick on ${primary_iface} proto tcp to port 22 keep state \\
+pass in quick on ${primary_iface} proto tcp to port 22 keep state \
     (max-src-conn 10, max-src-conn-rate 15/5, overload <ssh_limited> flush global)
 
 # Allow PlexMediaServer traffic
@@ -469,68 +506,110 @@ pass in quick on ${primary_iface} proto udp to port 32400 keep state
 EOF
 
   # Validate the new PF rules before applying them
-  if ! pfctl -n -f "$pf_conf"; then
+  if ! pfctl -n -f "$pf_conf" 2>&1 | tee -a "$LOG_FILE"; then
+    log "PF rule validation failed. Check syntax using 'pfctl -nf $pf_conf' or see the logs for details."
     error_exit "Failed to validate PF rules. Aborting."
   fi
 
   # Enable and restart PF service
-  sysrc pf_enable="YES" || log "Failed to enable pf in rc.conf."
-  sysrc pf_rules="/etc/pf.conf" || log "Failed to set pf_rules in rc.conf."
-  service pf enable || log "Failed to enable pf service."
-  service pf restart || log "Failed to restart pf service."
+  if sysrc pf_enable="YES" >/dev/null 2>&1; then
+    log "PF enabled in rc.conf."
+  else
+    log "Failed to enable PF in rc.conf."
+  fi
+
+  if sysrc pf_rules="/etc/pf.conf" >/dev/null 2>&1; then
+    log "PF rules path set to /etc/pf.conf in rc.conf."
+  else
+    log "Failed to set PF rules path in rc.conf."
+  fi
+
+  if service pf enable >/dev/null 2>&1; then
+    log "PF service enabled."
+  else
+    log "Failed to enable PF service."
+  fi
+
+  if service pf restart >/dev/null 2>&1; then
+    log "PF service restarted successfully."
+  else
+    error_exit "Failed to restart PF service. Aborting."
+  fi
 
   log "PF firewall configured and restarted with custom rules."
 }
 
-# Set Bash as default shell and configure user environment
+# Set default shell and configure environment
 set_default_shell_and_env() {
-  log "Setting Bash as the default shell and configuring user environments."
-  local bash_path="/usr/local/bin/bash"
-  local users=("$@")  # Accept user list as arguments
-  [[ ${#users[@]} -eq 0 ]] && users=("root" "sawyer")  # Default users if none provided
+    log "Setting Bash as the default shell and configuring user environments."
+    local bash_path="/usr/local/bin/bash"
+    local users=("$@")  # Accept user list as arguments
 
-  # Ensure Bash is listed in /etc/shells
-  if ! grep -qF "$bash_path" /etc/shells; then
-    echo "$bash_path" >> /etc/shells \
-      && log "Added $bash_path to /etc/shells." \
-      || error_exit "Failed to add $bash_path to /etc/shells."
-  else
-    log "$bash_path already exists in /etc/shells."
-  fi
-
-  # Process each user
-  for user in "${users[@]}"; do
-    if pw usershow "$user" &>/dev/null; then
-      log "Processing user: $user"
-
-      # Set Bash as the default shell if not already set
-      if [[ "$(pw usershow "$user" | awk -F: '{print $7}')" != "$bash_path" ]]; then
-        chsh -s "$bash_path" "$user" \
-          && log "Set Bash as default shell for user $user." \
-          || log "Failed to set Bash as default shell for user $user."
-      else
-        log "Bash is already the default shell for user $user. Skipping."
-      fi
-
-      # Configure user's environment files
-      local user_home
-      user_home=$(eval echo "~$user")
-      if [[ -d "$user_home" ]]; then
-        configure_user_env "$user_home"
-      else
-        log "Home directory for user $user not found. Skipping environment setup."
-      fi
-    else
-      log "User $user does not exist. Skipping."
+    # Ensure at least one user is specified
+    if [[ ${#users[@]} -eq 0 ]]; then
+        log "No users provided for shell configuration. Aborting."
+        return 1
     fi
-  done
+
+    # Ensure Bash is listed in /etc/shells
+    if ! grep -qF "$bash_path" /etc/shells; then
+        echo "$bash_path" >> /etc/shells \
+            && log "Added $bash_path to /etc/shells." \
+            || error_exit "Failed to add $bash_path to /etc/shells."
+    else
+        log "$bash_path already exists in /etc/shells."
+    fi
+
+    # Process each user
+    for user in "${users[@]}"; do
+        log "Configuring shell and environment for user: $user"
+
+        # Ensure the user exists
+        if ! pw usershow "$user" &>/dev/null; then
+            log "User '$user' does not exist. Skipping."
+            continue
+        fi
+
+        # Set Bash as the default shell if not already set
+        if [[ "$(pw usershow "$user" | awk -F: '{print $7}')" != "$bash_path" ]]; then
+            if chsh -s "$bash_path" "$user"; then
+                log "Set Bash as the default shell for user $user."
+            else
+                log "Failed to set Bash as the default shell for user $user. Skipping."
+                continue
+            fi
+        else
+            log "Bash is already the default shell for user $user. Skipping."
+        fi
+
+        # Configure user's environment files
+        local user_home
+        user_home=$(eval echo "~$user")
+        if [[ -d "$user_home" ]]; then
+            configure_user_env "$user_home"
+        else
+            log "Home directory for user $user not found. Skipping environment setup."
+        fi
+    done
+
+    log "Shell configuration and environment setup completed for all specified users."
 }
 
 # Helper function to configure user's environment files
 configure_user_env() {
   local home_dir="$1"
+  local username
   local bashrc_file="$home_dir/.bashrc"
   local bash_profile_file="$home_dir/.bash_profile"
+
+  # Determine the username from the home directory path
+  username=$(basename "$home_dir")
+
+  # Ensure the home directory exists
+  if [[ ! -d "$home_dir" ]]; then
+    log "Home directory $home_dir does not exist. Skipping configuration for user $username."
+    return 1
+  fi
 
   # Configure .bashrc
   if [[ -f "$bashrc_file" ]]; then
@@ -605,8 +684,8 @@ alias l='ls -CF'
 # End of .bashrc
 # --------------------------------------
 EOF
-  chmod +x "$bashrc_file" \
-    && log "Populated and set execute permissions for $bashrc_file." \
+  chmod 644 "$bashrc_file" \
+    && log "Populated and set permissions for $bashrc_file." \
     || log "Failed to set permissions for $bashrc_file."
 
   # Configure .bash_profile
@@ -624,9 +703,14 @@ if [ -f ~/.bashrc ]; then
     . ~/.bashrc
 fi
 EOF
-  chmod +x "$bash_profile_file" \
-    && log "Populated and set execute permissions for $bash_profile_file." \
+  chmod 644 "$bash_profile_file" \
+    && log "Populated and set permissions for $bash_profile_file." \
     || log "Failed to set permissions for $bash_profile_file."
+
+  # Set correct ownership for the files
+  chown "$username:$username" "$bashrc_file" "$bash_profile_file" \
+    && log "Set ownership for $bashrc_file and $bash_profile_file to $username." \
+    || log "Failed to set ownership for $bashrc_file and $bash_profile_file."
 }
 
 # Finalizing configuration
@@ -672,12 +756,13 @@ finalize_configuration() {
   log "System configuration finalized successfully."
 }
 
-# Configure X11, i3, and SLiM
+# Configure X11, i3, and SLiM for one or more users
 configure_graphical_env() {
-  local user="${1:-sawyer}"             # Default to 'sawyer' if no user is specified
-  local home_dir
-  home_dir=$(eval echo "~$user")        # Get user's home directory
-  local xinitrc_file="$home_dir/.xinitrc"
+  local users=("$@")                  # Accept multiple users as arguments
+  if [[ ${#users[@]} -eq 0 ]]; then
+    log "No users provided for graphical environment configuration. Aborting."
+    return 1
+  fi
 
   log "Enabling and configuring SLiM for X11 and i3 session."
 
@@ -701,26 +786,41 @@ configure_graphical_env() {
     fi
   done
 
-  # Configure .xinitrc for the user
-  log "Configuring .xinitrc to start i3 for user $user."
-  if [[ -f "$xinitrc_file" ]]; then
-    log ".xinitrc already exists for user $user. Creating a backup."
-    mv "$xinitrc_file" "${xinitrc_file}.bak" || {
-      log "Failed to create backup of existing .xinitrc for user $user."
-      return 1
-    }
-  fi
+  # Configure graphical environment for each user
+  for user in "${users[@]}"; do
+    log "Configuring graphical environment for user: $user"
+    local home_dir
+    home_dir=$(eval echo "~$user")    # Get user's home directory
+    if [[ ! -d "$home_dir" ]]; then
+      log "Home directory for user $user not found. Skipping."
+      continue
+    fi
 
-  # Create a new .xinitrc
-  cat <<'EOF' > "$xinitrc_file"
+    local xinitrc_file="$home_dir/.xinitrc"
+
+    # Configure .xinitrc for the user
+    log "Configuring .xinitrc to start i3 for user $user."
+    if [[ -f "$xinitrc_file" ]]; then
+      log ".xinitrc already exists for user $user. Creating a backup."
+      mv "$xinitrc_file" "${xinitrc_file}.bak" || {
+        log "Failed to create backup of existing .xinitrc for user $user."
+        continue
+      }
+    fi
+
+    # Create a new .xinitrc
+    cat <<'EOF' > "$xinitrc_file"
 #!/usr/local/bin/bash
 exec i3
 EOF
-  chmod +x "$xinitrc_file" || {
-    log "Failed to set execute permission on $xinitrc_file."
-    return 1
-  }
-  log ".xinitrc created and configured to start i3 for user $user."
+    chmod +x "$xinitrc_file" || {
+      log "Failed to set execute permission on $xinitrc_file."
+      continue
+    }
+    chown "$user:$user" "$xinitrc_file" || log "Failed to set ownership for $xinitrc_file."
+
+    log ".xinitrc created and configured to start i3 for user $user."
+  done
 
   # Start the SLiM service
   if service slim start; then
@@ -730,7 +830,7 @@ EOF
     return 1
   fi
 
-  log "SLiM, Xorg, and i3 have been successfully enabled and configured for user $user."
+  log "SLiM, Xorg, and i3 have been successfully enabled and configured for all specified users."
 }
 
 # --------------------------------------
@@ -740,17 +840,27 @@ EOF
 check_root
 log "Starting FreeBSD system configuration script."
 
+# Fetch all users with home directories in /home
+IFS=$'\n' read -r -d '' -a users < <(awk -F: '/^.*:.*:.*:.*:.*:\/home\//{print $1}' /etc/passwd && printf '\0')
+log "Detected users: ${users[*]}"
+
 # Main configuration steps
 identify_primary_iface
 bootstrap_and_install_pkgs
 configure_rc_conf
 configure_dns
-configure_sudoers
-set_default_shell_and_env
+configure_sudoers false "${users[@]}"  # Configure sudo with a password requirement
+set_default_shell_and_env "${users[@]}"  # Dynamically configure all detected users
 configure_ssh
 configure_pf
 finalize_configuration
-configure_graphical_env
+
+# Configure graphical environment for all detected users
+if [[ ${#users[@]} -gt 0 ]]; then
+    configure_graphical_env "${users[@]}"
+else
+    log "No valid users detected for graphical environment setup. Skipping."
+fi
 
 # Cleanup and successful exit
 cleanup
