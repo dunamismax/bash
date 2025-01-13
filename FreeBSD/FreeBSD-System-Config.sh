@@ -440,9 +440,9 @@ configure_rc_conf
 configure_dns
 configure_sudoers
 configure_ssh
-configure_pf
 set_default_shell_and_env
 finalize_configuration
+configure_pf
 configure_graphical_env
 
 log "FreeBSD system configuration completed successfully."
