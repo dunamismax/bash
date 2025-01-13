@@ -15,6 +15,7 @@
 #          (as the default shell), ~/.bashrc, and ~/.bash_profile for that user.
 #       5) Completing final tasks (e.g., pkg upgrade, cleaning caches, and
 #          enabling Plex).
+#       6) Installing and configuring GNOME with Wayland support.
 #
 # Notes:
 #   • All log output is appended to /var/log/freebsd_setup.log.
@@ -398,7 +399,6 @@ configure_virtualization() {
 # ------------------------------------------------------
 # Configure and enable Caddy on FreeBSD
 # ------------------------------------------------------
-
 configure_caddy() {
     echo "[INFO] Enabling and configuring Caddy..."
 
@@ -406,7 +406,6 @@ configure_caddy() {
     sysrc caddy_enable="YES"
 
     # 2) Create/update the main config file at /usr/local/etc/caddy/Caddyfile
-    #    (Make sure the directory exists; if not, create it)
     [ ! -d /usr/local/etc/caddy ] && mkdir -p /usr/local/etc/caddy
 
     cat << 'EOF' > /usr/local/etc/caddy/Caddyfile
@@ -485,6 +484,36 @@ finalize_configuration() {
     log "Final configuration completed."
 }
 
+# ------------------------------------------------------
+# Configure GNOME and Wayland
+# ------------------------------------------------------
+configure_gnome_wayland() {
+    log "Installing GNOME, Wayland, and related packages..."
+    pkg install -y wayland xwayland gnome gnome-tweaks gnome-shell-extensions gnome-games gnome-system-monitor
+
+    log "Enabling required services for GNOME..."
+    sysrc gdm_enable="YES"
+    sysrc gnome_enable="YES"
+    sysrc dbus_enable="YES"
+    sysrc hald_enable="YES"
+
+    log "Configuring /etc/ttys for GDM..."
+    # Replace or set ttyv8 line to run GDM
+    if grep -q '^ttyv8' /etc/ttys; then
+        sed -i '' 's|^ttyv8.*|ttyv8 "/usr/local/sbin/gdm" xterm on secure|' /etc/ttys
+    else
+        echo 'ttyv8 "/usr/local/sbin/gdm" xterm on secure' >> /etc/ttys
+    fi
+
+    log "Optional: Starting GNOME services now..."
+    service dbus start
+    service hald start
+    service gdm start
+
+    log "GNOME with Wayland setup complete. A reboot is recommended."
+    log "After reboot, at the GDM login screen, click the gear icon and choose 'GNOME on Wayland'."
+}
+
 # --------------------------------------
 # SCRIPT START
 # --------------------------------------
@@ -501,6 +530,11 @@ identify_primary_iface
 
 # 2. Bootstrap pkg + install packages
 bootstrap_and_install_pkgs
+
+# ------------------------------------------------
+# 2a. Install and configure GNOME with Wayland
+# ------------------------------------------------
+configure_gnome_wayland
 
 # 3. Overwrite key config files
 overwrite_pf_conf
