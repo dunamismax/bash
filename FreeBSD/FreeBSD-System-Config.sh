@@ -1,53 +1,38 @@
 #!/usr/local/bin/bash
 #===============================================================================
-# FreeBSD Automated System Configuration Script
+# FreeBSD Automated System Configuration Script (Refactored)
 #===============================================================================
-# This script fully configures a new FreeBSD installation based on predefined
-# system policies and best practices. It automates a comprehensive setup, which
-# includes:
+# This script configures a FreeBSD installation following simplified requirements:
 #
-#   • Bootstrapping and updating the pkg system, then installing a suite of
+#   • Bootstraps and updates the pkg system, then installs a collection of
 #     essential packages for system management, development, and utilities.
-#   • Dynamically identifying the primary network adapter for Internet access
-#     and configuring DHCP settings automatically.
-#   • Configuring system settings via /etc/rc.conf to enable essential services,
-#     improve performance, and enhance security.
-#   • Updating DNS settings in /etc/resolv.conf with specified nameservers or
-#     enabling local_unbound for dynamic DNS resolution.
-#   • Dynamically detecting users with home directories in /home and:
-#       - Configuring Bash as their default shell (if not already set).
-#       - Setting up optimized environment files (.bashrc, .bash_profile).
-#   • Granting sudo privileges to detected users with an optional `nopasswd`
-#     setting, ensuring secure defaults in the sudoers configuration.
-#   • Hardening SSH by updating /etc/ssh/sshd_config with secure parameters,
-#     such as disabling root login and limiting authentication attempts.
-#   • Setting up and configuring the PF firewall with custom rules, including
-#     stateful connections, SSH rate-limiting, and traffic logging.
-#   • Enabling and configuring graphical environments (X11, SLiM, i3) for
-#     specified users, including automated .xinitrc setup.
-#   • Employing robust error handling, configuration backups, and detailed
-#     logging throughout the process to /var/log/freebsd_setup.log.
-#   • Finalizing the setup by upgrading installed packages, cleaning caches,
-#     and validating configurations for stability.
+#   • Identifies the primary network adapter for DHCP configuration (if possible).
+#   • Configures system settings in /etc/rc.conf.
+#   • Updates DNS settings ( /etc/resolv.conf ) with default or custom nameservers.
+#   • Grants sudo privileges to the hard-coded user "sawyer".
+#   • Sets Bash as the default shell for "sawyer" and configures environment files.
+#   • Hardens SSH configuration by disabling root login and limiting auth attempts.
+#   • Sets up and enables the PF firewall with simple SSH rate-limiting.
+#   • Performs package upgrades, cleans caches, and enables configured services.
 #
-# Usage: Execute this script as root on a fresh FreeBSD install to automate the
-#        initial system configuration process or to reapply system policies.
+# Logging:
+#   • All output is appended directly to the log file.
+#   • No error handling or traps are present—this script does not exit on failures.
 #
-# Notes:
-#   • This script assumes a basic FreeBSD installation with network access.
-#   • Review and customize variables and settings before execution to align
-#     with specific system requirements and preferences.
+# Usage:
+#   • Run as root on a fresh FreeBSD install to bootstrap and configure the system.
+#   • Modify variables as needed to suit your environment.
+#
 #===============================================================================
-
-set -euo pipefail
-IFS=$'\n\t'
 
 # --------------------------------------
 # CONFIGURATION
 # --------------------------------------
 
-# Global Variables
 LOG_FILE="/var/log/freebsd_setup.log"
+USERNAME="sawyer"  # Hard-coded username
+PRIMARY_IFACE=""   # Will be detected automatically, if possible
+
 PACKAGES=(
   # Essential Shells and Editors
   "vim" "bash" "zsh" "tmux" "mc" "nano" "fish" "screen"
@@ -63,823 +48,329 @@ PACKAGES=(
   "plexmediaserver" "postgresql" "caddy" "go"
   # System Tools and Backup
   "duplicity" "ffmpeg" "restic" "syslog-ng"
-  # X11 and Window Management
-  "xorg" "i3" "SLiM"
   # Virtualization and VM Support
   "qemu" "libvirt" "virt-manager" "vm-bhyve" "bhyve-firmware" "grub2-bhyve"
 )
 
 # --------------------------------------
-# FUNCTIONS
+# LOGGING (simplified)
 # --------------------------------------
-
 log() {
-  local level="${1:-INFO}"  # Default log level is INFO
-  local msg="${2:-}"
-
-  # If only one argument is passed, treat it as the message with INFO as the level
-  if [[ -z "$msg" ]]; then
-    msg="$level"
-    level="INFO"
-  fi
-
-  local timestamp
-  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
-
-  # Validate log level
-  case "$level" in
-    INFO|WARN|ERROR|DEBUG) ;;
-    *) level="INFO" ;;  # Default to INFO for unknown levels
-  esac
-
-  # Format log message
-  local formatted_msg="[$timestamp] [$level] $msg"
-
-  # Output to console and log file
-  if [[ -n "$LOG_FILE" ]]; then
-    echo "$formatted_msg" | tee -a "$LOG_FILE" >/dev/null
-  else
-    echo "$formatted_msg"
-  fi
+  echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
 }
 
-# Function to handle errors and exit
-error_exit() {
-  local msg="${1:-"An unknown error occurred."}"  # Default error message
-  local exit_code="${2:-1}"                       # Default exit code is 1
-
-  # Log the error with level ERROR
-  log "ERROR" "$msg"
-
-  # Perform cleanup if necessary
-  cleanup
-
-  # Exit with the specified code
-  exit "$exit_code"
-}
-
-# Cleanup function to handle temporary files or revert partial changes
-cleanup() {
-  log "INFO" "Performing cleanup tasks."
-
-  # Example: Remove temporary files or revert changes
-  if [[ -n "${temp_file:-}" && -f "$temp_file" ]]; then
-    rm -f "$temp_file"
-    log "INFO" "Temporary file $temp_file removed."
-  fi
-
-  log "INFO" "Cleanup completed."
-}
-
-# Trap setup
-trap error_exit ERR
-trap "log 'WARN' 'Script interrupted by user.'; cleanup; exit 1" INT
-
-# Ensure script is run as root
-check_root() {
-  log "Checking if the script is running as root."
-
-  # Use EUID or fallback to id command for environments without EUID
-  if [[ -n "${EUID:-}" && "$EUID" -ne 0 ]] || [[ -z "${EUID:-}" && "$(id -u)" -ne 0 ]]; then
-    error_exit "This script must be run as root. Current user: $(id -un). Please rerun as root or use 'sudo'."
-  fi
-
-  log "Script is running as root. Continuing."
-}
-
-# Identify primary network adapter
+# --------------------------------------
+# IDENTIFY PRIMARY NETWORK INTERFACE
+# --------------------------------------
 identify_primary_iface() {
-  log "Identifying primary network adapter for Internet connection."
+  log "Identifying primary network adapter..."
 
-  # Attempt to determine the primary interface using `route`
-  if command -v route &>/dev/null; then
-    primary_iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
-    if [[ -n "$primary_iface" ]]; then
-      log "Primary network adapter identified using route: $primary_iface"
-      export primary_iface
+  # Attempt to determine the primary interface using 'route'
+  if command -v route >/dev/null; then
+    PRIMARY_IFACE=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+    if [ -n "$PRIMARY_IFACE" ]; then
+      log "Primary network adapter found using 'route': $PRIMARY_IFACE"
       return
-    else
-      log "Failed to identify primary interface using route. Falling back to alternate methods."
     fi
-  else
-    log "Command 'route' not found. Skipping primary interface detection using route."
+    log "Failed to identify with 'route'. Trying netstat..."
   fi
 
-  # Fallback: Attempt to identify using `netstat`
-  if command -v netstat &>/dev/null; then
-    primary_iface=$(netstat -rn | awk '/^default/ {print $NF}' | head -n 1)
-    if [[ -n "$primary_iface" ]]; then
-      log "Primary network adapter identified using netstat: $primary_iface"
-      export primary_iface
+  # Fallback: netstat
+  if command -v netstat >/dev/null; then
+    PRIMARY_IFACE=$(netstat -rn | awk '/^default/ {print $NF}' | head -n 1)
+    if [ -n "$PRIMARY_IFACE" ]; then
+      log "Primary network adapter found using 'netstat': $PRIMARY_IFACE"
       return
-    else
-      log "Failed to identify primary interface using netstat."
     fi
-  else
-    log "Command 'netstat' not found. Skipping netstat-based detection."
+    log "Failed to identify with 'netstat'. Trying ifconfig..."
   fi
 
-  # Fallback to active interfaces using ifconfig
+  # Fallback: ifconfig
+  local active_iface
   active_iface=$(ifconfig | awk '/status: active/{getline; print $1}' | head -n 1)
-  if [[ -n "$active_iface" ]]; then
-    log "Active network adapter identified using ifconfig: $active_iface"
-    primary_iface="$active_iface"
-    export primary_iface
+  if [ -n "$active_iface" ]; then
+    PRIMARY_IFACE="$active_iface"
+    log "Active network adapter found using 'ifconfig': $PRIMARY_IFACE"
     return
-  else
-    log "No active network adapter found using ifconfig."
   fi
 
-  # Fallback to a default interface (if specified)
-  local default_iface="${1:-}"
-  if [[ -n "$default_iface" ]]; then
-    # Validate that the default interface exists and is up
-    if ifconfig "$default_iface" &>/dev/null && ifconfig "$default_iface" | grep -q "status: active"; then
-      log "Falling back to the default interface: $default_iface"
-      primary_iface="$default_iface"
-      export primary_iface
-      return
-    else
-      log "Default interface $default_iface is either inactive or does not exist."
-    fi
-  fi
-
-  # If all methods fail, exit with an error
-  error_exit "Primary network interface not found. Aborting configuration."
+  # If all methods fail, leave PRIMARY_IFACE blank
+  log "No primary network interface was detected."
 }
 
-# Bootstrap pkg and install packages
+# --------------------------------------
+# BOOTSTRAP AND INSTALL PACKAGES
+# --------------------------------------
 bootstrap_and_install_pkgs() {
-  log "Bootstrapping pkg and installing base packages."
+  log "Bootstrapping pkg and installing packages..."
 
-  # Default package list if none provided
-  local packages=("${PACKAGES[@]}")
-  if [[ $# -gt 0 ]]; then
-    packages=("$@")
-    log "Using custom package list: ${packages[*]}"
-  else
-    log "Using default package list."
-  fi
-
-  # Check if pkg is available; bootstrap if not
-  if ! command -v pkg &>/dev/null; then
+  # If pkg is missing, bootstrap it
+  if ! command -v pkg >/dev/null; then
     log "pkg not found. Bootstrapping pkg..."
-    if ! env ASSUME_ALWAYS_YES=yes pkg bootstrap; then
-      log "ERROR" "Failed to bootstrap pkg. Continuing without exiting."
-      return 1
-    fi
+    env ASSUME_ALWAYS_YES=yes pkg bootstrap >> "$LOG_FILE" 2>&1
+    log "pkg bootstrap process finished."
   fi
 
   # Force-update the package database
-  if ! pkg update -f; then
-    log "ERROR" "pkg update failed. Continuing without exiting."
-    return 1
-  fi
+  pkg update -f >> "$LOG_FILE" 2>&1
+  log "pkg update -f completed."
 
-  # Install packages dynamically
-  log "Installing packages if not already installed."
-  local failed_packages=()
-  for pkg in "${packages[@]}"; do
+  # Install packages
+  for pkg in "${PACKAGES[@]}"; do
     if ! pkg info -q "$pkg"; then
-      log "INFO" "Installing package: $pkg"
-      if pkg install -y "$pkg"; then
-        log "INFO" "Successfully installed $pkg."
-      else
-        log "ERROR" "Failed to install package: $pkg."
-        failed_packages+=("$pkg")
-      fi
+      log "Installing package: $pkg"
+      pkg install -y "$pkg" >> "$LOG_FILE" 2>&1
+      log "Finished attempt to install $pkg"
     else
-      log "INFO" "Package $pkg is already installed, skipping."
+      log "Package $pkg is already installed."
     fi
   done
 
-  # Log failed installations but do not exit
-  if [[ ${#failed_packages[@]} -gt 0 ]]; then
-    log "WARN" "The following packages failed to install: ${failed_packages[*]}"
-    log "WARN" "Continuing script execution despite package installation failures."
-  else
-    log "INFO" "All packages installed successfully."
-  fi
-
-  return 0  # Always return success to allow script continuation
+  log "Package installation process completed."
 }
 
-# Configure /etc/rc.conf settings
+# --------------------------------------
+# CONFIGURE /etc/rc.conf
+# --------------------------------------
 configure_rc_conf() {
-  log "Configuring /etc/rc.conf with system settings."
+  log "Configuring /etc/rc.conf..."
   local rc_conf="/etc/rc.conf"
-  local hostname="${1:-freebsd}"   # Default to 'freebsd' if no hostname is provided
-  local interfaces=("${2:-${primary_iface}}") # Use primary_iface if no interfaces are specified
+  local hostname="freebsd"
 
-  # Backup rc.conf if it exists and no backup is present
-  if [[ -f "$rc_conf" && ! -f "${rc_conf}.bak" ]]; then
-    cp "$rc_conf" "${rc_conf}.bak" || error_exit "Failed to backup rc.conf."
-    log "Backup of rc.conf created at ${rc_conf}.bak."
-  elif [[ ! -f "$rc_conf" ]]; then
-    log "No existing rc.conf found. A new file will be created."
+  # Apply some common rc.conf settings
+  sysrc clear_tmp_enable="YES"          >> "$LOG_FILE" 2>&1
+  sysrc hostname="$hostname"            >> "$LOG_FILE" 2>&1
+  sysrc local_unbound_enable="YES"      >> "$LOG_FILE" 2>&1
+  sysrc sshd_enable="YES"               >> "$LOG_FILE" 2>&1
+  sysrc moused_enable="NO"              >> "$LOG_FILE" 2>&1
+  sysrc ntpd_enable="YES"               >> "$LOG_FILE" 2>&1
+  sysrc powerd_enable="YES"             >> "$LOG_FILE" 2>&1
+  sysrc dumpdev="AUTO"                  >> "$LOG_FILE" 2>&1
+  sysrc zfs_enable="YES"                >> "$LOG_FILE" 2>&1
+
+  # Configure the primary network interface for DHCP
+  if [ -n "$PRIMARY_IFACE" ]; then
+    sysrc ifconfig_"$PRIMARY_IFACE"="DHCP" >> "$LOG_FILE" 2>&1
+    log "Set DHCP for $PRIMARY_IFACE in /etc/rc.conf."
   else
-    log "Backup of rc.conf already exists. Skipping backup."
+    log "No primary network interface set. Skipping interface config."
   fi
 
-  # Update rc.conf settings
-  declare -A settings=(
-    ["clear_tmp_enable"]="YES"
-    ["hostname"]="$hostname"
-    ["local_unbound_enable"]="YES"
-    ["sshd_enable"]="YES"
-    ["moused_enable"]="NO"
-    ["ntpd_enable"]="YES"
-    ["powerd_enable"]="YES"
-    ["dumpdev"]="AUTO"
-    ["zfs_enable"]="YES"
-  )
-
-  # Apply general settings
-  for key in "${!settings[@]}"; do
-    if sysrc "$key=${settings[$key]}" >/dev/null 2>&1; then
-      log "Successfully set $key=${settings[$key]} in rc.conf."
-    else
-      log "Failed to set $key=${settings[$key]} in rc.conf. Please check manually."
-    fi
-  done
-
-  # Configure network interfaces
-  if [[ -n "${interfaces[*]}" ]]; then
-    for iface in "${interfaces[@]}"; do
-      if sysrc "ifconfig_${iface}=DHCP" >/dev/null 2>&1; then
-        log "Configured network interface $iface with DHCP."
-      else
-        log "Failed to configure network interface $iface with DHCP. Please check manually."
-      fi
-    done
-  else
-    log "No network interfaces provided or detected. Skipping network configuration."
-  fi
-
-  log "/etc/rc.conf has been updated with the new settings."
+  log "/etc/rc.conf configuration complete."
 }
 
-# Configure DNS settings
+# --------------------------------------
+# CONFIGURE DNS
+# --------------------------------------
 configure_dns() {
-  log "Configuring DNS settings in /etc/resolv.conf."
+  log "Configuring DNS..."
   local resolv_conf="/etc/resolv.conf"
-  local nameservers=("1.1.1.1" "9.9.9.9") # Default nameservers
+  local nameservers=("1.1.1.1" "9.9.9.9")
 
-  # Check if custom nameservers are provided as arguments
-  if [[ $# -gt 0 ]]; then
-    nameservers=("$@")
-    log "Using custom nameservers: ${nameservers[*]}"
-  else
-    log "Using default nameservers: ${nameservers[*]}"
-  fi
+  # Remove existing nameserver lines
+  sed -i '' '/^\s*nameserver\s/d' "$resolv_conf" >> "$LOG_FILE" 2>&1
 
-  # Backup resolv.conf if it exists and is not empty
-  if [[ -f "$resolv_conf" && -s "$resolv_conf" ]]; then
-    if [[ ! -f "${resolv_conf}.bak" ]]; then
-      cp "$resolv_conf" "${resolv_conf}.bak" || log "Failed to backup resolv.conf."
-      log "Backup of resolv.conf created at ${resolv_conf}.bak."
-    else
-      log "Backup of resolv.conf already exists. Skipping backup."
-    fi
-  else
-    log "No existing resolv.conf found or file is empty. Skipping backup."
-  fi
-
-  # Clear existing nameserver entries
-  sed -i '' '/^\s*nameserver\s/d' "$resolv_conf" || log "Failed to clean old nameservers from resolv.conf."
-
-  # Add new nameserver entries
   for ns in "${nameservers[@]}"; do
-    if ! grep -q "^\s*nameserver\s\+$ns" "$resolv_conf"; then
-      echo "nameserver $ns" >> "$resolv_conf" \
-        && log "Added nameserver $ns to resolv.conf." \
-        || log "Failed to add nameserver $ns to resolv.conf."
-    else
-      log "Nameserver $ns is already present in resolv.conf. Skipping."
-    fi
+    echo "nameserver $ns" >> "$resolv_conf"
+    log "Added nameserver $ns to $resolv_conf"
   done
 
-  log "/etc/resolv.conf has been successfully updated with new nameserver entries."
+  log "DNS configuration complete."
 }
 
-# Grant sudo privileges to one or more users
+# --------------------------------------
+# CONFIGURE SUDOERS (for $USERNAME)
+# --------------------------------------
 configure_sudoers() {
+  log "Configuring sudoers for $USERNAME..."
   local sudoers_file="/usr/local/etc/sudoers"
-  local nopasswd="${1:-false}"  # Default is to require a password
-  shift                        # Remove the first argument (nopasswd flag)
-  local users=("$@")           # Remaining arguments are user names
-
-  if [[ ${#users[@]} -eq 0 ]]; then
-    log "No users specified for sudo configuration. Aborting."
-    return 1
-  fi
-
-  # Ensure the sudoers file exists
-  if [[ ! -f "$sudoers_file" ]]; then
-    log "Sudoers file not found at $sudoers_file. Aborting."
-    return 1
-  fi
-
-  # Define the sudo rule for the wheel group
   local sudo_rule="%wheel ALL=(ALL) ALL"
-  if [[ "$nopasswd" == "true" ]]; then
-    sudo_rule="%wheel ALL=(ALL) NOPASSWD: ALL"
-  fi
 
-  # Ensure wheel group rule exists in sudoers
-  if ! grep -q "^%wheel" "$sudoers_file"; then
-    log "Adding wheel group rule to sudoers."
-    if echo "$sudo_rule" >> "$sudoers_file"; then
-      log "Sudoers file updated to include wheel group rule (${nopasswd:+NOPASSWD})."
-    else
-      log "Failed to update sudoers file for wheel group. Aborting."
-      return 1
-    fi
+  # Ensure wheel rule
+  if ! grep -q "^%wheel" "$sudoers_file" 2>/dev/null; then
+    echo "$sudo_rule" >> "$sudoers_file"
+    log "Added wheel group rule to sudoers."
   else
-    log "Wheel group rule already exists in sudoers. Skipping modification."
+    log "Wheel group rule exists in sudoers."
   fi
 
-  # Process each user
-  for user in "${users[@]}"; do
-    log "Configuring sudo privileges for user: $user"
-
-    # Ensure the user exists
-    if ! pw usershow "$user" > /dev/null 2>&1; then
-      log "User '$user' does not exist. Skipping."
-      continue
-    fi
-
-    # Add user to the wheel group if not already a member
-    if pw groupshow wheel | grep -qw "$user"; then
-      log "User '$user' is already a member of the wheel group. Skipping group modification."
-    else
-      if pw usermod "$user" -G wheel; then
-        log "User '$user' added to the wheel group for sudo privileges."
-      else
-        log "Failed to add user '$user' to the wheel group. Skipping."
-        continue
-      fi
-    fi
-  done
+  # Add user to wheel group
+  pw usermod "$USERNAME" -G wheel >> "$LOG_FILE" 2>&1
+  log "User $USERNAME added to wheel (or already present)."
 }
 
-# Hardening SSH configuration
+# --------------------------------------
+# CONFIGURE SSH
+# --------------------------------------
 configure_ssh() {
-  log "Updating SSH configuration for security and specific settings."
+  log "Configuring SSH..."
   local sshd_config="/etc/ssh/sshd_config"
-  declare -A sshd_settings=(
-    ["Port"]="22"
-    ["AddressFamily"]="any"
-    ["ListenAddress"]="0.0.0.0"
-    ["MaxAuthTries"]="6"
-    ["MaxSessions"]="10"
-    ["PermitRootLogin"]="no"
-  )
 
-  # Backup sshd_config if not already backed up
-  if [[ ! -f "${sshd_config}.bak" ]]; then
-    cp "$sshd_config" "${sshd_config}.bak" || log "Failed to backup sshd_config."
-    log "Backup of sshd_config created at ${sshd_config}.bak."
-  fi
+  # Basic SSH settings
+  sed -i '' 's/^#\?\s*Port .*/Port 22/'  "$sshd_config" >> "$LOG_FILE" 2>&1
+  sed -i '' 's/^#\?\s*AddressFamily .*/AddressFamily any/' "$sshd_config" >> "$LOG_FILE" 2>&1
+  sed -i '' 's/^#\?\s*ListenAddress .*/ListenAddress 0.0.0.0/' "$sshd_config" >> "$LOG_FILE" 2>&1
+  sed -i '' 's/^#\?\s*MaxAuthTries .*/MaxAuthTries 6/' "$sshd_config" >> "$LOG_FILE" 2>&1
+  sed -i '' 's/^#\?\s*MaxSessions .*/MaxSessions 10/' "$sshd_config" >> "$LOG_FILE" 2>&1
+  sed -i '' 's/^#\?\s*PermitRootLogin .*/PermitRootLogin no/' "$sshd_config" >> "$LOG_FILE" 2>&1
 
-  # Update or add settings dynamically
-  for setting in "${!sshd_settings[@]}"; do
-    local value="${sshd_settings[$setting]}"
-    if grep -Eq "^\s*${setting}\s" "$sshd_config"; then
-      sed -i '' "s|^\s*${setting}\s.*|${setting} ${value}|" "$sshd_config" \
-        && log "Updated ${setting} to ${value}." \
-        || log "Failed to update ${setting}."
-    else
-      echo "${setting} ${value}" >> "$sshd_config" \
-        && log "Added ${setting} ${value}." \
-        || log "Failed to add ${setting} ${value}."
-    fi
-  done
+  chown root:wheel "$sshd_config"
+  chmod 644 "$sshd_config"
 
-  # Ensure ownership and permissions are correct
-  chown root:wheel "$sshd_config" || log "Failed to set ownership for $sshd_config."
-  chmod 644 "$sshd_config" || log "Failed to set permissions for $sshd_config."
-
-  # Restart the SSH service
-  if service sshd restart; then
-    log "SSH service restarted with updated configuration."
-  else
-    log "Failed to restart SSH service."
-  fi
+  service sshd restart >> "$LOG_FILE" 2>&1
+  log "SSH configuration and restart complete."
 }
 
-# Configure PF firewall
+# --------------------------------------
+# CONFIGURE PF FIREWALL
+# --------------------------------------
 configure_pf() {
-  log "Configuring PF firewall."
+  log "Configuring PF firewall..."
   local pf_conf="/etc/pf.conf"
 
-  # Ensure primary_iface is set
-  if [[ -z "${primary_iface:-}" ]]; then
-    log "Primary interface not set. Attempting to identify primary interface."
-    identify_primary_iface
-  fi
-
-  if [[ -z "${primary_iface:-}" ]]; then
-    error_exit "Failed to identify the primary network interface. Cannot configure PF."
-  fi
-
-  # Backup existing pf.conf if it exists
-  if [[ -f "$pf_conf" ]]; then
-    cp "$pf_conf" "${pf_conf}.bak" || log "Failed to backup pf.conf."
-    log "Backup of pf.conf created at ${pf_conf}.bak."
-  else
-    log "No existing pf.conf found. Creating a new one."
-  fi
-
-  # Write new rules to pf.conf
+  # Write minimal pf.conf
   cat <<EOF > "$pf_conf"
 # /etc/pf.conf - Minimal pf ruleset with SSH rate-limiting
-
-# General options (must come first)
 set skip on lo0
-set loginterface ${primary_iface}
-
-# Normalize and scrub incoming packets
+set loginterface $PRIMARY_IFACE
 scrub in all
-
-# Block inbound traffic by default and log blocked packets
 block in log all
+pass out on $PRIMARY_IFACE all keep state
 
-# Allow all outbound traffic on the primary interface, keeping stateful connections
-pass out on ${primary_iface} all keep state
-
-# Rate-limiting for SSH: Max 10 connections per 5 seconds, burstable to 15
+# SSH rate-limiting
 table <ssh_limited> persist
-block in quick on ${primary_iface} proto tcp to port 22
-pass in quick on ${primary_iface} proto tcp to port 22 keep state \
+block in quick on $PRIMARY_IFACE proto tcp to port 22
+pass in quick on $PRIMARY_IFACE proto tcp to port 22 keep state \
     (max-src-conn 10, max-src-conn-rate 15/5, overload <ssh_limited> flush global)
 
-# Allow PlexMediaServer traffic
-pass in quick on ${primary_iface} proto tcp to port 32400 keep state
-pass in quick on ${primary_iface} proto udp to port 32400 keep state
+# Plex (example)
+pass in quick on $PRIMARY_IFACE proto tcp to port 32400 keep state
+pass in quick on $PRIMARY_IFACE proto udp to port 32400 keep state
 EOF
 
-  # Validate the new PF rules before applying them
-  if ! pfctl -n -f "$pf_conf" 2>&1 | tee -a "$LOG_FILE"; then
-    log "PF rule validation failed. Check syntax using 'pfctl -nf $pf_conf' or see the logs for details."
-    log "Continuing without applying invalid rules."
-    return 1
-  fi
+  # Enable PF and declare rules
+  sysrc pf_enable="YES"   >> "$LOG_FILE" 2>&1
+  sysrc pf_rules="/etc/pf.conf" >> "$LOG_FILE" 2>&1
+  service pf enable       >> "$LOG_FILE" 2>&1
+  service pf restart      >> "$LOG_FILE" 2>&1
 
-  # Enable PF in rc.conf
-  if sysrc pf_enable="YES" >/dev/null 2>&1; then
-    log "PF enabled in rc.conf."
-  else
-    log "Failed to enable PF in rc.conf."
-  fi
-
-  # Set the rules path in rc.conf
-  if sysrc pf_rules="/etc/pf.conf" >/dev/null 2>&1; then
-    log "PF rules path set to /etc/pf.conf in rc.conf."
-  else
-    log "Failed to set PF rules path in rc.conf."
-  fi
-
-  # Enable and restart the PF service
-  if service pf enable >/dev/null 2>&1; then
-    log "PF service enabled."
-  else
-    log "Failed to enable PF service."
-  fi
-
-  if service pf restart >/dev/null 2>&1; then
-    log "PF service restarted successfully."
-  else
-    log "Failed to restart PF service. Continuing with the script."
-  fi
-
-  log "PF firewall configuration process completed."
+  log "PF firewall configuration complete."
 }
 
-# Set default shell and configure environment
+# --------------------------------------
+# SET BASH AS DEFAULT SHELL + ENV
+# --------------------------------------
 set_default_shell_and_env() {
-    log "Setting Bash as the default shell and configuring user environments."
-    local bash_path="/usr/local/bin/bash"
-    local users=("$@")  # Accept user list as arguments
+  log "Setting Bash as default shell for $USERNAME..."
+  local bash_path="/usr/local/bin/bash"
 
-    # Ensure at least one user is specified
-    if [[ ${#users[@]} -eq 0 ]]; then
-        log "No users provided for shell configuration. Aborting."
-        return 1
-    fi
-
-    # Ensure Bash is listed in /etc/shells
-    if ! grep -qF "$bash_path" /etc/shells; then
-        echo "$bash_path" >> /etc/shells \
-            && log "Added $bash_path to /etc/shells." \
-            || error_exit "Failed to add $bash_path to /etc/shells."
-    else
-        log "$bash_path already exists in /etc/shells."
-    fi
-
-    # Process each user
-    for user in "${users[@]}"; do
-        log "Configuring shell and environment for user: $user"
-
-        # Ensure the user exists
-        if ! pw usershow "$user" &>/dev/null; then
-            log "User '$user' does not exist. Skipping."
-            continue
-        fi
-
-        # Set Bash as the default shell if not already set
-        if [[ "$(pw usershow "$user" | awk -F: '{print $7}')" != "$bash_path" ]]; then
-            if chsh -s "$bash_path" "$user"; then
-                log "Set Bash as the default shell for user $user."
-            else
-                log "Failed to set Bash as the default shell for user $user. Skipping."
-                continue
-            fi
-        else
-            log "Bash is already the default shell for user $user. Skipping."
-        fi
-
-        # Configure user's environment files
-        local user_home
-        user_home=$(eval echo "~$user")
-        if [[ -d "$user_home" ]]; then
-            configure_user_env "$user_home"
-        else
-            log "Home directory for user $user not found. Skipping environment setup."
-        fi
-    done
-
-    log "Shell configuration and environment setup completed for all specified users."
-}
-
-# Helper function to configure user's environment files
-configure_user_env() {
-  local home_dir="$1"
-  local username
-  local bashrc_file="$home_dir/.bashrc"
-  local bash_profile_file="$home_dir/.bash_profile"
-
-  # Determine the username from the home directory path
-  username=$(basename "$home_dir")
-
-  # Ensure the home directory exists
-  if [[ ! -d "$home_dir" ]]; then
-    log "Home directory $home_dir does not exist. Skipping configuration for user $username."
-    return 1
+  # Ensure bash is in /etc/shells
+  if ! grep -qx "$bash_path" /etc/shells; then
+    echo "$bash_path" >> /etc/shells
+    log "Added $bash_path to /etc/shells."
   fi
 
-  # Configure .bashrc
-  if [[ -f "$bashrc_file" ]]; then
-    mv "$bashrc_file" "${bashrc_file}.bak" \
-      && log "Backup of existing .bashrc created for $home_dir." \
-      || log "Failed to create backup of existing .bashrc for $home_dir."
-  fi
+  # Change shell for $USERNAME
+  chsh -s "$bash_path" "$USERNAME" >> "$LOG_FILE" 2>&1
+
+  # Configure environment files in $USERNAME's home
+  local user_home
+  user_home=$(eval echo "~$USERNAME")
+  local bashrc_file="$user_home/.bashrc"
+  local bash_profile_file="$user_home/.bash_profile"
+
+  # .bashrc
   cat <<'EOF' > "$bashrc_file"
 #!/usr/local/bin/bash
 # ~/.bashrc: executed by bash(1) for interactive shells.
 
-# --------------------------------------
-# Basic Settings and Environment Setup
-# --------------------------------------
-
-# Check if the shell is interactive
 case $- in
     *i*) ;;
-      *) return;;
+    *) return ;;
 esac
 
-# Set a colorful prompt: [user@host current_directory]$
 PS1='\[\e[01;32m\]\u@\h\[\e[00m\]:\[\e[01;34m\]\w\[\e[00m\]\$ '
-
-# Ensure PATH includes common FreeBSD binary directories
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-# Enable color support for 'ls' and grep
 alias ls='ls -lah --color=auto'
 alias grep='grep --color=auto'
 
-# --------------------------------------
-# History Configuration
-# --------------------------------------
-
-# Avoid duplicate entries and set history sizes
 export HISTCONTROL=ignoredups:erasedups
 export HISTSIZE=1000
 export HISTFILESIZE=2000
-
-# Append rather than overwrite history on shell exit
 shopt -s histappend
-
-# --------------------------------------
-# Pager and Less Configuration
-# --------------------------------------
 
 export PAGER='less -R'
 export LESS='-R'
 
-# --------------------------------------
-# Bash Completion
-# --------------------------------------
-
-# Source Bash completion if available
 if [ -f /usr/local/etc/bash_completion ]; then
     . /usr/local/etc/bash_completion
 fi
-
-# --------------------------------------
-# Custom Aliases and Functions
-# --------------------------------------
-
-# Common shortcuts
-alias ll='ls -lah'
-alias la='ls -A'
-alias l='ls -CF'
-
-# Add more aliases or functions below as needed
-
-# --------------------------------------
-# End of .bashrc
-# --------------------------------------
 EOF
-  chmod 644 "$bashrc_file" \
-    && log "Populated and set permissions for $bashrc_file." \
-    || log "Failed to set permissions for $bashrc_file."
 
-  # Configure .bash_profile
-  if [[ -f "$bash_profile_file" ]]; then
-    mv "$bash_profile_file" "${bash_profile_file}.bak" \
-      && log "Backup of existing .bash_profile created for $home_dir." \
-      || log "Failed to create backup of existing .bash_profile for $home_dir."
-  fi
+  # .bash_profile
   cat <<'EOF' > "$bash_profile_file"
 #!/usr/local/bin/bash
 # ~/.bash_profile: executed by bash(1) for login shells.
 
-# Source the .bashrc if it exists
 if [ -f ~/.bashrc ]; then
     . ~/.bashrc
 fi
 EOF
-  chmod 644 "$bash_profile_file" \
-    && log "Populated and set permissions for $bash_profile_file." \
-    || log "Failed to set permissions for $bash_profile_file."
 
-  # Set correct ownership for the files
-  chown "$username:$username" "$bashrc_file" "$bash_profile_file" \
-    && log "Set ownership for $bashrc_file and $bash_profile_file to $username." \
-    || log "Failed to set ownership for $bashrc_file and $bash_profile_file."
+  chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file"
+  chmod 644 "$bashrc_file" "$bash_profile_file"
+
+  log "Shell and environment configured for $USERNAME."
 }
 
-# Finalizing configuration
+# --------------------------------------
+# FINALIZE CONFIGURATION
+# --------------------------------------
 finalize_configuration() {
-  log "Finalizing system configuration."
+  log "Finalizing configuration (pkg upgrade, clean)..."
 
-  # Upgrade installed packages
-  log "Upgrading installed packages."
-  if pkg upgrade -y; then
-    log "Package upgrade completed successfully."
-  else
-    log "Package upgrade failed. Please check the logs for details."
-    return 1
-  fi
+  pkg upgrade -y >> "$LOG_FILE" 2>&1
+  pkg clean -y   >> "$LOG_FILE" 2>&1
 
-  # Clean up package cache
-  log "Cleaning up package cache."
-  if pkg clean -y; then
-    log "Package cache cleaned successfully."
-  else
-    log "Package clean failed. Continuing with the next steps."
-  fi
+  # Example: enable and start Plex
+  sysrc plexmediaserver_enable="YES" >> "$LOG_FILE" 2>&1
+  service plexmediaserver start      >> "$LOG_FILE" 2>&1
 
-  # Enable and start services
-  local services=("plexmediaserver") # Add more services to this list as needed
-  for service in "${services[@]}"; do
-    log "Enabling and starting $service service."
-    if sysrc "${service}_enable=YES"; then
-      log "$service service enabled in rc.conf."
-    else
-      log "Failed to enable $service service in rc.conf."
-      return 1
-    fi
-
-    if service "$service" start; then
-      log "$service service started successfully."
-    else
-      log "Failed to start $service service. Please check the logs for details."
-      return 1
-    fi
-  done
-
-  log "System configuration finalized successfully."
-}
-
-# Configure X11, i3, and SLiM for one or more users
-configure_graphical_env() {
-  local users=("$@")                  # Accept multiple users as arguments
-  if [[ ${#users[@]} -eq 0 ]]; then
-    log "No users provided for graphical environment configuration. Aborting."
-    return 1
-  fi
-
-  log "Enabling and configuring SLiM for X11 and i3 session."
-
-  # Enable SLiM in rc.conf
-  if sysrc slim_enable="YES"; then
-    log "SLiM enabled in rc.conf."
-  else
-    log "Failed to enable SLiM in rc.conf."
-    return 1
-  fi
-
-  # Ensure required packages are installed
-  local required_pkgs=("xorg" "i3" "slim")
-  for pkg in "${required_pkgs[@]}"; do
-    if ! pkg info -q "$pkg"; then
-      log "Required package $pkg is not installed. Installing now."
-      if ! pkg install -y "$pkg"; then
-        log "Failed to install required package $pkg. Aborting."
-        return 1
-      fi
-    fi
-  done
-
-  # Configure graphical environment for each user
-  for user in "${users[@]}"; do
-    log "Configuring graphical environment for user: $user"
-    local home_dir
-    home_dir=$(eval echo "~$user")    # Get user's home directory
-    if [[ ! -d "$home_dir" ]]; then
-      log "Home directory for user $user not found. Skipping."
-      continue
-    fi
-
-    local xinitrc_file="$home_dir/.xinitrc"
-
-    # Configure .xinitrc for the user
-    log "Configuring .xinitrc to start i3 for user $user."
-    if [[ -f "$xinitrc_file" ]]; then
-      log ".xinitrc already exists for user $user. Creating a backup."
-      mv "$xinitrc_file" "${xinitrc_file}.bak" || {
-        log "Failed to create backup of existing .xinitrc for user $user."
-        continue
-      }
-    fi
-
-    # Create a new .xinitrc
-    cat <<'EOF' > "$xinitrc_file"
-#!/usr/local/bin/bash
-exec i3
-EOF
-    chmod +x "$xinitrc_file" || {
-      log "Failed to set execute permission on $xinitrc_file."
-      continue
-    }
-    chown "$user:$user" "$xinitrc_file" || log "Failed to set ownership for $xinitrc_file."
-
-    log ".xinitrc created and configured to start i3 for user $user."
-  done
-
-  # Start the SLiM service
-  if service slim start; then
-    log "SLiM service started successfully."
-  else
-    log "Failed to start SLiM service."
-    return 1
-  fi
-
-  log "SLiM, Xorg, and i3 have been successfully enabled and configured for all specified users."
+  log "Final configuration completed."
 }
 
 # --------------------------------------
 # SCRIPT EXECUTION
 # --------------------------------------
+log "Starting FreeBSD system configuration (Refactored)."
 
-check_root
-log "Starting FreeBSD system configuration script."
-
-# Fetch all users with home directories in /home
-IFS=$'\n' read -r -d '' -a users < <(awk -F: '/^.*:.*:.*:.*:.*:\/home\//{print $1}' /etc/passwd && printf '\0')
-log "Detected users: ${users[*]}"
-
-# Main configuration steps
+# Identify primary network interface
 identify_primary_iface
+
+# Bootstrap pkg + install packages
 bootstrap_and_install_pkgs
+
+# Configure rc.conf
 configure_rc_conf
+
+# Configure DNS
 configure_dns
-configure_sudoers false "${users[@]}"  # Configure sudo with a password requirement
-set_default_shell_and_env "${users[@]}"  # Dynamically configure all detected users
+
+# Configure sudoers for $USERNAME
+configure_sudoers
+
+# Set Bash as default for $USERNAME
+set_default_shell_and_env
+
+# SSH Hardening
 configure_ssh
+
+# PF Firewall
 configure_pf
+
+# Finalize with package upgrade and cleaning
 finalize_configuration
 
-# Configure graphical environment for all detected users
-if [[ ${#users[@]} -gt 0 ]]; then
-    configure_graphical_env "${users[@]}"
-else
-    log "No valid users detected for graphical environment setup. Skipping."
-fi
-
-# Cleanup and successful exit
-cleanup
-log "FreeBSD system configuration completed successfully."
+log "Configuration script finished."
 exit 0
