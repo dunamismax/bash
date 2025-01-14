@@ -669,29 +669,19 @@ apt_and_settings() {
   log "==== Starting apt_and_settings routine ===="
 
   ##############################################################################
-  # 1) APT Configuration
-  ##############################################################################
-
-  ##############################################################################
-  # 2) Clean the APT cache
-  ##############################################################################
-  log "Cleaning the APT cache..."
-  apt clean
-
-  ##############################################################################
-  # 3) System Update
+  # 1) System Update
   ##############################################################################
   log "Updating package lists and upgrading installed packages..."
   apt upgrade 2>&1 | tee -a "$LOG_FILE"
 
   ##############################################################################
-  # 4) Perform a “dist-upgrade” (somewhat analogous to a group update of "core")
+  # 2) Perform a “dist-upgrade” (somewhat analogous to a group update of "core")
   ##############################################################################
   log "Performing a dist-upgrade to handle any dependency changes..."
   apt dist-upgrade 2>&1 | tee -a "$LOG_FILE"
 
   ##############################################################################
-  # 5) Add Flatpak (Flathub) remote for installing Flatpak apps
+  # 3) Add Flatpak (Flathub) remote for installing Flatpak apps
   ##############################################################################
   log "Installing flatpak and configuring Flathub remote..."
   apt install flatpak 2>&1 | tee -a "$LOG_FILE"
