@@ -1,31 +1,29 @@
 #!/usr/bin/env bash
 #
-# This script installs or updates pyenv for a non-root user, installs the latest
-# Python 3.x (via pyenv), and manages pipx plus a set of Python CLI tools.
-#
-# Usage:
-#   sudo ./install_python_setup.sh <username>
+# This script installs or updates pyenv for a non-root user named "sawyer",
+# installs the latest Python 3.x (via pyenv), and manages pipx plus a set of
+# Python CLI tools.
 #
 # Note:
 #   - This script is intended for Debian/Ubuntu systems (uses apt-get).
 #   - Must be run as root (e.g., via sudo).
-#   - You must supply a valid username as the argument.
+#   - The user "sawyer" must already exist on the system.
 #
-# Example:
-#   sudo ./install_python_setup.sh myuser
+# Example usage:
+#   sudo ./python-dev-setup.sh
 
 set -euo pipefail
 
 ################################################################################
-# Globals & Helper Functions
+# Globals
 ################################################################################
 
-usage() {
-  echo "Usage: sudo $0 <username>"
-  exit 1
-}
+# Set this to the username you wish to configure
+USERNAME="sawyer"
 
+################################################################################
 # Check if a command exists on the system
+################################################################################
 command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
@@ -37,9 +35,9 @@ command_exists() {
 #   system-level packages are installed via sudo apt-get.
 ################################################################################
 install_or_update_pyenv() {
-  local user_home
-  user_home=$(eval echo "~${USERNAME}")
-  local pyenv_dir="${user_home}/.pyenv"
+  # Expand the home directory for $USERNAME
+  user_home="$(eval echo "~${USERNAME}")"
+  pyenv_dir="${user_home}/.pyenv"
 
   # 1) Ensure Git is installed (root action)
   if ! command_exists git; then
@@ -70,7 +68,7 @@ export PATH="\$PYENV_ROOT/bin:\$PATH"
 if command -v pyenv 1>/dev/null 2>&1; then
     eval "\$(pyenv init -)"
 fi
-# <<< pyenv initialization <<<
+# <<< pyenv initialization >>>
 EOF
       fi
 
@@ -99,16 +97,16 @@ EOF
 ################################################################################
 install_latest_python() {
   # We run this as the non-root user because pyenv is installed in that user's home.
-  sudo -u "$USERNAME" -H bash -c "
+  if sudo -u "$USERNAME" -H bash -c "
     set -e
 
-    local pyenv_dir=\"\${HOME}/.pyenv\"
+    pyenv_dir=\"\${HOME}/.pyenv\"
     export PYENV_ROOT=\"\${pyenv_dir}\"
     export PATH=\"\${PYENV_ROOT}/bin:\$PATH\"
     eval \"\$(pyenv init -)\"
 
     echo '[INFO] Looking up latest stable Python 3.x via pyenv...'
-    LATEST_PY3=\"\$(pyenv install -l | awk '/^[[:space:]]*3\\.[0-9]+\\.[0-9]+\$/ {latest=\$1} END{print latest}')\"
+    LATEST_PY3=\"\$(pyenv install -l | awk '/^[[:space:]]*3\\.[0-9]+\\.[0-9]+\$/ { latest=\$1 } END { print latest }')\"
 
     if [[ -z \"\$LATEST_PY3\" ]]; then
       echo '[ERROR] Could not determine the latest Python 3.x version from pyenv.' >&2
@@ -119,8 +117,9 @@ install_latest_python() {
     echo '[INFO] Latest Python 3.x version is: '\$LATEST_PY3
     echo '[INFO] Currently active pyenv Python is: '\$CURRENT_PY3
 
+    # If the current global pyenv isn't the latest, install and switch to it
     if [[ \"\$CURRENT_PY3\" != \"\$LATEST_PY3\" ]]; then
-      if ! pyenv versions --bare | grep -q \"^\${LATEST_PY3}\$\"; then
+      if ! pyenv versions --bare | grep -q \"^\"\$LATEST_PY3\"$\"; then
         echo '[INFO] Installing Python '\$LATEST_PY3' via pyenv...'
         pyenv install \"\$LATEST_PY3\"
       fi
@@ -131,7 +130,13 @@ install_latest_python() {
       echo '[INFO] Python '\$LATEST_PY3' is already installed and set as global.'
       exit 1  # Indicate no change
     fi
-  "
+  "; then
+    # If 'install_latest_python' returns 0, a new version was installed
+    return 0
+  else
+    # If it returns 1, there's no change
+    return 1
+  fi
 }
 
 ################################################################################
@@ -141,13 +146,13 @@ install_latest_python() {
 #   If the Python version changed, pipx reinstall-all is used; otherwise, upgrades.
 ################################################################################
 install_or_upgrade_pipx_and_tools() {
-  local python_changed="$1"
+  python_changed="$1"
 
   sudo -u "$USERNAME" -H bash -c "
     set -e
 
     # Helper to check commands in the user context
-    function command_exists() {
+    command_exists() {
       command -v \"\$1\" >/dev/null 2>&1
     }
 
@@ -221,13 +226,6 @@ main() {
     exit 1
   fi
 
-  # Check for exactly one argument (the username)
-  if [[ $# -ne 1 ]]; then
-    usage
-  fi
-
-  USERNAME="$1"
-
   # Verify the user exists on the system
   if ! id "$USERNAME" &>/dev/null; then
     echo "[ERROR] User '$USERNAME' does not exist on this system."
@@ -254,4 +252,4 @@ main() {
   echo "[INFO] Done! Please have '$USERNAME' re-login or source their ~/.bashrc."
 }
 
-main "$@"
+main
