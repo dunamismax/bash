@@ -171,9 +171,9 @@ enable_contrib_non_free_firmware() {
   echo "[INFO] Adding contrib and non-free-firmware repos for Debian 12 (bookworm)"
   cat <<EOF >> /etc/apt/sources.list
 
-deb http://deb.debian.org/debian bookworm main contrib non-free-firmware
-deb http://security.debian.org/debian-security bookworm-security main contrib non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware
+deb http://deb.debian.org/debian contrib non-free-firmware
+deb http://security.debian.org/debian-security contrib non-free-firmware
+deb http://deb.debian.org/debian contrib non-free-firmware
 EOF
 
   echo "[INFO] Updating package lists..."
