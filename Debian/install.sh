@@ -217,51 +217,6 @@ EOF
 }
 
 ################################################################################
-# Function: configure_sudoers
-# Configure user in the sudo group (typical on Debian)
-################################################################################
-configure_sudoers() {
-  log "Configuring sudoers for $USERNAME..."
-  apt install sudo
-
-  # Ensure required commands are available
-  for cmd in usermod sudo; do
-    if ! command -v "$cmd" &>/dev/null; then
-      log "Command '$cmd' not found. Attempting to install..."
-      if ! apt update && apt install -y "$cmd"; then
-        log "Failed to install '$cmd'. Ensure the system has internet access and retry."
-        return 1
-      fi
-      log "Installed missing command '$cmd'."
-    fi
-  done
-
-  # Add user to the 'sudo' group
-  if id "$USERNAME" &>/dev/null; then
-    if usermod -aG sudo "$USERNAME"; then
-      log "User $USERNAME added to the 'sudo' group successfully."
-    else
-      log "Failed to add $USERNAME to the 'sudo' group."
-      return 1
-    fi
-  else
-    log "User $USERNAME does not exist. Aborting configuration."
-    return 1
-  fi
-
-  # Ensure /etc/sudoers has a rule for %sudo
-  local sudoers_file="/etc/sudoers"
-  local sudo_rule="%sudo ALL=(ALL) ALL"
-
-  if ! grep -q "^%sudo" "$sudoers_file"; then
-    echo "$sudo_rule" >> "$sudoers_file"
-    log "Added group 'sudo' rule to /etc/sudoers."
-  else
-    log "Group 'sudo' rule already exists in /etc/sudoers."
-  fi
-}
-
-################################################################################
 # Function: set_default_shell_and_env
 # Bash as default shell for the user, plus a sample .bashrc / .bash_profile
 ################################################################################
@@ -896,60 +851,6 @@ EOF
 }
 
 ################################################################################
-# Function: create_user
-# Description:
-#   Creates or updates a user account passed as the first argument. If the user
-#   doesn't exist, it creates one with a home directory and Bash shell. Prompts
-#   the admin to enter and confirm a new password for the user. SSH key
-#   configuration is intentionally omitted to allow password-based SSH.
-#
-# Usage:
-#   create_user "username"
-#
-# Example:
-#   create_user "sawyer"
-################################################################################
-create_user() {
-  local username="$1"
-  if [[ -z "$username" ]]; then
-    echo "[ERROR] Usage: create_user <username>"
-    return 1
-  fi
-
-  # 1) Check if user exists, otherwise create
-  if ! id "$username" &>/dev/null; then
-    useradd -m -s /bin/bash "$username"
-    echo "[INFO] Created user '$username'."
-  else
-    echo "[INFO] User '$username' already exists. Proceeding to set new password..."
-  fi
-
-  # 2) Prompt for password (hidden input)
-  local user_password
-  read -s -p "Enter a new password for '$username': " user_password
-  echo
-  read -s -p "Confirm the new password for '$username': " confirm_password
-  echo
-
-  # 3) Validate that both entries match
-  if [[ "$user_password" != "$confirm_password" ]]; then
-    echo "[ERROR] Passwords did not match. Aborting."
-    return 1
-  fi
-
-  # 4) Set the password for the user non-interactively
-  echo -e "${user_password}\n${user_password}" | passwd "$username" &>/dev/null
-  if [[ $? -eq 0 ]]; then
-    echo "[INFO] Password successfully set for user '$username'."
-  else
-    echo "[ERROR] Failed to set password for user '$username'."
-    return 1
-  fi
-
-  return 0
-}
-
-################################################################################
 # Function: configure_ntp
 # Description:
 #   Installs and configures NTP service on Debian-based systems using chrony.
@@ -1270,9 +1171,7 @@ main() {
   # --------------------------------------------------------
   # 2) User Creation and Environment
   # --------------------------------------------------------
-  create_user "sawyer"
   set_default_shell_and_env
-  configure_sudoers
   setup_pyenv_and_python_tools_for_user "$USERNAME"
 
   # --------------------------------------------------------
