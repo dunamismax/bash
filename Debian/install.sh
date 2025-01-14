@@ -1038,7 +1038,7 @@ setup_pyenv_and_python_tools_for_user() {
       log "[ERROR] Failed to enter $pyenv_root."
       return 1
     }
-    sudo -u "$user" -H git pull --ff-only 2>&1 | tee -a "$LOG_FILE"
+    sudo -u "$user" -H git clone --ff-only 2>&1 | tee -a "$LOG_FILE"
     popd >/dev/null || true
   fi
 
