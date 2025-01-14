@@ -1029,18 +1029,8 @@ setup_pyenv_and_python_tools_for_user() {
   # ---------------------------------------------------------------------------
   # 2) Clone or update pyenv in /home/sawyer (hardcoded pyenv_root).
   # ---------------------------------------------------------------------------
-  if [[ ! -d "$pyenv_root" ]]; then
-    log "pyenv not found in $pyenv_root. Cloning from GitHub..."
+    log "Cloning from GitHub..."
     sudo -u "$user" -H git clone https://github.com/pyenv/pyenv.git "$pyenv_root" 2>&1 | tee -a "$LOG_FILE"
-  else
-    log "pyenv already exists in $pyenv_root. Updating..."
-    pushd "$pyenv_root" >/dev/null || {
-      log "[ERROR] Failed to enter $pyenv_root."
-      return 1
-    }
-    sudo -u "$user" -H git clone --ff-only 2>&1 | tee -a "$LOG_FILE"
-    popd >/dev/null || true
-  fi
 
   # ---------------------------------------------------------------------------
   # 3) Ensure pyenv init lines are in the user’s shell RC (if desired).
