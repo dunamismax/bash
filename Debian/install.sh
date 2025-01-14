@@ -626,8 +626,6 @@ EOF
 install_caddy() {
     log "Installing Caddy"
     apt install caddy
-    systemctl enable caddy
-    systemctl start caddy
     log "Caddy Installed!"
 }
 
@@ -1109,7 +1107,12 @@ main() {
   set_default_shell_and_env
 
   # --------------------------------------------------------
-  # 3) Software Installation
+  # 3) Create caddyfile
+  # --------------------------------------------------------
+  create_caddyfile
+
+  # --------------------------------------------------------
+  # 4) Software Installation
   # --------------------------------------------------------
   bootstrap_and_install_pkgs  # Installs essential system packages
   install_caddy               # Installs Caddy web server
@@ -1117,7 +1120,7 @@ main() {
   enable_gui                  # Installs GNOME desktop environment & AwesomeWM
 
   # --------------------------------------------------------
-  # 4) Security and Hardening
+  # 5) Security and Hardening
   # --------------------------------------------------------
   overwrite_sshd_config
   configure_ufw \
@@ -1139,18 +1142,13 @@ main() {
   basic_security_hardening
 
   # --------------------------------------------------------
-  # 5) Additional Configuration
-  # --------------------------------------------------------
-  create_caddyfile
-
-  # --------------------------------------------------------
   # 6) Dev Setup
   # --------------------------------------------------------
   install_python_build_deps
   install_dev_build_deps
 
   # --------------------------------------------------------
-  # 6) Finalization
+  # 7) Finalization
   # --------------------------------------------------------
   finalize_configuration
 
