@@ -84,7 +84,6 @@ PACKAGES=(
   which
   patch
   smartmontools
-  util-linux-user
 
   # Virtualization (optional; remove if not needed)
   qemu-kvm
