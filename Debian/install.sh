@@ -1029,6 +1029,7 @@ main() {
   finalize_configuration
 
   log "Configuration script finished successfully."
+  log "Enjoy Debian!"
   log "--------------------------------------"
 }
 
