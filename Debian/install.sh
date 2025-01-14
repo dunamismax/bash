@@ -506,6 +506,8 @@ configure_ufw() {
 force_release_ports() {
   # The ports we want to check and kill processes on
   local ports=("80" "443")
+  apt purge apache2 -y
+  apt autoremove -y
 
   for port in "${ports[@]}"; do
     echo "================================================================="
