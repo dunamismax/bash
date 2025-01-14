@@ -633,22 +633,6 @@ ${codename} stable" \
 }
 
 ################################################################################
-# Function: system_cleanup
-# Description:
-#   Performs RPM-based package cleanup to remove unneeded packages,
-#   orphaned dependencies, and clean the cache.
-################################################################################
-system_cleanup() {
-  log "Performing system cleanup..."
-
-  # Remove orphaned dependencies and old kernels if any
-  apt autoremove
-  apt clean
-
-  log "System cleanup completed."
-}
-
-################################################################################
 # Function: apt_and_settings
 # Description:
 #   1) Configure APT to enable some preferable defaults (e.g., assume "yes",
@@ -859,6 +843,12 @@ finalize_configuration() {
   apt upgrade 2>&1 | tee -a "$LOG_FILE"
   apt autoremove 2>&1 | tee -a "$LOG_FILE"
   apt clean all 2>&1 | tee -a "$LOG_FILE"
+
+  log "Performing system cleanup..."
+  # Remove orphaned dependencies and old kernels if any
+  apt autoremove
+  apt clean
+  log "System cleanup completed."
 
   log "Final configuration steps completed."
 }
@@ -1082,7 +1072,6 @@ main() {
   create_caddyfile
   setup_pyenv_and_python_tools_for_user "$USERNAME"
   finalize_configuration
-  system_cleanup
 
   log "Configuration script finished successfully."
   log "--------------------------------------"
