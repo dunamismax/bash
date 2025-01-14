@@ -942,8 +942,7 @@ install_apt_dependencies() {
         apt-transport-https \
         gnupg \
         lsb-release \
-        jq \
-        nginx
+        jq
 
     # Optionally remove automatically installed packages no longer needed
     sudo apt-get autoremove -y
