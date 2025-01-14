@@ -270,6 +270,21 @@ set_default_shell_and_env() {
   local bashrc_file="$user_home/.bashrc"
   local bash_profile_file="$user_home/.bash_profile"
 
+  # Create the .bash_profile file first with the specified contents
+  log "Creating $bash_profile_file with default content..."
+  cat << 'EOF' > "$bash_profile_file"
+# ~/.bash_profile
+# Always source ~/.bashrc to ensure consistent shell environment setup
+if [ -f ~/.bashrc ]; then
+    source ~/.bashrc
+fi
+EOF
+
+  # Set ownership and permissions for the .bash_profile file
+  chown "$USERNAME":"$USERNAME" "$bash_profile_file"
+  chmod 644 "$bash_profile_file"
+  log ".bash_profile created successfully."
+
   cat << 'EOF' > "$bashrc_file"
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
