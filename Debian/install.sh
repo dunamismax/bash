@@ -917,6 +917,10 @@ install_dev_build_deps() {
 }
 
 ################################################################################
+# Python and Pyenv setup
+################################################################################
+
+################################################################################
 # Helper: Check if a command exists
 ################################################################################
 command_exists() {
@@ -971,6 +975,13 @@ install_apt_dependencies() {
     sudo apt-get clean
 }
 
+bash
+
+Copy
+#!/usr/bin/env bash
+
+USERNAME="sawyer"  # Change as needed
+
 ###############################################################################
 # Helper: command_exists
 # Checks if a given command is available on the PATH.
@@ -980,163 +991,186 @@ command_exists() {
 }
 
 ################################################################################
-# 1. Install or Update pyenv
+# Function: install_or_update_pyenv
+# Description:
+#   Installs or updates pyenv for a normal user (USERNAME). Any system-level
+#   packages or actions that require elevated permissions are performed with sudo.
 ################################################################################
 install_or_update_pyenv() {
-    local PYENV_DIR="${HOME}/.pyenv"
+    local user_home
+    user_home=$(eval echo "~${USERNAME}")
+    local pyenv_dir="${user_home}/.pyenv"
 
-    # Sanity check: ensure Git is installed
+    # 1) Ensure Git is installed (root action)
     if ! command_exists git; then
-        echo "[ERROR] Git is not installed. Cannot proceed with pyenv installation." >&2
-        return 1
+        echo "[INFO] Installing git using sudo..."
+        sudo apt-get update -y
+        sudo apt-get install -y git
     fi
 
-    if [[ ! -d "$PYENV_DIR" ]]; then
-        echo "[INFO] Installing pyenv..."
-        git clone https://github.com/pyenv/pyenv.git "$PYENV_DIR"
-        # Optionally clone pyenv-virtualenv if you want that plugin:
-        #   git clone https://github.com/pyenv/pyenv-virtualenv.git \
-        #       "${PYENV_DIR}/plugins/pyenv-virtualenv"
+    # 2) Run all pyenv-related actions as the non-root user
+    sudo -u "$USERNAME" -H bash -c "
+        set -e
 
-        # Update .bashrc to load pyenv automatically (for bash)
-        if [[ -f "${HOME}/.bashrc" ]] && ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
-            cat <<'EOF' >> "${HOME}/.bashrc"
+        # If pyenv doesn't exist, clone it; otherwise, update it
+        if [[ ! -d '$pyenv_dir' ]]; then
+            echo '[INFO] Installing pyenv for $USERNAME...'
+            git clone https://github.com/pyenv/pyenv.git '$pyenv_dir'
+
+            # (Optional) If you want pyenv-virtualenv:
+            # git clone https://github.com/pyenv/pyenv-virtualenv.git \
+            #     '$pyenv_dir'/plugins/pyenv-virtualenv
+
+            # Append pyenv config to .bashrc if not already present
+            if [[ -f '${user_home}/.bashrc' && \$(grep -c 'export PYENV_ROOT' '${user_home}/.bashrc') -eq 0 ]]; then
+                cat <<'EOF' >> '${user_home}/.bashrc'
 
 # >>> pyenv initialization >>>
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
+export PYENV_ROOT=\"\$HOME/.pyenv\"
+export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
 if command -v pyenv 1>/dev/null 2>&1; then
-    eval "$(pyenv init -)"
+    eval \"\$(pyenv init -)\"
 fi
 # <<< pyenv initialization <<<
 EOF
+            fi
+        else
+            echo '[INFO] Updating pyenv for $USERNAME...'
+            pushd '$pyenv_dir' >/dev/null
+            git pull --ff-only
+            popd >/dev/null
         fi
-    else
-        echo "[INFO] Updating pyenv..."
-        pushd "$PYENV_DIR" >/dev/null
-        git pull --ff-only
-        popd >/dev/null
-    fi
 
-    # Make sure pyenv is available in the current shell
-    export PYENV_ROOT="$PYENV_DIR"
-    export PATH="$PYENV_ROOT/bin:$PATH"
-    eval "$(pyenv init -)"
+        # Initialize pyenv in this subshell so we can run pyenv commands if needed
+        export PYENV_ROOT='$pyenv_dir'
+        export PATH='\$PYENV_ROOT/bin:\$PATH'
+        eval \"\$(pyenv init -)\"
+
+        echo '[INFO] pyenv installation/update complete for $USERNAME.'
+    "
 }
 
 ################################################################################
-# 2. Ensure We Have the Latest Python 3.x Version
+# Function: install_latest_python
+# Description:
+#   Uses pyenv to determine and install the latest stable Python 3.x version.
+#   All actions happen as $USERNAME. If an update is performed, return 0,
+#   otherwise 1.
 ################################################################################
 install_latest_python() {
-    echo "[INFO] Finding the latest stable Python 3.x version via pyenv..."
-    local LATEST_PY3
-    LATEST_PY3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/ {latest=$1} END{print latest}')"
+    sudo -u "$USERNAME" -H bash -c "
+        set -e
+        local pyenv_dir='${HOME}/.pyenv'
+        export PYENV_ROOT=\"\$pyenv_dir\"
+        export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
+        eval \"\$(pyenv init -)\"
 
-    if [[ -z "$LATEST_PY3" ]]; then
-        echo "[ERROR] Could not determine the latest Python 3.x version from pyenv." >&2
-        exit 1
-    fi
+        # Fetch the latest stable Python 3.x
+        echo '[INFO] Finding the latest stable Python 3.x via pyenv...'
+        LATEST_PY3=\"\$(pyenv install -l | awk '/^[[:space:]]*3\\.[0-9]+\\.[0-9]+\$/ {latest=\$1} END{print latest}')\"
 
-    # Might be empty if global is not set yet
-    local CURRENT_PY3
-    CURRENT_PY3="$(pyenv global || true)"
-
-    echo "[INFO] Latest Python 3.x version is: $LATEST_PY3"
-    if [[ -n "$CURRENT_PY3" ]]; then
-        echo "[INFO] Currently active pyenv Python is: $CURRENT_PY3"
-    else
-        echo "[INFO] No global Python set yet."
-    fi
-
-    local INSTALL_NEW_PYTHON=false
-    if [[ "$CURRENT_PY3" != "$LATEST_PY3" ]]; then
-        # If the version doesn't exist, install it
-        if ! pyenv versions --bare | grep -q "^${LATEST_PY3}\$"; then
-            echo "[INFO] Installing Python $LATEST_PY3 via pyenv..."
-            pyenv install "$LATEST_PY3"
+        if [[ -z \"\$LATEST_PY3\" ]]; then
+            echo '[ERROR] Could not determine the latest Python 3.x version from pyenv.' >&2
+            exit 1
         fi
-        echo "[INFO] Setting Python $LATEST_PY3 as global..."
-        pyenv global "$LATEST_PY3"
-        INSTALL_NEW_PYTHON=true
-    else
-        echo "[INFO] Python $LATEST_PY3 is already installed and set as global."
-    fi
 
-    # Refresh shell environment with the new global
-    eval "$(pyenv init -)"
+        CURRENT_PY3=\"\$(pyenv global || true)\"
+        echo '[INFO] Latest Python 3.x version is: '\$LATEST_PY3
+        echo '[INFO] Currently active pyenv Python is: '\$CURRENT_PY3
 
-    # Use return code to signify a newly installed version vs. no change
-    if [[ "$INSTALL_NEW_PYTHON" == true ]]; then
-        return 0
-    else
-        return 1
-    fi
+        if [[ \"\$CURRENT_PY3\" != \"\$LATEST_PY3\" ]]; then
+            # Install new Python version if not already present
+            if ! pyenv versions --bare | grep -q \"^\${LATEST_PY3}\$\"; then
+                echo '[INFO] Installing Python '\$LATEST_PY3' via pyenv...'
+                pyenv install \"\${LATEST_PY3}\"
+            fi
+            echo '[INFO] Setting Python '\$LATEST_PY3' as global...'
+            pyenv global \"\$LATEST_PY3\"
+            # Return code 0 means a new version was installed or changed
+            exit 0
+        else
+            echo '[INFO] Python '\$LATEST_PY3' is already installed and set as global.'
+            # Return code 1 means no change
+            exit 1
+        fi
+    "
 }
 
 ################################################################################
-# 3. pipx & Python Tooling
+# Function: install_or_upgrade_pipx_and_tools
+# Description:
+#   Installs or upgrades pipx (if missing) and a curated list of Python CLI tools.
+#   Runs as $USERNAME, using sudo only if system-level packages are required.
 ################################################################################
 install_or_upgrade_pipx_and_tools() {
-    # Ensure we have a reliable way to check for pipx
-    if ! command_exists pipx; then
-        echo "[INFO] Installing pipx with the current Python version..."
-        python -m pip install --upgrade pip  # ensure pip is up to date
-        python -m pip install --user pipx
-    fi
+    local python_changed="${1:-false}"
 
-    # Ensure ~/.local/bin is on PATH for pipx
-    if [[ -f "${HOME}/.bashrc" ]]; then
-        if ! grep -q 'export PATH=.*\.local/bin' "${HOME}/.bashrc"; then
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
+    # Run everything as the $USERNAME user
+    sudo -u "$USERNAME" -H bash -c "
+        set -e
+
+        # Helper function to see if a command is on PATH
+        function command_exists {
+            command -v \"\$1\" >/dev/null 2>&1
+        }
+
+        # Ensure pipx is installed
+        if ! command_exists pipx; then
+            echo '[INFO] Installing pipx using pip (user install)...'
+            python -m pip install --upgrade pip
+            python -m pip install --user pipx
+
+            # Ensure ~/.local/bin is on PATH (append to .bashrc if not present)
+            if [[ -f \"\$HOME/.bashrc\" && \$(grep -c 'export PATH=.*\\.local/bin' \"\$HOME/.bashrc\") -eq 0 ]]; then
+                echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> \"\$HOME/.bashrc\"
+            fi
+            export PATH=\"\$HOME/.local/bin:\$PATH\"
         fi
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
 
-    # Upgrade pipx itself
-    pipx upgrade pipx || true
+        echo '[INFO] Upgrading pipx itself, if already installed...'
+        pipx upgrade pipx || true
 
-    # A list of pipx-managed tools
-    local PIPX_TOOLS=(
-        ansible-core
-        black
-        cookiecutter
-        coverage
-        flake8
-        isort
-        ipython
-        mypy
-        pip-tools
-        pylint
-        pyupgrade
-        pytest
-        rich-cli
-        tldr
-        tox
-        twine
-        yt-dlp
-        poetry
-        pre-commit
-    )
+        # List of pipx-managed tools
+        PIPX_TOOLS=(
+            ansible-core
+            black
+            cookiecutter
+            coverage
+            flake8
+            isort
+            ipython
+            mypy
+            pip-tools
+            pylint
+            pyupgrade
+            pytest
+            rich-cli
+            tldr
+            tox
+            twine
+            yt-dlp
+            poetry
+            pre-commit
+        )
 
-    # 1 argument indicates whether Python version changed
-    if [[ "${1:-false}" == "true" ]]; then
-        echo "[INFO] Python version changed; performing a pipx reinstall-all to avoid breakage..."
-        pipx reinstall-all
-    else
-        echo "[INFO] Upgrading all pipx packages to ensure they’re current..."
-        pipx upgrade-all || true
-    fi
-
-    # Ensure each tool in PIPX_TOOLS is installed or upgraded
-    echo
-    echo "[INFO] Checking each PIPX tool installation..."
-    for tool in "${PIPX_TOOLS[@]}"; do
-        if pipx list | grep -q "$tool"; then
-            pipx upgrade "$tool" || true
+        if [[ \"\$python_changed\" == \"true\" ]]; then
+            echo '[INFO] Python version changed; performing a pipx reinstall-all...'
+            pipx reinstall-all
         else
-            pipx install "$tool" || true
+            echo '[INFO] Upgrading all pipx packages...'
+            pipx upgrade-all || true
         fi
-    done
+
+        echo '[INFO] Ensuring each tool is installed/upgraded...'
+        for tool in \"\${PIPX_TOOLS[@]}\"; do
+            if pipx list | grep -q \"\$tool\"; then
+                pipx upgrade \"\$tool\" || true
+            else
+                pipx install \"\$tool\" || true
+            fi
+        done
+        echo '[INFO] pipx tools installation/upgrade complete.'
+    "
 }
 
 ################################################################################
