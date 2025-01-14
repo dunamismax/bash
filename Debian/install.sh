@@ -1034,14 +1034,20 @@ main() {
     "--add-port=80/tcp" \
     "--add-port=80/udp" \
     "--add-port=443/tcp" \
-    "--add-port=443/udp"  \
+    "--add-port=443/udp" \
     "--add-port=32400/tcp" \
     "--add-port=1900/udp" \
     "--add-port=5353/udp" \
     "--add-port=8324/tcp" \
-    "--add-port=32410-32415/udp" \
+    "--add-port=32410/udp" \
+    "--add-port=32411/udp" \
+    "--add-port=32412/udp" \
+    "--add-port=32413/udp" \
+    "--add-port=32414/udp" \
+    "--add-port=32415/udp" \
     "--add-port=32469/tcp"
   configure_ntp
+
   configure_automatic_updates
   basic_security_hardening
 
