@@ -1040,6 +1040,64 @@ setup_pyenv_and_python_tools_for_user() {
     popd >/dev/null || true
   fi
 
+  # ---------------------------------------------------------------------------
+  # 3) Ensure pyenv init lines are in the user’s shell RC (if desired).
+  #    You can skip this block if you only ever set PATH manually.
+  # ---------------------------------------------------------------------------
+  if ! grep -q 'export PYENV_ROOT=' "$bashrc_file" 2>/dev/null; then
+    log "Appending pyenv init lines to $bashrc_file..."
+    {
+      echo "export PYENV_ROOT=\"$pyenv_root\""
+      echo 'export PATH="$PYENV_ROOT/bin:$PATH"'
+      echo 'eval "$(pyenv init - bash)"'
+    } | sudo -u "$user" tee -a "$bashrc_file" >/dev/null
+  else
+    log "pyenv init lines already found in $bashrc_file. No changes made."
+  fi
+
+  # ---------------------------------------------------------------------------
+  # 4) Detect the latest stable Python 3.x version via pyenv.
+  #    We explicitly set up the environment in the sudo command to ensure
+  #    pyenv is on PATH and initialized, so we can parse “pyenv install -l”.
+  # ---------------------------------------------------------------------------
+  log "Detecting the latest stable Python 3.x version via pyenv..."
+  local latest_stable_py3
+  latest_stable_py3="$(
+    sudo -u "$user" -H bash -c "
+      export PYENV_ROOT=\"$pyenv_root\"
+      export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
+      eval \"\$(pyenv init - bash)\"
+      pyenv install -l |
+        grep -E '^\\s*3\\.[0-9]+\\.[0-9]+\$' |
+        tail -1 |
+        sed 's/^ *//'
+    "
+  )"
+
+  # ---------------------------------------------------------------------------
+  # 5) Bail out if no Python 3.x version string was found.
+  # ---------------------------------------------------------------------------
+  if [[ -z "$latest_stable_py3" ]]; then
+    log "[ERROR] Could not detect the latest Python 3.x version via pyenv."
+    return 1
+  fi
+  log "Detected Python 3.x version: $latest_stable_py3"
+
+  # ---------------------------------------------------------------------------
+  # 6) You can now install that Python version (or something else).
+  # ---------------------------------------------------------------------------
+  log "Installing Python $latest_stable_py3 for user $user..."
+  sudo -u "$user" -H bash -c "
+    export PYENV_ROOT=\"$pyenv_root\"
+    export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
+    eval \"\$(pyenv init - bash)\"
+    pyenv install -s \"$latest_stable_py3\"
+    pyenv global \"$latest_stable_py3\"
+  "
+
+  log "----- Completed pyenv setup for $user -----"
+}
+
   # Ensure ownership is correct on the .pyenv folder
   chown -R "$user":"$user" "$pyenv_root"
 
