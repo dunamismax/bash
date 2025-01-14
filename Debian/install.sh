@@ -645,14 +645,51 @@ configure_ufw() {
 ###############################################################################
 # Function: force_release_ports
 # Description:
-#   1) Checks which processes are listening on ports 80 and 443 using lsof/netstat.
-#   2) Immediately terminates those processes by sending SIGKILL (-9).
+#   1) Removes Apache2 and Caddy (if present), then performs system cleanup.
+#   2) Installs net-tools if not present.
+#   3) Checks which processes are listening on the listed ports (TCP/UDP).
+#   4) Immediately terminates those processes by sending SIGKILL (-9).
 ###############################################################################
 force_release_ports() {
-  # apache and ports fix
+  # Step 1: Remove Apache and Caddy, then autoremove
+  echo "Removing apache2 and caddy..."
   apt purge -y apache2
+  apt purge -y caddy
   apt autoremove -y
+
+  # Step 2: Install net-tools if not present
+  echo "Installing net-tools..."
   apt install -y net-tools
+
+  # Step 3: Define ports to kill (TCP and UDP separately)
+  local tcp_ports=("8080" "80" "443" "32400" "8324" "32469")
+  local udp_ports=("80" "443" "1900" "5353" "32410" "32411" "32412" "32413" "32414" "32415")
+
+  echo "Killing any processes listening on the specified ports..."
+
+  # Kill TCP processes
+  for p in "${tcp_ports[@]}"; do
+    # lsof -t: print only the process IDs
+    # -i TCP:$p: match TCP port
+    # -sTCP:LISTEN: only processes in LISTEN state
+    pids="$(lsof -t -i TCP:"$p" -sTCP:LISTEN 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+      echo "Killing processes on TCP port $p: $pids"
+      kill -9 $pids
+    fi
+  done
+
+  # Kill UDP processes
+  for p in "${udp_ports[@]}"; do
+    # -i UDP:$p: match UDP port
+    pids="$(lsof -t -i UDP:"$p" 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+      echo "Killing processes on UDP port $p: $pids"
+      kill -9 $pids
+    fi
+  done
+
+  echo "Ports have been forcibly released."
 }
 
 ################################################################################
