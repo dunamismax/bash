@@ -1252,6 +1252,37 @@ apt install -y caddy
 }
 
 ################################################################################
+# disable_sleep_and_set_performance
+# Description:
+#   1) Masks (disables) system sleep targets so the system never suspends.
+#   2) Installs cpufrequtils (if not present) and sets all CPU cores to
+#      "performance" governor.
+#
+# Usage:
+#   1) Make this script executable: chmod +x disable_sleep_and_set_performance.sh
+#   2) Run as root or via sudo:
+#      sudo ./disable_sleep_and_set_performance.sh
+################################################################################
+
+disable_sleep_and_set_performance() {
+  echo "[INFO] Disabling sleep, suspend, hibernate, and hybrid-sleep targets..."
+  systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
+  echo "[INFO] Installing cpufrequtils if not already installed..."
+  if ! command -v cpufreq-set &>/dev/null; then
+    apt-get update -y
+    apt-get install -y cpufrequtils
+  fi
+
+  echo "[INFO] Setting CPU governor to 'performance' for all CPU cores..."
+  for cpu_gov in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
+    echo performance | tee "$cpu_gov" >/dev/null
+  done
+
+  echo "[INFO] Done. Your system should no longer suspend and CPU frequency is set to performance."
+}
+
+################################################################################
 # Function: finalize_configuration
 ################################################################################
 finalize_configuration() {
@@ -1301,6 +1332,7 @@ main() {
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
   set_hostname "debian"
+  disable_sleep_and_set_performance
 
   # --------------------------------------------------------
   # 2) User Creation and Environment
