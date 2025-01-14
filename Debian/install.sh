@@ -4,7 +4,7 @@
 # ------------------------------------------------------------------------------
 # DESCRIPTION:
 #   Automates the initial setup of a fresh Debian or Ubuntu system by:
-#     1) Syncing package repositories and installing/ updating core packages
+#     1) Syncing package repositories and installing/updating core packages
 #        (e.g., build tools, curl, git).
 #     2) Backing up, then overwriting certain system configs
 #        (e.g., '/etc/ssh/sshd_config') to apply recommended security and
@@ -311,12 +311,13 @@ EOF
 }
 
 ################################################################################
-# Function: set_default_shell_and_env (Revised)
+# Function: set_default_shell_and_env
 # Description:
-#   Deletes (overwrites) and recreates ~/.bash_profile and ~/.bashrc for $USERNAME.
+#   Deletes (overwrites) and recreates ~/.profile, ~/.bash_profile, and ~/.bashrc
+#   for $USERNAME.
 ################################################################################
 set_default_shell_and_env() {
-  log "Recreating .bashrc and .bash_profile for $USERNAME..."
+  log "Recreating .profile, .bash_profile, and .bashrc for $USERNAME..."
 
   # Dynamically determine the user's home directory
   local user_home
@@ -325,6 +326,7 @@ set_default_shell_and_env() {
   # File paths
   local bashrc_file="$user_home/.bashrc"
   local bash_profile_file="$user_home/.bash_profile"
+  local profile_file="$user_home/.profile"
 
   # Overwrite the .bash_profile file with the specified contents
   log "Creating $bash_profile_file with default content..."
@@ -341,75 +343,121 @@ EOF
   chmod 644 "$bash_profile_file"
   log ".bash_profile created successfully."
 
+  # Overwrite the .profile file with the specified contents (like .bash_profile)
+  log "Creating $profile_file with default content..."
+  cat << 'EOF' > "$profile_file"
+# ~/.profile
+# Always source ~/.bashrc to ensure consistent shell environment setup
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+fi
+EOF
+
+  # Set ownership and permissions for the .profile file
+  chown "$USERNAME":"$USERNAME" "$profile_file"
+  chmod 644 "$profile_file"
+  log ".profile created successfully."
+
   # Overwrite the .bashrc file
   log "Creating $bashrc_file with default content..."
   cat << 'EOF' > "$bashrc_file"
 # ~/.bashrc: executed by bash(1) for non-login shells.
-# see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
-# for examples
+# ------------------------------------------------------------------------------
+# Purpose:
+#   This file configures your interactive Bash shell, defining environment
+#   variables, initializing pyenv, setting up command history preferences,
+#   enabling a fancy prompt, providing helpful aliases, and defining functions
+#   for Python virtual environment management.
+#
+#   It also handles bash-completion (if available), making commands more
+#   convenient to type.
+#
+# Note:
+#   - This file is read for interactive non-login shells. For login shells,
+#     ~/.bash_profile or ~/.profile typically point here if you want the same
+#     configuration (depending on your distribution).
+#   - If you have separate user-defined aliases, you can place them in
+#     ~/.bash_aliases, which is sourced at the end of this file (if it exists).
+# ------------------------------------------------------------------------------
 
-
-# >>> pyenv initialization >>>
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-if command -v pyenv 1>/dev/null 2>&1; then
-    eval "$(pyenv init -)"
-fi
-# <<< pyenv initialization <<<
-
-# If not running interactively, don't do anything
+# ------------------------------------------------------------------------------
+# 1. Early return if not running interactively
+# ------------------------------------------------------------------------------
 case $- in
     *i*) ;;
       *) return;;
 esac
 
-# don't put duplicate lines or lines starting with space in the history.
-# See bash(1) for more options
+# ------------------------------------------------------------------------------
+# 2. Environment variables
+# ------------------------------------------------------------------------------
+# Add your local bin directory to PATH.
+export PATH="$PATH:$HOME/.local/bin"
+
+# ------------------------------------------------------------------------------
+# 3. pyenv initialization
+# ------------------------------------------------------------------------------
+# Adjust these lines according to your Python environment needs.
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+
+if command -v pyenv 1>/dev/null 2>&1; then
+    # Initialize pyenv so that it can manage your Python versions and virtualenvs.
+    eval "$(pyenv init --path)"
+    eval "$(pyenv init -)"
+fi
+
+# ------------------------------------------------------------------------------
+# 4. History preferences
+# ------------------------------------------------------------------------------
+# Do not store duplicate lines or lines that start with a space in the history.
 HISTCONTROL=ignoreboth
 
-# append to the history file, don't overwrite it
+# Allow appending to the history file (instead of overwriting it).
 shopt -s histappend
 
-# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
+# Set history limits (number of lines in memory / on disk).
 HISTSIZE=10000
 HISTFILESIZE=20000
 
-# Add timestamps to each history line for auditing
+# Add timestamps to each command in history (for auditing).
 HISTTIMEFORMAT="%F %T "
 
-# check the window size after each command and, if necessary,
-# update the values of LINES and COLUMNS.
+# Re-check window size after each command, updating LINES and COLUMNS if needed.
 shopt -s checkwinsize
 
-# make less more friendly for non-text input files, see lesspipe(1)
+# ------------------------------------------------------------------------------
+# 5. Less (pager) setup
+# ------------------------------------------------------------------------------
+# Make 'less' more friendly for non-text input files, see lesspipe(1).
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
-# set variable identifying the chroot you work in (used in the prompt below)
+# ------------------------------------------------------------------------------
+# 6. Bash prompt (PS1)
+# ------------------------------------------------------------------------------
+# Identify if we are in a Debian/Ubuntu chroot environment and set debian_chroot.
 if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
     debian_chroot=$(cat /etc/debian_chroot)
 fi
 
-# set a fancy prompt (non-color, unless we know we "want" color)
+# If terminal supports color, enable a colored prompt.
 case "$TERM" in
     xterm-color|*-256color) color_prompt=yes;;
 esac
 
-# uncomment for a colored prompt, if the terminal has the capability; turned
-# off by default to not distract the user: the focus in a terminal window
-# should be on the output of commands, not on the prompt
-#force_color_prompt=yes
+# Uncomment the line below if you always want a color prompt (if supported).
+# force_color_prompt=yes
 
 if [ -n "$force_color_prompt" ]; then
     if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
-        # We have color support; assume it's compliant with Ecma-48
-        # (ISO/IEC-6429). (Lack of such support is extremely rare, and such
-        # a case would tend to support setf rather than setaf.)
+        # We have color support; assume it's compliant with Ecma-48 (ISO/IEC-6429).
         color_prompt=yes
     else
         color_prompt=
     fi
 fi
 
+# Choose a colored or plain prompt.
 if [ "$color_prompt" = yes ]; then
     PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
@@ -417,82 +465,55 @@ else
 fi
 unset color_prompt force_color_prompt
 
-# If this is an xterm set the title to user@host:dir
+# If this is an xterm or rxvt terminal, set the window title to user@host:dir.
 case "$TERM" in
-xterm*|rxvt*)
-    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
-    ;;
-*)
-    ;;
+    xterm*|rxvt*)
+        PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+        ;;
+    *)
+        ;;
 esac
 
-# enable color support of ls and also add handy aliases
+# ------------------------------------------------------------------------------
+# 7. Color support for common commands
+# ------------------------------------------------------------------------------
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
     alias ls='ls --color=auto'
-    #alias dir='dir --color=auto'
-    #alias vdir='vdir --color=auto'
+    # alias dir='dir --color=auto'
+    # alias vdir='vdir --color=auto'
 
     alias grep='grep --color=auto'
     alias fgrep='fgrep --color=auto'
     alias egrep='egrep --color=auto'
 fi
 
-# some more ls aliases
+# ------------------------------------------------------------------------------
+# 8. Handy aliases
+# ------------------------------------------------------------------------------
+# Basic ls aliases
 alias ll='ls -alF'
 alias la='ls -A'
 alias l='ls -CF'
 
-# Add an "alert" alias for long running commands.  Use like so:
-#   sleep 10; alert
-alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+# Launch ranger file manager
+alias r='ranger'
 
-# If you want separate user-defined aliases, you can place them in ~/.bash_aliases
-if [ -f ~/.bash_aliases ]; then
-    . ~/.bash_aliases
-fi
+# Alert alias for long running commands (use: sleep 10; alert)
+alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" \
+"$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
 
-# enable programmable completion features
-if ! shopt -oq posix; then
-  if [ -f /usr/share/bash-completion/bash_completion ]; then
-    . /usr/share/bash-completion/bash_completion
-  elif [ -f /etc/bash_completion ]; then
-    . /etc/bash_completion
-  fi
-fi
+# ------------------------------------------------------------------------------
+# 9. Python virtual environment functions and aliases
+# ------------------------------------------------------------------------------
+# Alias to quickly set up a new Python virtual environment
+alias venv='setup_venv'
+# Alias to quickly re-enable an existing Python virtual environment
+alias v='enable_venv'
 
-# -------------------
-# Custom user additions:
-# -------------------
-
-alias r="ranger"
-alias venv="setup_venv"
-alias v="enable_venv"
-
-export PATH="$PATH:$HOME/.local/bin"
-
-# Function to re-enable a virtual environment
-enable_venv() {
-    if type deactivate &>/dev/null; then
-        echo "Deactivating current virtual environment..."
-        deactivate
-    fi
-
-    echo "Activating the virtual environment..."
-    source .venv/bin/activate
-
-    if [ -f requirements.txt ]; then
-        echo "Installing dependencies from requirements.txt..."
-        pip install -r requirements.txt
-    else
-        echo "No requirements.txt found. Skipping pip install."
-    fi
-
-    echo "Virtual environment setup complete."
-}
-
-# Function to set up Python virtual environment
+# Function to set up a new Python virtual environment in the current directory
 setup_venv() {
+    # If there's already a venv active, deactivate it first
     if type deactivate &>/dev/null; then
         echo "Deactivating current virtual environment..."
         deactivate
@@ -513,12 +534,57 @@ setup_venv() {
 
     echo "Virtual environment setup complete."
 }
+
+# Function to re-enable an existing Python virtual environment in the current directory
+enable_venv() {
+    # If there's already a venv active, deactivate it first
+    if type deactivate &>/dev/null; then
+        echo "Deactivating current virtual environment..."
+        deactivate
+    fi
+
+    echo "Activating the virtual environment..."
+    source .venv/bin/activate
+
+    if [ -f requirements.txt ]; then
+        echo "Installing dependencies from requirements.txt..."
+        pip install -r requirements.txt
+    else
+        echo "No requirements.txt found. Skipping pip install."
+    fi
+
+    echo "Virtual environment setup complete."
+}
+
+# ------------------------------------------------------------------------------
+# 10. Load user-defined aliases from ~/.bash_aliases (if it exists)
+# ------------------------------------------------------------------------------
+if [ -f ~/.bash_aliases ]; then
+    . ~/.bash_aliases
+fi
+
+# ------------------------------------------------------------------------------
+# 11. Bash completion
+# ------------------------------------------------------------------------------
+# Enable programmable completion features if not in POSIX mode.
+# (Examples: git completion, docker completion, etc.)
+if ! shopt -oq posix; then
+    if [ -f /usr/share/bash-completion/bash_completion ]; then
+        . /usr/share/bash-completion/bash_completion
+    elif [ -f /etc/bash_completion ]; then
+        . /etc/bash_completion
+    fi
+fi
+
+# ------------------------------------------------------------------------------
+# End of ~/.bashrc
+# ------------------------------------------------------------------------------
 EOF
 
-  chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file"
-  chmod 644 "$bashrc_file" "$bash_profile_file"
+  chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file" "$profile_file"
+  chmod 644 "$bashrc_file" "$bash_profile_file" "$profile_file"
 
-  log "Bash configuration files have been recreated for $USERNAME."
+  log "Bash configuration files (.profile, .bash_profile, and .bashrc) have been recreated for $USERNAME."
 }
 
 ################################################################################
