@@ -108,6 +108,8 @@ PACKAGES=(
   patch
   smartmontools
   ntfs-3g
+  xserver-xorg-video-amdgpu
+  firmware-amd-graphics
 
   # Virtualization (optional; remove if not needed)
   qemu-kvm
