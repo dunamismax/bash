@@ -969,18 +969,35 @@ install_apt_dependencies() {
     sudo apt-get clean
 }
 
+###############################################################################
+# Helper: command_exists
+# Checks if a given command is available on the PATH.
+###############################################################################
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
 ################################################################################
 # 1. Install or Update pyenv
 ################################################################################
 install_or_update_pyenv() {
-    if [[ ! -d "${HOME}/.pyenv" ]]; then
-        echo "[INFO] Installing pyenv..."
-        git clone https://github.com/pyenv/pyenv.git "${HOME}/.pyenv"
-        # Optionally clone pyenv-virtualenv if you want that plugin
-        # git clone https://github.com/pyenv/pyenv-virtualenv.git "${HOME}/.pyenv/plugins/pyenv-virtualenv"
+    local PYENV_DIR="${HOME}/.pyenv"
 
-        # Update your shell config to load pyenv automatically (for bash)
-        if ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
+    # Sanity check: ensure Git is installed
+    if ! command_exists git; then
+        echo "[ERROR] Git is not installed. Cannot proceed with pyenv installation." >&2
+        return 1
+    fi
+
+    if [[ ! -d "$PYENV_DIR" ]]; then
+        echo "[INFO] Installing pyenv..."
+        git clone https://github.com/pyenv/pyenv.git "$PYENV_DIR"
+        # Optionally clone pyenv-virtualenv if you want that plugin:
+        #   git clone https://github.com/pyenv/pyenv-virtualenv.git \
+        #       "${PYENV_DIR}/plugins/pyenv-virtualenv"
+
+        # Update .bashrc to load pyenv automatically (for bash)
+        if [[ -f "${HOME}/.bashrc" ]] && ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
             cat <<'EOF' >> "${HOME}/.bashrc"
 
 # >>> pyenv initialization >>>
@@ -994,13 +1011,13 @@ EOF
         fi
     else
         echo "[INFO] Updating pyenv..."
-        pushd "${HOME}/.pyenv" >/dev/null
+        pushd "$PYENV_DIR" >/dev/null
         git pull --ff-only
         popd >/dev/null
     fi
 
     # Make sure pyenv is available in the current shell
-    export PYENV_ROOT="$HOME/.pyenv"
+    export PYENV_ROOT="$PYENV_DIR"
     export PATH="$PYENV_ROOT/bin:$PATH"
     eval "$(pyenv init -)"
 }
@@ -1010,20 +1027,28 @@ EOF
 ################################################################################
 install_latest_python() {
     echo "[INFO] Finding the latest stable Python 3.x version via pyenv..."
-    LATEST_PY3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')"
+    local LATEST_PY3
+    LATEST_PY3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/ {latest=$1} END{print latest}')"
 
     if [[ -z "$LATEST_PY3" ]]; then
         echo "[ERROR] Could not determine the latest Python 3.x version from pyenv." >&2
         exit 1
     fi
 
-    CURRENT_PY3="$(pyenv global || true)"   # might be empty if not set
+    # Might be empty if global is not set yet
+    local CURRENT_PY3
+    CURRENT_PY3="$(pyenv global || true)"
 
-    echo "[INFO] Latest Python 3.x version is $LATEST_PY3"
-    echo "[INFO] Currently active pyenv Python is $CURRENT_PY3"
+    echo "[INFO] Latest Python 3.x version is: $LATEST_PY3"
+    if [[ -n "$CURRENT_PY3" ]]; then
+        echo "[INFO] Currently active pyenv Python is: $CURRENT_PY3"
+    else
+        echo "[INFO] No global Python set yet."
+    fi
 
-    INSTALL_NEW_PYTHON=false
+    local INSTALL_NEW_PYTHON=false
     if [[ "$CURRENT_PY3" != "$LATEST_PY3" ]]; then
+        # If the version doesn't exist, install it
         if ! pyenv versions --bare | grep -q "^${LATEST_PY3}\$"; then
             echo "[INFO] Installing Python $LATEST_PY3 via pyenv..."
             pyenv install "$LATEST_PY3"
@@ -1038,8 +1063,8 @@ install_latest_python() {
     # Refresh shell environment with the new global
     eval "$(pyenv init -)"
 
-    # Return an indicator if we installed a new version
-    if $INSTALL_NEW_PYTHON; then
+    # Use return code to signify a newly installed version vs. no change
+    if [[ "$INSTALL_NEW_PYTHON" == true ]]; then
         return 0
     else
         return 1
@@ -1050,24 +1075,26 @@ install_latest_python() {
 # 3. pipx & Python Tooling
 ################################################################################
 install_or_upgrade_pipx_and_tools() {
-    # If pipx is not installed, install it with the current Python version
+    # Ensure we have a reliable way to check for pipx
     if ! command_exists pipx; then
-        echo "[INFO] Installing pipx with current Python version."
+        echo "[INFO] Installing pipx with the current Python version..."
         python -m pip install --upgrade pip  # ensure pip is up to date
         python -m pip install --user pipx
     fi
 
-    # Ensure pipx is on PATH
-    if ! grep -q 'export PATH=.*\.local/bin' "${HOME}/.bashrc"; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
+    # Ensure ~/.local/bin is on PATH for pipx
+    if [[ -f "${HOME}/.bashrc" ]]; then
+        if ! grep -q 'export PATH=.*\.local/bin' "${HOME}/.bashrc"; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
+        fi
     fi
     export PATH="$HOME/.local/bin:$PATH"
 
-    # Now that pipx is installed, ensure it’s upgraded
+    # Upgrade pipx itself
     pipx upgrade pipx || true
 
     # A list of pipx-managed tools
-    PIPX_TOOLS=(
+    local PIPX_TOOLS=(
         ansible-core
         black
         cookiecutter
@@ -1089,18 +1116,18 @@ install_or_upgrade_pipx_and_tools() {
         pre-commit
     )
 
-    # Detect if a new Python version was installed by checking install_latest_python()’s return code
+    # 1 argument indicates whether Python version changed
     if [[ "${1:-false}" == "true" ]]; then
-        echo "[INFO] Python version changed; performing pipx reinstall-all to avoid breakage..."
+        echo "[INFO] Python version changed; performing a pipx reinstall-all to avoid breakage..."
         pipx reinstall-all
     else
         echo "[INFO] Upgrading all pipx packages to ensure they’re current..."
         pipx upgrade-all || true
     fi
 
-    # Make sure each specific tool is installed (or upgraded if present)
+    # Ensure each tool in PIPX_TOOLS is installed or upgraded
     echo
-    echo "[INFO] Ensuring each tool in PIPX_TOOLS is installed/upgraded..."
+    echo "[INFO] Checking each PIPX tool installation..."
     for tool in "${PIPX_TOOLS[@]}"; do
         if pipx list | grep -q "$tool"; then
             pipx upgrade "$tool" || true
