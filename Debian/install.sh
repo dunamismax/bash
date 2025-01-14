@@ -1099,16 +1099,18 @@ apt install -y caddy
 #   1) Masks (disables) system sleep targets so the system never suspends.
 #   2) Installs cpufrequtils (if not present) and sets all CPU cores to
 #      "performance" governor.
-#
-# Usage:
-#   1) Make this script executable: chmod +x disable_sleep_and_set_performance.sh
-#   2) Run as root or via sudo:
-#      sudo ./disable_sleep_and_set_performance.sh
 ################################################################################
-
 disable_sleep_and_set_performance() {
-  echo "[INFO] Disabling sleep, suspend, hibernate, and hybrid-sleep targets..."
+  # Ensure we run as root/sudo
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "[ERROR] This function must be run as root or with sudo privileges."
+    exit 1
+  fi
+
+  echo "[INFO] Disabling system sleep, suspend, hibernate, and hybrid-sleep..."
   systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+  # Optionally stop them if currently active
+  systemctl stop sleep.target suspend.target hibernate.target hybrid-sleep.target 2>/dev/null || true
 
   echo "[INFO] Installing cpufrequtils if not already installed..."
   if ! command -v cpufreq-set &>/dev/null; then
@@ -1116,12 +1118,25 @@ disable_sleep_and_set_performance() {
     apt-get install -y cpufrequtils
   fi
 
+  echo "[INFO] Checking available CPU governor(s)..."
+  # It's useful to ensure "performance" is a valid governor before setting it.
+  # This might vary on certain virtualized environments.
+  if ! cpufreq-info | grep -q "performance"; then
+    echo "[WARNING] 'performance' governor not found. Your system may not support it."
+    echo "          Attempting to continue..."
+  fi
+
   echo "[INFO] Setting CPU governor to 'performance' for all CPU cores..."
   for cpu_gov in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
-    echo performance | tee "$cpu_gov" >/dev/null
+    if [ -w "$cpu_gov" ]; then
+      echo performance > "$cpu_gov"
+    else
+      echo "[WARNING] Unable to set performance governor for $(dirname "$cpu_gov")"
+    fi
   done
 
   echo "[INFO] Done. Your system should no longer suspend and CPU frequency is set to performance."
+  echo "[INFO] If you want to persist governor settings across reboots, edit /etc/default/cpufrequtils."
 }
 
 ################################################################################
