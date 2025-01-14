@@ -121,7 +121,18 @@ log() {
 ################################################################################
 handle_error() {
   log "An error occurred. Check the log for details."
-  exit 1
+}
+
+################################################################################
+# Function: install and enable sudo
+################################################################################
+enable_sudo() {
+  log "Enabling sudo."
+  apt install sudo -y
+  usermod -aG sudo sawyer
+  apt install bash -y
+  bash
+  log "User 'sawyer' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
 
 ################################################################################
@@ -204,7 +215,6 @@ set_default_shell_and_env() {
 
   if ! id "$USERNAME" &>/dev/null; then
     log "User '$USERNAME' not found. Exiting..."
-    exit 1
   fi
 
   chsh -s "$bash_path" "$USERNAME" 2>&1 | tee -a "$LOG_FILE" || true
@@ -941,6 +951,7 @@ main() {
   # --------------------------------------------------------
   # 1) Basic System Preparation
   # --------------------------------------------------------
+  enable_sudo
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
   set_hostname "debian"
