@@ -587,22 +587,6 @@ EOF
   log "Bash configuration files (.profile, .bash_profile, and .bashrc) have been recreated for $USERNAME."
 }
 
-################################################################################
-# Function: configure_ufw
-# Description:
-#   1) Enables and starts ufw as a systemd service.
-#   2) Accepts any number of arguments in the style of:
-#        --add-service=ssh
-#        --add-port=8080/tcp
-#      Then parses these to run the equivalent “ufw allow” commands.
-#   3) Reloads ufw after adding all specified rules.
-#
-# Example usage:
-#   configure_ufw \
-#       "--add-service=ssh" \
-#       "--add-port=8080/tcp"
-################################################################################
-
 ###############################################################################
 # Enable and configure ufw.
 ###############################################################################
@@ -616,30 +600,27 @@ configure_ufw() {
   # --force ensures it doesn’t prompt for confirmation
   ufw --force enable 2>&1 | tee -a "$LOG_FILE"
 
-  if [ $# -eq 0 ]; then
-    log "No firewall rules provided. ufw is enabled, but no new rules were added."
-  else
-    for rule in "$@"; do
-      # Check if the user provided something like --add-service=ssh
-      if [[ "$rule" == --add-service=* ]]; then
-        local service="${rule#*=}"
-        log "Allowing service: $service"
-        ufw allow "$service" 2>&1 | tee -a "$LOG_FILE"
+  log "Configuring ufw rules..."
+  ufw allow ssh
+  ufw allow http
+  ufw allow 8080/tcp
+  ufw allow 80/tcp
+  ufw allow 80/udp
+  ufw allow 443/tcp
+  ufw allow 443/udp
+  ufw allow 32400/tcp
+  ufw allow 1900/udp
+  ufw allow 5353/udp
+  ufw allow 8324/tcp
+  ufw allow 32410/udp
+  ufw allow 32411/udp
+  ufw allow 32412/udp
+  ufw allow 32413/udp
+  ufw allow 32414/udp
+  ufw allow 32415/udp
+  ufw allow 32469/tcp
 
-      # Check if the user provided something like --add-port=8080/tcp
-      elif [[ "$rule" == --add-port=* ]]; then
-        local port_proto="${rule#*=}"
-        log "Allowing port/protocol: $port_proto"
-        ufw allow "$port_proto" 2>&1 | tee -a "$LOG_FILE"
-
-      else
-        log "[WARNING] Unrecognized rule format: '$rule'"
-      fi
-    done
-
-    log "Reloading ufw to apply the new rules..."
-    ufw reload 2>&1 | tee -a "$LOG_FILE"
-  fi
+  log "UFW configuration complete."
 }
 
 ###############################################################################
@@ -1253,25 +1234,7 @@ main() {
   # 5) Security and Hardening
   # --------------------------------------------------------
   overwrite_ssh_config
-  configure_ufw \
-    "--add-service=ssh" \
-    "--add-service=http" \
-    "--add-port=8080/tcp" \
-    "--add-port=80/tcp" \
-    "--add-port=80/udp" \
-    "--add-port=443/tcp" \
-    "--add-port=443/udp" \
-    "--add-port=32400/tcp" \
-    "--add-port=1900/udp" \
-    "--add-port=5353/udp" \
-    "--add-port=8324/tcp" \
-    "--add-port=32410/udp" \
-    "--add-port=32411/udp" \
-    "--add-port=32412/udp" \
-    "--add-port=32413/udp" \
-    "--add-port=32414/udp" \
-    "--add-port=32415/udp" \
-    "--add-port=32469/tcp"
+  configure_ufw
   configure_ntp
 
   basic_security_hardening
