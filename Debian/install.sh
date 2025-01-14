@@ -715,8 +715,8 @@ system_cleanup() {
 #   2) Clean the APT cache.
 #   3) Update the system.
 #   4) Optionally enable extra repositories (similar to RPM Fusion on RHEL/Fedora),
-#      here we demonstrate adding the Debian Multimedia Repository (if desired).  
-#   5) Perform a “dist-upgrade” (somewhat analogous to a group update of "core").  
+#      here we demonstrate adding the Debian Multimedia Repository (if desired).
+#   5) Perform a “dist-upgrade” (somewhat analogous to a group update of "core").
 #   6) Add Flatpak (Flathub) remote for installing Flatpak apps.
 #
 # Notes:
