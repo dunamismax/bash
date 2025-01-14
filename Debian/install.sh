@@ -25,7 +25,6 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/debian_setup.log"
 USERNAME="sawyer"
-sources_list="/etc/apt/sources.list"
 
 # Essential Debian/Ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
@@ -479,10 +478,10 @@ enable_extra_debian_repos() {
 
   # Enable contrib and non-free if not already enabled
   # (Runs a simple check and appends if missing)
-  if ! grep -Eq "(^|\s)(contrib|non-free)" "$sources_list"; then
-    log "Adding 'contrib' and 'non-free' components to $sources_list."
-    sed -i "s/^\(deb .*${debian_codename}\s\+main\)/\1 contrib non-free/" "$sources_list"
-    sed -i "s/^\(deb-src .*${debian_codename}\s\+main\)/\1 contrib non-free/" "$sources_list"
+  if ! grep -Eq "(^|\s)(contrib|non-free)" "/etc/apt/sources.list"; then
+    log "Adding 'contrib' and 'non-free' components to /etc/apt/sources.list."
+    sed -i "s/^\(deb .*${debian_codename}\s\+main\)/\1 contrib non-free/" "/etc/apt/sources.list"
+    sed -i "s/^\(deb-src .*${debian_codename}\s\+main\)/\1 contrib non-free/" "/etc/apt/sources.list"
   else
     log "Contrib and non-free repos appear to be already enabled."
   fi
@@ -742,10 +741,10 @@ apt_and_settings() {
   log "Configuring APT to enable preferable defaults..."
 
   # Backup any old version of our custom file
-  cp "$sources_list" "${$sources_list}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+  cp "/etc/apt/sources.list" "${/etc/apt/sources.list}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
 
   # Overwrite with desired defaults
-  cat <<EOF > "$sources_list"
+  cat <<EOF > "/etc/apt/sources.list"
 // Custom APT configuration
 APT::Get::Assume-Yes "true";
 APT::Get::force-yes "false";  // Only set to 'true' if you absolutely trust repos
@@ -755,7 +754,7 @@ APT::Keep-Downloaded-Packages "true";
 // Acquire::Retries "3";
 EOF
 
-  log "APT configuration updated at $sources_list."
+  log "APT configuration updated at /etc/apt/sources.list."
 
   ##############################################################################
   # 2) Clean the APT cache
