@@ -714,31 +714,18 @@ install_container_engine() {
   log "Removing older Docker packages if present..."
   apt purge docker docker.io containerd runc 2>&1 | tee -a "$LOG_FILE"
 
-  log "Updating APT and installing prerequisite packages for Docker repo..."
-  apt install ca-certificates curl gnupg lsb-release 2>&1 | tee -a "$LOG_FILE"
-
   # Add Docker’s official GPG key
   log "Adding Docker’s official GPG key..."
   mkdir -p /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg \
-    | gpg --dearmor \
-    | tee /etc/apt/keyrings/docker.gpg >/dev/null 2>&1
+  curl -fsSL https://download.docker.com/linux/debian/gpg >/dev/null 2>&1
 
   # Set up the stable Docker repository
   log "Setting up the Docker APT repository..."
-  local arch
-  arch="$(dpkg --print-architecture)"
-  local codename
-  codename="$(lsb_release -cs)"
-
-  echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/debian \
-${codename} stable" \
-    | tee /etc/apt/sources.list.d/docker.list >/dev/null
+  sudo echo "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
 
   # Update package index and install Docker Engine
   log "Installing Docker Engine and related packages..."
-  apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>&1 | tee -a "$LOG_FILE"
+  apt install docker-ce docker-ce-cli containerd.io docker-compose-plugin 2>&1 | tee -a "$LOG_FILE"
 
   # Enable and start Docker
   log "Enabling and starting Docker service..."
