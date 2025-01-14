@@ -55,6 +55,7 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/debian_setup.log"
 USERNAME="sawyer"
+export PATH=$PATH:/usr/sbin
 
 # Essential Debian/Ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
