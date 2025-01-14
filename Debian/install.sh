@@ -239,16 +239,34 @@ EOF
 ################################################################################
 set_default_shell_and_env() {
   log "Setting Bash as default shell for $USERNAME..."
-  local bash_path="/bin/bash"
 
-  if ! id "$USERNAME" &>/dev/null; then
-    log "User '$USERNAME' not found. Exiting..."
+  # Get the path to the Bash binary dynamically
+  local bash_path
+  bash_path=$(command -v bash)
+
+  if [ -z "$bash_path" ]; then
+    log "Error: Bash binary not found. Exiting..."
+    return 1
   fi
 
-  chsh -s "$bash_path" "$USERNAME" 2>&1 | tee -a "$LOG_FILE" || true
+  log "Bash binary found at $bash_path"
 
+  # Check current shell and change to Bash if needed
+  local current_shell
+  current_shell=$(getent passwd "$USERNAME" | cut -d: -f7)
+  if [ "$current_shell" = "$bash_path" ]; then
+    log "Bash is already the default shell for $USERNAME."
+  else
+    if ! chsh -s "$bash_path" "$USERNAME" 2>&1 | tee -a "$LOG_FILE"; then
+      log "Failed to set Bash as default shell for $USERNAME. Continuing..."
+    fi
+  fi
+
+  # Dynamically determine the user's home directory
   local user_home
   user_home=$(eval echo "~$USERNAME")
+
+  # File paths
   local bashrc_file="$user_home/.bashrc"
   local bash_profile_file="$user_home/.bash_profile"
 
@@ -394,7 +412,7 @@ alias venv="setup_venv"
 alias v="enable_venv"
 
 # Created by `pipx` on 2024-12-04 22:17:40
-export PATH="$PATH:/home/sawyer/.local/bin"
+export PATH="\$PATH:\$HOME/.local/bin"
 
 # Function to disable, then re-enable virtual environment
 enable_venv() {
