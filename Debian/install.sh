@@ -974,7 +974,7 @@ setup_pyenv_and_python_tools_for_user() {
   # Use $USERNAME from the environment, and hardcode PYENV_ROOT=/home/sawyer.
   # ---------------------------------------------------------------------------
   local user="$USERNAME"
-  local pyenv_root="/home/sawyer"
+  local pyenv_root="/home/sawyer/"
 
   # ---------------------------------------------------------------------------
   # Validate that $USERNAME is set.
