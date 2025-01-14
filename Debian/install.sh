@@ -81,6 +81,7 @@ PACKAGES=(
   which
   patch
   smartmontools
+  ntfs-3g
 
   # Virtualization (optional; remove if not needed)
   qemu-kvm
