@@ -234,33 +234,12 @@ EOF
 }
 
 ################################################################################
-# Function: set_default_shell_and_env
-# Bash as default shell for the user, plus a sample .bashrc / .bash_profile
+# Function: set_default_shell_and_env (Revised)
+# Description:
+#   Deletes (overwrites) and recreates ~/.bash_profile and ~/.bashrc for $USERNAME.
 ################################################################################
 set_default_shell_and_env() {
-  log "Setting Bash as default shell for $USERNAME..."
-
-  # Get the path to the Bash binary dynamically
-  local bash_path
-  bash_path=$(command -v bash)
-
-  if [ -z "$bash_path" ]; then
-    log "Error: Bash binary not found. Exiting..."
-    return 1
-  fi
-
-  log "Bash binary found at $bash_path"
-
-  # Check current shell and change to Bash if needed
-  local current_shell
-  current_shell=$(getent passwd "$USERNAME" | cut -d: -f7)
-  if [ "$current_shell" = "$bash_path" ]; then
-    log "Bash is already the default shell for $USERNAME."
-  else
-    if ! chsh -s "$bash_path" "$USERNAME" 2>&1 | tee -a "$LOG_FILE"; then
-      log "Failed to set Bash as default shell for $USERNAME. Continuing..."
-    fi
-  fi
+  log "Recreating .bashrc and .bash_profile for $USERNAME..."
 
   # Dynamically determine the user's home directory
   local user_home
@@ -270,7 +249,7 @@ set_default_shell_and_env() {
   local bashrc_file="$user_home/.bashrc"
   local bash_profile_file="$user_home/.bash_profile"
 
-  # Create the .bash_profile file first with the specified contents
+  # Overwrite the .bash_profile file with the specified contents
   log "Creating $bash_profile_file with default content..."
   cat << 'EOF' > "$bash_profile_file"
 # ~/.bash_profile
@@ -285,6 +264,8 @@ EOF
   chmod 644 "$bash_profile_file"
   log ".bash_profile created successfully."
 
+  # Overwrite the .bashrc file
+  log "Creating $bashrc_file with default content..."
   cat << 'EOF' > "$bashrc_file"
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
@@ -322,10 +303,6 @@ HISTTIMEFORMAT="%F %T "
 # check the window size after each command and, if necessary,
 # update the values of LINES and COLUMNS.
 shopt -s checkwinsize
-
-# If set, the pattern "**" used in a pathname expansion context will
-# match all files and zero or more directories and subdirectories.
-#shopt -s globstar
 
 # make less more friendly for non-text input files, see lesspipe(1)
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
@@ -384,9 +361,6 @@ if [ -x /usr/bin/dircolors ]; then
     alias egrep='egrep --color=auto'
 fi
 
-# colored GCC warnings and errors
-#export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
-
 # some more ls aliases
 alias ll='ls -alF'
 alias la='ls -A'
@@ -396,18 +370,12 @@ alias l='ls -CF'
 #   sleep 10; alert
 alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
 
-# Alias definitions.
-# You may want to put all your additions into a separate file like
-# ~/.bash_aliases, instead of adding them here directly.
-# See /usr/share/doc/bash-doc/examples in the bash-doc package.
-
+# If you want separate user-defined aliases, you can place them in ~/.bash_aliases
 if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
 fi
 
-# enable programmable completion features (you don't need to enable
-# this, if it's already enabled in /etc/bash.bashrc and /etc/profile
-# sources /etc/bash.bashrc).
+# enable programmable completion features
 if ! shopt -oq posix; then
   if [ -f /usr/share/bash-completion/bash_completion ]; then
     . /usr/share/bash-completion/bash_completion
@@ -417,31 +385,25 @@ if ! shopt -oq posix; then
 fi
 
 # -------------------
-# User additions:
+# Custom user additions:
 # -------------------
-
-# Aliases:
 
 alias r="ranger"
 alias venv="setup_venv"
 alias v="enable_venv"
 
-# Created by `pipx` on 2024-12-04 22:17:40
-export PATH="\$PATH:\$HOME/.local/bin"
+export PATH="$PATH:$HOME/.local/bin"
 
-# Function to disable, then re-enable virtual environment
+# Function to re-enable a virtual environment
 enable_venv() {
-    # Deactivate any existing virtual environment
     if type deactivate &>/dev/null; then
         echo "Deactivating current virtual environment..."
         deactivate
     fi
 
-    # Activate the virtual environment in the current directory
     echo "Activating the virtual environment..."
     source .venv/bin/activate
 
-    # Install dependencies from requirements.txt if it exists
     if [ -f requirements.txt ]; then
         echo "Installing dependencies from requirements.txt..."
         pip install -r requirements.txt
@@ -454,21 +416,17 @@ enable_venv() {
 
 # Function to set up Python virtual environment
 setup_venv() {
-    # Deactivate any existing virtual environment
     if type deactivate &>/dev/null; then
         echo "Deactivating current virtual environment..."
         deactivate
     fi
 
-    # Create a new virtual environment in the current directory
     echo "Creating a new virtual environment in $(pwd)/.venv..."
     python -m venv .venv
 
-    # Activate the newly created virtual environment
     echo "Activating the virtual environment..."
     source .venv/bin/activate
 
-    # Install dependencies from requirements.txt if it exists
     if [ -f requirements.txt ]; then
         echo "Installing dependencies from requirements.txt..."
         pip install -r requirements.txt
@@ -483,7 +441,7 @@ EOF
   chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file"
   chmod 644 "$bashrc_file" "$bash_profile_file"
 
-  log "Shell and environment configured for $USERNAME."
+  log "Bash configuration files have been recreated for $USERNAME."
 }
 
 ################################################################################
