@@ -982,9 +982,7 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
   | tee /etc/apt/sources.list.d/caddy-stable.list
 apt update -y
 apt install -y caddy
-systemctl enable caddy
-systemctl start caddy
-  log "Caddy installed and enabled."
+  log "Caddy installed."
 }
 
 ################################################################################
