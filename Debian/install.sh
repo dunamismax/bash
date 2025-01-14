@@ -948,6 +948,126 @@ enable_gui() {
   echo "[INFO] The system will now boot to the graphical login screen by default."
 }
 
+# Function to install build dependencies for compiling Python via pyenv
+install_python_build_deps() {
+    LOG_FILE="/var/log/python_build_deps_install.log" # Define the log file location
+
+    log "Installing system build dependencies..." | tee -a "$LOG_FILE"
+
+    # Update package lists
+    if ! apt-get update -y 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    # Install required packages
+    if ! apt-get install -y \
+        build-essential \
+        git \
+        curl \
+        wget \
+        ca-certificates \
+        libssl-dev \
+        libbz2-dev \
+        libffi-dev \
+        zlib1g-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        libncurses5-dev \
+        libncursesw5-dev \
+        xz-utils \
+        liblzma-dev \
+        tk-dev \
+        llvm \
+        jq \
+        gnupg \
+        libxml2-dev \
+        libxmlsec1-dev \
+        --no-install-recommends 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to install build dependencies. Exiting." | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    # Clean up unnecessary packages and caches
+    if ! apt-get autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
+    fi
+
+    if ! apt-get clean 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to clean package cache." | tee -a "$LOG_FILE"
+    fi
+
+    log "System build dependencies installed." | tee -a "$LOG_FILE"
+}
+
+# Function to install build dependencies for C, C++, Rust, and Go
+install_dev_build_deps() {
+    LOG_FILE="/var/log/dev_build_deps_install.log" # Define the log file location
+
+    log "Installing system build dependencies for C, C++, Rust, and Go..." | tee -a "$LOG_FILE"
+
+    # Update package lists
+    if ! apt-get update -y 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    # Install required packages
+    if ! apt-get install -y \
+        build-essential \
+        gcc \
+        g++ \
+        clang \
+        cmake \
+        git \
+        curl \
+        wget \
+        ca-certificates \
+        make \
+        llvm \
+        gdb \
+        libssl-dev \
+        libbz2-dev \
+        libffi-dev \
+        zlib1g-dev \
+        pkg-config \
+        jq \
+        gnupg \
+        libxml2-dev \
+        libxmlsec1-dev \
+        --no-install-recommends 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to install build dependencies for C and C++. Exiting." | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    # Install Rust toolchain
+    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y >>"$LOG_FILE" 2>&1; then
+        log "Failed to install Rust toolchain. Exiting." | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    # Add Rust binaries to PATH (for current session)
+    export PATH="$HOME/.cargo/bin:$PATH"
+
+    # Install Go (use apt for simplicity, but better alternatives exist)
+    if ! apt-get install -y \
+        golang-go 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to install Go programming environment. Exiting." | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    # Clean up unnecessary packages and caches
+    if ! apt-get autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
+    fi
+
+    if ! apt-get clean 2>&1 | tee -a "$LOG_FILE"; then
+        log "Failed to clean package cache." | tee -a "$LOG_FILE"
+    fi
+
+    log "System build dependencies for C, C++, Rust, and Go installed." | tee -a "$LOG_FILE"
+}
+
 ################################################################################
 # Function: finalize_configuration
 ################################################################################
@@ -1023,6 +1143,12 @@ main() {
   # 5) Additional Configuration
   # --------------------------------------------------------
   create_caddyfile
+
+  # --------------------------------------------------------
+  # 6) Dev Setup
+  # --------------------------------------------------------
+  install_python_build_deps
+  install_dev_build_deps
 
   # --------------------------------------------------------
   # 6) Finalization
