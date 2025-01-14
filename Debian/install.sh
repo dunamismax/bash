@@ -152,6 +152,40 @@ handle_error() {
 }
 
 ################################################################################
+# enable_contrib_non_free_firmware
+# Description:
+#   1) Appends "contrib" and "non-free-firmware" sources for Debian 12 (bookworm)
+#      to /etc/apt/sources.list.
+#   2) Updates package lists.
+#   3) Installs the AMD firmware package "firmware-amd-graphics".
+#
+# Usage:
+#   1) Make this script executable:  chmod +x enable_cnf_fw.sh
+#   2) Run as root or via sudo:      sudo ./enable_cnf_fw.sh
+################################################################################
+
+enable_contrib_non_free_firmware() {
+  echo "[INFO] Backing up /etc/apt/sources.list to /etc/apt/sources.list.bak"
+  cp -a /etc/apt/sources.list /etc/apt/sources.list.bak
+
+  echo "[INFO] Adding contrib and non-free-firmware repos for Debian 12 (bookworm)"
+  cat <<EOF >> /etc/apt/sources.list
+
+deb http://deb.debian.org/debian bookworm main contrib non-free-firmware
+deb http://security.debian.org/debian-security bookworm-security main contrib non-free-firmware
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware
+EOF
+
+  echo "[INFO] Updating package lists..."
+  apt-get update -y
+
+  echo "[INFO] Installing firmware-amd-graphics..."
+  apt-get install -y firmware-amd-graphics
+
+  echo "[INFO] Done. You may reboot or reload amdgpu for the firmware changes to take effect."
+}
+
+################################################################################
 # Function: install_enable_systemd
 # Description:
 #   Ensures that systemd is installed and active as the init system on Debian.
@@ -1256,6 +1290,7 @@ main() {
   install_enable_systemd
   enable_sudo
   configure_sudo_access
+  enable_contrib_non_free_firmware
   force_release_ports
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
