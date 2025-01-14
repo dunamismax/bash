@@ -975,13 +975,6 @@ install_apt_dependencies() {
     sudo apt-get clean
 }
 
-bash
-
-Copy
-#!/usr/bin/env bash
-
-USERNAME="sawyer"  # Change as needed
-
 ###############################################################################
 # Helper: command_exists
 # Checks if a given command is available on the PATH.
