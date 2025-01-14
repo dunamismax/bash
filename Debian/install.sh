@@ -1165,7 +1165,7 @@ install_and_enable_plex() {
   fi
 
   # Change this to match the latest Plex version you want to install
-  local VERSION="1.19.4.2935-79e214ead"
+  local VERSION="1.41.3.9314-a0bfb8370"
   local DEB_PACKAGE="plexmediaserver_${VERSION}_amd64.deb"
   local DEB_URL="https://downloads.plex.tv/plex-media-server-new/${VERSION}/debian/${DEB_PACKAGE}"
 
