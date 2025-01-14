@@ -159,8 +159,8 @@ handle_error() {
 enable_sudo() {
   export PATH=$PATH:/usr/sbin
   log "Enabling sudo."
-  apt install sudo -y
-  apt install net-tools -y
+  apt install -y sudo
+  apt install -y net-tools
   usermod -aG sudo sawyer
   log "User 'sawyer' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
@@ -171,8 +171,8 @@ enable_sudo() {
 ################################################################################
 bootstrap_and_install_pkgs() {
   log "Updating apt package list and upgrading existing packages..."
-  apt update 2>&1 | tee -a "$LOG_FILE"
-  apt upgrade 2>&1 | tee -a "$LOG_FILE"
+  apt update -y 2>&1 | tee -a "$LOG_FILE"
+  apt upgrade -y 2>&1 | tee -a "$LOG_FILE"
 
   local packages_to_install=()
   for pkg in "${PACKAGES[@]}"; do
@@ -186,13 +186,13 @@ bootstrap_and_install_pkgs() {
 
   if [ ${#packages_to_install[@]} -gt 0 ]; then
     log "Installing packages: ${packages_to_install[*]}"
-    apt install "${packages_to_install[@]}" 2>&1 | tee -a "$LOG_FILE"
+    apt install -y "${packages_to_install[@]}" 2>&1 | tee -a "$LOG_FILE"
   else
     log "All listed packages are already installed. No action needed."
   fi
 
-  apt autoremove 2>&1 | tee -a "$LOG_FILE"
-  apt clean 2>&1 | tee -a "$LOG_FILE"
+  apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
+  apt clean -y 2>&1 | tee -a "$LOG_FILE"
 
   log "Package installation process completed."
 }
@@ -505,9 +505,9 @@ configure_ufw() {
 ###############################################################################
 force_release_ports() {
   # apache and ports fix
-  apt purge apache2 -y
+  apt purge -y apache2
   apt autoremove -y
-  apt install net-tools
+  apt install -y net-tools
 }
 
 ################################################################################
@@ -538,7 +538,7 @@ configure_timezone() {
   log "Configuring timezone to '${tz}'..."
 
   # Ensure tzdata is present (usually installed by default, but just in case)
-  apt install tzdata
+  apt install -y tzdata
 
   # Timedatectl sets both system clock and hardware clock
   timedatectl set-timezone "$tz" 2>&1 | tee -a "$LOG_FILE"
@@ -595,7 +595,7 @@ configure_automatic_updates() {
   log "Configuring unattended-upgrades for automatic updates..."
 
   # Update package lists and install unattended-upgrades
-  apt install unattended-upgrades 2>&1 | tee -a "$LOG_FILE"
+  apt install -y unattended-upgrades 2>&1 | tee -a "$LOG_FILE"
 
   # Optionally configure /etc/apt/apt.conf.d/50unattended-upgrades
   # Add or adjust settings for automatic reboots, email notifications, etc.
@@ -710,7 +710,7 @@ apt_and_settings() {
   # 1) Add Flatpak (Flathub) remote for installing Flatpak apps
   ##############################################################################
   log "Installing flatpak and configuring Flathub remote..."
-  apt install flatpak 2>&1 | tee -a "$LOG_FILE"
+  apt install -y flatpak 2>&1 | tee -a "$LOG_FILE"
 
   # Add the Flathub remote if not already added
   if ! flatpak remote-list | grep -q 'flathub'; then
@@ -829,13 +829,13 @@ install_python_build_deps() {
     log "Installing system build dependencies..." | tee -a "$LOG_FILE"
 
     # Update package lists
-    if ! apt-get update -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt update -y 2>&1 | tee -a "$LOG_FILE"; then
         log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
 
     # Install required packages
-    if ! apt-get install -y \
+    if ! apt install -y \
         build-essential \
         git \
         curl \
@@ -863,11 +863,11 @@ install_python_build_deps() {
     fi
 
     # Clean up unnecessary packages and caches
-    if ! apt-get autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
         log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
     fi
 
-    if ! apt-get clean 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt clean -y 2>&1 | tee -a "$LOG_FILE"; then
         log "Failed to clean package cache." | tee -a "$LOG_FILE"
     fi
 
@@ -881,13 +881,13 @@ install_dev_build_deps() {
     log "Installing system build dependencies for C, C++, Rust, and Go..." | tee -a "$LOG_FILE"
 
     # Update package lists
-    if ! apt-get update -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt update -y 2>&1 | tee -a "$LOG_FILE"; then
         log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
 
     # Install required packages
-    if ! apt-get install -y \
+    if ! apt install -y \
         build-essential \
         gcc \
         g++ \
@@ -924,18 +924,18 @@ install_dev_build_deps() {
     export PATH="$HOME/.cargo/bin:$PATH"
 
     # Install Go (use apt for simplicity, but better alternatives exist)
-    if ! apt-get install -y \
+    if ! apt install -y \
         golang-go 2>&1 | tee -a "$LOG_FILE"; then
         log "Failed to install Go programming environment. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
 
     # Clean up unnecessary packages and caches
-    if ! apt-get autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
         log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
     fi
 
-    if ! apt-get clean 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt clean -y 2>&1 | tee -a "$LOG_FILE"; then
         log "Failed to clean package cache." | tee -a "$LOG_FILE"
     fi
 
@@ -964,18 +964,30 @@ apt install -y caddy
 finalize_configuration() {
   log "Finalizing system configuration..."
 
-  apt update 2>&1 | tee -a "$LOG_FILE"
-  apt upgrade 2>&1 | tee -a "$LOG_FILE"
-  apt autoremove 2>&1 | tee -a "$LOG_FILE"
-  apt clean all 2>&1 | tee -a "$LOG_FILE"
+  # Update and upgrade packages
+  if ! apt update -y 2>&1 | tee -a "$LOG_FILE"; then
+    log "Error: Failed to update package lists."
+    return 1
+  fi
 
+  if ! apt upgrade -y 2>&1 | tee -a "$LOG_FILE"; then
+    log "Error: Failed to upgrade packages."
+    return 1
+  fi
+
+  # Remove unused dependencies
   log "Performing system cleanup..."
-  # Remove orphaned dependencies and old kernels if any
-  apt autoremove
-  apt clean
-  log "System cleanup completed."
+  if ! apt autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+    log "Error: Failed to remove unused dependencies."
+  fi
 
-  log "Final configuration steps completed."
+  # Clean up local package cache
+  if ! apt clean 2>&1 | tee -a "$LOG_FILE"; then
+    log "Error: Failed to clean package cache."
+  fi
+
+  log "System cleanup completed."
+  log "Final configuration steps completed successfully."
 }
 
 ################################################################################
