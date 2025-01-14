@@ -536,6 +536,10 @@ EOF
 #       "--add-service=ssh" \
 #       "--add-port=8080/tcp"
 ################################################################################
+
+###############################################################################
+# Enable and configure ufw.
+###############################################################################
 configure_ufw() {
   log "Enabling ufw systemd service..."
   # Ensure ufw starts on boot, then start it now
@@ -646,36 +650,6 @@ basic_security_hardening() {
   fi
 
   log "Security hardening steps completed."
-}
-
-################################################################################
-# Function: configure_automatic_updates
-# Description:
-#   Installs and configures the unattended-upgrades package on Debian to perform
-#   automatic updates. Adjust the config as needed (e.g., security-only).
-################################################################################
-configure_automatic_updates() {
-  log "Configuring unattended-upgrades for automatic updates..."
-
-  # Update package lists and install unattended-upgrades
-  apt install -y unattended-upgrades 2>&1 | tee -a "$LOG_FILE"
-
-  # Optionally configure /etc/apt/apt.conf.d/50unattended-upgrades
-  # Add or adjust settings for automatic reboots, email notifications, etc.
-  # For example:
-  # sed -i 's|//Unattended-Upgrade::Mail ""|Unattended-Upgrade::Mail "root"|g' /etc/apt/apt.conf.d/50unattended-upgrades
-  # sed -i 's|//Unattended-Upgrade::Automatic-Reboot "false"|Unattended-Upgrade::Automatic-Reboot "true"|g' /etc/apt/apt.conf.d/50unattended-upgrades
-
-  # Enable automatic updates by configuring a basic auto-upgrades file
-  cat <<EOF >/etc/apt/apt.conf.d/20auto-upgrades
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-EOF
-
-  # Enable and start the relevant systemd timers for unattended-upgrades
-  systemctl enable unattended-upgrades.service && systemctl start unattended-upgrades.service
-
-  log "Automatic updates have been enabled via unattended-upgrades."
 }
 
 ################################################################################
@@ -1158,7 +1132,6 @@ main() {
     "--add-port=32469/tcp"
   configure_ntp
 
-  configure_automatic_updates
   basic_security_hardening
 
   # --------------------------------------------------------
