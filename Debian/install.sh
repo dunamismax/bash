@@ -970,25 +970,32 @@ finalize_configuration() {
 }
 
 setup_pyenv_and_python_tools_for_user() {
-  local NORMAL_USER="$1"
-  if [[ -z "$NORMAL_USER" ]]; then
+  local user="$1"
+
+  # ---------------------------------------------------------------------------
+  # Validate input.
+  # ---------------------------------------------------------------------------
+  if [[ -z "$user" ]]; then
     log "[ERROR] No user provided to setup_pyenv_and_python_tools_for_user."
     return 1
   fi
 
-  local USER_HOME
-  USER_HOME="$(eval echo "~$NORMAL_USER")"
-  local PYENV_ROOT="$USER_HOME/.pyenv"
-  local BASHRC_FILE="$USER_HOME/.bashrc"
+  # ---------------------------------------------------------------------------
+  # Basic variables and paths.
+  # ---------------------------------------------------------------------------
+  local user_home
+  user_home="$(eval echo "~$user")"
+  local pyenv_root="$user_home/.pyenv"
+  local bashrc_file="$user_home/.bashrc"
 
-  log "----- Setting up pyenv + pipx for user '$NORMAL_USER' in $PYENV_ROOT -----"
+  log "----- Setting up pyenv + pipx for user: $user -----"
+  log "Using PYENV_ROOT=$pyenv_root"
 
-  ##############################################################################
-  # 1) Install Debian build dependencies for Python (as root)
-  #    These packages are required to compile Python if you plan on building
-  #    different versions from source with pyenv.
-  ##############################################################################
-  log "Installing system build dependencies (as root)..."
+  # ---------------------------------------------------------------------------
+  # 1) Install build dependencies needed for compiling Python via pyenv.
+  # ---------------------------------------------------------------------------
+  log "Installing system build dependencies..."
+  apt update -y 2>&1 | tee -a "$LOG_FILE"
   apt install -y \
     build-essential \
     git \
@@ -1010,34 +1017,41 @@ setup_pyenv_and_python_tools_for_user() {
     jq \
     gnupg \
     libxml2-dev \
-    libxmlsec1-dev 2>&1 | tee -a "$LOG_FILE"
+    libxmlsec1-dev \
+    --no-install-recommends 2>&1 | tee -a "$LOG_FILE"
 
-  apt -y autoremove 2>&1 | tee -a "$LOG_FILE"
+  apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
   apt clean 2>&1 | tee -a "$LOG_FILE"
   log "System build dependencies installed."
 
-  ##############################################################################
-  # 2) Clone or update pyenv in /home/<user>/.pyenv (not in root’s home!)
-  ##############################################################################
-  if [[ ! -d "$PYENV_ROOT" ]]; then
-    log "pyenv not found in $PYENV_ROOT. Cloning from GitHub..."
-    sudo -u "$NORMAL_USER" -H git clone https://github.com/pyenv/pyenv.git "$PYENV_ROOT" 2>&1 | tee -a "$LOG_FILE"
+  # ---------------------------------------------------------------------------
+  # 2) Clone or update pyenv in the user’s home (not in /root).
+  # ---------------------------------------------------------------------------
+  if [[ ! -d "$pyenv_root" ]]; then
+    log "pyenv not found in $pyenv_root. Cloning from GitHub..."
+    sudo -u "$user" -H git clone https://github.com/pyenv/pyenv.git "$pyenv_root" 2>&1 | tee -a "$LOG_FILE"
   else
-    log "pyenv already exists in $PYENV_ROOT. Updating..."
-    pushd "$PYENV_ROOT" >/dev/null || return 1
-    sudo -u "$NORMAL_USER" -H git pull --ff-only 2>&1 | tee -a "$LOG_FILE"
-    popd >/dev/null || return 1
+    log "pyenv already exists in $pyenv_root. Updating..."
+    pushd "$pyenv_root" >/dev/null || {
+      log "[ERROR] Failed to enter $pyenv_root."
+      return 1
+    }
+    sudo -u "$user" -H git pull --ff-only 2>&1 | tee -a "$LOG_FILE"
+    popd >/dev/null || true
   fi
 
-  ##############################################################################
-  # 3) Ensure pyenv is initialized in the normal user’s .bashrc
-  ##############################################################################
-  if ! sudo -u "$NORMAL_USER" grep -q 'export PYENV_ROOT' "$BASHRC_FILE" 2>/dev/null; then
-    log "Adding pyenv init lines to $BASHRC_FILE..."
-    cat <<EOF | sudo -u "$NORMAL_USER" tee -a "$BASHRC_FILE" >/dev/null
+  # Ensure ownership is correct on the .pyenv folder
+  chown -R "$user":"$user" "$pyenv_root"
+
+  # ---------------------------------------------------------------------------
+  # 3) Ensure pyenv lines are in the user’s .bashrc
+  # ---------------------------------------------------------------------------
+  if ! sudo -u "$user" grep -q 'export PYENV_ROOT' "$bashrc_file" 2>/dev/null; then
+    log "Adding pyenv initialization lines to $bashrc_file..."
+    cat <<EOF | sudo -u "$user" tee -a "$bashrc_file" >/dev/null
 
 # >>> pyenv initialization >>>
-export PYENV_ROOT="$HOME/.pyenv"
+export PYENV_ROOT="\$HOME/.pyenv"
 export PATH="\$PYENV_ROOT/bin:\$PATH"
 if command -v pyenv 1>/dev/null 2>&1; then
     eval "\$(pyenv init -)"
@@ -1045,63 +1059,64 @@ fi
 # <<< pyenv initialization <<<
 EOF
   else
-    log "pyenv init lines already found in $BASHRC_FILE. No changes made."
+    log "pyenv init lines already found in $bashrc_file. No changes made."
   fi
 
-  # Make sure permissions are correct
-  chown "$NORMAL_USER":"$NORMAL_USER" -R "$PYENV_ROOT"
-  chown "$NORMAL_USER":"$NORMAL_USER" "$BASHRC_FILE"
+  # Ensure the user owns the .bashrc
+  chown "$user":"$user" "$bashrc_file"
 
-  ##############################################################################
-  # 4) Install or upgrade the latest Python 3.x with pyenv (as the normal user)
-  ##############################################################################
-  log "Finding and installing the latest stable Python 3.x via pyenv..."
-  local LATEST_PY3
-  # The sudo command includes a bash -c, so we can source the .bashrc
-  # and run pyenv commands reliably.
-  LATEST_PY3="$(sudo -u "$NORMAL_USER" -i bash -c '
-    source ~/.bashrc
-    pyenv install -l 2>/dev/null | awk "/^[[:space:]]*3\\.[0-9]+\\.[0-9]+\$/{ latest=\$1 }END{ print latest }"
-  ')"
+  # ---------------------------------------------------------------------------
+  # 4) Install or update the latest Python 3.x version with pyenv.
+  #    We'll grab the final 3.x release listed via “pyenv install -l”.
+  # ---------------------------------------------------------------------------
+  log "Detecting the latest stable Python 3.x version via pyenv..."
 
-  if [[ -z "$LATEST_PY3" ]]; then
-    log "[ERROR] Could not detect the latest Python 3.x version with pyenv."
+  # NOTE: Using “sudo -u … -i” will run a login shell for the user, which
+  # generally sources that user’s startup scripts (including .bashrc).
+  local latest_py3
+  latest_py3="$(sudo -u "$user" -i bash -c "
+    pyenv install -l 2>/dev/null \
+      | grep -E '^[[:space:]]*3\.[0-9]+\.[0-9]+\$' \
+      | tail -n 1
+  ")"
+
+  if [[ -z "$latest_py3" ]]; then
+    log "[ERROR] Could not detect the latest Python 3.x version via pyenv."
     return 1
   fi
 
-  # Check if user’s pyenv already has that version
-  local ALREADY_INSTALLED
-  ALREADY_INSTALLED="$(sudo -u "$NORMAL_USER" -i bash -c "
-    source ~/.bashrc
-    pyenv versions --bare | grep '^${LATEST_PY3}\$' || true
+  log "Latest Python 3.x candidate is: $latest_py3"
+
+  # Check if the user already has that version installed
+  local already_installed
+  already_installed="$(sudo -u "$user" -i bash -c "
+    pyenv versions --bare \
+      | grep '^${latest_py3}\$' || true
   ")"
 
-  if [[ -z "$ALREADY_INSTALLED" ]]; then
-    log "Installing Python $LATEST_PY3 for user $NORMAL_USER..."
-    sudo -u "$NORMAL_USER" -i bash -c "
-      source ~/.bashrc
-      pyenv install '$LATEST_PY3'
-      pyenv global '$LATEST_PY3'
+  if [[ -z "$already_installed" ]]; then
+    log "Installing Python $latest_py3 for user $user..."
+    sudo -u "$user" -i bash -c "
+      pyenv install '$latest_py3'
+      pyenv global '$latest_py3'
       pyenv rehash
     "
   else
-    log "Python $LATEST_PY3 is already installed. Setting pyenv global to $LATEST_PY3."
-    sudo -u "$NORMAL_USER" -i bash -c "
-      source ~/.bashrc
-      pyenv global '$LATEST_PY3'
+    log "Python $latest_py3 already installed. Setting pyenv global to $latest_py3."
+    sudo -u "$user" -i bash -c "
+      pyenv global '$latest_py3'
       pyenv rehash
     "
   fi
 
-  ##############################################################################
-  # 5) Install pipx and some global Python tools for the normal user
-  ##############################################################################
-  log "Checking and installing pipx for user $NORMAL_USER..."
-  sudo -u "$NORMAL_USER" -i bash -c '
-    source ~/.bashrc
+  # ---------------------------------------------------------------------------
+  # 5) Install pipx and a curated set of Python-based CLI tools.
+  # ---------------------------------------------------------------------------
+  log "Ensuring pipx is installed for user $user..."
+  sudo -u "$user" -i bash -c '
     if ! command -v pipx &>/dev/null; then
       python -m pip install --upgrade --user pipx
-      # Ensure ~/.local/bin is in PATH
+      # Add ~/.local/bin to PATH in .bashrc if missing
       if ! grep -q "$HOME/.local/bin" ~/.bashrc; then
         echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.bashrc
       fi
@@ -1110,8 +1125,8 @@ EOF
     fi
   '
 
-  # Define a set of CLI tools for pipx
-  local PIPX_TOOLS=(
+  # Now, install or upgrade specific Python CLI tools via pipx
+  local tools=(
     ansible-core
     black
     cookiecutter
@@ -1133,10 +1148,9 @@ EOF
     pre-commit
   )
 
-  log "Installing/upgrading pipx tools for user $NORMAL_USER..."
-  for tool in "${PIPX_TOOLS[@]}"; do
-    sudo -u "$NORMAL_USER" -i bash -c "
-      source ~/.bashrc
+  log "Installing/upgrading pipx tools for user $user..."
+  for tool in "${tools[@]}"; do
+    sudo -u "$user" -i bash -c "
       if pipx list | grep -q '${tool}'; then
         pipx upgrade '${tool}' || true
       else
@@ -1145,8 +1159,8 @@ EOF
     "
   done
 
-  log "pyenv + pipx installation for user '$NORMAL_USER' completed."
-  log "-------------------------------------------------------------------"
+  log "Pyenv + pipx setup for user '$user' is complete."
+  log "-------------------------------------------------------"
 }
 
 ################################################################################
