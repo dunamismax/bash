@@ -550,7 +550,6 @@ configure_timezone() {
 #   Applies a minimal set of security best practices on Debian-based systems:
 #     1) Disables root SSH login
 #     2) Installs fail2ban if not already installed
-#     3) Installs or updates AIDE (file integrity monitoring)
 ################################################################################
 basic_security_hardening() {
   log "Applying basic Debian security hardening..."
@@ -567,17 +566,6 @@ basic_security_hardening() {
     systemctl start fail2ban 2>&1 | tee -a "$LOG_FILE"
   else
     log "fail2ban is already installed."
-  fi
-
-  # 3) Install or update AIDE for file integrity monitoring
-  if ! dpkg-query -W -f='${Status}' aide 2>/dev/null | grep -q "install ok installed"; then
-    log "Installing AIDE..."
-    apt install -y aide 2>&1 | tee -a "$LOG_FILE"
-    aide --init 2>&1 | tee -a "$LOG_FILE"
-    mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
-    log "AIDE initialization complete."
-  else
-    log "AIDE is already installed."
   fi
 
   log "Security hardening steps completed."
