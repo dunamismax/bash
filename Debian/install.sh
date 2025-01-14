@@ -201,20 +201,20 @@ bootstrap_and_install_pkgs() {
 }
 
 ################################################################################
-# Function: overwrite_sshd_config
-# Overwrite /etc/ssh/sshd_config
+# Function: overwrite_ssh_config
+# Overwrite /etc/ssh/ssh_config
 ################################################################################
-overwrite_sshd_config() {
+overwrite_ssh_config() {
   log "Backing up and overwriting /etc/ssh/sshd_config..."
 
-  local sshd_config="/etc/ssh/sshd_config"
-  if [ -f "$sshd_config" ]; then
-    cp "$sshd_config" "${sshd_config}.bak"
-    log "Backed up existing $sshd_config to ${sshd_config}.bak"
+  local ssh_config="/etc/ssh/sshd_config"
+  if [ -f "$ssh_config" ]; then
+    cp "$ssh_config" "${ssh_config}.bak"
+    log "Backed up existing $ssh_config to ${ssh_config}.bak"
   fi
 
-  cat << 'EOF' > "$sshd_config"
-# Basic Debian SSHD Configuration
+  cat << 'EOF' > "$ssh_config"
+# Basic Debian SSH Configuration
 
 Port 22
 AddressFamily any
@@ -229,13 +229,15 @@ KbdInteractiveAuthentication no
 UsePAM yes
 ClientAliveInterval 300
 ClientAliveCountMax 3
-Subsystem       sftp    /usr/libexec/openssh/sftp-server
+Subsystem       sftp    /usr/lib/openssh/sftp-server
 EOF
 
-  chown root:root "$sshd_config"
-  chmod 644 "$sshd_config"
-  log "Completed overwriting /etc/ssh/sshd_config. Restarting sshd..."
-  systemctl restart sshd 2>&1 | tee -a "$LOG_FILE"
+  chown root:root "$ssh_config"
+  chmod 644 "$ssh_config"
+  log "Completed overwriting /etc/ssh/sshd_config. Restarting ssh service..."
+
+  # Restart the service using Debian's service name
+  systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
 }
 
 ################################################################################
@@ -993,7 +995,7 @@ main() {
   # --------------------------------------------------------
   # 5) Security and Hardening
   # --------------------------------------------------------
-  overwrite_sshd_config
+  overwrite_ssh_config
   configure_ufw \
     "--add-service=ssh" \
     "--add-service=http" \
