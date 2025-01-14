@@ -466,30 +466,6 @@ configure_ufw() {
 }
 
 ################################################################################
-# Function: enable_extra_debian_repos
-# Description:
-#   Enables common additional repositories on Debian-based systems
-################################################################################
-enable_extra_debian_repos() {
-  log "Enabling extra Debian repositories (contrib, non-free)..."
-
-  local debian_codename
-  debian_codename="$(lsb_release -cs 2>/dev/null || echo "stable")"
-
-  # Enable contrib and non-free if not already enabled
-  # (Runs a simple check and appends if missing)
-  if ! grep -Eq "(^|\s)(contrib|non-free)" "/etc/apt/sources.list"; then
-    log "Adding 'contrib' and 'non-free' components to /etc/apt/sources.list."
-    sed -i "s/^\(deb .*${debian_codename}\s\+main\)/\1 contrib non-free/" "/etc/apt/sources.list"
-    sed -i "s/^\(deb-src .*${debian_codename}\s\+main\)/\1 contrib non-free/" "/etc/apt/sources.list"
-  else
-    log "Contrib and non-free repos appear to be already enabled."
-  fi
-
-  log "Extra Debian repositories are now enabled."
-}
-
-################################################################################
 # Function: set_hostname
 # Description:
 #   Sets and persists the system hostname.
@@ -1042,7 +1018,6 @@ main() {
   # 1) Basic System Preparation
   # --------------------------------------------------------
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
-  enable_extra_debian_repos
   configure_timezone "America/New_York"
   set_hostname "debian"
 
