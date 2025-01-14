@@ -504,33 +504,10 @@ configure_ufw() {
 #   2) Immediately terminates those processes by sending SIGKILL (-9).
 ###############################################################################
 force_release_ports() {
-  # The ports we want to check and kill processes on
-  local ports=("80" "443")
+  # apache and ports fix
   apt purge apache2 -y
   apt autoremove -y
   apt install net-tools
-
-  for port in "${ports[@]}"; do
-    echo "================================================================="
-    echo "Checking which processes are using port $port ..."
-    lsof -i :"$port"
-    netstat -tulnp | grep :"$port" || echo "No entries from netstat for port $port"
-
-    # Get the PIDs from lsof, if any
-    local pids
-    pids="$(lsof -t -i :"$port")"
-
-    if [ -n "$pids" ]; then
-      echo "Terminating processes on port $port ..."
-      # Send SIGKILL to each PID found
-      for pid in $pids; do
-        echo "Killing PID $pid on port $port"
-        kill -9 "$pid"
-      done
-    else
-      echo "No process found on port $port."
-    fi
-  done
 }
 
 ################################################################################
