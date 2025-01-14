@@ -1064,8 +1064,7 @@ setup_pyenv_and_python_tools_for_user() {
   local latest_stable_py3
   latest_stable_py3="$(
     sudo -u "$user" -H bash -c "
-      export PYENV_ROOT=\"$pyenv_root\"
-      export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
+      export PYENV_ROOT=\"/home/sawyer\"
       eval \"\$(pyenv init - bash)\"
       pyenv install -l |
         grep -E '^\\s*3\\.[0-9]+\\.[0-9]+\$' |
