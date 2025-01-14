@@ -928,9 +928,6 @@ EOF
 enable_gui() {
   echo "[INFO] Enabling GUI environment..."
 
-  # Ensure package data is current
-  apt update
-
   echo "[INFO] Installing GNOME, GDM, AwesomeWM, and related packages..."
   apt -y install \
     gnome \
