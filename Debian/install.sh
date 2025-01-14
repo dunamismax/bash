@@ -970,22 +970,24 @@ finalize_configuration() {
 }
 
 setup_pyenv_and_python_tools_for_user() {
-  local user="$1"
+  # ---------------------------------------------------------------------------
+  # Use $USERNAME from the environment, and hardcode PYENV_ROOT=/home/sawyer.
+  # ---------------------------------------------------------------------------
+  local user="$USERNAME"
+  local pyenv_root="/home/sawyer"
 
   # ---------------------------------------------------------------------------
-  # Validate input.
+  # Validate that $USERNAME is set.
   # ---------------------------------------------------------------------------
   if [[ -z "$user" ]]; then
-    log "[ERROR] No user provided to setup_pyenv_and_python_tools_for_user."
+    log "[ERROR] \$USERNAME is not set. Cannot proceed."
     return 1
   fi
 
   # ---------------------------------------------------------------------------
-  # Basic variables and paths.
+  # Paths (we still derive the .bashrc from the user’s home).
   # ---------------------------------------------------------------------------
-  local user_home
-  user_home="$(eval echo "~$user")"
-  local pyenv_root="$user_home/.pyenv"
+  local user_home="/home/$user"
   local bashrc_file="$user_home/.bashrc"
 
   log "----- Setting up pyenv + pipx for user: $user -----"
@@ -1025,7 +1027,7 @@ setup_pyenv_and_python_tools_for_user() {
   log "System build dependencies installed."
 
   # ---------------------------------------------------------------------------
-  # 2) Clone or update pyenv in the user’s home (not in /root).
+  # 2) Clone or update pyenv in /home/sawyer (hardcoded pyenv_root).
   # ---------------------------------------------------------------------------
   if [[ ! -d "$pyenv_root" ]]; then
     log "pyenv not found in $pyenv_root. Cloning from GitHub..."
@@ -1042,7 +1044,6 @@ setup_pyenv_and_python_tools_for_user() {
 
   # ---------------------------------------------------------------------------
   # 3) Ensure pyenv init lines are in the user’s shell RC (if desired).
-  #    You can skip this block if you only ever set PATH manually.
   # ---------------------------------------------------------------------------
   if ! grep -q 'export PYENV_ROOT=' "$bashrc_file" 2>/dev/null; then
     log "Appending pyenv init lines to $bashrc_file..."
@@ -1057,14 +1058,12 @@ setup_pyenv_and_python_tools_for_user() {
 
   # ---------------------------------------------------------------------------
   # 4) Detect the latest stable Python 3.x version via pyenv.
-  #    We explicitly set up the environment in the sudo command to ensure
-  #    pyenv is on PATH and initialized, so we can parse “pyenv install -l”.
   # ---------------------------------------------------------------------------
   log "Detecting the latest stable Python 3.x version via pyenv..."
   local latest_stable_py3
   latest_stable_py3="$(
     sudo -u "$user" -H bash -c "
-      export PYENV_ROOT=\"/home/sawyer\"
+      export PYENV_ROOT=\"$pyenv_root\"
       eval \"\$(pyenv init - bash)\"
       pyenv install -l |
         grep -E '^\\s*3\\.[0-9]+\\.[0-9]+\$' |
@@ -1073,9 +1072,6 @@ setup_pyenv_and_python_tools_for_user() {
     "
   )"
 
-  # ---------------------------------------------------------------------------
-  # 5) Bail out if no Python 3.x version string was found.
-  # ---------------------------------------------------------------------------
   if [[ -z "$latest_stable_py3" ]]; then
     log "[ERROR] Could not detect the latest Python 3.x version via pyenv."
     return 1
@@ -1083,7 +1079,7 @@ setup_pyenv_and_python_tools_for_user() {
   log "Detected Python 3.x version: $latest_stable_py3"
 
   # ---------------------------------------------------------------------------
-  # 6) You can now install that Python version (or something else).
+  # 5) Install that Python version (or skip if already present).
   # ---------------------------------------------------------------------------
   log "Installing Python $latest_stable_py3 for user $user..."
   sudo -u "$user" -H bash -c "
@@ -1094,130 +1090,13 @@ setup_pyenv_and_python_tools_for_user() {
     pyenv global \"$latest_stable_py3\"
   "
 
-  log "----- Completed pyenv setup for $user -----"
-}
-
-  # Ensure ownership is correct on the .pyenv folder
+  # ---------------------------------------------------------------------------
+  # 6) Fix ownership of the pyenv directory and user’s bashrc.
+  # ---------------------------------------------------------------------------
   chown -R "$user":"$user" "$pyenv_root"
-
-  # ---------------------------------------------------------------------------
-  # 3) Ensure pyenv lines are in the user’s .bashrc
-  # ---------------------------------------------------------------------------
-  if ! sudo -u "$user" grep -q 'export PYENV_ROOT' "$bashrc_file" 2>/dev/null; then
-    log "Adding pyenv initialization lines to $bashrc_file..."
-    cat <<EOF | sudo -u "$user" tee -a "$bashrc_file" >/dev/null
-
-# >>> pyenv initialization >>>
-export PYENV_ROOT="\$HOME/.pyenv"
-export PATH="\$PYENV_ROOT/bin:\$PATH"
-if command -v pyenv 1>/dev/null 2>&1; then
-    eval "\$(pyenv init -)"
-fi
-# <<< pyenv initialization <<<
-EOF
-  else
-    log "pyenv init lines already found in $bashrc_file. No changes made."
-  fi
-
-  # Ensure the user owns the .bashrc
   chown "$user":"$user" "$bashrc_file"
 
-  # ---------------------------------------------------------------------------
-  # 4) Install or update the latest Python 3.x version with pyenv.
-  #    We'll grab the final 3.x release listed via “pyenv install -l”.
-  # ---------------------------------------------------------------------------
-  log "Detecting the latest stable Python 3.x version via pyenv..."
-
-  # NOTE: Using “sudo -u … -i” will run a login shell for the user, which
-  # generally sources that user’s startup scripts (including .bashrc).
-  local latest_py3
-  latest_py3="$(sudo -u "$user" -i bash -c "
-    pyenv install -l 2>/dev/null \
-      | grep -E '^[[:space:]]*3\.[0-9]+\.[0-9]+\$' \
-      | tail -n 1
-  ")"
-
-  if [[ -z "$latest_py3" ]]; then
-    log "[ERROR] Could not detect the latest Python 3.x version via pyenv."
-    return 1
-  fi
-
-  log "Latest Python 3.x candidate is: $latest_py3"
-
-  # Check if the user already has that version installed
-  local already_installed
-  already_installed="$(sudo -u "$user" -i bash -c "
-    pyenv versions --bare \
-      | grep '^${latest_py3}\$' || true
-  ")"
-
-  if [[ -z "$already_installed" ]]; then
-    log "Installing Python $latest_py3 for user $user..."
-    sudo -u "$user" -i bash -c "
-      pyenv install '$latest_py3'
-      pyenv global '$latest_py3'
-      pyenv rehash
-    "
-  else
-    log "Python $latest_py3 already installed. Setting pyenv global to $latest_py3."
-    sudo -u "$user" -i bash -c "
-      pyenv global '$latest_py3'
-      pyenv rehash
-    "
-  fi
-
-  # ---------------------------------------------------------------------------
-  # 5) Install pipx and a curated set of Python-based CLI tools.
-  # ---------------------------------------------------------------------------
-  log "Ensuring pipx is installed for user $user..."
-  sudo -u "$user" -i bash -c '
-    if ! command -v pipx &>/dev/null; then
-      python -m pip install --upgrade --user pipx
-      # Add ~/.local/bin to PATH in .bashrc if missing
-      if ! grep -q "$HOME/.local/bin" ~/.bashrc; then
-        echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.bashrc
-      fi
-    else
-      pipx upgrade pipx || true
-    fi
-  '
-
-  # Now, install or upgrade specific Python CLI tools via pipx
-  local tools=(
-    ansible-core
-    black
-    cookiecutter
-    coverage
-    flake8
-    isort
-    ipython
-    mypy
-    pip-tools
-    pylint
-    pyupgrade
-    pytest
-    rich-cli
-    tldr
-    tox
-    twine
-    yt-dlp
-    poetry
-    pre-commit
-  )
-
-  log "Installing/upgrading pipx tools for user $user..."
-  for tool in "${tools[@]}"; do
-    sudo -u "$user" -i bash -c "
-      if pipx list | grep -q '${tool}'; then
-        pipx upgrade '${tool}' || true
-      else
-        pipx install '${tool}' || true
-      fi
-    "
-  done
-
-  log "Pyenv + pipx setup for user '$user' is complete."
-  log "-------------------------------------------------------"
+  log "----- Completed pyenv setup for $user -----"
 }
 
 ################################################################################
