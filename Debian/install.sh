@@ -1107,6 +1107,45 @@ disable_sleep_and_set_performance() {
 }
 
 ################################################################################
+# Function: install_and_enable_plex
+# Description:
+#   This function installs the official Plex Media Server package on Debian,
+#   ensures the service is enabled, and starts the service.
+#   It adds the official Plex repository, installs any prerequisites,
+#   and sets up Plex to run automatically on system boot.
+################################################################################
+install_and_enable_plex() {
+  set -e  # Exit immediately if a command exits with a non-zero status
+
+  echo "Updating apt package index..."
+  sudo apt-get update -y
+
+  echo "Installing prerequisites (curl) if not already installed..."
+  if ! dpkg -s curl >/dev/null 2>&1; then
+    sudo apt-get install curl -y
+  fi
+
+  echo "Importing Plex GPG key..."
+  curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key | sudo apt-key add -
+
+  echo "Adding Plex repository to /etc/apt/sources.list.d/plexmediaserver.list..."
+  echo "deb https://downloads.plex.tv/repo/deb public main" | sudo tee /etc/apt/sources.list.d/plexmediaserver.list
+
+  echo "Updating apt package index (with new Plex repo)..."
+  sudo apt-get update -y
+
+  echo "Installing Plex Media Server..."
+  sudo apt-get install plexmediaserver -y
+
+  echo "Enabling and starting the plexmediaserver service..."
+  sudo systemctl enable plexmediaserver
+  sudo systemctl start plexmediaserver
+
+  echo "Plex Media Server installation and enablement complete!"
+  echo "You can access the Plex Web UI on http://<your-server-IP>:32400/web."
+}
+
+################################################################################
 # Function: finalize_configuration
 ################################################################################
 finalize_configuration() {
@@ -1210,6 +1249,7 @@ main() {
   # --------------------------------------------------------
   # 7) Finalization
   # --------------------------------------------------------
+  install_and_enable_plex
   finalize_configuration
 
   log "Configuration script finished successfully."
