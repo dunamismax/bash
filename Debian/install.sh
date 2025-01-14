@@ -155,27 +155,21 @@ handle_error() {
 # enable_non_free_firmware_only
 # Description:
 #   1) Backs up /etc/apt/sources.list
-#   2) Adds "non-free-firmware" to existing lines referencing Debian 12 (bookworm)
-#      in /etc/apt/sources.list, without duplicating other components.
+#   2) Adds "non-free-firmware" (and nothing else) to existing lines referencing
+#      Debian 12 (bookworm) in /etc/apt/sources.list, skipping duplicates.
 #   3) Updates package lists.
 #   4) Installs the AMD firmware package "firmware-amd-graphics".
-#
 ################################################################################
 
-enable_non_free_and_non_free_firmware() {
+enable_non_free_firmware_only() {
   echo "[INFO] Backing up /etc/apt/sources.list to /etc/apt/sources.list.bak"
   cp -a /etc/apt/sources.list /etc/apt/sources.list.bak
 
-  echo "[INFO] Ensuring both 'non-free' and 'non-free-firmware' are added to existing bookworm lines."
-
-  # First, add "non-free" if it’s not present.
-  sed -i '/^deb .*bookworm/ {/non-free/! s/$/ non-free/;}' /etc/apt/sources.list
-
-  # Then add "non-free-firmware" if it’s not present.
+  echo "[INFO] Ensuring 'non-free-firmware' is added to existing bookworm lines without duplicating."
   sed -i '/^deb .*bookworm/ {/non-free-firmware/! s/$/ non-free-firmware/;}' /etc/apt/sources.list
 
   echo "[INFO] Updating package lists..."
-  apt update -y
+  apt update
 
   echo "[INFO] Installing firmware-amd-graphics..."
   apt install -y firmware-amd-graphics
