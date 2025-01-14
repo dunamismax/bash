@@ -2,47 +2,40 @@
 # ------------------------------------------------------------------------------
 # Debian/Ubuntu Automated System Configuration Script
 # ------------------------------------------------------------------------------
-# Description:
-#   This script automates the initial configuration of a fresh Debian or Ubuntu
-#   system. Its primary tasks include:
+# DESCRIPTION:
+#   Automates the initial setup of a fresh Debian or Ubuntu system by:
+#     1) Syncing package repositories and installing/ updating core packages
+#        (e.g., build tools, curl, git).
+#     2) Backing up, then overwriting certain system configs
+#        (e.g., '/etc/ssh/sshd_config') to apply recommended security and
+#        custom settings.
+#     3) Creating or configuring a user account (default: "sawyer") with:
+#         - Sudo privileges
+#         - Bash as the default shell
 #
-#     1) Updating the package repository cache, performing system upgrades,
-#        and installing essential packages (like build tools, curl, git, etc.).
+# USAGE & REQUIREMENTS:
+#   - Run as root or via 'sudo'; non-root execution lacks necessary privileges.
+#   - Works on Debian and Ubuntu (may also function on derivative distros).
+#   - Review all overwriting steps before use; backups of replaced files are
+#     stored with timestamps in the same directory.
 #
-#     2) Safely backing up and replacing select system configuration files,
-#        such as '/etc/ssh/sshd_config', to enforce recommended security settings
-#        and other custom configurations.
+# LOGGING:
+#   - All operations and errors are logged to '/var/log/debian_setup.log'
+#     for troubleshooting.
 #
-#     3) Creating or configuring a user account (by default "sawyer") with:
-#         • Sudo privileges for administrative tasks.
-#         • Bash set as the default shell.
+# ERROR HANDLING:
+#   - 'set -euo pipefail' aborts on errors, unbound variables, or failed pipes.
+#   - Trapped 'ERR' ensures a graceful exit on unexpected failures.
 #
-# Usage & Requirements:
-#   • Must be executed as root or via 'sudo'—otherwise, it cannot modify
-#     system-level packages or configuration files.
-#   • Compatible with both Debian and Ubuntu releases. May function on derivatives as well,
-#     but YMMV (your mileage may vary).
-#   • Before running, ensure you are comfortable with overwriting certain system files.
-#     All replaced files will be backed up with a timestamp in the same directory.
+# DISCLAIMER:
+#   - Designed to streamline initial setup, but always review and test
+#     in a controlled environment first.
+#   - Configurations are based on opinionated defaults; adjust them to
+#     match your security or compliance needs.
 #
-# Logging:
-#   • The script logs its operations and any error messages to '/var/log/debian_setup.log'
-#     to help with troubleshooting or future review.
-#
-# Error Handling:
-#   • Uses 'set -euo pipefail' to abort on errors, unbound variables, or failed pipes.
-#   • Traps on 'ERR' to catch unexpected failures and exit gracefully.
-#
-# Disclaimer:
-#   • While this script aims to streamline initial setup, always review the source
-#     and test in a safe environment before using it in production.
-#   • The provided configurations are opinionated defaults; adjust them to match
-#     your security/compliance needs.
-#
-# Author & License:
-#   • Author: dunamismax.
-#   • License: MIT.
-#
+# AUTHOR & LICENSE:
+#   - Author: dunamismax
+#   - License: MIT
 # ------------------------------------------------------------------------------
 
 set -Eeuo pipefail
