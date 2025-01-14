@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Debian/Ubuntu Automated System Configuration Script + Python/pyenv/pipx Setup
+# Debian/Ubuntu Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # Description:
 #   This script automates the configuration of a fresh Debian or Ubuntu system by:
@@ -8,8 +8,6 @@
 #     2) Backing up and replacing select system config files (e.g. 'etc/ssh/sshd_config').
 #     3) Granting sudo privileges to the user "sawyer" and setting Bash as that user’s
 #        default shell.
-#     4) Installing pyenv + pipx, along with the latest stable Python 3.x and a curated set
-#        of Python CLI tools.
 #
 # Notes:
 #   • All logs are appended to /var/log/debian_setup.log for consistency.
@@ -59,6 +57,7 @@ PACKAGES=(
   tk-dev
   xz-utils
   libncurses5-dev
+  python3
   python3-dev
   python3-pip
   python3-venv
@@ -969,126 +968,6 @@ finalize_configuration() {
   log "Final configuration steps completed."
 }
 
-setup_pyenv_and_python_tools_for_user() {
-  # ---------------------------------------------------------------------------
-  # Use $USERNAME from the environment, and hardcode PYENV_ROOT=/home/sawyer.
-  # ---------------------------------------------------------------------------
-  local user="$USERNAME"
-  local pyenv_root="/home/sawyer/"
-
-  # ---------------------------------------------------------------------------
-  # Validate that $USERNAME is set.
-  # ---------------------------------------------------------------------------
-  if [[ -z "$user" ]]; then
-    log "[ERROR] \$USERNAME is not set. Cannot proceed."
-    return 1
-  fi
-
-  # ---------------------------------------------------------------------------
-  # Paths (we still derive the .bashrc from the user’s home).
-  # ---------------------------------------------------------------------------
-  local user_home="/home/$user"
-  local bashrc_file="$user_home/.bashrc"
-
-  log "----- Setting up pyenv + pipx for user: $user -----"
-  log "Using PYENV_ROOT=$pyenv_root"
-
-  # ---------------------------------------------------------------------------
-  # 1) Install build dependencies needed for compiling Python via pyenv.
-  # ---------------------------------------------------------------------------
-  log "Installing system build dependencies..."
-  apt update -y 2>&1 | tee -a "$LOG_FILE"
-  apt install -y \
-    build-essential \
-    git \
-    curl \
-    wget \
-    ca-certificates \
-    libssl-dev \
-    libbz2-dev \
-    libffi-dev \
-    zlib1g-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libncurses5-dev \
-    libncursesw5-dev \
-    xz-utils \
-    liblzma-dev \
-    tk-dev \
-    llvm \
-    jq \
-    gnupg \
-    libxml2-dev \
-    libxmlsec1-dev \
-    --no-install-recommends 2>&1 | tee -a "$LOG_FILE"
-
-  apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
-  apt clean 2>&1 | tee -a "$LOG_FILE"
-  log "System build dependencies installed."
-
-  # ---------------------------------------------------------------------------
-  # 2) Clone or update pyenv in /home/sawyer (hardcoded pyenv_root).
-  # ---------------------------------------------------------------------------
-    log "Cloning from GitHub..."
-    sudo -u "$user" -H git clone https://github.com/pyenv/pyenv.git "$pyenv_root" 2>&1 | tee -a "$LOG_FILE"
-
-  # ---------------------------------------------------------------------------
-  # 3) Ensure pyenv init lines are in the user’s shell RC (if desired).
-  # ---------------------------------------------------------------------------
-  if ! grep -q 'export PYENV_ROOT=' "$bashrc_file" 2>/dev/null; then
-    log "Appending pyenv init lines to $bashrc_file..."
-    {
-      echo "export PYENV_ROOT=\"$pyenv_root\""
-      echo 'export PATH="$PYENV_ROOT/bin:$PATH"'
-      echo 'eval "$(pyenv init - bash)"'
-    } | sudo -u "$user" tee -a "$bashrc_file" >/dev/null
-  else
-    log "pyenv init lines already found in $bashrc_file. No changes made."
-  fi
-
-  # ---------------------------------------------------------------------------
-  # 4) Detect the latest stable Python 3.x version via pyenv.
-  # ---------------------------------------------------------------------------
-  log "Detecting the latest stable Python 3.x version via pyenv..."
-  local latest_stable_py3
-  latest_stable_py3="$(
-    sudo -u "$user" -H bash -c "
-      export PYENV_ROOT=\"$pyenv_root\"
-      eval \"\$(pyenv init - bash)\"
-      pyenv install -l |
-        grep -E '^\\s*3\\.[0-9]+\\.[0-9]+\$' |
-        tail -1 |
-        sed 's/^ *//'
-    "
-  )"
-
-  if [[ -z "$latest_stable_py3" ]]; then
-    log "[ERROR] Could not detect the latest Python 3.x version via pyenv."
-    return 1
-  fi
-  log "Detected Python 3.x version: $latest_stable_py3"
-
-  # ---------------------------------------------------------------------------
-  # 5) Install that Python version (or skip if already present).
-  # ---------------------------------------------------------------------------
-  log "Installing Python $latest_stable_py3 for user $user..."
-  sudo -u "$user" -H bash -c "
-    export PYENV_ROOT=\"$pyenv_root\"
-    export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
-    eval \"\$(pyenv init - bash)\"
-    pyenv install -s \"$latest_stable_py3\"
-    pyenv global \"$latest_stable_py3\"
-  "
-
-  # ---------------------------------------------------------------------------
-  # 6) Fix ownership of the pyenv directory and user’s bashrc.
-  # ---------------------------------------------------------------------------
-  chown -R "$user":"$user" "$pyenv_root"
-  chown "$user":"$user" "$bashrc_file"
-
-  log "----- Completed pyenv setup for $user -----"
-}
-
 ################################################################################
 # MAIN
 ################################################################################
@@ -1109,7 +988,6 @@ main() {
   # 2) User Creation and Environment
   # --------------------------------------------------------
   set_default_shell_and_env
-  setup_pyenv_and_python_tools_for_user "$USERNAME"
 
   # --------------------------------------------------------
   # 3) Software Installation
