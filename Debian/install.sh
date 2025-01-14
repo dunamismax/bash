@@ -115,28 +115,6 @@ bootstrap_and_install_pkgs() {
 }
 
 ################################################################################
-# Function: configure_firewall
-# Basic UFW firewall
-################################################################################
-configure_firewall() {
-  log "Configuring UFW firewall..."
-
-  # Enable UFW if not active
-  if ! ufw status | grep -q "Status: active"; then
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow ssh
-    # Example rule: allow port 32400 (Plex) -- remove if not needed
-    ufw allow 32400/tcp
-    ufw allow 32400/udp
-    ufw --force enable
-    log "UFW is now enabled with SSH (and Plex) allowed."
-  else
-    log "UFW is already active. Skipping initial setup."
-  fi
-}
-
-################################################################################
 # Function: overwrite_resolv_conf
 # Overwrite /etc/resolv.conf
 ################################################################################
@@ -518,7 +496,6 @@ main() {
 
   identify_primary_iface
   bootstrap_and_install_pkgs
-  configure_firewall
   overwrite_resolv_conf
   overwrite_sshd_config
   configure_sudoers
