@@ -790,40 +790,6 @@ EOF
   log "NTP (chrony) configuration complete."
 }
 
-################################################################################
-# Function: enable_gui
-# Description:
-#   Installs the GNOME desktop environment (with Xorg/Wayland/GDM3) plus extras
-#   and tweaks, and also installs AwesomeWM on a Debian/Ubuntu system. Afterwards,
-#   it sets the system to boot into a graphical session by default.
-#
-# Usage:
-#   enable_gui
-################################################################################
-enable_gui() {
-  echo "[INFO] Enabling GUI environment..."
-
-  echo "[INFO] Installing GNOME, GDM, AwesomeWM, and related packages..."
-  apt -y install \
-    gnome \
-    gnome-shell \
-    gnome-tweaks \
-    xorg \
-    wayland-protocols \
-    gdm3 \
-    awesome
-
-  echo "[INFO] Setting default target to graphical..."
-  systemctl set-default graphical.target
-
-  echo "[INFO] Enabling and starting GDM3..."
-  systemctl enable gdm3
-  systemctl start gdm3
-
-  echo "[INFO] GNOME desktop environment and AwesomeWM installation complete."
-  echo "[INFO] The system will now boot to the graphical login screen by default."
-}
-
 # Function to install build dependencies for compiling Python via pyenv
 install_python_build_deps() {
     LOG_FILE="/var/log/python_build_deps_install.log" # Define the log file location
@@ -1022,7 +988,6 @@ main() {
   # 4) Software Installation
   # --------------------------------------------------------
   bootstrap_and_install_pkgs  # Installs essential system packages
-  enable_gui                  # Installs GNOME desktop environment & AwesomeWM
 
   # --------------------------------------------------------
   # 5) Security and Hardening
