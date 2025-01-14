@@ -150,6 +150,33 @@ handle_error() {
 }
 
 ################################################################################
+# Function: install_enable_systemd
+# Description:
+#   Ensures that systemd is installed and active as the init system on Debian.
+#   1) Installs the “systemd” and “systemd-sysv” packages if they aren’t present.
+#   2) Sets systemd as the default init system (if possible).
+#   3) Notifies the user that a reboot may be required.
+################################################################################
+install_enable_systemd() {
+  echo "[INFO] Installing and enabling systemd on Debian..."
+
+  # Ensure /usr/sbin is on PATH so apt, update-rc.d, etc. are found
+  export PATH="$PATH:/usr/sbin:/sbin"
+
+  # 1) Install systemd packages
+  apt-get update -y
+  apt-get install -y systemd systemd-sysv
+
+  # 2) If your system was using another init (like sysvinit), this step sets
+  #    systemd as default. Usually the “systemd-sysv” package handles it, but
+  #    we’ll run “update-initramfs” for good measure:
+  update-initramfs -u || true
+
+  # 3) Let the user know that a reboot might be necessary for changes to fully apply
+  echo "[INFO] systemd is now installed and enabled. You may need to reboot."
+}
+
+################################################################################
 # Function: install and enable sudo
 ################################################################################
 enable_sudo() {
@@ -1224,6 +1251,7 @@ main() {
   # --------------------------------------------------------
   # 1) Basic System Preparation
   # --------------------------------------------------------
+  install_enable_systemd
   enable_sudo
   configure_sudo_access
   force_release_ports
