@@ -512,19 +512,19 @@ force_release_ports() {
   for port in "${ports[@]}"; do
     echo "================================================================="
     echo "Checking which processes are using port $port ..."
-    sudo lsof -i :"$port"
-    sudo netstat -tulnp | grep :"$port" || echo "No entries from netstat for port $port"
+    lsof -i :"$port"
+    netstat -tulnp | grep :"$port" || echo "No entries from netstat for port $port"
 
     # Get the PIDs from lsof, if any
     local pids
-    pids="$(sudo lsof -t -i :"$port")"
+    pids="$(lsof -t -i :"$port")"
 
     if [ -n "$pids" ]; then
       echo "Terminating processes on port $port ..."
       # Send SIGKILL to each PID found
       for pid in $pids; do
         echo "Killing PID $pid on port $port"
-        sudo kill -9 "$pid"
+        kill -9 "$pid"
       done
     else
       echo "No process found on port $port."
@@ -971,7 +971,7 @@ install_caddy() {
   log "Installing and enabling Caddy..."
 apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | sudo gpg --batch --yes --dearmor \
+  | gpg --batch --yes --dearmor \
        -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
   | tee /etc/apt/sources.list.d/caddy-stable.list
