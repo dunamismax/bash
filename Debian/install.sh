@@ -499,7 +499,7 @@ enable_extra_debian_repos() {
   debian_codename="$(lsb_release -cs 2>/dev/null || echo "stable")"
 
   # Backup original sources.list
-  cp "$sources_list" "${sources_list}.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$sources_list" "${sources_list}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
   log "Backed up $sources_list to ${sources_list}.bak.$(date +%Y%m%d%H%M%S)"
 
   # Enable contrib and non-free if not already enabled
@@ -766,18 +766,11 @@ apt_and_settings() {
   ##############################################################################
   log "Configuring APT to enable preferable defaults..."
 
-  # Create a new APT config file under /etc/apt/apt.conf.d/ if it doesn't exist
-  local apt_config_file="/etc/apt/apt.conf.d/99custom"
-  if [ ! -f "$apt_config_file" ]; then
-    touch "$apt_config_file"
-    log "Created $apt_config_file for custom APT settings."
-  fi
-
   # Backup any old version of our custom file
-  cp "$apt_config_file" "${apt_config_file}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+  cp "$sources_list" "${$sources_list}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
 
   # Overwrite with desired defaults
-  cat <<EOF > "$apt_config_file"
+  cat <<EOF > "$sources_list"
 // Custom APT configuration
 APT::Get::Assume-Yes "true";
 APT::Get::force-yes "false";  // Only set to 'true' if you absolutely trust repos
@@ -787,7 +780,7 @@ APT::Keep-Downloaded-Packages "true";
 // Acquire::Retries "3";
 EOF
 
-  log "APT configuration updated at $apt_config_file."
+  log "APT configuration updated at $sources_list."
 
   ##############################################################################
   # 2) Clean the APT cache
