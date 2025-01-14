@@ -14,6 +14,7 @@
 #         - Bash as the default shell
 #
 # USAGE & REQUIREMENTS:
+#   - Change all instances of "sawyer" in the code to whatever your username is before running.
 #   - Run as root or via 'sudo'; non-root execution lacks necessary privileges.
 #   - Works on Debian and Ubuntu (may also function on derivative distros).
 #   - Review all overwriting steps before use; backups of replaced files are
@@ -26,12 +27,6 @@
 # ERROR HANDLING:
 #   - 'set -euo pipefail' aborts on errors, unbound variables, or failed pipes.
 #   - Trapped 'ERR' ensures a graceful exit on unexpected failures.
-#
-# DISCLAIMER:
-#   - Designed to streamline initial setup, but always review and test
-#     in a controlled environment first.
-#   - Configurations are based on opinionated defaults; adjust them to
-#     match your security or compliance needs.
 #
 # AUTHOR & LICENSE:
 #   - Author: dunamismax
