@@ -494,13 +494,8 @@ configure_ufw() {
 enable_extra_debian_repos() {
   log "Enabling extra Debian repositories (contrib, non-free)..."
 
-  local sources_list="/etc/apt/sources.list"
   local debian_codename
   debian_codename="$(lsb_release -cs 2>/dev/null || echo "stable")"
-
-  # Backup original sources.list
-  cp "$sources_list" "${sources_list}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
-  log "Backed up $sources_list to ${sources_list}.bak.$(date +%Y%m%d%H%M%S)"
 
   # Enable contrib and non-free if not already enabled
   # (Runs a simple check and appends if missing)
