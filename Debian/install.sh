@@ -652,18 +652,7 @@ EOF
 
 ################################################################################
 # Function: apt_and_settings
-# Description:
-#   1) Configure APT to enable some preferable defaults (e.g., assume "yes",
-#      keep downloaded packages, etc.).
-#   2) Clean the APT cache.
-#   3) Update the system.
-#   4) Optionally enable extra repositories (similar to RPM Fusion on RHEL/Fedora),
-#      here we demonstrate adding the Debian Multimedia Repository (if desired).
-#   5) Perform a “dist-upgrade” (somewhat analogous to a group update of "core").
-#   6) Add Flatpak (Flathub) remote for installing Flatpak apps.
-#
-# Notes:
-#   - You must run this function as root (or with sudo).
+#  1) Add Flatpak (Flathub) remote for installing Flatpak apps.
 ################################################################################
 apt_and_settings() {
   log "==== Starting apt_and_settings routine ===="
