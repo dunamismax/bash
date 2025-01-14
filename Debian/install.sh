@@ -738,23 +738,6 @@ apt_and_settings() {
   ##############################################################################
   # 1) APT Configuration
   ##############################################################################
-  log "Configuring APT to enable preferable defaults..."
-
-  # Backup any old version of our custom file
-  cp "/etc/apt/sources.list" "${/etc/apt/sources.list}.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
-
-  # Overwrite with desired defaults
-  cat <<EOF > "/etc/apt/sources.list"
-// Custom APT configuration
-APT::Get::Assume-Yes "true";
-APT::Get::force-yes "false";  // Only set to 'true' if you absolutely trust repos
-APT::Keep-Downloaded-Packages "true";
-// Uncomment or add additional lines for parallel downloads (apt 2.0+), e.g.:
-// Acquire::Queue-Mode "access";
-// Acquire::Retries "3";
-EOF
-
-  log "APT configuration updated at /etc/apt/sources.list."
 
   ##############################################################################
   # 2) Clean the APT cache
