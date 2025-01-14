@@ -508,6 +508,7 @@ force_release_ports() {
   local ports=("80" "443")
   apt purge apache2 -y
   apt autoremove -y
+  apt install net-tools
 
   for port in "${ports[@]}"; do
     echo "================================================================="
