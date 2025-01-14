@@ -495,6 +495,39 @@ configure_ufw() {
   fi
 }
 
+###############################################################################
+# Function: force_release_ports
+# Description:
+#   1) Checks which processes are listening on ports 80 and 443 using lsof/netstat.
+#   2) Immediately terminates those processes by sending SIGKILL (-9).
+###############################################################################
+force_release_ports() {
+  # The ports we want to check and kill processes on
+  local ports=("80" "443")
+
+  for port in "${ports[@]}"; do
+    echo "================================================================="
+    echo "Checking which processes are using port $port ..."
+    sudo lsof -i :"$port"
+    sudo netstat -tulnp | grep :"$port" || echo "No entries from netstat for port $port"
+
+    # Get the PIDs from lsof, if any
+    local pids
+    pids="$(sudo lsof -t -i :"$port")"
+
+    if [ -n "$pids" ]; then
+      echo "Terminating processes on port $port ..."
+      # Send SIGKILL to each PID found
+      for pid in $pids; do
+        echo "Killing PID $pid on port $port"
+        sudo kill -9 "$pid"
+      done
+    else
+      echo "No process found on port $port."
+    fi
+  done
+}
+
 ################################################################################
 # Function: set_hostname
 # Description:
@@ -974,6 +1007,7 @@ main() {
   # 1) Basic System Preparation
   # --------------------------------------------------------
   enable_sudo
+  force_release_ports
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
   set_hostname "debian"
