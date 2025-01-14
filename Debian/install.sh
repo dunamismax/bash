@@ -160,33 +160,25 @@ handle_error() {
 #   3) Updates package lists.
 #   4) Installs the AMD firmware package "firmware-amd-graphics".
 #
-# Usage:
-#   1) chmod +x enable_non_free_firmware_only.sh
-#   2) sudo ./enable_non_free_firmware_only.sh
 ################################################################################
 
-enable_non_free_firmware_only() {
+enable_non_free_and_non_free_firmware() {
   echo "[INFO] Backing up /etc/apt/sources.list to /etc/apt/sources.list.bak"
   cp -a /etc/apt/sources.list /etc/apt/sources.list.bak
 
-  echo "[INFO] Adding only 'non-free-firmware' to existing lines for bookworm"
+  echo "[INFO] Ensuring both 'non-free' and 'non-free-firmware' are added to existing bookworm lines."
 
-  # This sed command:
-  #  1) Applies only to lines starting with "deb" that mention "bookworm"
-  #  2) Skips lines already containing "non-free-firmware"
-  #  3) Appends "non-free-firmware" at the end of the line
-  #
-  # If you'd like to insert it right after 'main' or 'contrib' instead,
-  # you can adjust the sed expression accordingly.
-  sed -i \
-    '/^deb .*bookworm/ {/non-free-firmware/! s/$/ non-free-firmware/;}' \
-    /etc/apt/sources.list
+  # First, add "non-free" if it’s not present.
+  sed -i '/^deb .*bookworm/ {/non-free/! s/$/ non-free/;}' /etc/apt/sources.list
+
+  # Then add "non-free-firmware" if it’s not present.
+  sed -i '/^deb .*bookworm/ {/non-free-firmware/! s/$/ non-free-firmware/;}' /etc/apt/sources.list
 
   echo "[INFO] Updating package lists..."
-  apt-get update -y
+  apt update -y
 
   echo "[INFO] Installing firmware-amd-graphics..."
-  apt-get install -y firmware-amd-graphics
+  apt install -y firmware-amd-graphics
 
   echo "[INFO] Done. You may reboot or unload/reload amdgpu for the changes to take effect."
 }
