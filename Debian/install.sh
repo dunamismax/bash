@@ -153,7 +153,7 @@ handle_error() {
 # Function: install and enable sudo
 ################################################################################
 enable_sudo() {
-  export PATH=$PATH:/usr/bin
+  export PATH=$PATH:/usr/sbin
   log "Enabling sudo."
   apt install -y sudo
   apt install -y net-tools
