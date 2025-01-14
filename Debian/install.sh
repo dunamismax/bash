@@ -73,6 +73,7 @@ PACKAGES=(
   build-essential
   cmake
   exim4
+  openssh-server
   libtool
   pkg-config
   libssl-dev
