@@ -5,7 +5,7 @@
 # Description:
 #   This script automates the configuration of a fresh Debian installation by:
 #
-#   1) Updating APT and installing essential packages (including firewall setup with UFW).
+#   1) Updating APT and installing essential packages.
 #   2) Overwriting selected configuration files (/etc/resolv.conf, /etc/ssh/sshd_config)
 #      and backing up the originals.
 #   3) Granting sudo privileges to the user "sawyer" and configuring Bash as the default shell.
