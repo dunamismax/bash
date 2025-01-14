@@ -73,6 +73,7 @@ PACKAGES=(
   rsync
   htop
   sudo
+  passwd
   bash-completion
   neofetch
   tig
@@ -222,8 +223,30 @@ EOF
 configure_sudoers() {
   log "Configuring sudoers for $USERNAME..."
 
+  # Ensure required commands are available
+  for cmd in usermod sudo; do
+    if ! command -v "$cmd" &>/dev/null; then
+      log "Command '$cmd' not found. Attempting to install..."
+      if ! apt update && apt install -y "$cmd"; then
+        log "Failed to install '$cmd'. Ensure the system has internet access and retry."
+        return 1
+      fi
+      log "Installed missing command '$cmd'."
+    fi
+  done
+
   # Add user to the 'sudo' group
-  usermod -aG sudo "$USERNAME"
+  if id "$USERNAME" &>/dev/null; then
+    if usermod -aG sudo "$USERNAME"; then
+      log "User $USERNAME added to the 'sudo' group successfully."
+    else
+      log "Failed to add $USERNAME to the 'sudo' group."
+      return 1
+    fi
+  else
+    log "User $USERNAME does not exist. Aborting configuration."
+    return 1
+  fi
 
   # Ensure /etc/sudoers has a rule for %sudo
   local sudoers_file="/etc/sudoers"
