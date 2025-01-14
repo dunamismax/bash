@@ -92,6 +92,7 @@ PACKAGES=(
 
   # Generic system utilities
   git
+  ufw
   perl
   curl
   wget
