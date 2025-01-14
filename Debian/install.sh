@@ -1271,6 +1271,7 @@ main() {
   # --------------------------------------------------------
   create_user "sawyer"
   set_default_shell_and_env
+  configure_sudoers
   setup_pyenv_and_python_tools_for_user "$USERNAME"
 
   # --------------------------------------------------------
@@ -1285,7 +1286,6 @@ main() {
   # 4) Security and Hardening
   # --------------------------------------------------------
   overwrite_sshd_config
-  configure_sudoers
   configure_ufw \
     "--add-service=ssh" \
     "--add-service=http" \
