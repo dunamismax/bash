@@ -95,7 +95,6 @@ PACKAGES=(
 
   # Optional tools
   chrony          # For time synchronization
-  firewalld       # Firewall management
   fail2ban        # Intrusion prevention
   ffmpeg          # Multimedia processing
   restic          # Backup tool
@@ -378,9 +377,6 @@ enable_extra_debian_repos() {
     log "Contrib and non-free repos appear to be already enabled."
   fi
 
-  # Update package list
-  apt update 2>&1 | tee -a "$LOG_FILE"
-
   log "Extra Debian repositories are now enabled."
 }
 
@@ -421,56 +417,6 @@ configure_timezone() {
 }
 
 ################################################################################
-# Function: manage_service
-# Description:
-#   Enables, disables, or restarts a systemd service. Optionally checks for
-#   valid actions before proceeding.
-#
-# Usage:
-#   manage_service <service_name> <enable|disable|start|stop|restart|status>
-#
-# Examples:
-#   manage_service "firewalld" "enable"
-#   manage_service "firewalld" "start"
-#
-# Note:
-#   - Logs all output to $LOG_FILE (assumes 'log' and 'LOG_FILE' exist).
-#   - Returns non-zero if systemctl is unavailable or usage is incorrect.
-################################################################################
-manage_service() {
-  local service_name="$1"
-  local action="$2"
-
-  # Check that systemctl is available
-  if ! command -v systemctl &>/dev/null; then
-    log "[ERROR] systemctl not found on this system. Exiting..."
-    return 1
-  fi
-
-  # Validate parameters
-  if [[ -z "$service_name" || -z "$action" ]]; then
-    log "[ERROR] Usage: manage_service <service_name> <enable|disable|start|stop|restart|status>"
-    return 1
-  fi
-
-  # Validate action against a known set of possible actions
-  local valid_actions=("enable" "disable" "start" "stop" "restart" "status")
-  if [[ ! " ${valid_actions[*]} " =~ " $action " ]]; then
-    log "[ERROR] Invalid action '$action'. Valid actions: ${valid_actions[*]}"
-    return 1
-  fi
-
-  log "Managing service '${service_name}' with action '${action}'..."
-  if ! systemctl "${action}" "${service_name}" 2>&1 | tee -a "$LOG_FILE"; then
-    log "[ERROR] Failed to '${action}' service '${service_name}'. Check logs above for details."
-    return 1
-  fi
-
-  # Optionally, you can add a success message
-  log "Successfully executed '${action}' on service '${service_name}'."
-}
-
-################################################################################
 # Function: basic_security_hardening
 # Description:
 #   Applies a minimal set of security best practices on Debian-based systems:
@@ -488,7 +434,6 @@ basic_security_hardening() {
   # 2) Install fail2ban (from Debian repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
     log "Installing fail2ban..."
-    apt update -y 2>&1 | tee -a "$LOG_FILE"
     apt install -y fail2ban 2>&1 | tee -a "$LOG_FILE"
     systemctl enable fail2ban 2>&1 | tee -a "$LOG_FILE"
     systemctl start fail2ban 2>&1 | tee -a "$LOG_FILE"
@@ -499,7 +444,6 @@ basic_security_hardening() {
   # 3) Install or update AIDE for file integrity monitoring
   if ! dpkg-query -W -f='${Status}' aide 2>/dev/null | grep -q "install ok installed"; then
     log "Installing AIDE..."
-    apt update -y 2>&1 | tee -a "$LOG_FILE"
     apt install -y aide 2>&1 | tee -a "$LOG_FILE"
     aide --init 2>&1 | tee -a "$LOG_FILE"
     mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
@@ -521,7 +465,6 @@ configure_automatic_updates() {
   log "Configuring unattended-upgrades for automatic updates..."
 
   # Update package lists and install unattended-upgrades
-  apt update 2>&1 | tee -a "$LOG_FILE"
   apt install unattended-upgrades 2>&1 | tee -a "$LOG_FILE"
 
   # Optionally configure /etc/apt/apt.conf.d/50unattended-upgrades
@@ -648,7 +591,6 @@ install_container_engine() {
   apt purge docker docker-engine docker.io containerd runc 2>&1 | tee -a "$LOG_FILE"
 
   log "Updating APT and installing prerequisite packages for Docker repo..."
-  apt update 2>&1 | tee -a "$LOG_FILE"
   apt install ca-certificates curl gnupg lsb-release 2>&1 | tee -a "$LOG_FILE"
 
   # Add Docker’s official GPG key
@@ -672,7 +614,6 @@ ${codename} stable" \
 
   # Update package index and install Docker Engine
   log "Installing Docker Engine and related packages..."
-  apt update 2>&1 | tee -a "$LOG_FILE"
   apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>&1 | tee -a "$LOG_FILE"
 
   # Enable and start Docker
@@ -763,7 +704,6 @@ EOF
   # 3) System Update
   ##############################################################################
   log "Updating package lists and upgrading installed packages..."
-  apt update 2>&1 | tee -a "$LOG_FILE"
   apt upgrade 2>&1 | tee -a "$LOG_FILE"
 
   ##############################################################################
@@ -858,7 +798,6 @@ configure_ntp() {
   # 1) Install chrony if it is not already installed
   if ! dpkg-query -W -f='${Status}' chrony 2>/dev/null | grep -q "install ok installed"; then
     log "Installing chrony..."
-    apt update -y 2>&1 | tee -a "$LOG_FILE"
     apt install -y chrony 2>&1 | tee -a "$LOG_FILE"
   else
     log "chrony is already installed."
@@ -944,7 +883,6 @@ setup_pyenv_and_python_tools_for_user() {
   #    different versions from source with pyenv.
   ##############################################################################
   log "Installing system build dependencies (as root)..."
-  apt update 2>&1 | tee -a "$LOG_FILE"
   apt install -y \
     build-essential \
     git \
@@ -1141,11 +1079,7 @@ main() {
   configure_automatic_updates
   install_container_engine
   basic_security_hardening
-  manage_service "firewalld" "enable"
-  manage_service "firewalld" "start"
   create_caddyfile
-  manage_service "caddy" "enable"
-  manage_service "caddy" "start"
   setup_pyenv_and_python_tools_for_user "$USERNAME"
   finalize_configuration
   system_cleanup
