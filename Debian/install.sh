@@ -712,7 +712,7 @@ install_container_engine() {
 
   # Remove any older Docker packages that may conflict
   log "Removing older Docker packages if present..."
-  apt purge docker docker-engine docker.io containerd runc 2>&1 | tee -a "$LOG_FILE"
+  apt purge docker docker.io containerd runc 2>&1 | tee -a "$LOG_FILE"
 
   log "Updating APT and installing prerequisite packages for Docker repo..."
   apt install ca-certificates curl gnupg lsb-release 2>&1 | tee -a "$LOG_FILE"
