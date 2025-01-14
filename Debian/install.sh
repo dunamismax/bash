@@ -3,16 +3,46 @@
 # Debian/Ubuntu Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # Description:
-#   This script automates the configuration of a fresh Debian or Ubuntu system by:
-#     1) Updating apt (and performing upgrades), then installing essential packages.
-#     2) Backing up and replacing select system config files (e.g. 'etc/ssh/sshd_config').
-#     3) Granting sudo privileges to the user "sawyer" and setting Bash as that user’s
-#        default shell.
+#   This script automates the initial configuration of a fresh Debian or Ubuntu
+#   system. Its primary tasks include:
 #
-# Notes:
-#   • All logs are appended to /var/log/debian_setup.log for consistency.
-#   • The script uses "set -euo pipefail" and a trap on ERR to handle unexpected errors.
-#   • Must be run as root (or via sudo) on a fresh Debian/Ubuntu system.
+#     1) Updating the package repository cache, performing system upgrades,
+#        and installing essential packages (like build tools, curl, git, etc.).
+#
+#     2) Safely backing up and replacing select system configuration files,
+#        such as '/etc/ssh/sshd_config', to enforce recommended security settings
+#        and other custom configurations.
+#
+#     3) Creating or configuring a user account (by default "sawyer") with:
+#         • Sudo privileges for administrative tasks.
+#         • Bash set as the default shell.
+#
+# Usage & Requirements:
+#   • Must be executed as root or via 'sudo'—otherwise, it cannot modify
+#     system-level packages or configuration files.
+#   • Compatible with both Debian and Ubuntu releases. May function on derivatives as well,
+#     but YMMV (your mileage may vary).
+#   • Before running, ensure you are comfortable with overwriting certain system files.
+#     All replaced files will be backed up with a timestamp in the same directory.
+#
+# Logging:
+#   • The script logs its operations and any error messages to '/var/log/debian_setup.log'
+#     to help with troubleshooting or future review.
+#
+# Error Handling:
+#   • Uses 'set -euo pipefail' to abort on errors, unbound variables, or failed pipes.
+#   • Traps on 'ERR' to catch unexpected failures and exit gracefully.
+#
+# Disclaimer:
+#   • While this script aims to streamline initial setup, always review the source
+#     and test in a safe environment before using it in production.
+#   • The provided configurations are opinionated defaults; adjust them to match
+#     your security/compliance needs.
+#
+# Author & License:
+#   • Author: dunamismax.
+#   • License: MIT.
+#
 # ------------------------------------------------------------------------------
 
 set -Eeuo pipefail
