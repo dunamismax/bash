@@ -72,6 +72,7 @@ PACKAGES=(
   # Basic development tools
   build-essential
   cmake
+  exim4
   libtool
   pkg-config
   libssl-dev
