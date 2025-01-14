@@ -833,8 +833,44 @@ EOF
 }
 
 ################################################################################
+# Function: enable_gui
+# Description:
+#   Installs the GNOME desktop environment (with Xorg/Wayland/GDM3) plus extras
+#   and tweaks, and also installs AwesomeWM on a Debian/Ubuntu system. Afterwards,
+#   it sets the system to boot into a graphical session by default.
+#
+# Usage:
+#   enable_gui
+################################################################################
+enable_gui() {
+  echo "[INFO] Enabling GUI environment..."
+
+  # Ensure package data is current
+  apt update
+
+  echo "[INFO] Installing GNOME, GDM, AwesomeWM, and related packages..."
+  apt -y install \
+    gnome \
+    gnome-shell \
+    gnome-tweaks \
+    xorg \
+    wayland-protocols \
+    gdm3 \
+    awesome
+
+  echo "[INFO] Setting default target to graphical..."
+  systemctl set-default graphical.target
+
+  echo "[INFO] Enabling and starting GDM3..."
+  systemctl enable gdm3
+  systemctl start gdm3
+
+  echo "[INFO] GNOME desktop environment and AwesomeWM installation complete."
+  echo "[INFO] The system will now boot to the graphical login screen by default."
+}
+
+################################################################################
 # Function: finalize_configuration
-# apt upgrade
 ################################################################################
 finalize_configuration() {
   log "Finalizing system configuration..."
@@ -1040,43 +1076,68 @@ main() {
   log "--------------------------------------"
   log "Starting Debian Automated System Configuration Script"
 
+  # --------------------------------------------------------
+  # 1) Basic System Preparation
+  # --------------------------------------------------------
   identify_primary_iface
-  apt_and_settings
-  create_user "sawyer"
-  install_caddy
-  bootstrap_and_install_pkgs
-  overwrite_sshd_config
-  configure_sudoers
-  set_default_shell_and_env
-  configure_ufw \
-  "--add-service=ssh" \
-  "--add-service=http" \
-  "--add-port=8080/tcp" \
-  "--add-port=80/tcp" \
-  "--add-port=80/udp" \
-  "--add-port=443/tcp" \
-  "--add-port=443/udp"  \
-  "--add-port=32400/tcp" \
-  "--add-port=1900/udp" \
-  "--add-port=5353/udp" \
-  "--add-port=8324/tcp" \
-  "--add-port=32410-32415/udp" \
-  "--add-port=32469/tcp"
-  configure_ntp
+  apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   enable_extra_debian_repos
   configure_timezone "America/New_York"
   set_hostname "debian"
-  configure_automatic_updates
-  install_container_engine
-  basic_security_hardening
-  create_caddyfile
+
+  # --------------------------------------------------------
+  # 2) User Creation and Environment
+  # --------------------------------------------------------
+  create_user "sawyer"
+  set_default_shell_and_env
   setup_pyenv_and_python_tools_for_user "$USERNAME"
+
+  # --------------------------------------------------------
+  # 3) Software Installation
+  # --------------------------------------------------------
+  bootstrap_and_install_pkgs  # Installs essential system packages
+  install_caddy               # Installs Caddy web server
+  install_container_engine    # Installs Docker and related tools
+  enable_gui                  # Installs GNOME desktop environment & AwesomeWM
+
+  # --------------------------------------------------------
+  # 4) Security and Hardening
+  # --------------------------------------------------------
+  overwrite_sshd_config
+  configure_sudoers
+  configure_ufw \
+    "--add-service=ssh" \
+    "--add-service=http" \
+    "--add-port=8080/tcp" \
+    "--add-port=80/tcp" \
+    "--add-port=80/udp" \
+    "--add-port=443/tcp" \
+    "--add-port=443/udp"  \
+    "--add-port=32400/tcp" \
+    "--add-port=1900/udp" \
+    "--add-port=5353/udp" \
+    "--add-port=8324/tcp" \
+    "--add-port=32410-32415/udp" \
+    "--add-port=32469/tcp"
+  configure_ntp
+  configure_automatic_updates
+  basic_security_hardening
+
+  # --------------------------------------------------------
+  # 5) Additional Configuration
+  # --------------------------------------------------------
+  create_caddyfile
+
+  # --------------------------------------------------------
+  # 6) Finalization
+  # --------------------------------------------------------
   finalize_configuration
 
   log "Configuration script finished successfully."
   log "--------------------------------------"
 }
 
+# Entrypoint
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   main "$@"
 fi
