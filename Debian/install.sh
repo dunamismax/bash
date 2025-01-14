@@ -194,6 +194,28 @@ bootstrap_and_install_pkgs() {
 }
 
 ################################################################################
+# Function: configure_sudo_access
+# Description:
+#   1) Installs the sudo package if missing.
+#   2) Ensures $USERNAME is in the 'sudo' group.
+################################################################################
+configure_sudo_access() {
+  # 1) Ensure sudo is installed
+  echo "[INFO] Installing sudo package (if not already installed)..."
+  apt-get update -y
+  apt-get install -y sudo
+
+  # 2) Add the user to the 'sudo' group
+  echo "[INFO] Adding '$USERNAME' to the sudo group..."
+  if id "$USERNAME" &>/dev/null; then
+    usermod -aG sudo "$USERNAME"
+  else
+    echo "[WARNING] User '$USERNAME' does not exist. Please create the user before configuring sudo."
+    return 1
+  fi
+}
+
+################################################################################
 # Function: overwrite_ssh_config
 # Overwrite /etc/ssh/ssh_config
 ################################################################################
@@ -1176,6 +1198,7 @@ main() {
   # 1) Basic System Preparation
   # --------------------------------------------------------
   enable_sudo
+  configure_sudo_access
   force_release_ports
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
