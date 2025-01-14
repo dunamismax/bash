@@ -655,6 +655,8 @@ EOF
 create_caddyfile() {
   log "Creating /etc/caddy/Caddyfile..."
 
+  install_caddy
+
   local caddyfile_path="/etc/caddy/Caddyfile"
   local caddyfile_dir
   caddyfile_dir=$(dirname "$caddyfile_path")
@@ -710,6 +712,9 @@ EOF
   chmod 644 "$caddyfile_path"
 
   log "Caddyfile created at $caddyfile_path"
+
+  systemctl enable caddy
+  systemctl start caddy
 
   # Optionally reload or restart Caddy to apply changes
   if command -v systemctl &>/dev/null; then
@@ -1025,8 +1030,6 @@ main() {
   # --------------------------------------------------------
   # 3) Install Caddy and create caddyfile
   # --------------------------------------------------------
-  create_caddyfile
-  install_caddy
   create_caddyfile
 
   # --------------------------------------------------------
