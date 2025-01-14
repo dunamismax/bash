@@ -157,8 +157,10 @@ handle_error() {
 # Function: install and enable sudo
 ################################################################################
 enable_sudo() {
+  export PATH=$PATH:/usr/sbin
   log "Enabling sudo."
   apt install sudo -y
+  apt install shadow -y
   usermod -aG sudo sawyer
   log "User 'sawyer' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
