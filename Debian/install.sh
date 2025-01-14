@@ -1187,11 +1187,11 @@ main() {
   # --------------------------------------------------------
   # 1) Basic System Preparation
   # --------------------------------------------------------
+  force_release_ports
   install_enable_systemd
   enable_sudo
   configure_sudo_access
   enable_non_free_firmware_only
-  force_release_ports
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
   set_hostname "debian"
