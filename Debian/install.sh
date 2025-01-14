@@ -222,6 +222,7 @@ EOF
 ################################################################################
 configure_sudoers() {
   log "Configuring sudoers for $USERNAME..."
+  apt install sudo
 
   # Ensure required commands are available
   for cmd in usermod sudo; do
