@@ -1127,10 +1127,16 @@ disable_sleep_and_set_performance() {
 ################################################################################
 # Function: install_and_enable_plex
 # Description:
-#   This function installs the official Plex Media Server package on Debian,
-#   ensures the service is enabled, and starts the service.
-#   It adds the official Plex repository, installs any prerequisites,
-#   and sets up Plex to run automatically on system boot.
+#   This function installs Plex Media Server on Ubuntu using the official
+#   .deb package. Then it enables and starts the plexmediaserver service so
+#   that Plex runs automatically on system boot. Finally, it displays how
+#   to access the Plex Web UI.
+#
+# Usage:
+#   1. Adjust the VERSION variable below as necessary.
+#   2. Call install_and_enable_plex.
+#   3. Access the Plex Web UI on http://127.0.0.1:32400/web from the same
+#      machine running Plex.
 ################################################################################
 install_and_enable_plex() {
   set -e  # Exit immediately if a command exits with a non-zero status
@@ -1140,27 +1146,27 @@ install_and_enable_plex() {
 
   echo "Installing prerequisites (curl) if not already installed..."
   if ! dpkg -s curl >/dev/null 2>&1; then
-    sudo apt-get install curl -y
+    sudo apt-get install -y curl
   fi
 
-  echo "Importing Plex GPG key..."
-  curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key | sudo apt-key add -
+  # Change this to match the latest Plex version you want to install
+  local VERSION="1.19.4.2935-79e214ead"
+  local DEB_PACKAGE="plexmediaserver_${VERSION}_amd64.deb"
+  local DEB_URL="https://downloads.plex.tv/plex-media-server-new/${VERSION}/debian/${DEB_PACKAGE}"
 
-  echo "Adding Plex repository to /etc/apt/sources.list.d/plexmediaserver.list..."
-  echo "deb https://downloads.plex.tv/repo/deb public main" | sudo tee /etc/apt/sources.list.d/plexmediaserver.list
-
-  echo "Updating apt package index (with new Plex repo)..."
-  sudo apt-get update -y
+  echo "Downloading Plex Media Server package from Plex..."
+  curl -LO "${DEB_URL}"
 
   echo "Installing Plex Media Server..."
-  sudo apt-get install plexmediaserver -y
+  sudo dpkg -i "${DEB_PACKAGE}"
 
-  echo "Enabling and starting the plexmediaserver service..."
+  echo "Enabling and starting plexmediaserver service..."
   sudo systemctl enable plexmediaserver
   sudo systemctl start plexmediaserver
 
-  echo "Plex Media Server installation and enablement complete!"
-  echo "You can access the Plex Web UI on http://<your-server-IP>:32400/web."
+  echo "Plex Media Server installation complete!"
+  echo "To configure Plex, open a browser on the same machine and go to:"
+  echo "  http://127.0.0.1:32400/web"
 }
 
 ################################################################################
