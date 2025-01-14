@@ -160,8 +160,6 @@ enable_sudo() {
   log "Enabling sudo."
   apt install sudo -y
   usermod -aG sudo sawyer
-  apt install bash -y
-  bash
   log "User 'sawyer' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
 
