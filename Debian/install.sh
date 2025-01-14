@@ -127,24 +127,6 @@ handle_error() {
 }
 
 ################################################################################
-# Function: identify_primary_iface
-# Identify the primary network interface on Debian
-################################################################################
-identify_primary_iface() {
-  log "Identifying primary network interface..."
-
-  if command -v ip &>/dev/null; then
-    PRIMARY_IFACE=$(ip route show default 2>/dev/null | awk '/default via/ {print $5}' | head -n1)
-    if [ -n "$PRIMARY_IFACE" ]; then
-      log "Primary network interface found: $PRIMARY_IFACE"
-      return
-    fi
-  fi
-
-  log "No primary network interface was detected."
-}
-
-################################################################################
 # Function: bootstrap_and_install_pkgs
 # apt update/upgrade and install our base PACKAGES
 ################################################################################
