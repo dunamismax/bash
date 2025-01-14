@@ -650,50 +650,6 @@ EOF
 }
 
 ################################################################################
-# Function: install_container_engine
-# Description:
-#   Installs Docker Engine (Docker CE) and related tools on Debian-based systems.
-#   Removes older Docker packages if present, adds the Docker APT repo, installs
-#   Docker, then enables and starts the Docker service. Optionally adds $USERNAME
-#   to the 'docker' group to allow non-root access to Docker commands.
-################################################################################
-install_container_engine() {
-  log "Starting container engine installation for Debian..."
-
-  # Remove any older Docker packages that may conflict
-  log "Removing older Docker packages if present..."
-  apt purge docker docker.io containerd runc 2>&1 | tee -a "$LOG_FILE"
-
-  # Add Docker’s official GPG key
-  log "Adding Docker’s official GPG key..."
-  mkdir -p /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg >/dev/null 2>&1
-
-  # Set up the stable Docker repository
-  log "Setting up the Docker APT repository..."
-  sudo echo "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-
-  # Update package index and install Docker Engine
-  log "Installing Docker Engine and related packages..."
-  apt install docker-ce docker-ce-cli containerd.io docker-compose-plugin 2>&1 | tee -a "$LOG_FILE"
-
-  # Enable and start Docker
-  log "Enabling and starting Docker service..."
-  systemctl enable docker 2>&1 | tee -a "$LOG_FILE"
-  systemctl start docker 2>&1 | tee -a "$LOG_FILE"
-
-  # Optionally add your user to the 'docker' group for non-root usage
-  if id "$USERNAME" &>/dev/null; then
-    log "Adding '$USERNAME' to the 'docker' group..."
-    usermod -aG docker "$USERNAME"
-  else
-    log "User '$USERNAME' does not exist or is not passed in. Skipping 'docker' group addition."
-  fi
-
-  log "Docker installation completed successfully."
-}
-
-################################################################################
 # Function: apt_and_settings
 # Description:
 #   1) Configure APT to enable some preferable defaults (e.g., assume "yes",
@@ -1037,7 +993,6 @@ main() {
   # 4) Software Installation
   # --------------------------------------------------------
   bootstrap_and_install_pkgs  # Installs essential system packages
-  install_container_engine    # Installs Docker and related tools
   enable_gui                  # Installs GNOME desktop environment & AwesomeWM
 
   # --------------------------------------------------------
