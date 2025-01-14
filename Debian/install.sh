@@ -152,29 +152,35 @@ handle_error() {
 }
 
 ################################################################################
-# enable_contrib_non_free_firmware
+# enable_non_free_firmware_only
 # Description:
-#   1) Appends "contrib" and "non-free-firmware" sources for Debian 12 (bookworm)
-#      to /etc/apt/sources.list.
-#   2) Updates package lists.
-#   3) Installs the AMD firmware package "firmware-amd-graphics".
+#   1) Backs up /etc/apt/sources.list
+#   2) Adds "non-free-firmware" to existing lines referencing Debian 12 (bookworm)
+#      in /etc/apt/sources.list, without duplicating other components.
+#   3) Updates package lists.
+#   4) Installs the AMD firmware package "firmware-amd-graphics".
 #
 # Usage:
-#   1) Make this script executable:  chmod +x enable_cnf_fw.sh
-#   2) Run as root or via sudo:      sudo ./enable_cnf_fw.sh
+#   1) chmod +x enable_non_free_firmware_only.sh
+#   2) sudo ./enable_non_free_firmware_only.sh
 ################################################################################
 
-enable_contrib_non_free_firmware() {
+enable_non_free_firmware_only() {
   echo "[INFO] Backing up /etc/apt/sources.list to /etc/apt/sources.list.bak"
   cp -a /etc/apt/sources.list /etc/apt/sources.list.bak
 
-  echo "[INFO] Adding contrib and non-free-firmware repos for Debian 12 (bookworm)"
-  cat <<EOF >> /etc/apt/sources.list
+  echo "[INFO] Adding only 'non-free-firmware' to existing lines for bookworm"
 
-deb http://deb.debian.org/debian bookworm main contrib non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware
-deb http://security.debian.org/debian-security bookworm-security main contrib non-free-firmware
-EOF
+  # This sed command:
+  #  1) Applies only to lines starting with "deb" that mention "bookworm"
+  #  2) Skips lines already containing "non-free-firmware"
+  #  3) Appends "non-free-firmware" at the end of the line
+  #
+  # If you'd like to insert it right after 'main' or 'contrib' instead,
+  # you can adjust the sed expression accordingly.
+  sed -i \
+    '/^deb .*bookworm/ {/non-free-firmware/! s/$/ non-free-firmware/;}' \
+    /etc/apt/sources.list
 
   echo "[INFO] Updating package lists..."
   apt-get update -y
@@ -182,7 +188,7 @@ EOF
   echo "[INFO] Installing firmware-amd-graphics..."
   apt-get install -y firmware-amd-graphics
 
-  echo "[INFO] Done. You may reboot or reload amdgpu for the firmware changes to take effect."
+  echo "[INFO] Done. You may reboot or unload/reload amdgpu for the changes to take effect."
 }
 
 ################################################################################
@@ -1290,7 +1296,7 @@ main() {
   install_enable_systemd
   enable_sudo
   configure_sudo_access
-  enable_contrib_non_free_firmware
+  enable_non_free_firmware_only
   force_release_ports
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
