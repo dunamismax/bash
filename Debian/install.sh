@@ -621,15 +621,6 @@ EOF
 }
 
 ################################################################################
-# Function to install Caddy: install_caddy
-################################################################################
-install_caddy() {
-    log "Installing Caddy"
-    apt install caddy
-    log "Caddy Installed!"
-}
-
-################################################################################
 # Function: create_caddyfile
 # Description:
 #   Creates (or overwrites) /etc/caddy/Caddyfile with the specified contents:
@@ -1066,6 +1057,21 @@ install_dev_build_deps() {
 }
 
 ################################################################################
+# Function: install_caddy
+################################################################################
+install_caddy() {
+  log "Installing and enabling Caddy..."
+apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+apt update
+apt install caddy
+systemctl enable caddy
+systemctl start caddy
+  log "Caddy installed and enabled."
+}
+
+################################################################################
 # Function: finalize_configuration
 ################################################################################
 finalize_configuration() {
@@ -1107,15 +1113,16 @@ main() {
   set_default_shell_and_env
 
   # --------------------------------------------------------
-  # 3) Create caddyfile
+  # 3) Install Caddy and create caddyfile
   # --------------------------------------------------------
+  create_caddyfile
+  install_caddy
   create_caddyfile
 
   # --------------------------------------------------------
   # 4) Software Installation
   # --------------------------------------------------------
   bootstrap_and_install_pkgs  # Installs essential system packages
-  install_caddy               # Installs Caddy web server
   install_container_engine    # Installs Docker and related tools
   enable_gui                  # Installs GNOME desktop environment & AwesomeWM
 
