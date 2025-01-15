@@ -1174,8 +1174,15 @@ install_and_enable_plex() {
 # install_i3_and_ly
 #   Installs Chocolatey (on Ubuntu via WSL or similar), uses it to install Zig,
 #   then proceeds to install i3, X11/GUI dependencies, and Ly.
+#
+#   NOTE: Because Chocolatey is primarily intended for Windows, many steps (like
+#   referencing $env:SystemDrive or $env:TEMP) do not exist by default on Linux/WSL.
+#   This script attempts to set possible environment variables needed by the
+#   Chocolatey bootstrap script to avoid null references. However, official
+#   support for Chocolatey on Linux is quite limited, so proceed with caution.
 # ------------------------------------------------------------------------------
 install_i3_and_ly() {
+  set -euo pipefail
   echo "[INFO] Starting installation process for i3, Ly, and dependencies..."
 
   # 1) Ensure prerequisites are installed
@@ -1183,35 +1190,38 @@ install_i3_and_ly() {
   sudo apt-get update -y
   sudo apt-get install -y wget apt-transport-https software-properties-common
 
-  # Get the version of Ubuntu
-  source /etc/os-release
-
-  # Download the Microsoft repository keys
+  # Download the Microsoft repository keys (adjust to your Ubuntu version as needed)
   echo "[INFO] Downloading Microsoft repository keys..."
-  wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb
+  wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
 
   # Register the Microsoft repository keys
   echo "[INFO] Registering Microsoft repository keys..."
-  sudo dpkg -i packages-microsoft-prod.deb
+  sudo dpkg -i packages-microsoft-prod.deb || true
 
   # Delete the repository keys file
   echo "[INFO] Cleaning up repository keys file..."
-  rm packages-microsoft-prod.deb
+  rm -f packages-microsoft-prod.deb
 
   # Update package lists
   echo "[INFO] Updating package lists..."
   sudo apt-get update -y
 
   # Install PowerShell
-  echo "[INFO] Installing PowerShell..."
+  echo "[INFO] Installing PowerShell (if supported on this distro)..."
   sudo apt-get install -y powershell
 
   # 2) Install and enable Chocolatey
   echo "[INFO] Ensuring Chocolatey is installed..."
   if ! command -v choco &>/dev/null; then
     echo "[INFO] Installing Chocolatey using PowerShell..."
-    pwsh -Command 'Set-ExecutionPolicy Bypass -Scope Process -Force; \
-      [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; \
+    # Remove Set-ExecutionPolicy (it’s not supported on non-Windows).
+    # Also set environment variables so that the Chocolatey script doesn’t fail
+    # due to $env:SystemDrive or $env:TEMP being null.
+    pwsh -Command '[System.Environment]::SetEnvironmentVariable("SystemDrive","/",[System.EnvironmentVariableTarget]::Process); 
+      [System.Environment]::SetEnvironmentVariable("TEMP","/tmp",[System.EnvironmentVariableTarget]::Process);
+      [System.Environment]::SetEnvironmentVariable("ALLUSERSPROFILE","/tmp",[System.EnvironmentVariableTarget]::Process);
+      [System.Environment]::SetEnvironmentVariable("ProgramData","/tmp",[System.EnvironmentVariableTarget]::Process);
+      [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072;
       iex ((New-Object System.Net.WebClient).DownloadString("https://community.chocolatey.org/install.ps1"))'
   else
     echo "[INFO] Chocolatey is already installed."
@@ -1219,7 +1229,12 @@ install_i3_and_ly() {
 
   # 3) Install Zig using Chocolatey
   echo "[INFO] Installing Zig via Chocolatey..."
-  choco install zig -y
+  if command -v choco &>/dev/null; then
+    choco install zig -y
+  else
+    echo "[ERROR] Chocolatey was not installed successfully; cannot install Zig with choco."
+    exit 1
+  fi
 
   # 4) Proceed with i3, X11, and other dependencies
   echo "[INFO] Updating package lists and installing i3 / X11 dependencies..."
@@ -1238,7 +1253,7 @@ install_i3_and_ly() {
   echo "[INFO] Cloning Ly repository..."
   if [ -d "ly" ]; then
     echo "[INFO] 'ly' directory already exists; skipping clone."
-    cd ly
+    cd ly || exit
   else
     git clone https://github.com/fairyglade/ly.git
     cd ly
@@ -1246,6 +1261,7 @@ install_i3_and_ly() {
 
   # 6) Build Ly using Zig
   echo "[INFO] Compiling Ly..."
+  # If zig from Chocolatey is not in PATH, specify its full path or ensure PATH is updated.
   zig build
 
   # Optional test step (will fail to launch desktop environments from a bare shell):
