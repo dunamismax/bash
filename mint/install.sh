@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Ubuntu Automated System Configuration Script
+# mint Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # DESCRIPTION:
-#   Automates the initial configuration of a fresh Ubuntu system by:
+#   Automates the initial configuration of a fresh mint system by:
 #     1) Updating package repositories and installing/upgrading essential software
 #        (e.g., development tools, utilities, network tools).
 #     2) Backing up and customizing critical system configuration files
@@ -24,11 +24,11 @@
 # USAGE & REQUIREMENTS:
 #   - Ensure you have administrative privileges (run as root or via `sudo`).
 #   - Review and adjust all variables (e.g., USERNAME, PACKAGES) before execution.
-#   - Works on Ubuntu and may be compatible with derivative distributions.
+#   - Works on mint and may be compatible with derivative distributions.
 #   - Backups of replaced configuration files are stored with timestamps for safety.
 #
 # LOGGING:
-#   - All actions and errors are logged to '/var/log/ubuntu_setup.log'.
+#   - All actions and errors are logged to '/var/log/mint_setup.log'.
 #   - Logs include timestamps to aid troubleshooting and provide an audit trail.
 #
 # ERROR HANDLING:
@@ -36,7 +36,7 @@
 #   - A trap is set on 'ERR' to display helpful messages and ensure a graceful exit.
 #
 # COMPATIBILITY:
-#   - Developed and tested on Ubuntu 20.04 and 22.04 LTS. Verify compatibility
+#   - Developed and tested on mint 20.04 and 22.04 LTS. Verify compatibility
 #     before running on older/newer versions or derivatives.
 #
 # CUSTOMIZATION:
@@ -58,10 +58,10 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/ubuntu_setup.log"
+LOG_FILE="/var/log/mint_setup.log"
 USERNAME="sawyer"
 
-# Essential Ubuntu packages for a baseline system
+# Essential mint packages for a baseline system
 # (You can expand or refine this list according to your needs.)
 PACKAGES=(
   # Shells and terminal utilities
@@ -243,7 +243,7 @@ overwrite_ssh_config() {
   fi
 
   cat << 'EOF' > "$ssh_config"
-# Basic Ubuntu SSH Configuration
+# Basic mint SSH Configuration
 
 Port 22
 AddressFamily any
@@ -265,7 +265,7 @@ EOF
   chmod 644 "$ssh_config"
   log "Completed overwriting /etc/ssh/ssh_config. Restarting ssh service..."
 
-  # Restart the service using Ubuntu's service name
+  # Restart the service using mint's service name
   systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
 }
 
@@ -394,9 +394,9 @@ shopt -s checkwinsize
 # ------------------------------------------------------------------------------
 # 6. Bash prompt (PS1)
 # ------------------------------------------------------------------------------
-# Identify if we are in a Ubuntu chroot environment and set ubuntu_chroot.
-if [ -z "${ubuntu_chroot:-}" ] && [ -r /etc/ubuntu_chroot ]; then
-    ubuntu_chroot=$(cat /etc/ubuntu_chroot)
+# Identify if we are in a mint chroot environment and set mint_chroot.
+if [ -z "${mint_chroot:-}" ] && [ -r /etc/mint_chroot ]; then
+    mint_chroot=$(cat /etc/mint_chroot)
 fi
 
 # If terminal supports color, enable a colored prompt.
@@ -418,16 +418,16 @@ fi
 
 # Choose a colored or plain prompt.
 if [ "$color_prompt" = yes ]; then
-    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+    PS1='${mint_chroot:+($mint_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
-    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\u@\h:\w\$ '
+    PS1='${mint_chroot:+($mint_chroot)}\u@\h:\w\$ '
 fi
 unset color_prompt force_color_prompt
 
 # If this is an xterm or rxvt terminal, set the window title to user@host:dir.
 case "$TERM" in
     xterm*|rxvt*)
-        PS1="\[\e]0;${ubuntu_chroot:+($ubuntu_chroot)}\u@\h: \w\a\]$PS1"
+        PS1="\[\e]0;${mint_chroot:+($mint_chroot)}\u@\h: \w\a\]$PS1"
         ;;
     *)
         ;;
@@ -671,18 +671,18 @@ configure_timezone() {
 ################################################################################
 # Function: basic_security_hardening
 # Description:
-#   Applies a minimal set of security best practices on Ubuntu-based systems:
+#   Applies a minimal set of security best practices on mint-based systems:
 #     1) Disables root SSH login
 #     2) Installs fail2ban if not already installed
 ################################################################################
 basic_security_hardening() {
-  log "Applying basic Ubuntu security hardening..."
+  log "Applying basic mint security hardening..."
 
   # 1) Disable root login in ssh_config
   sed -i 's/^\s*#*\s*PermitRootLogin\s.*/PermitRootLogin no/' /etc/ssh/ssh_config
   systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
 
-  # 2) Install fail2ban (from Ubuntu repositories)
+  # 2) Install fail2ban (from mint repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
     log "Installing fail2ban..."
     apt install -y fail2ban 2>&1 | tee -a "$LOG_FILE"
@@ -806,7 +806,7 @@ apt_and_settings() {
 ################################################################################
 # Function: configure_ntp
 # Description:
-#   Installs and configures NTP service on Ubuntu-based systems using chrony.
+#   Installs and configures NTP service on mint-based systems using chrony.
 #   1) Installs chrony if not already installed.
 #   2) Backs up the existing /etc/chrony/chrony.conf (if present).
 #   3) Writes a basic chrony.conf with recommended upstream NTP servers.
@@ -835,7 +835,7 @@ configure_ntp() {
 # /etc/chrony/chrony.conf - basic configuration
 
 # Pool-based time servers:
-pool 2.ubuntu.pool.ntp.org iburst
+pool 2.mint.pool.ntp.org iburst
 pool time.google.com iburst
 pool pool.ntp.org iburst
 
@@ -1043,7 +1043,7 @@ install_caddy() {
   log "Installing and enabling Caddy..."
 
   apt update -y
-  apt install -y ubuntu-keyring apt-transport-https curl
+  apt install -y mint-keyring apt-transport-https curl
 
   # Add the official Caddy GPG key
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
@@ -1109,7 +1109,7 @@ disable_sleep_and_set_performance() {
 ################################################################################
 # Function: install_and_enable_plex
 # Description:
-#   This function installs Plex Media Server on Ubuntu using the official
+#   This function installs Plex Media Server on mint using the official
 #   .deb package if it is not already installed. If it is already installed,
 #   the function skips the installation and proceeds. Then it enables and
 #   starts the plexmediaserver service to ensure Plex runs on system boot.
@@ -1167,7 +1167,7 @@ install_and_enable_plex() {
 
 # ------------------------------------------------------------------------------
 # install_powershell_and_zig
-#   Installs PowerShell and Zig on Ubuntu/Linux Mint.
+#   Installs PowerShell and Zig on mint/Linux Mint.
 # ------------------------------------------------------------------------------
 install_powershell_and_zig() {
   set -euo pipefail
@@ -1175,7 +1175,7 @@ install_powershell_and_zig() {
 
   # Install PowerShell
   echo "[INFO] Installing PowerShell..."
-  wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
+  wget -q https://packages.microsoft.com/config/mint/22.04/packages-microsoft-prod.deb
   sudo dpkg -i packages-microsoft-prod.deb || true
   rm -f packages-microsoft-prod.deb
   sudo apt-get update -y
@@ -1252,7 +1252,7 @@ finalize_configuration() {
 ################################################################################
 main() {
   log "--------------------------------------"
-  log "Starting Ubuntu Automated System Configuration Script"
+  log "Starting mint Automated System Configuration Script"
 
   # --------------------------------------------------------
   # 1) Basic System Preparation
@@ -1262,7 +1262,7 @@ main() {
   configure_sudo_access
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
-  set_hostname "ubuntu"
+  set_hostname "mint"
   disable_sleep_and_set_performance
 
   # --------------------------------------------------------
@@ -1304,7 +1304,7 @@ main() {
   finalize_configuration
 
   log "Configuration script finished successfully."
-  log "Enjoy Ubuntu!"
+  log "Enjoy mint!"
   log "--------------------------------------"
 }
 
