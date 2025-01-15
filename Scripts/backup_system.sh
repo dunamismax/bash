@@ -4,8 +4,6 @@
 # CONFIGURATION
 # --------------------------------------
 
-# Exit immediately if a command exits with a non-zero status,
-# if any variable is unset, and if any command in a pipeline fails
 set -euo pipefail
 
 # Variables
@@ -13,6 +11,8 @@ SOURCE="/"
 DESTINATION="/mnt/WD_BLACK/BACKUP/ubuntu-backups"
 LOG_FILE="/var/log/ubuntu-backup.log"
 RETENTION_DAYS=7
+DATE=$(date +"%Y-%m-%d")
+BACKUP_NAME="backup-$DATE.tar.gz"
 
 # Exclusions
 EXCLUDES=(
@@ -36,65 +36,54 @@ EXCLUDES=(
     "*.tmp"           # Temporary files
 )
 
-# Create a formatted exclusions string for rsync
-EXCLUDES_STRING=""
+# Create exclusion string for tar
+EXCLUDES_ARGS=()
 for EXCLUDE in "${EXCLUDES[@]}"; do
-    EXCLUDES_STRING+="--exclude=${EXCLUDE} "
+    EXCLUDES_ARGS+=(--exclude="$EXCLUDE")
 done
 
 # --------------------------------------
 # FUNCTIONS
 # --------------------------------------
 
-# Function to log messages with timestamp
 log() {
     echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1" | tee -a "$LOG_FILE"
 }
 
-# Function to perform the backup
 perform_backup() {
-    local DATE=$(date +"%Y-%m-%d")
-    local BACKUP_DIR="$DESTINATION/$DATE"
+    log "Starting on-the-fly backup and compression to $DESTINATION/$BACKUP_NAME"
+    mkdir -p "$DESTINATION"
 
-    log "Starting backup to $BACKUP_DIR"
-    mkdir -p "$BACKUP_DIR"
+    # Compress and stream directly to the destination
+    tar -I pigz -cf "$DESTINATION/$BACKUP_NAME" "${EXCLUDES_ARGS[@]}" -C / . >> "$LOG_FILE" 2>&1
 
-    rsync -aAXv --delete $EXCLUDES_STRING "$SOURCE" "$BACKUP_DIR" >> "$LOG_FILE" 2>&1
-
-    log "Backup completed to $BACKUP_DIR"
+    log "Backup and compression completed: $DESTINATION/$BACKUP_NAME"
 }
 
-# Function to remove old backups
 cleanup_backups() {
-    log "Removing backups older than $RETENTION_DAYS days from $DESTINATION"
-    find "$DESTINATION" -mindepth 1 -maxdepth 1 -type d -mtime +$RETENTION_DAYS -exec rm -rf {} \; >> "$LOG_FILE" 2>&1
-    log "Old backups removed successfully."
+    log "Removing old backups from $DESTINATION older than $RETENTION_DAYS days"
+    find "$DESTINATION" -mindepth 1 -maxdepth 1 -type f -mtime +$RETENTION_DAYS -exec rm -f {} \; >> "$LOG_FILE" 2>&1
+    log "Old backups removed."
 }
 
-# Function to handle errors
 handle_error() {
     log "An error occurred during the backup process. Check the log for details."
     exit 1
 }
 
-# Trap errors and execute handle_error
 trap 'handle_error' ERR
 
 # --------------------------------------
 # SCRIPT START
 # --------------------------------------
 
-# Ensure the log file exists and has appropriate permissions
 touch "$LOG_FILE"
 chmod 644 "$LOG_FILE"
 
 log "--------------------------------------"
 log "Starting Ubuntu Backup Script"
 
-# Step 1: Perform the backup
 perform_backup
-
-# Step 2: Remove old backups
 cleanup_backups
 
 log "Backup and cleanup completed successfully on $(date)."
