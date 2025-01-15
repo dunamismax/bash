@@ -1152,7 +1152,14 @@ install_and_enable_plex() {
   curl -LO "${DEB_URL}"
 
   echo "Installing Plex Media Server..."
-  sudo dpkg -i "${DEB_PACKAGE}"
+  if ! sudo dpkg -i "${DEB_PACKAGE}"; then
+    echo "Resolving missing dependencies..."
+    sudo apt-get install -f -y
+    sudo dpkg -i "${DEB_PACKAGE}"
+  fi
+
+  echo "Configuring any partially installed packages..."
+  sudo dpkg --configure -a
 
   echo "Enabling and starting plexmediaserver service..."
   sudo systemctl enable plexmediaserver
