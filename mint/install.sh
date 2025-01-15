@@ -709,11 +709,11 @@ log() {
 # --------------------------------------
 
 update_repositories() {
-    log "Creating directory $GITHUB_DIR if it doesn't exist"
-    mkdir -p "$GITHUB_DIR"
+    log "Creating directory"
+    mkdir -p "/home/sawyer/github"
 
-    log "Changing to directory $GITHUB_DIR"
-    cd "$GITHUB_DIR"
+    log "Changing to directory /home/sawyer/github"
+    cd "/home/sawyer/github"
 
     # Clone repositories if they do not already exist
     repos=(
@@ -748,6 +748,7 @@ update_repositories() {
     sudo chmod o+rx "/home/sawyer/github/hugo/dunamismax.com"
 
     log "Update repositories and permissions completed."
+    cd ~
 }
 
 ################################################################################
