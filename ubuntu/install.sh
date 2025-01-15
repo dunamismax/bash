@@ -176,8 +176,8 @@ enable_sudo() {
   log "Enabling sudo."
   apt install -y sudo
   apt install -y net-tools
-  usermod -aG sudo sawyer
-  log "User 'sawyer' has been added to the sudo group. Log out and back in for the changes to take effect."
+  usermod -aG sudo $USERNAME
+  log "User '$USERNAME' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
 
 ################################################################################
