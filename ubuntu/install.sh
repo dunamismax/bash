@@ -1193,9 +1193,9 @@ install_and_enable_plex() {
 #            feh --bg-scale /path/to/wallpaper.jpg
 #       - clipmenu is a clipboard manager that you can run in your i3 config.
 # ------------------------------------------------------------------------------
-install_i3-gaps_and_ly() {
+install_x11_and_ly() {
   set -euo pipefail
-  echo "[INFO] Starting installation process for i3-gaps, Ly, and dependencies..."
+  echo "[INFO] Starting installation process for x11, Ly, and dependencies..."
 
   # 1) Ensure standard prerequisites are installed
   echo "[INFO] Installing prerequisites..."
@@ -1238,11 +1238,10 @@ install_i3-gaps_and_ly() {
   rm -f "$ZIG_TARBALL"
   rm -rf "$ZIG_EXTRACTED"
 
-  # 4) Install i3-gaps, X11, and other dependencies from apt
+  # 4) Install X11, and other dependencies from apt
   echo "[INFO] Installing i3-gaps / X11 dependencies..."
   sudo apt-get update -y
   sudo apt-get install -y \
-    i3-gaps \
     xserver-xorg \
     xinit \
     x11-xserver-utils \
@@ -1528,6 +1527,35 @@ EOF
   echo "i3-gaps configuration file created at /home/sawyer/.config/i3/config"
 }
 
+# Function to add the PPA, update repositories, and install i3-gaps
+install_i3_gaps() {
+    # Check if the user has sudo privileges
+    if ! sudo -v &>/dev/null; then
+        echo "You need sudo privileges to run this function." >&2
+        return 1
+    fi
+
+    echo "Adding the Regolith Linux PPA..."
+    if ! sudo add-apt-repository -y ppa:regolith-linux/release; then
+        echo "Failed to add the Regolith Linux PPA." >&2
+        return 1
+    fi
+
+    echo "Updating package list..."
+    if ! sudo apt update; then
+        echo "Failed to update package lists." >&2
+        return 1
+    fi
+
+    echo "Installing i3-gaps..."
+    if ! sudo apt install -y i3-gaps; then
+        echo "Failed to install i3-gaps." >&2
+        return 1
+    fi
+
+    echo "i3-gaps installation completed successfully."
+}
+
 ################################################################################
 # Function: finalize_configuration
 ################################################################################
@@ -1614,7 +1642,8 @@ main() {
   # 7) Finalization
   # --------------------------------------------------------
   install_and_enable_plex
-  install_i3-gaps_and_ly
+  install_i3_gaps
+  install_x11_and_ly
   create_i3_config
   finalize_configuration
 
