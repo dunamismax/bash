@@ -3,34 +3,51 @@
 # Ubuntu Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # DESCRIPTION:
-#   Automates the initial setup of a fresh Ubuntu system by:
-#     1) Syncing package repositories and installing/updating core packages
-#        (e.g., build tools, curl, git).
-#     2) Backing up, then overwriting certain system configs
-#        (e.g., '/etc/ssh/ssh_config') to apply recommended security and
-#        custom settings.
-#     3) Creating or configuring a user account (default: "sawyer") with:
+#   Automates the initial configuration of a fresh Ubuntu system by:
+#     1) Updating package repositories and installing/upgrading essential software
+#        (e.g., development tools, utilities, network tools).
+#     2) Backing up and customizing critical system configuration files
+#        (e.g., '/etc/ssh/ssh_config') to apply best practices for security
+#        and performance.
+#     3) Setting up a user account (default: "sawyer") with:
 #         - Sudo privileges
-#         - Bash as the default shell
+#         - A configured Bash environment as the default shell.
+#     4) Enabling and configuring essential services, including:
+#         - UFW (firewall)
+#         - SSH (secure shell access)
+#         - Chrony (NTP synchronization)
+#     5) Installing optional tools, such as:
+#         - Caddy for web hosting and reverse proxy
+#         - Plex Media Server for multimedia streaming
+#         - Python, Go, Rust, and Zig development environments.
 #
 # USAGE & REQUIREMENTS:
-#   - Change all instances of "sawyer" in the code to whatever your username is before running.
-#   - Run as root or via 'sudo'; non-root execution lacks necessary privileges.
-#   - Works on Ubuntu (may also function on derivative distros).
-#   - Review all overwriting steps before use; backups of replaced files are
-#     stored with timestamps in the same directory.
+#   - Ensure you have administrative privileges (run as root or via `sudo`).
+#   - Review and adjust all variables (e.g., USERNAME, PACKAGES) before execution.
+#   - Works on Ubuntu and may be compatible with derivative distributions.
+#   - Backups of replaced configuration files are stored with timestamps for safety.
 #
 # LOGGING:
-#   - All operations and errors are logged to '/var/log/ubuntu_setup.log'
-#     for troubleshooting.
+#   - All actions and errors are logged to '/var/log/ubuntu_setup.log'.
+#   - Logs include timestamps to aid troubleshooting and provide an audit trail.
 #
 # ERROR HANDLING:
-#   - 'set -euo pipefail' aborts on errors, unbound variables, or failed pipes.
-#   - Trapped 'ERR' ensures a graceful exit on unexpected failures.
+#   - 'set -euo pipefail' halts execution on errors, unbound variables, or failed pipelines.
+#   - A trap is set on 'ERR' to display helpful messages and ensure a graceful exit.
+#
+# COMPATIBILITY:
+#   - Developed and tested on Ubuntu 20.04 and 22.04 LTS. Verify compatibility
+#     before running on older/newer versions or derivatives.
+#
+# CUSTOMIZATION:
+#   - Update variables like `USERNAME`, `PACKAGES`, and services to match your needs.
+#   - Modify optional components (e.g., Plex, Caddy) as required for your setup.
 #
 # AUTHOR & LICENSE:
 #   - Author: dunamismax
-#   - License: MIT
+#   - License: MIT License
+#     Permission is granted to use, copy, modify, and distribute this script
+#     for any purpose with or without attribution. Provided "as-is" without warranty.
 # ------------------------------------------------------------------------------
 
 set -Eeuo pipefail
