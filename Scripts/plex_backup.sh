@@ -19,7 +19,7 @@ BACKUP_NAME="plex-backup-$TIMESTAMP.tar.gz"
 # --------------------------------------
 
 # Check if required commands exist
-for cmd in tar pigz find tee; do
+for cmd in tar pigz find tee df mountpoint; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "Error: Required command '$cmd' is not installed." >&2
         exit 1
@@ -32,8 +32,12 @@ if [ ! -d "$SOURCE" ]; then
     exit 1
 fi
 
-# Check if DESTINATION mount is available
-if ! mountpoint -q "$(dirname "$DESTINATION")"; then
+# Create destination directory if it doesn't exist
+mkdir -p "$DESTINATION"
+
+# Check for the nearest mounted parent directory of DESTINATION
+mounted_parent=$(df --output=target "$DESTINATION" | tail -1)
+if [ -z "$mounted_parent" ] || ! mountpoint -q "$mounted_parent"; then
     echo "Error: Destination mount point for '$DESTINATION' is not available." >&2
     exit 1
 fi
@@ -55,8 +59,6 @@ log() {
 }
 
 perform_backup() {
-    mkdir -p "$DESTINATION"
-
     log "Starting on-the-fly backup and compression to $DESTINATION/$BACKUP_NAME"
 
     # Compress and stream directly to the destination using pigz for speed
