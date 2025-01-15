@@ -740,12 +740,13 @@ www.dunamismax.com {
 # Main website
 dunamismax.com {
     # Serve the static files from your Hugo output folder
-    root * /home/sawyer/GitHub/Hugo/dunamismax.com/public
+    root * /home/sawyer/github/hugo/dunamismax.com/public
     file_server
 
-    # Deny hidden files (dotfiles like .git, .htaccess, etc.)
+    # Deny hidden files (dotfiles like .git, .htaccess, etc.), except .well-known
     @hiddenFiles {
-        path_regexp hiddenFiles ^/\.
+        path /.*
+        not path /.well-known/*
     }
     respond @hiddenFiles 404
 
