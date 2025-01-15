@@ -11,7 +11,7 @@ set -euo pipefail
 # Variables
 export RESTIC_REPOSITORY="/mnt/media/WD_BLACK/BACKUPS/ubuntu-home-backups"
 export RESTIC_PASSWORD_FILE="/root/.restic-password"
-SOURCE_DIR="/home/dowdy"
+SOURCE_DIR="/home/sawyer"
 LOG_FILE="/var/log/home-backup.log"
 RETENTION_DAYS=30
 SNAPSHOT_TAG="Home-$(date +"%Y-%m-%d")"

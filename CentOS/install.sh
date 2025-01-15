@@ -8,7 +8,7 @@
 #   1) Updating DNF/YUM and installing essential packages (including epel-release).
 #   2) Overwriting selected configuration files (/etc/resolv.conf, /etc/ssh/sshd_config)
 #      and backing up the originals.
-#   3) Granting sudo privileges to the user "dowdy" and configuring Bash as the default shell.
+#   3) Granting sudo privileges to the user "sawyer" and configuring Bash as the default shell.
 #   4) Adding Python environment setup (pyenv + pipx) for the latest stable Python 3.x
 #      plus a curated set of Python CLI tools.
 #
@@ -28,7 +28,7 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # --------------------------------------
 
 LOG_FILE="/var/log/centos_setup.log"
-USERNAME="dowdy"
+USERNAME="sawyer"
 PRIMARY_IFACE=""    # Will be detected automatically, if possible
 
 # List of packages to install for the core system configuration
@@ -566,7 +566,7 @@ www.dunamismax.com {
 # Main website
 dunamismax.com {
     # Serve the static files from your Hugo output folder
-    root * /home/dowdy/GitHub/Hugo/dunamismax.com/public
+    root * /home/sawyer/GitHub/Hugo/dunamismax.com/public
     file_server
 
     # Deny hidden files (dotfiles like .git, .htaccess, etc.)
@@ -762,7 +762,7 @@ EOF
 #   create_user "username"
 #
 # Example:
-#   create_user "dowdy"
+#   create_user "sawyer"
 ################################################################################
 create_user() {
   local username="$1"
@@ -1024,7 +1024,7 @@ main() {
 
   identify_primary_iface
   dnf_and_settings
-  create_user "dowdy"
+  create_user "sawyer"
   install_caddy
   bootstrap_and_install_pkgs
   overwrite_resolv_conf

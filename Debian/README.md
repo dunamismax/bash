@@ -11,7 +11,7 @@ This script is designed to automate the setup and configuration of a fresh Debia
 1. Updates and upgrades your system using apt.
 2. Installs a list of baseline tools and utilities (e.g., bash, Vim, Python, developer toolchains, etc.).
 3. Secures SSH by backing up and overwriting /etc/ssh/sshd_config.
-4. Creates a new user (“dowdy”) with Bash as the default shell.
+4. Creates a new user (“sawyer”) with Bash as the default shell.
 5. Configures a firewall (ufw) with pre-defined service and port rules.
 6. Installs and configures the Caddy web server.
 7. Sets up system time synchronization via chrony.
@@ -46,7 +46,7 @@ This script is designed to automate the setup and configuration of a fresh Debia
 
 ## Important Notes
 
-- This script creates a user named “dowdy” and sets that user’s default shell to Bash. If you need a different username, modify the `USERNAME` variable at the top of the script.
+- This script creates a user named “sawyer” and sets that user’s default shell to Bash. If you need a different username, modify the `USERNAME` variable at the top of the script.
 - The script backs up certain files (like `/etc/ssh/sshd_config`) before overwriting them. These backups typically use the `.bak` extension, sometimes with a timestamp for safety.
 - The script attempts to enable and configure GNOME, gdm3, and AwesomeWM. If you do not need a GUI environment on your server, remove or comment out the relevant sections (e.g., `enable_gui`).
 - By default, it sets the hostname to “debian” and the timezone to “America/New_York” in the `main()` function. Adjust these parameters as needed.
@@ -55,6 +55,6 @@ This script is designed to automate the setup and configuration of a fresh Debia
 ## Troubleshooting & Support
 
 - Check the log file at `/var/log/debian_setup.log` if you run into issues. Additionally, check the logs for services like `systemctl status caddy` or `systemctl status fail2ban` if they fail to start.
-- Confirm that the user “dowdy” was created and has the correct shell by running `grep dowdy /etc/passwd`.
+- Confirm that the user “sawyer” was created and has the correct shell by running `grep sawyer /etc/passwd`.
 - If ufw rules are not applying, manually run `ufw status` to see if the rules were added.
 - For further security, consider customizing the firewall ports, SSH configurations, and adding advanced intrusion detection solutions beyond `fail2ban` and `AIDE`.

@@ -9,12 +9,12 @@
 #     2) Backing up, then overwriting certain system configs
 #        (e.g., '/etc/ssh/sshd_config') to apply recommended security and
 #        custom settings.
-#     3) Creating or configuring a user account (default: "dowdy") with:
+#     3) Creating or configuring a user account (default: "sawyer") with:
 #         - Sudo privileges
 #         - Bash as the default shell
 #
 # USAGE & REQUIREMENTS:
-#   - Change all instances of "dowdy" in the code to whatever your username is before running.
+#   - Change all instances of "sawyer" in the code to whatever your username is before running.
 #   - Run as root or via 'sudo'; non-root execution lacks necessary privileges.
 #   - Works on Debian and Ubuntu (may also function on derivative distros).
 #   - Review all overwriting steps before use; backups of replaced files are
@@ -42,7 +42,7 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/debian_setup.log"
-USERNAME="dowdy"
+USERNAME="sawyer"
 
 # Essential Debian/Ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
@@ -207,8 +207,8 @@ enable_sudo() {
   log "Enabling sudo."
   apt install -y sudo
   apt install -y net-tools
-  usermod -aG sudo dowdy
-  log "User 'dowdy' has been added to the sudo group. Log out and back in for the changes to take effect."
+  usermod -aG sudo sawyer
+  log "User 'sawyer' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
 
 ################################################################################
@@ -776,7 +776,7 @@ www.dunamismax.com {
 # Main website
 dunamismax.com {
     # Serve the static files from your Hugo output folder
-    root * /home/dowdy/GitHub/Hugo/dunamismax.com/public
+    root * /home/sawyer/GitHub/Hugo/dunamismax.com/public
     file_server
 
     # Deny hidden files (dotfiles like .git, .htaccess, etc.)

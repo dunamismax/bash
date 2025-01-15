@@ -9,7 +9,7 @@
 #     2) Backing up and customizing critical system configuration files
 #        (e.g., '/etc/ssh/ssh_config') to apply best practices for security
 #        and performance.
-#     3) Setting up a user account (default: "dowdy") with:
+#     3) Setting up a user account (default: "sawyer") with:
 #         - Sudo privileges
 #         - A configured Bash environment as the default shell.
 #     4) Enabling and configuring essential services, including:
@@ -59,7 +59,7 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/ubuntu_setup.log"
-USERNAME="dowdy"
+USERNAME="sawyer"
 
 # Essential Ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
@@ -740,7 +740,7 @@ www.dunamismax.com {
 # Main website
 dunamismax.com {
     # Serve the static files from your Hugo output folder
-    root * /home/dowdy/GitHub/Hugo/dunamismax.com/public
+    root * /home/sawyer/GitHub/Hugo/dunamismax.com/public
     file_server
 
     # Deny hidden files (dotfiles like .git, .htaccess, etc.)

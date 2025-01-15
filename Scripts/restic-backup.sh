@@ -29,7 +29,7 @@ EXCLUDES=(
     "/var/run"
     "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server"
     "/swapfile"
-    "/home/dowdy"  # Exclude the Home directory since it is backed up in a separate script
+    "/home/sawyer"  # Exclude the Home directory since it is backed up in a separate script
 )
 
 # --------------------------------------

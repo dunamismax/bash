@@ -10,9 +10,9 @@ set -euo pipefail
 
 # Variables
 BACKUP_SOURCE="/mnt/media/WD_BLACK/"
-BACKUP_DEST="Backblaze:plex-dowdy"
+BACKUP_DEST="Backblaze:plex-sawyer"
 LOG_FILE="/var/log/backblaze-backup.log"
-RCLONE_CONFIG="/home/dowdy/.config/rclone/rclone.conf"
+RCLONE_CONFIG="/home/sawyer/.config/rclone/rclone.conf"
 RETENTION_DAYS=30
 
 # --------------------------------------
