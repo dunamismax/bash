@@ -1171,16 +1171,16 @@ install_and_enable_plex() {
 }
 
 # ------------------------------------------------------------------------------
-# install_i3_and_ly
+# install_i3-gaps_and_ly
 #   Installs Zig (from official upstream tarball) on Ubuntu, then proceeds to
-#   install i3, X11/GUI dependencies, and Ly.
+#   install i3-gaps, X11/GUI dependencies, and Ly.
 #
 #   This version copies the entire Zig folder to /usr/local/zig to avoid
 #   "unable to find zig installation directory" errors.
 # ------------------------------------------------------------------------------
-install_i3_and_ly() {
+install_i3-gaps_and_ly() {
   set -euo pipefail
-  echo "[INFO] Starting installation process for i3, Ly, and dependencies..."
+  echo "[INFO] Starting installation process for i3-gaps, Ly, and dependencies..."
 
   # 1) Ensure standard prerequisites are installed
   echo "[INFO] Installing prerequisites..."
@@ -1224,11 +1224,11 @@ install_i3_and_ly() {
   rm -f "$ZIG_TARBALL"
   rm -rf "$ZIG_EXTRACTED"
 
-  # 4) Install i3, X11, and other dependencies from apt
-  echo "[INFO] Installing i3 / X11 dependencies..."
+  # 4) Install i3-gaps, X11, and other dependencies from apt
+  echo "[INFO] Installing i3-gaps / X11 dependencies..."
   sudo apt-get update -y
   sudo apt-get install -y \
-    i3 \
+    i3-gaps \
     xserver-xorg \
     xinit \
     x11-xserver-utils \
@@ -1258,8 +1258,8 @@ install_i3_and_ly() {
   sudo systemctl enable ly.service
 
   echo "[INFO] Done. Reboot or switch to TTY2 to use Ly."
-  echo "[INFO] i3 has been installed, and the Ly display manager is set up."
-  echo "[INFO] After reboot, log in via Ly and start i3 on your headless Ubuntu server."
+  echo "[INFO] i3-gaps has been installed, and the Ly display manager is set up."
+  echo "[INFO] After reboot, log in via Ly and start i3-gaps on your headless Ubuntu server."
 }
 
 ################################################################################
@@ -1348,7 +1348,7 @@ main() {
   # 7) Finalization
   # --------------------------------------------------------
   install_and_enable_plex
-  install_i3_and_ly
+  install_i3-gaps_and_ly
   finalize_configuration
 
   log "Configuration script finished successfully."
