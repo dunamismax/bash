@@ -1181,7 +1181,7 @@ install_i3_and_ly() {
 
   # Download the Microsoft repository keys
   echo "[INFO] Downloading Microsoft repository keys..."
-  wget -q https://packages.microsoft.com/config/ubuntu/$VERSION_ID/packages-microsoft-prod.deb
+  wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb
 
   # Register the Microsoft repository keys
   echo "[INFO] Registering Microsoft repository keys..."
