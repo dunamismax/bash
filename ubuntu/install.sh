@@ -1115,9 +1115,10 @@ disable_sleep_and_set_performance() {
 # Function: install_and_enable_plex
 # Description:
 #   This function installs Plex Media Server on Ubuntu using the official
-#   .deb package. Then it enables and starts the plexmediaserver service so
-#   that Plex runs automatically on system boot. Finally, it displays how
-#   to access the Plex Web UI.
+#   .deb package if it is not already installed. If it is already installed,
+#   the function skips the installation and proceeds. Then it enables and
+#   starts the plexmediaserver service to ensure Plex runs on system boot.
+#   Finally, it displays how to access the Plex Web UI.
 #
 # Usage:
 #   1. Adjust the VERSION variable below as necessary.
@@ -1127,6 +1128,12 @@ disable_sleep_and_set_performance() {
 ################################################################################
 install_and_enable_plex() {
   set -e  # Exit immediately if a command exits with a non-zero status
+
+  echo "Checking if Plex Media Server is already installed..."
+  if dpkg -l | grep -q '^ii.*plexmediaserver'; then
+    echo "Plex Media Server is already installed. Skipping installation."
+    return
+  fi
 
   echo "Updating apt package index..."
   sudo apt-get update -y
