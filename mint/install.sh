@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# mint Automated System Configuration Script
+# Linux Mint Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # DESCRIPTION:
 #   Automates the initial configuration of a fresh mint system by:
