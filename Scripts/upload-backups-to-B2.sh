@@ -4,64 +4,91 @@
 # CONFIGURATION
 # --------------------------------------
 
-# Exit immediately if a command exits with a non-zero status,
-# if any variable is unset, and if any command in a pipeline fails
 set -euo pipefail
 
 # Variables
-BACKUP_SOURCE="/mnt/media/WD_BLACK/BACKUPS/"
-BACKUP_DEST="Backblaze:ubuntu-server-sawyer"
-LOG_FILE="/var/log/backblaze-backup.log"
+BACKUP_SOURCE="/mnt/media/WD_BLACK/BACKUP/"
+BACKUP_DEST="Backblaze:sawyer-backups"
+LOG_FILE="/var/log/backblaze-b2-backup.log"
 RCLONE_CONFIG="/home/sawyer/.config/rclone/rclone.conf"
 RETENTION_DAYS=30
+
+# --------------------------------------
+# PRE-CHECKS & VALIDATIONS
+# --------------------------------------
+
+# Check if required commands exist
+for cmd in rclone tee; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Error: Required command '$cmd' is not installed." >&2
+        exit 1
+    fi
+done
+
+# Check if BACKUP_SOURCE directory exists
+if [ ! -d "$BACKUP_SOURCE" ]; then
+    echo "Error: Backup source directory '$BACKUP_SOURCE' does not exist." >&2
+    exit 1
+fi
+
+# Validate rclone configuration file existence
+if [ ! -f "$RCLONE_CONFIG" ]; then
+    echo "Error: rclone config file '$RCLONE_CONFIG' not found." >&2
+    exit 1
+fi
+
+# Ensure the log file exists and has appropriate permissions
+touch "$LOG_FILE"
+chmod 644 "$LOG_FILE"
+
+# Redirect all output (stdout and stderr) to both console and log file for consistency
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # --------------------------------------
 # FUNCTIONS
 # --------------------------------------
 
-# Function to log messages with timestamp
 log() {
-    echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1" | tee -a "$LOG_FILE"
+    # Print timestamped messages
+    echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1"
 }
 
-# Function to upload files directly to Backblaze B2
 upload_backup() {
     log "Starting direct upload of $BACKUP_SOURCE to Backblaze B2: $BACKUP_DEST"
-    rclone --config "$RCLONE_CONFIG" copy "$BACKUP_SOURCE" "$BACKUP_DEST" -vv >> "$LOG_FILE" 2>&1
-    log "Backup uploaded successfully."
+    # Upload using rclone with verbose output appended to LOG_FILE
+    if rclone --config "$RCLONE_CONFIG" copy "$BACKUP_SOURCE" "$BACKUP_DEST" -vv; then
+        log "Backup uploaded successfully."
+    else
+        log "Error: Failed to upload backup."
+        return 1
+    fi
 }
 
-# Function to remove old backups from Backblaze B2
 cleanup_backups() {
     log "Removing old backups (older than ${RETENTION_DAYS} days) from Backblaze B2: $BACKUP_DEST"
-    rclone --config "$RCLONE_CONFIG" delete "$BACKUP_DEST" --min-age "${RETENTION_DAYS}d" -vv >> "$LOG_FILE" 2>&1
-    log "Old backups removed successfully."
+    # Delete old backups using rclone
+    if rclone --config "$RCLONE_CONFIG" delete "$BACKUP_DEST" --min-age "${RETENTION_DAYS}d" -vv; then
+        log "Old backups removed successfully."
+    else
+        log "Warning: Failed to remove some old backups."
+    fi
 }
 
-# Function to handle errors
 handle_error() {
     log "An error occurred during the backup process. Check the log for details."
     exit 1
 }
 
-# Trap errors and execute handle_error
 trap 'handle_error' ERR
 
 # --------------------------------------
 # SCRIPT START
 # --------------------------------------
 
-# Ensure the log file exists and has appropriate permissions
-touch "$LOG_FILE"
-chmod 644 "$LOG_FILE"
-
 log "--------------------------------------"
 log "Starting Backblaze B2 Direct Upload Backup Script"
 
-# Step 1: Upload the source directory directly to Backblaze B2
 upload_backup
-
-# Step 2: Remove backups older than RETENTION_DAYS days from Backblaze B2
 cleanup_backups
 
 log "Backup and cleanup completed successfully on $(date)."
