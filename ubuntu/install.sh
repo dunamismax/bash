@@ -1199,26 +1199,24 @@ install_x11_and_regolith() {
   # 3) Download and install Zig from the official source tarball
   echo "[INFO] Downloading Zig from official upstream..."
   ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
-  ZIG_TARBALL="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
+  ZIG_TARBALL="/home/sawyer/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
+  ZIG_EXTRACTED_DIR="/home/sawyer/zig-linux-x86_64-0.14.0"
 
 # Download the tarball
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
 
   echo "[INFO] Extracting Zig tarball..."
 # Extract the tarball
-  tar xf "$ZIG_TARBALL"
+  tar xf "$ZIG_TARBALL" -C /home/sawyer/
 
-# Dynamically detect the extracted directory
-  ZIG_EXTRACTED=$(tar -tf "$ZIG_TARBALL" | head -n 1 | cut -d/ -f1)
-
-  if [[ ! -d "$ZIG_EXTRACTED" ]]; then
-    echo "[ERROR] Expected directory '$ZIG_EXTRACTED' does not exist after extraction!"
+  if [[ ! -d "$ZIG_EXTRACTED_DIR" ]]; then
+    echo "[ERROR] Expected directory '$ZIG_EXTRACTED_DIR' does not exist after extraction!"
     exit 1
   fi
 
   echo "[INFO] Installing Zig into /usr/local/zig..."
   sudo rm -rf /usr/local/zig
-  sudo cp -r "$ZIG_EXTRACTED" /usr/local/zig
+  sudo cp -r "$ZIG_EXTRACTED_DIR" /usr/local/zig
 
   echo "[INFO] Creating symlink /usr/local/bin/zig..."
   sudo rm -f /usr/local/bin/zig
@@ -1227,9 +1225,9 @@ install_x11_and_regolith() {
 
   echo "[INFO] Zig installation completed successfully!"
 
-  # Optionally remove the downloaded tarball and extracted folder
+# Optionally remove the downloaded tarball and extracted folder
   rm -f "$ZIG_TARBALL"
-  rm -rf "$ZIG_EXTRACTED"
+  rm -rf "$ZIG_EXTRACTED_DIR"
 
   # 4) Install X11 dependencies
   echo "[INFO] Installing X11 dependencies..."
