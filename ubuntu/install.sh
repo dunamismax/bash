@@ -1172,11 +1172,11 @@ install_and_enable_plex() {
 
 # ------------------------------------------------------------------------------
 # install_i3_and_ly
-#   Installs Homebrew (on Ubuntu via WSL or similar), uses it to install Zig,
-#   then proceeds to install i3, X11/GUI dependencies, and Ly.
+#   Installs Zig (from official upstream tarball) on Ubuntu, then proceeds to
+#   install i3, X11/GUI dependencies, and Ly.
 #
-#   NOTE: Homebrew on Linux (a.k.a. Linuxbrew) will be installed in this script.
-#         Afterward, we use brew install zig instead of Chocolatey.
+#   NOTE: This script no longer installs Homebrew. Instead, it manually
+#         downloads and installs Zig from the given official tarball link.
 # ------------------------------------------------------------------------------
 install_i3_and_ly() {
   set -euo pipefail
@@ -1188,42 +1188,35 @@ install_i3_and_ly() {
   sudo apt-get install -y wget apt-transport-https software-properties-common \
                           build-essential git curl file
 
-  # 2) Download the Microsoft repository keys (if you need PowerShell on Ubuntu)
-  echo "[INFO] Downloading Microsoft repository keys (if needed)..."
-  wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
-
-  # 3) Register the Microsoft repository keys
-  echo "[INFO] Registering Microsoft repository keys..."
-  sudo dpkg -i packages-microsoft-prod.deb || true
-
-  # 4) Delete the repository keys file
-  echo "[INFO] Cleaning up repository keys file..."
-  rm -f packages-microsoft-prod.deb
-
-  # 5) Update package lists again
-  echo "[INFO] Updating package lists..."
-  sudo apt-get update -y
-
-  # 6) (Optional) Install PowerShell if desired
+  # 2) (Optional) If you need PowerShell on Ubuntu
   echo "[INFO] Installing PowerShell (if supported)..."
+  wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
+  sudo dpkg -i packages-microsoft-prod.deb || true
+  rm -f packages-microsoft-prod.deb
+  sudo apt-get update -y
   sudo apt-get install -y powershell || true
 
-  # 7) Install Homebrew on Linux (a.k.a. Linuxbrew)
-  #    See official instructions at: https://docs.brew.sh/Homebrew-on-Linux
-  echo "[INFO] Installing Homebrew (Linuxbrew)..."
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  # 3) Download and install Zig from the official source tarball
+  echo "[INFO] Downloading Zig from official upstream..."
+  ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
+  ZIG_TARBALL="zig-0.14.0-dev.2643+fb43e91b2.tar.xz"
 
-  # Add brew to the PATH for the current running shell
-  echo "[INFO] Configuring Homebrew environment..."
-  test -d ~/.linuxbrew && eval "$(~/.linuxbrew/bin/brew shellenv)"
-  test -d /home/linuxbrew/.linuxbrew && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+  wget -O "$ZIG_TARBALL" "$ZIG_URL"
+  echo "[INFO] Extracting Zig tarball..."
+  tar xf "$ZIG_TARBALL"
 
-  # 8) Install Zig using Homebrew
-  echo "[INFO] Installing Zig via Homebrew..."
-  brew update
-  brew install zig
+  # The extracted directory name depends on the tarball contents.
+  # Adjust if the folder name changes in future releases.
+  ZIG_EXTRACTED="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
+  echo "[INFO] Installing Zig to /usr/local..."
+  sudo cp -r "$ZIG_EXTRACTED/zig" /usr/local/bin/
+  sudo chmod +x /usr/local/bin/zig
 
-  # 9) Install i3, X11, and other dependencies from apt
+  # Optionally remove the downloaded tarball and extracted folder
+  rm -f "$ZIG_TARBALL"
+  rm -rf "$ZIG_EXTRACTED"
+
+  # 4) Install i3, X11, and other dependencies from apt
   echo "[INFO] Installing i3 / X11 dependencies..."
   sudo apt-get update -y
   sudo apt-get install -y \
@@ -1234,7 +1227,7 @@ install_i3_and_ly() {
     libpam0g-dev \
     libxcb-xkb-dev
 
-  # 10) Clone Ly if not already present
+  # 5) Clone Ly if not already present
   echo "[INFO] Cloning Ly repository..."
   if [ -d "ly" ]; then
     echo "[INFO] 'ly' directory already exists; skipping clone."
@@ -1244,16 +1237,15 @@ install_i3_and_ly() {
     cd ly
   fi
 
-  # 11) Build Ly using Zig
+  # 6) Build Ly using the newly installed Zig
   echo "[INFO] Compiling Ly..."
-  # Ensure ‘zig’ is in PATH if you just installed Brew in this same session.
   zig build
 
-  # 12) Install Ly and systemd service
+  # 7) Install Ly and systemd service
   echo "[INFO] Installing Ly with systemd support..."
   sudo zig build installsystemd
 
-  # 13) Enable Ly service
+  # 8) Enable Ly service
   echo "[INFO] Enabling Ly systemd service..."
   sudo systemctl enable ly.service
 
