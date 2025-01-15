@@ -1201,12 +1201,15 @@ install_x11_and_regolith() {
   ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
   ZIG_TARBALL="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
 
-  # Download the tarball
+# Download the tarball
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
 
   echo "[INFO] Extracting Zig tarball..."
-  # Extract the tarball and capture the directory name
-  ZIG_EXTRACTED=$(tar -xf "$ZIG_TARBALL" --directory . --wildcards --list | head -n 1 | cut -d/ -f1)
+# Extract the tarball
+  tar xf "$ZIG_TARBALL"
+
+# Dynamically detect the extracted directory
+  ZIG_EXTRACTED=$(tar -tf "$ZIG_TARBALL" | head -n 1 | cut -d/ -f1)
 
   if [[ ! -d "$ZIG_EXTRACTED" ]]; then
     echo "[ERROR] Expected directory '$ZIG_EXTRACTED' does not exist after extraction!"
