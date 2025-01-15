@@ -12,28 +12,29 @@ DESTINATION="/mnt/WD_BLACK/BACKUP/ubuntu-backups"
 LOG_FILE="/var/log/ubuntu-backup.log"
 RETENTION_DAYS=7
 DATE=$(date +"%Y-%m-%d")
-BACKUP_NAME="backup-$DATE.tar.gz"
 
 # Exclusions
 EXCLUDES=(
-    "/proc/*"         # Kernel and process-related virtual filesystem
-    "/sys/*"          # Kernel-related virtual filesystem
-    "/dev/*"          # Device files
-    "/run/*"          # Runtime state files
-    "/tmp/*"          # Temporary files
-    "/mnt/*"          # Mounted filesystems
-    "/media/*"        # Removable media
-    "/swapfile"       # Swap file
-    "/lost+found"     # Directory for recovered files after filesystem checks
-    "/var/tmp/*"      # Temporary files that persist across reboots
-    "/var/cache/*"    # Cached data (e.g., package downloads)
-    "/var/log/*"      # Log files (consider excluding or trimming logs for sensitive data)
-    "/var/lib/lxcfs/*" # LXCFS-related files (if using containers)
-    "/var/lib/docker/*" # Docker runtime files (if Docker is installed)
-    "/root/.cache/*"  # Root user cache files
-    "/home/*/.cache/*" # User-specific cache files
-    "*.iso"           # ISO files (large files often unnecessary in backups)
-    "*.tmp"           # Temporary files
+    "./proc/*"
+    "./sys/*"
+    "./dev/*"
+    "./run/*"
+    "./tmp/*"
+    "./mnt/*"
+    "./media/*"
+    "./swapfile"
+    "./lost+found"
+    "./var/tmp/*"
+    "./var/cache/*"
+    "./var/log/*"
+    "./var/lib/lxcfs/*"
+    "./var/lib/docker/*"
+    "./root/.cache/*"
+    "./home/*/.cache/*"
+    "./var/lib/plexmediaserver/*"
+    "*.iso"
+    "*.tmp"
+    "*.swap.img"
 )
 
 # Create exclusion string for tar
@@ -51,11 +52,21 @@ log() {
 }
 
 perform_backup() {
-    log "Starting on-the-fly backup and compression to $DESTINATION/$BACKUP_NAME"
     mkdir -p "$DESTINATION"
 
+    # Implement sequential naming scheme
+    BASE_NAME="backup-$DATE"
+    EXT=".tar.gz"
+    COUNTER=0
+    while [[ -f "$DESTINATION/${BASE_NAME}_${COUNTER}${EXT}" ]]; do
+        ((COUNTER++))
+    done
+    BACKUP_NAME="${BASE_NAME}_${COUNTER}${EXT}"
+
+    log "Starting on-the-fly backup and compression to $DESTINATION/$BACKUP_NAME"
+
     # Compress and stream directly to the destination
-    tar -I pigz -cf "$DESTINATION/$BACKUP_NAME" "${EXCLUDES_ARGS[@]}" -C / . >> "$LOG_FILE" 2>&1
+    tar -I pigz --one-file-system -cf "$DESTINATION/$BACKUP_NAME" "${EXCLUDES_ARGS[@]}" -C / . >> "$LOG_FILE" 2>&1
 
     log "Backup and compression completed: $DESTINATION/$BACKUP_NAME"
 }
