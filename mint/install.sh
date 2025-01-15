@@ -1039,7 +1039,7 @@ install_caddy() {
   log "Installing and enabling Caddy..."
 
   apt update -y
-  apt install -y mint-keyring apt-transport-https curl
+  apt install -y ubuntu-keyring apt-transport-https curl
 
   # Add the official Caddy GPG key
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
