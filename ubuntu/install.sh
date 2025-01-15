@@ -1175,8 +1175,8 @@ install_and_enable_plex() {
 #   Installs Zig (from official upstream tarball) on Ubuntu, then proceeds to
 #   install i3, X11/GUI dependencies, and Ly.
 #
-#   NOTE: This script no longer installs Homebrew. Instead, it manually
-#         downloads and installs Zig from the given official tarball link.
+#   This version copies the entire Zig folder to /usr/local/zig to avoid
+#   "unable to find zig installation directory" errors.
 # ------------------------------------------------------------------------------
 install_i3_and_ly() {
   set -euo pipefail
@@ -1202,14 +1202,19 @@ install_i3_and_ly() {
   ZIG_TARBALL="zig-0.14.0-dev.2643+fb43e91b2.tar.xz"
 
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
+
   echo "[INFO] Extracting Zig tarball..."
   tar xf "$ZIG_TARBALL"
 
-  # The extracted directory name depends on the tarball contents.
-  # Adjust if the folder name changes in future releases.
+  # Adjust this if future Zig releases have a different folder name
   ZIG_EXTRACTED="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
-  echo "[INFO] Installing Zig to /usr/local..."
-  sudo cp -r "$ZIG_EXTRACTED/zig" /usr/local/bin/
+
+  echo "[INFO] Installing Zig into /usr/local/zig..."
+  sudo rm -rf /usr/local/zig                # Clear any existing old copy
+  sudo cp -r "$ZIG_EXTRACTED" /usr/local/zig
+
+  echo "[INFO] Creating symlink /usr/local/bin/zig..."
+  sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
   sudo chmod +x /usr/local/bin/zig
 
   # Optionally remove the downloaded tarball and extracted folder
@@ -1239,6 +1244,10 @@ install_i3_and_ly() {
 
   # 6) Build Ly using the newly installed Zig
   echo "[INFO] Compiling Ly..."
+
+  # Make sure /usr/local/bin is in your PATH if you’re in the same shell session:
+  #   export PATH="/usr/local/bin:$PATH"
+  # Then:
   zig build
 
   # 7) Install Ly and systemd service
