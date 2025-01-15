@@ -376,8 +376,8 @@ HISTCONTROL=ignoreboth
 shopt -s histappend
 
 # Set history limits (number of lines in memory / on disk).
-HISTSIZE=10000
-HISTFILESIZE=20000
+HISTSIZE=100000
+HISTFILESIZE=200000
 
 # Add timestamps to each command in history (for auditing).
 HISTTIMEFORMAT="%F %T "
@@ -394,18 +394,13 @@ shopt -s checkwinsize
 # ------------------------------------------------------------------------------
 # 6. Bash prompt (PS1)
 # ------------------------------------------------------------------------------
-# Identify if we are in a mint chroot environment and set mint_chroot.
-if [ -z "${mint_chroot:-}" ] && [ -r /etc/mint_chroot ]; then
-    mint_chroot=$(cat /etc/mint_chroot)
-fi
-
 # If terminal supports color, enable a colored prompt.
 case "$TERM" in
     xterm-color|*-256color) color_prompt=yes;;
 esac
 
 # Uncomment the line below if you always want a color prompt (if supported).
-# force_color_prompt=yes
+force_color_prompt=yes
 
 if [ -n "$force_color_prompt" ]; then
     if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
@@ -418,16 +413,16 @@ fi
 
 # Choose a colored or plain prompt.
 if [ "$color_prompt" = yes ]; then
-    PS1='${mint_chroot:+($mint_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
-    PS1='${mint_chroot:+($mint_chroot)}\u@\h:\w\$ '
+    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\u@\h:\w\$ '
 fi
 unset color_prompt force_color_prompt
 
 # If this is an xterm or rxvt terminal, set the window title to user@host:dir.
 case "$TERM" in
     xterm*|rxvt*)
-        PS1="\[\e]0;${mint_chroot:+($mint_chroot)}\u@\h: \w\a\]$PS1"
+        PS1="\[\e]0;${ubuntu_chroot:+($ubuntu_chroot)}\u@\h: \w\a\]$PS1"
         ;;
     *)
         ;;

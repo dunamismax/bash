@@ -418,18 +418,13 @@ shopt -s checkwinsize
 # ------------------------------------------------------------------------------
 # 6. Bash prompt (PS1)
 # ------------------------------------------------------------------------------
-# Identify if we are in a Ubuntu chroot environment and set ubuntu_chroot.
-if [ -z "${ubuntu_chroot:-}" ] && [ -r /etc/ubuntu_chroot ]; then
-    ubuntu_chroot=$(cat /etc/ubuntu_chroot)
-fi
-
 # If terminal supports color, enable a colored prompt.
 case "$TERM" in
     xterm-color|*-256color) color_prompt=yes;;
 esac
 
 # Uncomment the line below if you always want a color prompt (if supported).
-# force_color_prompt=yes
+force_color_prompt=yes
 
 if [ -n "$force_color_prompt" ]; then
     if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
