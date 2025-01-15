@@ -7,7 +7,7 @@
 #     1) Syncing package repositories and installing/updating core packages
 #        (e.g., build tools, curl, git).
 #     2) Backing up, then overwriting certain system configs
-#        (e.g., '/etc/ssh/sshd_config') to apply recommended security and
+#        (e.g., '/etc/ssh/ssh_config') to apply recommended security and
 #        custom settings.
 #     3) Creating or configuring a user account (default: "sawyer") with:
 #         - Sudo privileges
@@ -239,9 +239,9 @@ configure_sudo_access() {
 # Overwrite /etc/ssh/ssh_config
 ################################################################################
 overwrite_ssh_config() {
-  log "Backing up and overwriting /etc/ssh/sshd_config..."
+  log "Backing up and overwriting /etc/ssh/ssh_config..."
 
-  local ssh_config="/etc/ssh/sshd_config"
+  local ssh_config="/etc/ssh/ssh_config"
   if [ -f "$ssh_config" ]; then
     cp "$ssh_config" "${ssh_config}.bak"
     log "Backed up existing $ssh_config to ${ssh_config}.bak"
@@ -268,7 +268,7 @@ EOF
 
   chown root:root "$ssh_config"
   chmod 644 "$ssh_config"
-  log "Completed overwriting /etc/ssh/sshd_config. Restarting ssh service..."
+  log "Completed overwriting /etc/ssh/ssh_config. Restarting ssh service..."
 
   # Restart the service using Ubuntu's service name
   systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
@@ -683,9 +683,9 @@ configure_timezone() {
 basic_security_hardening() {
   log "Applying basic Ubuntu security hardening..."
 
-  # 1) Disable root login in sshd_config
-  sed -i 's/^\s*#*\s*PermitRootLogin\s.*/PermitRootLogin no/' /etc/ssh/sshd_config
-  systemctl restart sshd 2>&1 | tee -a "$LOG_FILE"
+  # 1) Disable root login in ssh_config
+  sed -i 's/^\s*#*\s*PermitRootLogin\s.*/PermitRootLogin no/' /etc/ssh/ssh_config
+  systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
 
   # 2) Install fail2ban (from Ubuntu repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
