@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Debian/Ubuntu Automated System Configuration Script
+# Ubuntu Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # DESCRIPTION:
-#   Automates the initial setup of a fresh Debian or Ubuntu system by:
+#   Automates the initial setup of a fresh Ubuntu system by:
 #     1) Syncing package repositories and installing/updating core packages
 #        (e.g., build tools, curl, git).
 #     2) Backing up, then overwriting certain system configs
@@ -16,12 +16,12 @@
 # USAGE & REQUIREMENTS:
 #   - Change all instances of "sawyer" in the code to whatever your username is before running.
 #   - Run as root or via 'sudo'; non-root execution lacks necessary privileges.
-#   - Works on Debian and Ubuntu (may also function on derivative distros).
+#   - Works on Ubuntu (may also function on derivative distros).
 #   - Review all overwriting steps before use; backups of replaced files are
 #     stored with timestamps in the same directory.
 #
 # LOGGING:
-#   - All operations and errors are logged to '/var/log/debian_setup.log'
+#   - All operations and errors are logged to '/var/log/ubuntu_setup.log'
 #     for troubleshooting.
 #
 # ERROR HANDLING:
@@ -41,10 +41,10 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/debian_setup.log"
+LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 
-# Essential Debian/Ubuntu packages for a baseline system
+# Essential Ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
 PACKAGES=(
   # Shells and terminal utilities
@@ -248,7 +248,7 @@ overwrite_ssh_config() {
   fi
 
   cat << 'EOF' > "$ssh_config"
-# Basic Debian SSH Configuration
+# Basic Ubuntu SSH Configuration
 
 Port 22
 AddressFamily any
@@ -270,7 +270,7 @@ EOF
   chmod 644 "$ssh_config"
   log "Completed overwriting /etc/ssh/sshd_config. Restarting ssh service..."
 
-  # Restart the service using Debian's service name
+  # Restart the service using Ubuntu's service name
   systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
 }
 
@@ -399,9 +399,9 @@ shopt -s checkwinsize
 # ------------------------------------------------------------------------------
 # 6. Bash prompt (PS1)
 # ------------------------------------------------------------------------------
-# Identify if we are in a Debian/Ubuntu chroot environment and set debian_chroot.
-if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
-    debian_chroot=$(cat /etc/debian_chroot)
+# Identify if we are in a Ubuntu chroot environment and set ubuntu_chroot.
+if [ -z "${ubuntu_chroot:-}" ] && [ -r /etc/ubuntu_chroot ]; then
+    ubuntu_chroot=$(cat /etc/ubuntu_chroot)
 fi
 
 # If terminal supports color, enable a colored prompt.
@@ -423,16 +423,16 @@ fi
 
 # Choose a colored or plain prompt.
 if [ "$color_prompt" = yes ]; then
-    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
-    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\u@\h:\w\$ '
 fi
 unset color_prompt force_color_prompt
 
 # If this is an xterm or rxvt terminal, set the window title to user@host:dir.
 case "$TERM" in
     xterm*|rxvt*)
-        PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+        PS1="\[\e]0;${ubuntu_chroot:+($ubuntu_chroot)}\u@\h: \w\a\]$PS1"
         ;;
     *)
         ;;
@@ -676,18 +676,18 @@ configure_timezone() {
 ################################################################################
 # Function: basic_security_hardening
 # Description:
-#   Applies a minimal set of security best practices on Debian-based systems:
+#   Applies a minimal set of security best practices on Ubuntu-based systems:
 #     1) Disables root SSH login
 #     2) Installs fail2ban if not already installed
 ################################################################################
 basic_security_hardening() {
-  log "Applying basic Debian security hardening..."
+  log "Applying basic Ubuntu security hardening..."
 
   # 1) Disable root login in sshd_config
   sed -i 's/^\s*#*\s*PermitRootLogin\s.*/PermitRootLogin no/' /etc/ssh/sshd_config
   systemctl restart sshd 2>&1 | tee -a "$LOG_FILE"
 
-  # 2) Install fail2ban (from Debian repositories)
+  # 2) Install fail2ban (from Ubuntu repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
     log "Installing fail2ban..."
     apt install -y fail2ban 2>&1 | tee -a "$LOG_FILE"
@@ -811,7 +811,7 @@ apt_and_settings() {
 ################################################################################
 # Function: configure_ntp
 # Description:
-#   Installs and configures NTP service on Debian-based systems using chrony.
+#   Installs and configures NTP service on Ubuntu-based systems using chrony.
 #   1) Installs chrony if not already installed.
 #   2) Backs up the existing /etc/chrony/chrony.conf (if present).
 #   3) Writes a basic chrony.conf with recommended upstream NTP servers.
@@ -840,7 +840,7 @@ configure_ntp() {
 # /etc/chrony/chrony.conf - basic configuration
 
 # Pool-based time servers:
-pool 2.debian.pool.ntp.org iburst
+pool 2.ubuntu.pool.ntp.org iburst
 pool time.google.com iburst
 pool pool.ntp.org iburst
 
@@ -1046,7 +1046,7 @@ install_apt_dependencies() {
 ################################################################################
 install_caddy() {
   log "Installing and enabling Caddy..."
-apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+apt install -y ubuntu-keyring ubuntu-archive-keyring apt-transport-https curl
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
   | gpg --batch --yes --dearmor \
        -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -1185,7 +1185,7 @@ finalize_configuration() {
 ################################################################################
 main() {
   log "--------------------------------------"
-  log "Starting Debian Automated System Configuration Script"
+  log "Starting Ubuntu Automated System Configuration Script"
 
   # --------------------------------------------------------
   # 1) Basic System Preparation
@@ -1196,7 +1196,7 @@ main() {
   enable_non_free_firmware_only
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
-  set_hostname "debian"
+  set_hostname "ubuntu"
   disable_sleep_and_set_performance
 
   # --------------------------------------------------------
