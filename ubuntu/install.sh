@@ -1171,37 +1171,23 @@ install_and_enable_plex() {
 }
 
 # ------------------------------------------------------------------------------
-# install_i3-gaps_and_ly
+# install_x11_and_ly
 #   Installs Zig (from official upstream tarball) on Ubuntu, then proceeds to
-#   install i3-gaps, X11/GUI dependencies, Ly, plus the following additional
-#   programs: dmenu, dunst, polybar, picom, i3lock-color, xautolock,
-#   i3-layout-manager, i3-resurrect, feh, clipmenu.
+#   install X11/GUI dependencies, Ly, and Regolith. This script does NOT install
+#   i3 or i3-related tools (e.g., i3-gaps, i3lock-color, etc.).
 #
-#   This version copies the entire Zig folder to /usr/local/zig to avoid
-#   "unable to find zig installation directory" errors.
-#
-#   After successful installation, you can configure each program as needed.
-#   For example:
-#       - dmenu is invoked by the "$mod+d" keybind in i3 by default.
-#       - dunst can be configured in ~/.config/dunst/dunstrc.
-#       - polybar can be configured in ~/.config/polybar/config, then executed.
-#       - picom can be configured in ~/.config/picom/picom.conf.
-#       - i3lock-color can be used in combination with xautolock (example):
-#            xautolock -time 5 -locker "i3lock -c 000000"
-#       - i3-layout-manager / i3-resurrect can be configured in your i3 config.
-#       - feh can set wallpapers, e.g.:
-#            feh --bg-scale /path/to/wallpaper.jpg
-#       - clipmenu is a clipboard manager that you can run in your i3 config.
+#   After successful installation, you can choose to log in via Ly, then select
+#   Regolith as your session if desired.
 # ------------------------------------------------------------------------------
 install_x11_and_ly() {
   set -euo pipefail
-  echo "[INFO] Starting installation process for x11, Ly, and dependencies..."
+  echo "[INFO] Starting installation process for X11, Ly, and Regolith..."
 
   # 1) Ensure standard prerequisites are installed
-  echo "[INFO] Installing prerequisites..."
+  echo "[INFO] Installing base prerequisites..."
   sudo apt-get update -y
   sudo apt-get install -y wget apt-transport-https software-properties-common \
-                          build-essential git curl file
+                          build-essential git curl file gpg
 
   # 2) (Optional) If you need PowerShell on Ubuntu
   echo "[INFO] Installing PowerShell (if supported)..."
@@ -1221,7 +1207,7 @@ install_x11_and_ly() {
   echo "[INFO] Extracting Zig tarball..."
   tar xf "$ZIG_TARBALL"
 
-  # NOTE: After extracting, you will get a directory named "zig-linux-x86_64-0.12.0"
+  # After extracting, you will get a directory named "zig-linux-x86_64-0.12.0"
   ZIG_EXTRACTED="zig-linux-x86_64-0.12.0"
 
   echo "[INFO] Installing Zig into /usr/local/zig..."
@@ -1229,7 +1215,6 @@ install_x11_and_ly() {
   sudo cp -r "$ZIG_EXTRACTED" /usr/local/zig
 
   echo "[INFO] Creating symlink /usr/local/bin/zig..."
-  # Ensure any stale file or directory is removed first
   sudo rm -f /usr/local/bin/zig
   sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
   sudo chmod +x /usr/local/bin/zig
@@ -1238,8 +1223,8 @@ install_x11_and_ly() {
   rm -f "$ZIG_TARBALL"
   rm -rf "$ZIG_EXTRACTED"
 
-  # 4) Install X11, and other dependencies from apt
-  echo "[INFO] Installing i3-gaps / X11 dependencies..."
+  # 4) Install X11 dependencies
+  echo "[INFO] Installing X11 dependencies..."
   sudo apt-get update -y
   sudo apt-get install -y \
     xserver-xorg \
@@ -1248,26 +1233,23 @@ install_x11_and_ly() {
     libpam0g-dev \
     libxcb-xkb-dev
 
-  # 5) Install additional tools: dmenu, dunst, polybar, picom, i3lock-color,
-  #    xautolock, i3-layout-manager, i3-resurrect, feh, clipmenu
-  #    Assuming they are available in the Ubuntu repositories.
-  echo "[INFO] Installing additional i3 tools and extras..."
-  sudo apt-get install -y \
-    dmenu \
-    dunst \
-    polybar \
-    picom \
-    i3lock-color \
-    xautolock \
-    feh \
-    clipmenu
+  # 5) Install Regolith
+  echo "[INFO] Installing Regolith Desktop..."
+  # Register the Regolith public key
+  wget -qO - https://regolith-desktop.org/regolith.key \
+    | gpg --dearmor \
+    | sudo tee /usr/share/keyrings/regolith-archive-keyring.gpg > /dev/null
 
-  # For i3-layout-manager and i3-resurrect, if not in repositories or different package names,
-  # you may need to compile them manually. Uncomment and adapt the following if needed:
-  # echo "[INFO] Installing i3-layout-manager / i3-resurrect from repositories or building manually..."
-  # sudo apt-get install -y i3-layout-manager i3-resurrect || true
+  # Add the Regolith repository to apt
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/regolith-archive-keyring.gpg] \
+https://regolith-desktop.org/release-3_2-ubuntu-noble-amd64 noble main" \
+  | sudo tee /etc/apt/sources.list.d/regolith.list
 
-  # 6) Clone Ly if not already present
+  # Update apt and install Regolith
+  sudo apt update
+  sudo apt install -y regolith-desktop regolith-session-flashback regolith-look-lascaille
+
+  # 6) Clone and build Ly if not already present
   echo "[INFO] Cloning Ly repository..."
   if [ -d "ly" ]; then
     echo "[INFO] 'ly' directory already exists; skipping clone."
@@ -1277,283 +1259,20 @@ install_x11_and_ly() {
     cd ly
   fi
 
-  # 7) Build Ly using the newly installed Zig
-  echo "[INFO] Compiling Ly..."
+  echo "[INFO] Compiling Ly using Zig..."
   zig build
 
-  # 8) Install Ly and systemd service
+  # 7) Install Ly and systemd service
   echo "[INFO] Installing Ly with systemd support..."
   sudo zig build installsystemd
 
-  # 9) Enable Ly service
+  # 8) Enable Ly service
   echo "[INFO] Enabling Ly systemd service..."
   sudo systemctl enable ly.service
 
-  echo "[INFO] Done. Reboot or switch to TTY2 to use Ly."
-  echo "[INFO] i3-gaps and additional packages have been installed, and the Ly display manager is set up."
-  echo "[INFO] After reboot, log in via Ly and start i3-gaps on your system."
-  echo "[INFO] You can now configure each tool (e.g., dmenu, polybar, picom, i3lock-color, etc.) as desired."
-}
-
-# This function creates (or overwrites) the i3-gaps config file at
-# /home/sawyer/.config/i3/config, populating it with the specified content.
-create_i3_config() {
-  # Ensure the i3 config directory exists
-  mkdir -p "/home/sawyer/.config/i3"
-
-  # Write the configuration file content
-  cat << 'EOF' > "/home/sawyer/.config/i3/config"
-# i3-gaps Config File
-# A clean, commented configuration focusing on readability, aesthetics, and integration
-# with additional tools (dmenu, dunst, polybar, picom, i3lock-color, xautolock,
-# i3-layout-manager, i3-resurrect, feh, and clipmenu).
-
-###################################
-# 1. Mod Key and General Setup
-###################################
-
-# Use the "Super" key as the default mod key.
-set $mod Mod4
-
-# Use mouse+$mod to resize or move floating windows.
-floating_modifier $mod
-
-# Font settings. Adjust as needed for HiDPI/4K.
-font pango:Monospace 16
-
-# Default window borders (use "normal" or "pixel <px>").
-default_border pixel 2
-default_floating_border pixel 2
-
-# Recommended i3-gaps features:
-smart_borders on  # remove window borders when only one is present
-smart_gaps on     # remove gaps when only one container is present
-
-###################################
-# 2. Gaps Configuration (i3-gaps)
-###################################
-# Adjust these values to your liking:
-gaps inner 10
-gaps outer 5
-
-###################################
-# 3. Display Scaling (Optional)
-###################################
-# Identify your monitor via `xrandr` (e.g., HDMI-A-0, DP-1, eDP-1), then scale as desired.
-exec_always --no-startup-id xrandr --output HDMI-A-0 --scale 1.25x1.25 --dpi 120
-
-###################################
-# 4. Basic Keybindings
-###################################
-
-# Launch a terminal (example: Alacritty)
-bindsym $mod+Return exec alacritty
-
-# Application launcher (dmenu or rofi)
-bindsym $mod+d exec dmenu_run
-
-# Reload i3 config
-bindsym $mod+Shift+c reload
-
-# Restart i3 in place
-bindsym $mod+Shift+r restart
-
-# Exit i3
-bindsym $mod+Shift+e exec "i3-msg exit"
-
-###################################
-# 5. Window Navigation
-###################################
-
-# Focus movement
-bindsym $mod+h focus left
-bindsym $mod+j focus down
-bindsym $mod+k focus up
-bindsym $mod+l focus right
-
-# Move focused container
-bindsym $mod+Shift+h move left
-bindsym $mod+Shift+j move down
-bindsym $mod+Shift+k move up
-bindsym $mod+Shift+l move right
-
-# Splitting (horizontal/vertical)
-bindsym $mod+v split v
-bindsym $mod+h split h
-
-# Fullscreen toggle
-bindsym $mod+f fullscreen toggle
-
-# Floating toggle
-bindsym $mod+Shift+space floating toggle
-
-# Focus mode toggle (switch tiling/floating)
-bindsym $mod+space focus mode_toggle
-
-###################################
-# 6. Workspaces
-###################################
-# Customize workspace names, icons optional
-
-set $ws1 "1: "
-set $ws2 "2: "
-set $ws3 "3: "
-set $ws4 "4: "
-set $ws5 "5: "
-set $ws6 "6"
-set $ws7 "7"
-set $ws8 "8"
-set $ws9 "9"
-set $ws0 "0"
-
-# Switch (go) to workspace
-bindsym $mod+1 workspace $ws1
-bindsym $mod+2 workspace $ws2
-bindsym $mod+3 workspace $ws3
-bindsym $mod+4 workspace $ws4
-bindsym $mod+5 workspace $ws5
-bindsym $mod+6 workspace $ws6
-bindsym $mod+7 workspace $ws7
-bindsym $mod+8 workspace $ws8
-bindsym $mod+9 workspace $ws9
-bindsym $mod+0 workspace $ws0
-
-# Move focused window to workspace
-bindsym $mod+Shift+1 move container to workspace $ws1
-bindsym $mod+Shift+2 move container to workspace $ws2
-bindsym $mod+Shift+3 move container to workspace $ws3
-bindsym $mod+Shift+4 move container to workspace $ws4
-bindsym $mod+Shift+5 move container to workspace $ws5
-bindsym $mod+Shift+6 move container to workspace $ws6
-bindsym $mod+Shift+7 move container to workspace $ws7
-bindsym $mod+Shift+8 move container to workspace $ws8
-bindsym $mod+Shift+9 move container to workspace $ws9
-bindsym $mod+Shift+0 move container to workspace $ws0
-
-###################################
-# 7. Status Bar / Polybar (Optional)
-###################################
-# If using polybar, you may comment out or remove this block and launch polybar
-# in your ~/.config/i3/config or via ~/.xinitrc or a systemd user service.
-
-bar {
-    status_command i3status
-    position top
-    tray_output primary
-    height 30
-
-    colors {
-        background #222222
-        statusline #ffffff
-        separator  #666666
-
-        # workspace color settings: border  background text
-        focused_workspace  #4c7899 #285577   #ffffff
-        active_workspace   #333333 #5f676a   #ffffff
-        inactive_workspace #333333 #222222   #888888
-        urgent_workspace   #2f343a #900000   #ffffff
-    }
-}
-
-###################################
-# 8. Additional Applications
-###################################
-
-# 8.1 picom for compositing (shadows, fade effects, transparency).
-#     Customize picom.conf in ~/.config/picom/picom.conf
-exec --no-startup-id picom -b
-
-# 8.2 dunst for notifications
-exec --no-startup-id dunst
-
-# 8.3 clipmenu: starts the clipmenu daemon for clipboard history
-exec --no-startup-id clipmenud
-
-# 8.4 feh to set wallpaper (replace /path/to/wallpaper.png with a valid file)
-exec_always --no-startup-id feh --bg-scale /path/to/wallpaper.png
-
-# 8.5 xautolock + i3lock-color auto-lock. Adjust timeout (minutes) and lock color.
-exec_always --no-startup-id xautolock -time 5 -locker "i3lock -c 000000" -detectsleep
-
-###################################
-# 9. i3-layout-manager / i3-resurrect
-###################################
-# If installed, you can set keybindings to save/restore or manipulate layouts.
-
-# Example i3-resurrect usage:
-#    Save layout:
-#    bindsym $mod+Ctrl+s exec i3-resurrect save
-#    Restore layout:
-#    bindsym $mod+Ctrl+r exec i3-resurrect restore
-
-###################################
-# 10. Other Preferences
-###################################
-
-# Don’t automatically focus newly opened windows
-focus_on_window_activation focus
-
-# Disable focus-follows-mouse
-focus_follows_mouse no
-
-# Wrap focus around with arrow keys
-force_focus_wrapping yes
-
-# End of i3-gaps config
-    }
-}
-
-###################################
-# 8. Other Recommended Preferences
-###################################
-
-# Don’t automatically focus newly opened windows in certain cases
-focus_on_window_activation focus
-
-# Disable focus follows mouse
-focus_follows_mouse no
-
-# Wrap focus around when using focus arrows
-force_focus_wrapping yes
-
-# Startup applications and services (examples)
-# exec --no-startup-id nm-applet
-# exec --no-startup-id blueman-applet
-# exec_always --no-startup-id feh --bg-scale /path/to/wallpaper
-
-# End of i3-gaps config
-EOF
-
-  echo "i3-gaps configuration file created at /home/sawyer/.config/i3/config"
-}
-
-# Function to add the PPA, update repositories, and install i3-gaps
-install_i3_gaps() {
-    # Check if the user has sudo privileges
-    if ! sudo -v &>/dev/null; then
-        echo "You need sudo privileges to run this function." >&2
-        return 1
-    fi
-
-    echo "Adding the Regolith Linux PPA..."
-    if ! sudo add-apt-repository -y ppa:regolith-linux/release; then
-        echo "Failed to add the Regolith Linux PPA." >&2
-        return 1
-    fi
-
-    echo "Updating package list..."
-    if ! sudo apt update; then
-        echo "Failed to update package lists." >&2
-        return 1
-    fi
-
-    echo "Installing i3-gaps..."
-    if ! sudo apt install -y i3-gaps; then
-        echo "Failed to install i3-gaps." >&2
-        return 1
-    fi
-
-    echo "i3-gaps installation completed successfully."
+  echo "[INFO] Done! Reboot or switch to TTY2 to use Ly."
+  echo "[INFO] Regolith Desktop has been installed. Once Ly is running,"
+  echo "[INFO] you can select a Regolith session from the Ly interface."
 }
 
 ################################################################################
@@ -1642,9 +1361,7 @@ main() {
   # 7) Finalization
   # --------------------------------------------------------
   install_and_enable_plex
-  install_i3_gaps
   install_x11_and_ly
-  create_i3_config
   finalize_configuration
 
   log "Configuration script finished successfully."
