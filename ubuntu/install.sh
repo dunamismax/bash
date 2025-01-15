@@ -1172,84 +1172,69 @@ install_and_enable_plex() {
 
 # ------------------------------------------------------------------------------
 # install_i3_and_ly
-#   Installs Chocolatey (on Ubuntu via WSL or similar), uses it to install Zig,
+#   Installs Homebrew (on Ubuntu via WSL or similar), uses it to install Zig,
 #   then proceeds to install i3, X11/GUI dependencies, and Ly.
 #
-#   NOTE: Because Chocolatey is primarily intended for Windows, many steps (like
-#   referencing $env:SystemDrive or $env:TEMP) do not exist by default on Linux/WSL.
-#   This script attempts to set possible environment variables needed by the
-#   Chocolatey bootstrap script to avoid null references. However, official
-#   support for Chocolatey on Linux is quite limited, so proceed with caution.
+#   NOTE: Homebrew on Linux (a.k.a. Linuxbrew) will be installed in this script.
+#         Afterward, we use brew install zig instead of Chocolatey.
 # ------------------------------------------------------------------------------
 install_i3_and_ly() {
   set -euo pipefail
   echo "[INFO] Starting installation process for i3, Ly, and dependencies..."
 
-  # 1) Ensure prerequisites are installed
-  echo "[INFO] Installing prerequisites for PowerShell and Chocolatey..."
+  # 1) Ensure standard prerequisites are installed
+  echo "[INFO] Installing prerequisites..."
   sudo apt-get update -y
-  sudo apt-get install -y wget apt-transport-https software-properties-common
+  sudo apt-get install -y wget apt-transport-https software-properties-common \
+                          build-essential git curl file
 
-  # Download the Microsoft repository keys (adjust to your Ubuntu version as needed)
-  echo "[INFO] Downloading Microsoft repository keys..."
+  # 2) Download the Microsoft repository keys (if you need PowerShell on Ubuntu)
+  echo "[INFO] Downloading Microsoft repository keys (if needed)..."
   wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
 
-  # Register the Microsoft repository keys
+  # 3) Register the Microsoft repository keys
   echo "[INFO] Registering Microsoft repository keys..."
   sudo dpkg -i packages-microsoft-prod.deb || true
 
-  # Delete the repository keys file
+  # 4) Delete the repository keys file
   echo "[INFO] Cleaning up repository keys file..."
   rm -f packages-microsoft-prod.deb
 
-  # Update package lists
+  # 5) Update package lists again
   echo "[INFO] Updating package lists..."
   sudo apt-get update -y
 
-  # Install PowerShell
-  echo "[INFO] Installing PowerShell (if supported on this distro)..."
-  sudo apt-get install -y powershell
+  # 6) (Optional) Install PowerShell if desired
+  echo "[INFO] Installing PowerShell (if supported)..."
+  sudo apt-get install -y powershell || true
 
-  # 2) Install and enable Chocolatey
-  echo "[INFO] Ensuring Chocolatey is installed..."
-  if ! command -v choco &>/dev/null; then
-    echo "[INFO] Installing Chocolatey using PowerShell..."
-    # Remove Set-ExecutionPolicy (it’s not supported on non-Windows).
-    # Also set environment variables so that the Chocolatey script doesn’t fail
-    # due to $env:SystemDrive or $env:TEMP being null.
-    pwsh -Command '[System.Environment]::SetEnvironmentVariable("SystemDrive","/",[System.EnvironmentVariableTarget]::Process); 
-      [System.Environment]::SetEnvironmentVariable("TEMP","/tmp",[System.EnvironmentVariableTarget]::Process);
-      [System.Environment]::SetEnvironmentVariable("ALLUSERSPROFILE","/tmp",[System.EnvironmentVariableTarget]::Process);
-      [System.Environment]::SetEnvironmentVariable("ProgramData","/tmp",[System.EnvironmentVariableTarget]::Process);
-      [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072;
-      iex ((New-Object System.Net.WebClient).DownloadString("https://community.chocolatey.org/install.ps1"))'
-  else
-    echo "[INFO] Chocolatey is already installed."
-  fi
+  # 7) Install Homebrew on Linux (a.k.a. Linuxbrew)
+  #    See official instructions at: https://docs.brew.sh/Homebrew-on-Linux
+  echo "[INFO] Installing Homebrew (Linuxbrew)..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-  # 3) Install Zig using Chocolatey
-  echo "[INFO] Installing Zig via Chocolatey..."
-  if command -v choco &>/dev/null; then
-    choco install zig -y
-  else
-    echo "[ERROR] Chocolatey was not installed successfully; cannot install Zig with choco."
-    exit 1
-  fi
+  # Add brew to the PATH for the current running shell
+  echo "[INFO] Configuring Homebrew environment..."
+  test -d ~/.linuxbrew && eval "$(~/.linuxbrew/bin/brew shellenv)"
+  test -d /home/linuxbrew/.linuxbrew && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 
-  # 4) Proceed with i3, X11, and other dependencies
-  echo "[INFO] Updating package lists and installing i3 / X11 dependencies..."
+  # 8) Install Zig using Homebrew
+  echo "[INFO] Installing Zig via Homebrew..."
+  brew update
+  brew install zig
+
+  # 9) Install i3, X11, and other dependencies from apt
+  echo "[INFO] Installing i3 / X11 dependencies..."
   sudo apt-get update -y
   sudo apt-get install -y \
     i3 \
     xserver-xorg \
     xinit \
     x11-xserver-utils \
-    git \
-    build-essential \
     libpam0g-dev \
     libxcb-xkb-dev
 
-  # 5) Clone Ly if not already present
+  # 10) Clone Ly if not already present
   echo "[INFO] Cloning Ly repository..."
   if [ -d "ly" ]; then
     echo "[INFO] 'ly' directory already exists; skipping clone."
@@ -1259,19 +1244,16 @@ install_i3_and_ly() {
     cd ly
   fi
 
-  # 6) Build Ly using Zig
+  # 11) Build Ly using Zig
   echo "[INFO] Compiling Ly..."
-  # If zig from Chocolatey is not in PATH, specify its full path or ensure PATH is updated.
+  # Ensure ‘zig’ is in PATH if you just installed Brew in this same session.
   zig build
 
-  # Optional test step (will fail to launch desktop environments from a bare shell):
-  # sudo zig build run
-
-  # 7) Install Ly and systemd service
+  # 12) Install Ly and systemd service
   echo "[INFO] Installing Ly with systemd support..."
   sudo zig build installsystemd
 
-  # 8) Enable Ly service so it starts on boot
+  # 13) Enable Ly service
   echo "[INFO] Enabling Ly systemd service..."
   sudo systemctl enable ly.service
 
