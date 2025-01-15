@@ -1130,7 +1130,7 @@ install_and_enable_plex() {
   set -e  # Exit immediately if a command exits with a non-zero status
 
   echo "Checking if Plex Media Server is already installed..."
-  if dpkg -l | grep -q '^ii.*plexmediaserver'; then
+  if dpkg -s plexmediaserver >/dev/null 2>&1; then
     echo "Plex Media Server is already installed. Skipping installation."
     return
   fi
