@@ -1171,17 +1171,16 @@ install_and_enable_plex() {
 }
 
 # ------------------------------------------------------------------------------
-# install_x11_and_ly
-#   Installs Zig (from official upstream tarball) on Ubuntu, then proceeds to
-#   install X11/GUI dependencies, Ly, and Regolith. This script does NOT install
-#   i3 or i3-related tools (e.g., i3-gaps, i3lock-color, etc.).
+# install_x11_and_regolith
+#   Installs Zig (from the official upstream tarball) on Ubuntu,
+#   then proceeds to install X11/GUI dependencies and Regolith Desktop.
 #
-#   After successful installation, you can choose to log in via Ly, then select
-#   Regolith as your session if desired.
+#   This script does NOT install i3 or any i3-related tools.
+#   It also does not install any alternative display manager, since we'll use gdm3 with Regolith.
 # ------------------------------------------------------------------------------
-install_x11_and_ly() {
+install_x11_and_regolith() {
   set -euo pipefail
-  echo "[INFO] Starting installation process for X11, Ly, and Regolith..."
+  echo "[INFO] Starting installation process for X11 and Regolith..."
 
   # 1) Ensure standard prerequisites are installed
   echo "[INFO] Installing base prerequisites..."
@@ -1199,16 +1198,15 @@ install_x11_and_ly() {
 
   # 3) Download and install Zig from the official source tarball
   echo "[INFO] Downloading Zig from official upstream..."
-  ZIG_URL="https://ziglang.org/download/0.12.0/zig-linux-x86_64-0.12.0.tar.xz"
-  ZIG_TARBALL="zig-linux-x86_64-0.12.0.tar.xz"
+  ZIG_URL="https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz"
+  ZIG_TARBALL="zig-linux-x86_64-0.14.0.tar.xz"
 
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
-
   echo "[INFO] Extracting Zig tarball..."
   tar xf "$ZIG_TARBALL"
 
-  # After extracting, you will get a directory named "zig-linux-x86_64-0.12.0"
-  ZIG_EXTRACTED="zig-linux-x86_64-0.12.0"
+  # After extracting, you will get a directory named "zig-linux-x86_64-0.14.0"
+  ZIG_EXTRACTED="zig-linux-x86_64-0.14.0"
 
   echo "[INFO] Installing Zig into /usr/local/zig..."
   sudo rm -rf /usr/local/zig
@@ -1249,30 +1247,7 @@ https://regolith-desktop.org/release-3_2-ubuntu-noble-amd64 noble main" \
   sudo apt update
   sudo apt install -y regolith-desktop regolith-session-flashback regolith-look-lascaille
 
-  # 6) Clone and build Ly if not already present
-  echo "[INFO] Cloning Ly repository..."
-  if [ -d "ly" ]; then
-    echo "[INFO] 'ly' directory already exists; skipping clone."
-    cd ly || exit
-  else
-    git clone https://github.com/fairyglade/ly.git
-    cd ly
-  fi
-
-  echo "[INFO] Compiling Ly using Zig..."
-  zig build
-
-  # 7) Install Ly and systemd service
-  echo "[INFO] Installing Ly with systemd support..."
-  sudo zig build installsystemd
-
-  # 8) Enable Ly service
-  echo "[INFO] Enabling Ly systemd service..."
-  sudo systemctl enable ly.service
-
-  echo "[INFO] Done! Reboot or switch to TTY2 to use Ly."
-  echo "[INFO] Regolith Desktop has been installed. Once Ly is running,"
-  echo "[INFO] you can select a Regolith session from the Ly interface."
+  echo "[INFO] Done! You can now reboot and select Regolith from gdm3."
 }
 
 ################################################################################
