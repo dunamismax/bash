@@ -1201,12 +1201,17 @@ install_x11_and_regolith() {
   ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
   ZIG_TARBALL="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
 
+  # Download the tarball
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
-  echo "[INFO] Extracting Zig tarball..."
-  tar xf "$ZIG_TARBALL"
 
-  # After extracting, you will get a directory named "zig-linux-x86_64-0.14.0"
-  ZIG_EXTRACTED="zig-linux-x86_64-0.14.0"
+  echo "[INFO] Extracting Zig tarball..."
+  # Extract the tarball and capture the directory name
+  ZIG_EXTRACTED=$(tar -xf "$ZIG_TARBALL" --directory . --wildcards --list | head -n 1 | cut -d/ -f1)
+
+  if [[ ! -d "$ZIG_EXTRACTED" ]]; then
+    echo "[ERROR] Expected directory '$ZIG_EXTRACTED' does not exist after extraction!"
+    exit 1
+  fi
 
   echo "[INFO] Installing Zig into /usr/local/zig..."
   sudo rm -rf /usr/local/zig
@@ -1216,6 +1221,8 @@ install_x11_and_regolith() {
   sudo rm -f /usr/local/bin/zig
   sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
   sudo chmod +x /usr/local/bin/zig
+
+  echo "[INFO] Zig installation completed successfully!"
 
   # Optionally remove the downloaded tarball and extracted folder
   rm -f "$ZIG_TARBALL"
