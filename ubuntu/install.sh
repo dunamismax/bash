@@ -1158,53 +1158,74 @@ install_and_enable_plex() {
 
 # ------------------------------------------------------------------------------
 # install_i3_and_ly
-#   Installs i3, the Ly display manager, and minimal packages needed for
-#   a headless Ubuntu server to run a GUI environment.
+#   Installs Chocolatey (on Ubuntu via WSL or similar), uses it to install Zig,
+#   then proceeds to install i3, X11/GUI dependencies, and Ly.
 # ------------------------------------------------------------------------------
 install_i3_and_ly() {
   set -euo pipefail
 
-  echo "[INFO] Updating package lists..."
-  sudo apt-get update -y
+  # 1) Install and enable Chocolatey (assuming you’re in a WSL or a similar Ubuntu-on-Windows setup)
+  echo "[INFO] Ensuring Chocolatey is installed..."
+  if ! command -v choco &>/dev/null; then
+    echo "[INFO] Installing dependencies needed for Chocolatey..."
+    sudo apt-get update -y
+    # This installs PowerShell on Ubuntu (required for Chocolatey's install script):
+    sudo apt-get install -y wget apt-transport-https software-properties-common
+    sudo apt-get install -y powershell
 
-  echo "[INFO] Installing i3 and X11/GUI dependencies..."
+    echo "[INFO] Installing Chocolatey using PowerShell..."
+    pwsh -Command 'Set-ExecutionPolicy Bypass -Scope Process -Force; \
+      [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; \
+      iex ((New-Object System.Net.WebClient).DownloadString("https://community.chocolatey.org/install.ps1"))'
+  else
+    echo "[INFO] Chocolatey is already installed."
+  fi
+
+  # 2) Install Zig using Chocolatey
+  echo "[INFO] Installing Zig via Chocolatey..."
+  choco install zig -y
+
+  # 3) Proceed with i3, X11, and other dependencies
+  echo "[INFO] Updating package lists and installing i3 / X11 dependencies..."
+  sudo apt-get update -y
   sudo apt-get install -y \
     i3 \
     xserver-xorg \
     xinit \
     x11-xserver-utils \
-    wget \
     git \
     build-essential \
-    zig \
     libpam0g-dev \
     libxcb-xkb-dev
 
+  # 4) Clone Ly if not already present
   echo "[INFO] Cloning Ly repository..."
   if [ -d "ly" ]; then
-    echo "[INFO] 'ly' directory already exists, skipping clone."
+    echo "[INFO] 'ly' directory already exists; skipping clone."
+    cd ly
   else
     git clone https://github.com/fairyglade/ly.git
+    cd ly
   fi
 
+  # 5) Build Ly using Zig
   echo "[INFO] Compiling Ly..."
-  cd ly
   zig build
 
-  echo "[INFO] Testing Ly (optional)..."
-  # If you want to run it in this shell environment (won’t start desktop env):
+  # Optional test step (will fail to launch desktop environments from a bare shell):
   # sudo zig build run
 
+  # 6) Install Ly and systemd service
   echo "[INFO] Installing Ly with systemd support..."
   sudo zig build installsystemd
 
+  # 7) Enable Ly service so it starts on boot
   echo "[INFO] Enabling Ly systemd service..."
   sudo systemctl enable ly.service
 
-  echo "[INFO] Done. Reboot or switch to the configured tty (default: tty2)."
-  echo "[INFO] i3 is installed and Ly is set up as the display manager."
-  echo "[INFO] After reboot, Ly should launch on tty2, letting you log in and "
-  echo "[INFO] start i3 in a headless Ubuntu environment."
+  echo "[INFO] Done. Reboot or switch to TTY2 to use Ly."
+  echo "[INFO] i3 has been installed, and the Ly display manager is set up."
+  echo "[INFO] After reboot, log in via Ly and start i3 on your headless Ubuntu server."
 }
 
 ################################################################################
