@@ -1162,17 +1162,39 @@ install_and_enable_plex() {
 #   then proceeds to install i3, X11/GUI dependencies, and Ly.
 # ------------------------------------------------------------------------------
 install_i3_and_ly() {
-  set -euo pipefail
+  echo "[INFO] Starting installation process for i3, Ly, and dependencies..."
 
-  # 1) Install and enable Chocolatey (assuming you’re in a WSL or a similar Ubuntu-on-Windows setup)
+  # 1) Ensure prerequisites are installed
+  echo "[INFO] Installing prerequisites for PowerShell and Chocolatey..."
+  sudo apt-get update -y
+  sudo apt-get install -y wget apt-transport-https software-properties-common
+
+  # Get the version of Ubuntu
+  source /etc/os-release
+
+  # Download the Microsoft repository keys
+  echo "[INFO] Downloading Microsoft repository keys..."
+  wget -q https://packages.microsoft.com/config/ubuntu/$VERSION_ID/packages-microsoft-prod.deb
+
+  # Register the Microsoft repository keys
+  echo "[INFO] Registering Microsoft repository keys..."
+  sudo dpkg -i packages-microsoft-prod.deb
+
+  # Delete the repository keys file
+  echo "[INFO] Cleaning up repository keys file..."
+  rm packages-microsoft-prod.deb
+
+  # Update package lists
+  echo "[INFO] Updating package lists..."
+  sudo apt-get update -y
+
+  # Install PowerShell
+  echo "[INFO] Installing PowerShell..."
+  sudo apt-get install -y powershell
+
+  # 2) Install and enable Chocolatey
   echo "[INFO] Ensuring Chocolatey is installed..."
   if ! command -v choco &>/dev/null; then
-    echo "[INFO] Installing dependencies needed for Chocolatey..."
-    sudo apt-get update -y
-    # This installs PowerShell on Ubuntu (required for Chocolatey's install script):
-    sudo apt-get install -y wget apt-transport-https software-properties-common
-    sudo apt-get install -y powershell
-
     echo "[INFO] Installing Chocolatey using PowerShell..."
     pwsh -Command 'Set-ExecutionPolicy Bypass -Scope Process -Force; \
       [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; \
@@ -1181,11 +1203,11 @@ install_i3_and_ly() {
     echo "[INFO] Chocolatey is already installed."
   fi
 
-  # 2) Install Zig using Chocolatey
+  # 3) Install Zig using Chocolatey
   echo "[INFO] Installing Zig via Chocolatey..."
   choco install zig -y
 
-  # 3) Proceed with i3, X11, and other dependencies
+  # 4) Proceed with i3, X11, and other dependencies
   echo "[INFO] Updating package lists and installing i3 / X11 dependencies..."
   sudo apt-get update -y
   sudo apt-get install -y \
@@ -1198,7 +1220,7 @@ install_i3_and_ly() {
     libpam0g-dev \
     libxcb-xkb-dev
 
-  # 4) Clone Ly if not already present
+  # 5) Clone Ly if not already present
   echo "[INFO] Cloning Ly repository..."
   if [ -d "ly" ]; then
     echo "[INFO] 'ly' directory already exists; skipping clone."
@@ -1208,18 +1230,18 @@ install_i3_and_ly() {
     cd ly
   fi
 
-  # 5) Build Ly using Zig
+  # 6) Build Ly using Zig
   echo "[INFO] Compiling Ly..."
   zig build
 
   # Optional test step (will fail to launch desktop environments from a bare shell):
   # sudo zig build run
 
-  # 6) Install Ly and systemd service
+  # 7) Install Ly and systemd service
   echo "[INFO] Installing Ly with systemd support..."
   sudo zig build installsystemd
 
-  # 7) Enable Ly service so it starts on boot
+  # 8) Enable Ly service so it starts on boot
   echo "[INFO] Enabling Ly systemd service..."
   sudo systemctl enable ly.service
 
