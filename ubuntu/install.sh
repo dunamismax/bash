@@ -77,6 +77,7 @@ PACKAGES=(
   # Basic development tools
   build-essential
   cmake
+  hugo
   exim4
   openssh-server
   libtool
