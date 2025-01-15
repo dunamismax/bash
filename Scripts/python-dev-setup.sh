@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# This script installs or updates pyenv for a non-root user named "sawyer",
+# This script installs or updates pyenv for a non-root user named "dowdy",
 # installs the latest Python 3.x (via pyenv), and manages pipx plus a set of
 # Python CLI tools.
 #
 # Note:
 #   - This script is intended for Debian/Ubuntu systems (uses apt-get).
 #   - Must be run as root (e.g., via sudo).
-#   - The user "sawyer" must already exist on the system.
+#   - The user "dowdy" must already exist on the system.
 #
 # Example usage:
 #   sudo ./python-dev-setup.sh
@@ -19,7 +19,7 @@ set -euo pipefail
 ################################################################################
 
 # Set this to the username you wish to configure
-USERNAME="sawyer"
+USERNAME="dowdy"
 
 ################################################################################
 # Check if a command exists on the system

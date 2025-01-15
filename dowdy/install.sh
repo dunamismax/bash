@@ -1,36 +1,53 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Debian/Ubuntu Automated System Configuration Script
+# Ubuntu Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # DESCRIPTION:
-#   Automates the initial setup of a fresh Debian or Ubuntu system by:
-#     1) Syncing package repositories and installing/updating core packages
-#        (e.g., build tools, curl, git).
-#     2) Backing up, then overwriting certain system configs
-#        (e.g., '/etc/ssh/sshd_config') to apply recommended security and
-#        custom settings.
-#     3) Creating or configuring a user account (default: "dowdy") with:
+#   Automates the initial configuration of a fresh Ubuntu system by:
+#     1) Updating package repositories and installing/upgrading essential software
+#        (e.g., development tools, utilities, network tools).
+#     2) Backing up and customizing critical system configuration files
+#        (e.g., '/etc/ssh/ssh_config') to apply best practices for security
+#        and performance.
+#     3) Setting up a user account (default: "dowdy") with:
 #         - Sudo privileges
-#         - Bash as the default shell
+#         - A configured Bash environment as the default shell.
+#     4) Enabling and configuring essential services, including:
+#         - UFW (firewall)
+#         - SSH (secure shell access)
+#         - Chrony (NTP synchronization)
+#     5) Installing optional tools, such as:
+#         - Caddy for web hosting and reverse proxy
+#         - Plex Media Server for multimedia streaming
+#         - Python, Go, Rust, and Zig development environments.
 #
 # USAGE & REQUIREMENTS:
-#   - Change all instances of "dowdy" in the code to whatever your username is before running.
-#   - Run as root or via 'sudo'; non-root execution lacks necessary privileges.
-#   - Works on Debian and Ubuntu (may also function on derivative distros).
-#   - Review all overwriting steps before use; backups of replaced files are
-#     stored with timestamps in the same directory.
+#   - Ensure you have administrative privileges (run as root or via `sudo`).
+#   - Review and adjust all variables (e.g., USERNAME, PACKAGES) before execution.
+#   - Works on Ubuntu and may be compatible with derivative distributions.
+#   - Backups of replaced configuration files are stored with timestamps for safety.
 #
 # LOGGING:
-#   - All operations and errors are logged to '/var/log/debian_setup.log'
-#     for troubleshooting.
+#   - All actions and errors are logged to '/var/log/ubuntu_setup.log'.
+#   - Logs include timestamps to aid troubleshooting and provide an audit trail.
 #
 # ERROR HANDLING:
-#   - 'set -euo pipefail' aborts on errors, unbound variables, or failed pipes.
-#   - Trapped 'ERR' ensures a graceful exit on unexpected failures.
+#   - 'set -euo pipefail' halts execution on errors, unbound variables, or failed pipelines.
+#   - A trap is set on 'ERR' to display helpful messages and ensure a graceful exit.
+#
+# COMPATIBILITY:
+#   - Developed and tested on Ubuntu 20.04 and 22.04 LTS. Verify compatibility
+#     before running on older/newer versions or derivatives.
+#
+# CUSTOMIZATION:
+#   - Update variables like `USERNAME`, `PACKAGES`, and services to match your needs.
+#   - Modify optional components (e.g., Plex, Caddy) as required for your setup.
 #
 # AUTHOR & LICENSE:
 #   - Author: dunamismax
-#   - License: MIT
+#   - License: MIT License
+#     Permission is granted to use, copy, modify, and distribute this script
+#     for any purpose with or without attribution. Provided "as-is" without warranty.
 # ------------------------------------------------------------------------------
 
 set -Eeuo pipefail
@@ -41,10 +58,10 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/debian_setup.log"
+LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="dowdy"
 
-# Essential Debian/Ubuntu packages for a baseline system
+# Essential Ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
 PACKAGES=(
   # Shells and terminal utilities
@@ -103,8 +120,6 @@ PACKAGES=(
   patch
   smartmontools
   ntfs-3g
-  xserver-xorg-video-amdgpu
-  firmware-amd-graphics
 
   # Virtualization (optional; remove if not needed)
   qemu-kvm
@@ -150,53 +165,24 @@ handle_error() {
 # enable_non_free_firmware_only
 # Description:
 #   1) Backs up /etc/apt/sources.list
-#   2) Adds "non-free-firmware" (and nothing else) to existing lines referencing
-#      Debian 12 (bookworm) in /etc/apt/sources.list, skipping duplicates.
+#   2) Adds "restricted multiverse non-free-firmware" (and nothing else) to
+#      existing lines referencing Ubuntu in /etc/apt/sources.list, skipping duplicates.
 #   3) Updates package lists.
-#   4) Installs the AMD firmware package "firmware-amd-graphics".
 ################################################################################
 
 enable_non_free_firmware_only() {
   echo "[INFO] Backing up /etc/apt/sources.list to /etc/apt/sources.list.bak"
   cp -a /etc/apt/sources.list /etc/apt/sources.list.bak
 
-  echo "[INFO] Ensuring 'non-free-firmware' is added to existing bookworm lines without duplicating."
-  sed -i '/^deb .*bookworm/ {/non-free-firmware/! s/$/ non-free-firmware/;}' /etc/apt/sources.list
+  echo "[INFO] Ensuring 'restricted multiverse non-free-firmware' is added to Ubuntu lines without duplicating."
+  sed -i '/^deb .*ubuntu/ {/restricted/! s/$/ restricted/;};
+          /^deb .*ubuntu/ {/multiverse/! s/$/ multiverse/;};
+          /^deb .*ubuntu/ {/non-free-firmware/! s/$/ non-free-firmware/;}' /etc/apt/sources.list
 
   echo "[INFO] Updating package lists..."
   apt update
 
-  echo "[INFO] Installing firmware-amd-graphics..."
-  apt install -y firmware-amd-graphics
-
-  echo "[INFO] Done. You may reboot or unload/reload amdgpu for the changes to take effect."
-}
-
-################################################################################
-# Function: install_enable_systemd
-# Description:
-#   Ensures that systemd is installed and active as the init system on Debian.
-#   1) Installs the “systemd” and “systemd-sysv” packages if they aren’t present.
-#   2) Sets systemd as the default init system (if possible).
-#   3) Notifies the user that a reboot may be required.
-################################################################################
-install_enable_systemd() {
-  echo "[INFO] Installing and enabling systemd on Debian..."
-
-  # Ensure /usr/sbin is on PATH so apt, update-rc.d, etc. are found
-  export PATH="$PATH:/usr/sbin:/sbin"
-
-  # 1) Install systemd packages
-  apt-get update -y
-  apt-get install -y systemd systemd-sysv
-
-  # 2) If your system was using another init (like sysvinit), this step sets
-  #    systemd as default. Usually the “systemd-sysv” package handles it, but
-  #    we’ll run “update-initramfs” for good measure:
-  update-initramfs -u || true
-
-  # 3) Let the user know that a reboot might be necessary for changes to fully apply
-  echo "[INFO] systemd is now installed and enabled. You may need to reboot."
+  echo "[INFO] Done. You may reboot or reload necessary modules for the changes to take effect."
 }
 
 ################################################################################
@@ -207,8 +193,8 @@ enable_sudo() {
   log "Enabling sudo."
   apt install -y sudo
   apt install -y net-tools
-  usermod -aG sudo dowdy
-  log "User 'dowdy' has been added to the sudo group. Log out and back in for the changes to take effect."
+  usermod -aG sudo $USERNAME
+  log "User '$USERNAME' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
 
 ################################################################################
@@ -270,16 +256,16 @@ configure_sudo_access() {
 # Overwrite /etc/ssh/ssh_config
 ################################################################################
 overwrite_ssh_config() {
-  log "Backing up and overwriting /etc/ssh/sshd_config..."
+  log "Backing up and overwriting /etc/ssh/ssh_config..."
 
-  local ssh_config="/etc/ssh/sshd_config"
+  local ssh_config="/etc/ssh/ssh_config"
   if [ -f "$ssh_config" ]; then
     cp "$ssh_config" "${ssh_config}.bak"
     log "Backed up existing $ssh_config to ${ssh_config}.bak"
   fi
 
   cat << 'EOF' > "$ssh_config"
-# Basic Debian SSH Configuration
+# Basic Ubuntu SSH Configuration
 
 Port 22
 AddressFamily any
@@ -299,9 +285,9 @@ EOF
 
   chown root:root "$ssh_config"
   chmod 644 "$ssh_config"
-  log "Completed overwriting /etc/ssh/sshd_config. Restarting ssh service..."
+  log "Completed overwriting /etc/ssh/ssh_config. Restarting ssh service..."
 
-  # Restart the service using Debian's service name
+  # Restart the service using Ubuntu's service name
   systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
 }
 
@@ -430,9 +416,9 @@ shopt -s checkwinsize
 # ------------------------------------------------------------------------------
 # 6. Bash prompt (PS1)
 # ------------------------------------------------------------------------------
-# Identify if we are in a Debian/Ubuntu chroot environment and set debian_chroot.
-if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
-    debian_chroot=$(cat /etc/debian_chroot)
+# Identify if we are in a Ubuntu chroot environment and set ubuntu_chroot.
+if [ -z "${ubuntu_chroot:-}" ] && [ -r /etc/ubuntu_chroot ]; then
+    ubuntu_chroot=$(cat /etc/ubuntu_chroot)
 fi
 
 # If terminal supports color, enable a colored prompt.
@@ -454,16 +440,16 @@ fi
 
 # Choose a colored or plain prompt.
 if [ "$color_prompt" = yes ]; then
-    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 else
-    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\u@\h:\w\$ '
 fi
 unset color_prompt force_color_prompt
 
 # If this is an xterm or rxvt terminal, set the window title to user@host:dir.
 case "$TERM" in
     xterm*|rxvt*)
-        PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+        PS1="\[\e]0;${ubuntu_chroot:+($ubuntu_chroot)}\u@\h: \w\a\]$PS1"
         ;;
     *)
         ;;
@@ -707,18 +693,18 @@ configure_timezone() {
 ################################################################################
 # Function: basic_security_hardening
 # Description:
-#   Applies a minimal set of security best practices on Debian-based systems:
+#   Applies a minimal set of security best practices on Ubuntu-based systems:
 #     1) Disables root SSH login
 #     2) Installs fail2ban if not already installed
 ################################################################################
 basic_security_hardening() {
-  log "Applying basic Debian security hardening..."
+  log "Applying basic Ubuntu security hardening..."
 
-  # 1) Disable root login in sshd_config
-  sed -i 's/^\s*#*\s*PermitRootLogin\s.*/PermitRootLogin no/' /etc/ssh/sshd_config
-  systemctl restart sshd 2>&1 | tee -a "$LOG_FILE"
+  # 1) Disable root login in ssh_config
+  sed -i 's/^\s*#*\s*PermitRootLogin\s.*/PermitRootLogin no/' /etc/ssh/ssh_config
+  systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
 
-  # 2) Install fail2ban (from Debian repositories)
+  # 2) Install fail2ban (from Ubuntu repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
     log "Installing fail2ban..."
     apt install -y fail2ban 2>&1 | tee -a "$LOG_FILE"
@@ -729,90 +715,6 @@ basic_security_hardening() {
   fi
 
   log "Security hardening steps completed."
-}
-
-################################################################################
-# Function: create_caddyfile
-# Description:
-#   Creates (or overwrites) /etc/caddy/Caddyfile with the specified contents:
-#     - Global email setting
-#     - Global logging
-#     - www.dunamismax.com redirect
-#     - Main Hugo site at dunamismax.com
-#     - Nextcloud reverse proxy at cloud.dunamismax.com
-################################################################################
-create_caddyfile() {
-  log "Creating /etc/caddy/Caddyfile..."
-
-  install_caddy
-
-  local caddyfile_path="/etc/caddy/Caddyfile"
-  local caddyfile_dir
-  caddyfile_dir=$(dirname "$caddyfile_path")
-
-  # Ensure caddy directory exists
-  if [ ! -d "$caddyfile_dir" ]; then
-    mkdir -p "$caddyfile_dir"
-    log "Created directory $caddyfile_dir"
-  fi
-
-  # Write out the Caddyfile
-  cat << 'EOF' > "$caddyfile_path"
-{
-    # Use this email for Let's Encrypt notifications
-    email dunamismax@tutamail.com
-
-    # Global logging: captures all events (including errors during startup)
-    log {
-        output file /var/log/caddy/caddy.log
-    }
-}
-
-# Redirect www to non-www
-www.dunamismax.com {
-    redir https://dunamismax.com{uri}
-}
-
-# Main website
-dunamismax.com {
-    # Serve the static files from your Hugo output folder
-    root * /home/dowdy/GitHub/Hugo/dunamismax.com/public
-    file_server
-
-    # Deny hidden files (dotfiles like .git, .htaccess, etc.)
-    @hiddenFiles {
-        path_regexp hiddenFiles ^/\.
-    }
-    respond @hiddenFiles 404
-
-    # Per-site logging: captures site-specific access and error logs
-    log {
-        output file /var/log/caddy/dunamismax_access.log
-    }
-}
-
-# Nextcloud
-cloud.dunamismax.com {
-    reverse_proxy 127.0.0.1:8080
-}
-EOF
-
-  chown root:root "$caddyfile_path"
-  chmod 644 "$caddyfile_path"
-
-  log "Caddyfile created at $caddyfile_path"
-
-  systemctl enable caddy
-  systemctl start caddy
-
-  # Optionally reload or restart Caddy to apply changes
-  if command -v systemctl &>/dev/null; then
-    log "Reloading Caddy to apply new configuration..."
-    systemctl reload caddy 2>&1 | tee -a "$LOG_FILE" || {
-      log "Reload failed, attempting restart..."
-      systemctl restart caddy 2>&1 | tee -a "$LOG_FILE"
-    }
-  fi
 }
 
 ################################################################################
@@ -842,7 +744,7 @@ apt_and_settings() {
 ################################################################################
 # Function: configure_ntp
 # Description:
-#   Installs and configures NTP service on Debian-based systems using chrony.
+#   Installs and configures NTP service on Ubuntu-based systems using chrony.
 #   1) Installs chrony if not already installed.
 #   2) Backs up the existing /etc/chrony/chrony.conf (if present).
 #   3) Writes a basic chrony.conf with recommended upstream NTP servers.
@@ -871,7 +773,7 @@ configure_ntp() {
 # /etc/chrony/chrony.conf - basic configuration
 
 # Pool-based time servers:
-pool 2.debian.pool.ntp.org iburst
+pool 2.ubuntu.pool.ntp.org iburst
 pool time.google.com iburst
 pool pool.ntp.org iburst
 
@@ -1073,22 +975,6 @@ install_apt_dependencies() {
 }
 
 ################################################################################
-# Function: install_caddy
-################################################################################
-install_caddy() {
-  log "Installing and enabling Caddy..."
-apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | gpg --batch --yes --dearmor \
-       -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-  | tee /etc/apt/sources.list.d/caddy-stable.list
-apt update -y
-apt install -y caddy
-  log "Caddy installed."
-}
-
-################################################################################
 # disable_sleep_and_set_performance
 # Description:
 #   1) Masks (disables) system sleep targets so the system never suspends.
@@ -1138,9 +1024,10 @@ disable_sleep_and_set_performance() {
 # Function: install_and_enable_plex
 # Description:
 #   This function installs Plex Media Server on Ubuntu using the official
-#   .deb package. Then it enables and starts the plexmediaserver service so
-#   that Plex runs automatically on system boot. Finally, it displays how
-#   to access the Plex Web UI.
+#   .deb package if it is not already installed. If it is already installed,
+#   the function skips the installation and proceeds. Then it enables and
+#   starts the plexmediaserver service to ensure Plex runs on system boot.
+#   Finally, it displays how to access the Plex Web UI.
 #
 # Usage:
 #   1. Adjust the VERSION variable below as necessary.
@@ -1150,6 +1037,12 @@ disable_sleep_and_set_performance() {
 ################################################################################
 install_and_enable_plex() {
   set -e  # Exit immediately if a command exits with a non-zero status
+
+  echo "Checking if Plex Media Server is already installed..."
+  if dpkg -s plexmediaserver >/dev/null 2>&1; then
+    echo "Plex Media Server is already installed. Skipping installation."
+    return
+  fi
 
   echo "Updating apt package index..."
   sudo apt-get update -y
@@ -1168,7 +1061,14 @@ install_and_enable_plex() {
   curl -LO "${DEB_URL}"
 
   echo "Installing Plex Media Server..."
-  sudo dpkg -i "${DEB_PACKAGE}"
+  if ! sudo dpkg -i "${DEB_PACKAGE}"; then
+    echo "Resolving missing dependencies..."
+    sudo apt-get install -f -y
+    sudo dpkg -i "${DEB_PACKAGE}"
+  fi
+
+  echo "Configuring any partially installed packages..."
+  sudo dpkg --configure -a
 
   echo "Enabling and starting plexmediaserver service..."
   sudo systemctl enable plexmediaserver
@@ -1177,6 +1077,102 @@ install_and_enable_plex() {
   echo "Plex Media Server installation complete!"
   echo "To configure Plex, open a browser on the same machine and go to:"
   echo "  http://127.0.0.1:32400/web"
+}
+
+# ------------------------------------------------------------------------------
+# install_x11_and_regolith
+#   Installs Zig (from the official upstream tarball) on Ubuntu,
+#   then proceeds to install X11/GUI dependencies and Regolith Desktop.
+#
+#   This script does NOT install i3 or any i3-related tools.
+#   It also does not install any alternative display manager, since we'll use gdm3 with Regolith.
+# ------------------------------------------------------------------------------
+install_x11_and_regolith() {
+  set -euo pipefail
+  echo "[INFO] Starting installation process for X11 and Regolith..."
+
+  # 1) Ensure standard prerequisites are installed
+  echo "[INFO] Installing base prerequisites..."
+  sudo apt-get update -y
+  sudo apt-get install -y wget apt-transport-https software-properties-common \
+                          build-essential git curl file gpg
+
+  # 2) (Optional) If you need PowerShell on Ubuntu
+  echo "[INFO] Installing PowerShell (if supported)..."
+  wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
+  sudo dpkg -i packages-microsoft-prod.deb || true
+  rm -f packages-microsoft-prod.deb
+  sudo apt-get update -y
+  sudo apt-get install -y powershell || true
+
+  # 3) Download and install Zig from the official source tarball
+  echo "[INFO] Downloading Zig from official upstream..."
+  # Define variables for download and installation paths
+  ZIG_VERSION="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
+  ZIG_URL="https://ziglang.org/builds/${ZIG_VERSION}.tar.xz"
+  ZIG_TARBALL="/home/dowdy/${ZIG_VERSION}.tar.xz"
+  ZIG_EXTRACTED_DIR="/home/dowdy/${ZIG_VERSION}"
+  ZIG_INSTALL_DIR="/usr/local/zig"
+
+# 1) Download the tarball
+  echo "[INFO] Downloading Zig from official upstream..."
+  wget -O "$ZIG_TARBALL" "$ZIG_URL"
+
+# 2) Extract the tarball
+  echo "[INFO] Extracting Zig tarball..."
+  tar xf "$ZIG_TARBALL" -C /home/dowdy/
+
+# Verify the extracted directory exists
+  if [[ ! -d "$ZIG_EXTRACTED_DIR" ]]; then
+    echo "[ERROR] Expected directory '$ZIG_EXTRACTED_DIR' does not exist after extraction!"
+    exit 1
+  fi
+
+# 3) Install Zig
+  echo "[INFO] Installing Zig into $ZIG_INSTALL_DIR..."
+  sudo rm -rf "$ZIG_INSTALL_DIR"
+  sudo cp -r "$ZIG_EXTRACTED_DIR" "$ZIG_INSTALL_DIR"
+
+# 4) Create symlink for easier access
+  echo "[INFO] Creating symlink /usr/local/bin/zig..."
+  sudo rm -f /usr/local/bin/zig
+  sudo ln -sf "$ZIG_INSTALL_DIR/zig" /usr/local/bin/zig
+  sudo chmod +x /usr/local/bin/zig
+
+  echo "[INFO] Zig installation completed successfully!"
+
+# 5) Clean up (optional)
+  echo "[INFO] Cleaning up downloaded files..."
+  rm -f "$ZIG_TARBALL"
+  rm -rf "$ZIG_EXTRACTED_DIR"
+
+  # 4) Install X11 dependencies
+  echo "[INFO] Installing X11 dependencies..."
+  sudo apt-get update -y
+  sudo apt-get install -y \
+    xserver-xorg \
+    xinit \
+    x11-xserver-utils \
+    libpam0g-dev \
+    libxcb-xkb-dev
+
+  # 5) Install Regolith
+  echo "[INFO] Installing Regolith Desktop..."
+  # Register the Regolith public key
+  wget -qO - https://regolith-desktop.org/regolith.key \
+    | gpg --dearmor \
+    | sudo tee /usr/share/keyrings/regolith-archive-keyring.gpg > /dev/null
+
+  # Add the Regolith repository to apt
+  echo "deb [arch=amd64 signed-by=/usr/share/keyrings/regolith-archive-keyring.gpg] \
+https://regolith-desktop.org/release-3_2-ubuntu-noble-amd64 noble main" \
+  | sudo tee /etc/apt/sources.list.d/regolith.list
+
+  # Update apt and install Regolith
+  sudo apt update
+  sudo apt install -y regolith-desktop regolith-session-flashback regolith-look-lascaille
+
+  echo "[INFO] Done! You can now reboot and select Regolith from gdm3."
 }
 
 ################################################################################
@@ -1216,19 +1212,18 @@ finalize_configuration() {
 ################################################################################
 main() {
   log "--------------------------------------"
-  log "Starting Debian Automated System Configuration Script"
+  log "Starting Ubuntu Automated System Configuration Script"
 
   # --------------------------------------------------------
   # 1) Basic System Preparation
   # --------------------------------------------------------
   force_release_ports
-  install_enable_systemd
   enable_sudo
   configure_sudo_access
   enable_non_free_firmware_only
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
-  set_hostname "debian"
+  set_hostname "ubuntu"
   disable_sleep_and_set_performance
 
   # --------------------------------------------------------
@@ -1266,10 +1261,11 @@ main() {
   # 7) Finalization
   # --------------------------------------------------------
   install_and_enable_plex
+  install_x11_and_regolith
   finalize_configuration
 
   log "Configuration script finished successfully."
-  log "Enjoy Debian!"
+  log "Enjoy Ubuntu!"
   log "--------------------------------------"
 }
 

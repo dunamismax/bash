@@ -9,7 +9,7 @@
 #     2) Backing up and customizing critical system configuration files
 #        (e.g., '/etc/ssh/ssh_config') to apply best practices for security
 #        and performance.
-#     3) Setting up a user account (default: "sawyer") with:
+#     3) Setting up a user account (default: "dowdy") with:
 #         - Sudo privileges
 #         - A configured Bash environment as the default shell.
 #     4) Enabling and configuring essential services, including:
@@ -59,7 +59,7 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/ubuntu_setup.log"
-USERNAME="sawyer"
+USERNAME="dowdy"
 
 # Essential Ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
@@ -762,7 +762,7 @@ www.dunamismax.com {
 # Main website
 dunamismax.com {
     # Serve the static files from your Hugo output folder
-    root * /home/sawyer/GitHub/Hugo/dunamismax.com/public
+    root * /home/dowdy/GitHub/Hugo/dunamismax.com/public
     file_server
 
     # Deny hidden files (dotfiles like .git, .htaccess, etc.)
@@ -1218,8 +1218,8 @@ install_x11_and_regolith() {
   # Define variables for download and installation paths
   ZIG_VERSION="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
   ZIG_URL="https://ziglang.org/builds/${ZIG_VERSION}.tar.xz"
-  ZIG_TARBALL="/home/sawyer/${ZIG_VERSION}.tar.xz"
-  ZIG_EXTRACTED_DIR="/home/sawyer/${ZIG_VERSION}"
+  ZIG_TARBALL="/home/dowdy/${ZIG_VERSION}.tar.xz"
+  ZIG_EXTRACTED_DIR="/home/dowdy/${ZIG_VERSION}"
   ZIG_INSTALL_DIR="/usr/local/zig"
 
 # 1) Download the tarball
@@ -1228,7 +1228,7 @@ install_x11_and_regolith() {
 
 # 2) Extract the tarball
   echo "[INFO] Extracting Zig tarball..."
-  tar xf "$ZIG_TARBALL" -C /home/sawyer/
+  tar xf "$ZIG_TARBALL" -C /home/dowdy/
 
 # Verify the extracted directory exists
   if [[ ! -d "$ZIG_EXTRACTED_DIR" ]]; then

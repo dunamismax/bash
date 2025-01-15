@@ -11,7 +11,7 @@
 #          /etc/rc.conf, /etc/resolv.conf, /etc/ssh/sshd_config) with known-good
 #          contents, substituting "hn0" and "${primary_iface}" with the detected
 #          interface if applicable.
-#       4) Granting sudo privileges to the user "sawyer" and configuring Bash
+#       4) Granting sudo privileges to the user "dowdy" and configuring Bash
 #          (as the default shell), ~/.bashrc, and ~/.bash_profile for that user.
 #       5) Completing final tasks (e.g., pkg upgrade, cleaning caches, and
 #          enabling Plex).
@@ -36,7 +36,7 @@ trap 'handle_error' ERR
 
 # Variables
 LOG_FILE="/var/log/freebsd_setup.log"
-USERNAME="sawyer"
+USERNAME="dowdy"
 PRIMARY_IFACE=""    # Will be detected automatically, if possible
 
 PACKAGES=(

@@ -8,7 +8,7 @@
 set -euo pipefail
 
 # Variables
-DOCKER_COMPOSE_DIR="/home/sawyer/docker_compose"
+DOCKER_COMPOSE_DIR="/home/dowdy/docker_compose"
 LOG_FILE="/var/log/docker-compose-up.log"
 
 # --------------------------------------
