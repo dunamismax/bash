@@ -1198,36 +1198,44 @@ install_x11_and_regolith() {
 
   # 3) Download and install Zig from the official source tarball
   echo "[INFO] Downloading Zig from official upstream..."
-  ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
-  ZIG_TARBALL="/home/sawyer/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
-  /home/sawyer/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2="/home/sawyer/zig-linux-x86_64-0.14.0"
+  # Define variables for download and installation paths
+  ZIG_VERSION="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
+  ZIG_URL="https://ziglang.org/builds/${ZIG_VERSION}.tar.xz"
+  ZIG_TARBALL="/home/sawyer/${ZIG_VERSION}.tar.xz"
+  ZIG_EXTRACTED_DIR="/home/sawyer/${ZIG_VERSION}"
+  ZIG_INSTALL_DIR="/usr/local/zig"
 
-# Download the tarball
+# 1) Download the tarball
+  echo "[INFO] Downloading Zig from official upstream..."
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
 
+# 2) Extract the tarball
   echo "[INFO] Extracting Zig tarball..."
-# Extract the tarball
   tar xf "$ZIG_TARBALL" -C /home/sawyer/
 
-  if [[ ! -d "$/home/sawyer/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2" ]]; then
-    echo "[ERROR] Expected directory '$/home/sawyer/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2' does not exist after extraction!"
+# Verify the extracted directory exists
+  if [[ ! -d "$ZIG_EXTRACTED_DIR" ]]; then
+    echo "[ERROR] Expected directory '$ZIG_EXTRACTED_DIR' does not exist after extraction!"
     exit 1
   fi
 
-  echo "[INFO] Installing Zig into /usr/local/zig..."
-  sudo rm -rf /usr/local/zig
-  sudo cp -r "$/home/sawyer/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2" /usr/local/zig
+# 3) Install Zig
+  echo "[INFO] Installing Zig into $ZIG_INSTALL_DIR..."
+  sudo rm -rf "$ZIG_INSTALL_DIR"
+  sudo cp -r "$ZIG_EXTRACTED_DIR" "$ZIG_INSTALL_DIR"
 
+# 4) Create symlink for easier access
   echo "[INFO] Creating symlink /usr/local/bin/zig..."
   sudo rm -f /usr/local/bin/zig
-  sudo ln -sf /usr/local/zig/zig /usr/local/bin/zig
+  sudo ln -sf "$ZIG_INSTALL_DIR/zig" /usr/local/bin/zig
   sudo chmod +x /usr/local/bin/zig
 
   echo "[INFO] Zig installation completed successfully!"
 
-# Optionally remove the downloaded tarball and extracted folder
+# 5) Clean up (optional)
+  echo "[INFO] Cleaning up downloaded files..."
   rm -f "$ZIG_TARBALL"
-  rm -rf "$/home/sawyer/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
+  rm -rf "$ZIG_EXTRACTED_DIR"
 
   # 4) Install X11 dependencies
   echo "[INFO] Installing X11 dependencies..."
