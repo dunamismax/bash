@@ -1336,7 +1336,7 @@ main() {
   # 7) Finalization
   # --------------------------------------------------------
   install_and_enable_plex
-  install_x11_and_ly
+  install_x11_and_regolith
   finalize_configuration
 
   log "Configuration script finished successfully."
