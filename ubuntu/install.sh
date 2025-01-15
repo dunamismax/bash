@@ -1207,7 +1207,7 @@ install_i3_and_ly() {
   tar xf "$ZIG_TARBALL"
 
   # Adjust this if future Zig releases have a different folder name
-  ZIG_EXTRACTED="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
+  ZIG_EXTRACTED="zig-linux-x86_64-0.12.0.tar.xz"
 
   echo "[INFO] Installing Zig into /usr/local/zig..."
   sudo rm -rf /usr/local/zig                # Clear any existing old copy
