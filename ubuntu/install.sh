@@ -78,6 +78,7 @@ PACKAGES=(
   build-essential
   cmake
   hugo
+  pigz
   exim4
   openssh-server
   libtool
