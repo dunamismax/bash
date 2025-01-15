@@ -1198,8 +1198,8 @@ install_i3_and_ly() {
 
   # 3) Download and install Zig from the official source tarball
   echo "[INFO] Downloading Zig from official upstream..."
-  ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2.tar.xz"
-  ZIG_TARBALL="zig-0.14.0-dev.2643+fb43e91b2.tar.xz"
+  ZIG_URL="https://ziglang.org/download/0.12.0/zig-linux-x86_64-0.12.0.tar.xz"
+  ZIG_TARBALL="zig-linux-x86_64-0.12.0.tar.xz"
 
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
 
