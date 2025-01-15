@@ -1148,6 +1148,57 @@ install_and_enable_plex() {
   echo "  http://127.0.0.1:32400/web"
 }
 
+# ------------------------------------------------------------------------------
+# install_i3_and_ly
+#   Installs i3, the Ly display manager, and minimal packages needed for
+#   a headless Ubuntu server to run a GUI environment.
+# ------------------------------------------------------------------------------
+install_i3_and_ly() {
+  set -euo pipefail
+
+  echo "[INFO] Updating package lists..."
+  sudo apt-get update -y
+
+  echo "[INFO] Installing i3 and X11/GUI dependencies..."
+  sudo apt-get install -y \
+    i3 \
+    xserver-xorg \
+    xinit \
+    x11-xserver-utils \
+    wget \
+    git \
+    build-essential \
+    zig \
+    libpam0g-dev \
+    libxcb-xkb-dev
+
+  echo "[INFO] Cloning Ly repository..."
+  if [ -d "ly" ]; then
+    echo "[INFO] 'ly' directory already exists, skipping clone."
+  else
+    git clone https://github.com/fairyglade/ly.git
+  fi
+
+  echo "[INFO] Compiling Ly..."
+  cd ly
+  zig build
+
+  echo "[INFO] Testing Ly (optional)..."
+  # If you want to run it in this shell environment (won’t start desktop env):
+  # sudo zig build run
+
+  echo "[INFO] Installing Ly with systemd support..."
+  sudo zig build installsystemd
+
+  echo "[INFO] Enabling Ly systemd service..."
+  sudo systemctl enable ly.service
+
+  echo "[INFO] Done. Reboot or switch to the configured tty (default: tty2)."
+  echo "[INFO] i3 is installed and Ly is set up as the display manager."
+  echo "[INFO] After reboot, Ly should launch on tty2, letting you log in and "
+  echo "[INFO] start i3 in a headless Ubuntu environment."
+}
+
 ################################################################################
 # Function: finalize_configuration
 ################################################################################
@@ -1234,6 +1285,7 @@ main() {
   # 7) Finalization
   # --------------------------------------------------------
   install_and_enable_plex
+  install_i3_and_ly
   finalize_configuration
 
   log "Configuration script finished successfully."
