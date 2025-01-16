@@ -121,6 +121,63 @@ handle_error() {
 # Trap any error and output a helpful message
 trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
 
+# ------------------------------------------------------------------------------
+# Backup Function
+# ------------------------------------------------------------------------------
+backup_system() {
+    apt install -y rsync
+    # Variables
+    local SOURCE="/"                       # Source directory for backup
+    local DESTINATION="/home/sawyer/BACKUPS" # Destination for backups
+    local TIMESTAMP
+    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S") # Timestamp for folder naming
+    local BACKUP_FOLDER="$DESTINATION/backup-$TIMESTAMP" # Custom dated folder
+    local RETENTION_DAYS=7                 # Retain backups for 7 days
+    # Exclusions for the backup
+    local EXCLUDES=(
+        "./proc/*"
+        "./sys/*"
+        "./dev/*"
+        "./run/*"
+        "./tmp/*"
+        "./mnt/*"
+        "./media/*"
+        "./swapfile"
+        "./lost+found"
+        "./var/tmp/*"
+        "./var/cache/*"
+        "./var/log/*"
+        "./var/lib/lxcfs/*"
+        "./var/lib/docker/*"
+        "./root/.cache/*"
+        "./home/*/.cache/*"
+        "./var/lib/plexmediaserver/*"
+        "$DESTINATION"
+    )
+    # Create exclusion string for rsync
+    local EXCLUDES_ARGS=()
+    for EXCLUDE in "${EXCLUDES[@]}"; do
+        EXCLUDES_ARGS+=(--exclude="$EXCLUDE")
+    done
+    # Ensure the destination folder exists
+    mkdir -p "$BACKUP_FOLDER"
+    # Perform backup using rsync
+    log INFO "Starting system backup to $BACKUP_FOLDER"
+    if rsync -aAXv "${EXCLUDES_ARGS[@]}" "$SOURCE" "$BACKUP_FOLDER"; then
+        log INFO "Backup completed successfully: $BACKUP_FOLDER"
+    else
+        log ERROR "Error: Backup process failed."
+        exit 1
+    fi
+    # Remove old backups
+    log INFO "Cleaning up old backups older than $RETENTION_DAYS days."
+    if find "$DESTINATION" -type d -name "backup-*" -mtime +"$RETENTION_DAYS" -exec rm -rf {} \;; then
+        log INFO "Old backups removed."
+    else
+        log WARN "Warning: Failed to remove some old backups."
+    fi
+}
+
 ################################################################################
 # Function: Configure SSH and security settings
 # Purpose: Install and configure OpenSSH server with best practices for security
@@ -1133,6 +1190,7 @@ main() {
   log INFO "Starting Ubuntu Automated System Configuration Script"
 
 # Bash script execution order:
+  backup_system
   configure_ssh_settings
   force_release_ports
   configure_timezone "America/New_York"
