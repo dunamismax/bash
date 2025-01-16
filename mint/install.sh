@@ -187,7 +187,7 @@ install_gui() {
 
     # Step 1: Update package lists
     log INFO "Updating package lists..."
-    if sudo apt-get update -y; then
+    if apt update -y; then
         log INFO "Successfully updated package lists."
     else
         log ERROR "Failed to update package lists. Exiting."
@@ -199,7 +199,7 @@ install_gui() {
     if dpkg -l | grep -qw kde-full; then
         log INFO "KDE Plasma Desktop is already installed. Skipping."
     else
-        if sudo apt-get install -y kde-full; then
+        if apt install -y kde-full; then
             log INFO "Successfully installed KDE Plasma Desktop."
         else
             log ERROR "Failed to install KDE Plasma Desktop. Exiting."
@@ -213,7 +213,7 @@ install_gui() {
     if dpkg -l | grep -qw vlc && dpkg -l | grep -qw fonts-ubuntu; then
         log INFO "All additional utilities are already installed. Skipping."
     else
-        if sudo apt-get install -y $packages; then
+        if apt install -y $packages; then
             log INFO "Successfully installed desktop utilities."
         else
             log ERROR "Failed to install desktop utilities. Exiting."
@@ -221,9 +221,14 @@ install_gui() {
         fi
     fi
 
+    # Step 4: Install Window Managers
+    log INFO "Installing additional Window Managers
+    apt install -y openbox obconf tint2 compton rofi lxappearance nitrogen pcmanfm sway swaybg swaylock swayidle waybar wofi xwayland alacritty dmenu neofetch fonts-noto fonts-ubuntu fonts-dejavu pavucontrol
+    log INFO "Complete"
+
     # Step 4: Clean up
     log INFO "Cleaning up unnecessary packages..."
-    if sudo apt-get autoremove -y && sudo apt-get autoclean -y; then
+    if apt autoremove -y && sudo apt-get autoclean -y; then
         log INFO "System cleanup complete."
     else
         log WARN "System cleanup encountered issues. Proceeding anyway."
