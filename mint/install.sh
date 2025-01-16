@@ -220,35 +220,13 @@ install_regolith() {
         log ERROR "Failed to install Regolith Desktop."
         exit 1
     fi
-
-    # Step 5: Install GDM3 as the display manager
-    log INFO "Installing GDM as the display manager..."
-    if ! dpkg -l | grep -q gdm3; then
-        if sudo apt-get install -y gdm3; then
-            log INFO "Successfully installed GDM."
-        else
-            log ERROR "Failed to install GDM."
-            exit 1
-        fi
-    else
-        log INFO "GDM is already installed. Skipping."
-    fi
     
-    # Step 6: Install Regolith Desktop
+    # Step 5: Install Gnome Desktop
     log INFO "Installing Gnome desktop..."
     if sudo apt-get install -y ubuntu-gnome-desktop; then
         log INFO "Successfully installed Gnome Desktop."
     else
         log ERROR "Failed to install Gnome Desktop."
-        exit 1
-    fi
-
-    # Step 7: Enable and start GDM
-    log INFO "Enabling GDM..."
-    if sudo systemctl enable gdm3; then
-        log INFO "Successfully enabled GDM."
-    else
-        log ERROR "Failed to enable GDM."
         exit 1
     fi
 
