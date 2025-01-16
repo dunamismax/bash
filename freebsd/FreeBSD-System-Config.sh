@@ -8,7 +8,7 @@
 #          packages.
 #       2) Detecting the primary network interface (stored in PRIMARY_IFACE).
 #       3) Backing up and overwriting selected configuration files (/etc/pf.conf,
-#          /etc/rc.conf, /etc/resolv.conf, /etc/ssh/sshd_config) with known-good
+#          /etc/rc.conf, /etc/resolv.conf, /etc/ssh/ssh_config) with known-good
 #          contents, substituting "hn0" and "${primary_iface}" with the detected
 #          interface if applicable.
 #       4) Granting sudo privileges to the user "sawyer" and configuring Bash
@@ -201,7 +201,7 @@ clear_tmp_enable="YES"
 hostname="freebsd"
 ifconfig_hn0="DHCP"
 local_unbound_enable="NO"
-sshd_enable="YES"
+ssh_enable="YES"
 moused_enable="NO"
 ntpd_enable="YES"
 powerd_enable="YES"
@@ -246,19 +246,19 @@ EOF
     log "Completed overwriting /etc/resolv.conf."
 }
 
-# Function to overwrite /etc/ssh/sshd_config
-overwrite_sshd_config() {
-    log "Backing up and overwriting /etc/ssh/sshd_config with known-good contents."
+# Function to overwrite /etc/ssh/ssh_config
+overwrite_ssh_config() {
+    log "Backing up and overwriting /etc/ssh/ssh_config with known-good contents."
 
-    local sshd_config="/etc/ssh/sshd_config"
-    if [ -f "$sshd_config" ]; then
-        mv "$sshd_config" "${sshd_config}.bak"
-        log "Backed up existing $sshd_config to ${sshd_config}.bak"
+    local ssh_config="/etc/ssh/ssh_config"
+    if [ -f "$ssh_config" ]; then
+        mv "$ssh_config" "${ssh_config}.bak"
+        log "Backed up existing $ssh_config to ${ssh_config}.bak"
     fi
 
-    cat <<'EOF' > "$sshd_config"
-#       $OpenBSD: sshd_config,v 1.104 2021/07/02 05:11:21 dtucker Exp $
-# This is the sshd server system-wide configuration file.
+    cat <<'EOF' > "$ssh_config"
+#       $OpenBSD: ssh_config,v 1.104 2021/07/02 05:11:21 dtucker Exp $
+# This is the ssh server system-wide configuration file.
 
 Port 22
 AddressFamily any
@@ -278,11 +278,11 @@ Subsystem       sftp    /usr/libexec/sftp-server
 EOF
 
     # Fix ownership and permissions
-    chown root:wheel "$sshd_config"
-    chmod 644 "$sshd_config"
+    chown root:wheel "$ssh_config"
+    chmod 644 "$ssh_config"
 
-    log "Completed overwriting /etc/ssh/sshd_config. Restarting sshd..."
-    service sshd restart 2>&1 | tee -a "$LOG_FILE"
+    log "Completed overwriting /etc/ssh/ssh_config. Restarting ssh..."
+    service ssh restart 2>&1 | tee -a "$LOG_FILE"
 }
 
 # Function to configure sudoers
@@ -430,7 +430,7 @@ bootstrap_and_install_pkgs
 overwrite_pf_conf
 overwrite_rc_conf
 overwrite_resolv_conf
-overwrite_sshd_config
+overwrite_ssh_config
 
 # 4. Configure sudo for $USERNAME
 configure_sudoers

@@ -137,15 +137,15 @@ configure_ssh_settings() {
   fi
 
   # Enable and start SSH service
-  systemctl enable --now sshd
-  log INFO "SSHD service enabled and started."
+  systemctl enable --now ssh
+  log INFO "ssh service enabled and started."
 
-  log INFO "Configuring SSH settings in /etc/ssh/sshd_config..."
+  log INFO "Configuring SSH settings in /etc/ssh/ssh_config..."
 
-  # Backup sshd_config before making changes
-  local sshd_config="/etc/ssh/sshd_config"
-  local backup_file="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$sshd_config" "$backup_file" && log INFO "Backup created at $backup_file."
+  # Backup ssh_config before making changes
+  local ssh_config="/etc/ssh/ssh_config"
+  local backup_file="${ssh_config}.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$ssh_config" "$backup_file" && log INFO "Backup created at $backup_file."
 
   # Define desired SSH settings
   declare -A ssh_settings=(
@@ -158,20 +158,20 @@ configure_ssh_settings() {
 
   # Apply SSH settings
   for setting in "${!ssh_settings[@]}"; do
-    if grep -q "^${setting} " "$sshd_config"; then
-      sed -i "s/^${setting} .*/${setting} ${ssh_settings[$setting]}/" "$sshd_config"
+    if grep -q "^${setting} " "$ssh_config"; then
+      sed -i "s/^${setting} .*/${setting} ${ssh_settings[$setting]}/" "$ssh_config"
     else
-      echo "${setting} ${ssh_settings[$setting]}" >> "$sshd_config"
+      echo "${setting} ${ssh_settings[$setting]}" >> "$ssh_config"
     fi
   done
 
   log INFO "SSH configuration updated. Restarting SSH service..."
 
   # Restart SSH service and handle errors
-  if systemctl restart sshd; then
-    log INFO "SSHD service restarted successfully."
+  if systemctl restart ssh; then
+    log INFO "ssh service restarted successfully."
   else
-    log ERROR "Failed to restart SSHD service. Please check the configuration."
+    log ERROR "Failed to restart ssh service. Please check the configuration."
     return 1
   fi
 }
