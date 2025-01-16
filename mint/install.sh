@@ -36,7 +36,7 @@ PACKAGES=(
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
-  git ufw perl curl wget tcpdump rsync htop sudo passwd bash-completion neofetch tig jq
+  git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq
   nmap tree fzf lynx which patch smartmontools ntfs-3g
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils
   chrony fail2ban ffmpeg restic
@@ -135,18 +135,6 @@ handle_error() {
 trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
 
 ################################################################################
-# Function: install and enable sudo
-################################################################################
-enable_sudo() {
-  export PATH=$PATH:/usr/sbin
-  log INFO "Enabling sudo."
-  apt install -y sudo
-  apt install -y net-tools
-  usermod -aG sudo $USERNAME
-  log INFO "User '$USERNAME' has been added to the sudo group. Log out and back in for the changes to take effect."
-}
-
-################################################################################
 # Function: bootstrap_and_install_pkgs
 ################################################################################
 bootstrap_and_install_pkgs() {
@@ -175,25 +163,6 @@ bootstrap_and_install_pkgs() {
   apt clean -y
 
   log INFO "Package installation process completed."
-}
-
-################################################################################
-# Function: configure_sudo_access
-################################################################################
-configure_sudo_access() {
-  # 1) Ensure sudo is installed
-  log INFO "Installing sudo package (if not already installed)..."
-  apt update -y
-  apt install -y sudo
-
-  # 2) Add the user to the 'sudo' group
-  log INFO "Adding '$USERNAME' to the sudo group..."
-  if id "$USERNAME" &>/dev/null; then
-    usermod -aG sudo "$USERNAME"
-  else
-    log ERROR "User '$USERNAME' does not exist. Please create the user before configuring sudo."
-    return 1
-  fi
 }
 
 ################################################################################
@@ -1074,8 +1043,6 @@ main() {
   # 1) Basic System Preparation
   # --------------------------------------------------------
   force_release_ports
-  enable_sudo
-  configure_sudo_access
   configure_timezone "America/New_York"
 
   # --------------------------------------------------------
