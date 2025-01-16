@@ -181,9 +181,8 @@ configure_ssh_settings() {
 # ------------------------------------------------------------------------------
 backup_system() {
     # Variables
-    local USERNAME="${1:-$USER}"    # Accept username as a parameter or use current user
     local SOURCE="/"                # Source directory for backup
-    local DESTINATION="/home/$USERNAME/BACKUPS" # Destination for backup
+    local DESTINATION="/home/sawyer/BACKUPS" # Destination for backup
     local LOG_FILE="/var/log/system-backup.log" # Log file path
     local TIMESTAMP
     TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
@@ -209,7 +208,7 @@ backup_system() {
         "./root/.cache/*"
         "./home/*/.cache/*"
         "./var/lib/plexmediaserver/*"
-        "/home/$USERNAME/BACKUPS"
+        "/home/sawyer/BACKUPS"
     )
 
     # Create exclusion string for tar
