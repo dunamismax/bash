@@ -1163,7 +1163,7 @@ main() {
   download_repositories
   finalize_configuration
   systemctl restart caddy
-  install_hyperland
+  install_regolith
 
   log INFO "Configuration script finished successfully."
   log INFO "Enjoy Ubuntu!!!"
