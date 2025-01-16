@@ -87,7 +87,7 @@ install_gui() {
     if apt install -y gnome gnome-tweaks gnome-shell-extensions gnome-software \
        gnome-terminal gnome-control-center fonts-cantarell fonts-dejavu \
        fonts-ubuntu adwaita-icon-theme-full ttf-mscorefonts-installer \
-       gnome-shell-extension-prefs gnome-shell-extension-weather \
+       gnome-shell-extension-prefs \
        fonts-roboto fonts-open-sans fonts-droid-fallback fonts-liberation \
        fonts-powerline; then
         log INFO "Successfully installed GUI components and additional fonts."
