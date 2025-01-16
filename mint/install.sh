@@ -74,14 +74,14 @@ log() {
     # Define color codes
     local RED='\033[0;31m'
     local YELLOW='\033[0;33m'
-    local WHITE='\033[1;37m'  # Changed from green to white
+    local GREEN='\033[0;32m'  # INFO messages will now use green
     local BLUE='\033[0;34m'
     local NC='\033[0m'        # No Color
 
     # Validate log level and set color
     case "${level^^}" in
         INFO)
-            local color="${WHITE}"
+            local color="${GREEN}"
             ;;
         WARN|WARNING)
             local color="${YELLOW}"
@@ -710,24 +710,6 @@ EOF
 }
 
 ################################################################################
-# Function: Flatpak
-################################################################################
-flatpak_install() {
-  log INFO "Installing flatpak and configuring Flathub remote..."
-
-  # Ensure add-apt-repository command is available
-  apt install -y software-properties-common
-
-  add-apt-repository -y ppa:flatpak/stable
-  apt update -y
-  apt install -y flatpak
-  apt install -y gnome-software-plugin-flatpak
-  flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-
-  log INFO "Flatpak installed."
-}
-
-################################################################################
 # Function: configure_ntp
 ################################################################################
 configure_ntp() {
@@ -1094,7 +1076,6 @@ main() {
   force_release_ports
   enable_sudo
   configure_sudo_access
-  flatpak_install
   configure_timezone "America/New_York"
 
   # --------------------------------------------------------
