@@ -180,15 +180,15 @@ configure_ssh_settings() {
 # Backup Function
 # ------------------------------------------------------------------------------
 backup_system() {
-    apt install -y pigz
+    apt install -y rsync
+
     # Variables
-    local SOURCE="/"                # Source directory for backup
-    local DESTINATION="/home/sawyer/BACKUPS" # Destination for backup
-    local LOG_FILE="/var/log/system-backup.log" # Log file path
+    local SOURCE="/"                       # Source directory for backup
+    local DESTINATION="/home/sawyer/BACKUPS" # Destination for backups
     local TIMESTAMP
-    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-    local BACKUP_NAME="backup-$TIMESTAMP.tar.gz"
-    local RETENTION_DAYS=7          # Retain backups for 7 days
+    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S") # Timestamp for folder naming
+    local BACKUP_FOLDER="$DESTINATION/backup-$TIMESTAMP" # Custom dated folder
+    local RETENTION_DAYS=7                 # Retain backups for 7 days
 
     # Exclusions for the backup
     local EXCLUDES=(
@@ -209,70 +209,30 @@ backup_system() {
         "./root/.cache/*"
         "./home/*/.cache/*"
         "./var/lib/plexmediaserver/*"
-        "/home/sawyer/BACKUPS"
+        "$DESTINATION"
     )
 
-    # Create exclusion string for tar
+    # Create exclusion string for rsync
     local EXCLUDES_ARGS=()
     for EXCLUDE in "${EXCLUDES[@]}"; do
         EXCLUDES_ARGS+=(--exclude="$EXCLUDE")
     done
 
-    # Ensure destination exists
-    mkdir -p "$DESTINATION"
+    # Ensure the destination folder exists
+    mkdir -p "$BACKUP_FOLDER"
 
-    # Use filesystem snapshot (if supported) to ensure a consistent backup
-    if command -v lvcreate &>/dev/null && mountpoint -q "$SOURCE"; then
-        log INFO "Detected LVM support. Creating a snapshot for consistent backup."
-
-        # Create LVM snapshot
-        local VG_NAME
-        local LV_NAME
-        VG_NAME=$(df "$SOURCE" --output=source | tail -n1 | awk -F/ '{print $4}')
-        LV_NAME=$(df "$SOURCE" --output=source | tail -n1 | awk -F/ '{print $5}')
-
-        local SNAPSHOT_NAME="${LV_NAME}_snapshot"
-        lvcreate -L1G -s -n "$SNAPSHOT_NAME" "/dev/$VG_NAME/$LV_NAME" || {
-            log ERROR "Failed to create LVM snapshot. Proceeding with live backup."
-            BACKUP_SOURCE="$SOURCE"
-        }
-
-        # Mount the snapshot
-        local SNAPSHOT_MOUNT="/mnt/snapshot"
-        mkdir -p "$SNAPSHOT_MOUNT"
-        mount "/dev/$VG_NAME/$SNAPSHOT_NAME" "$SNAPSHOT_MOUNT" || {
-            log ERROR "Failed to mount snapshot. Proceeding with live backup."
-            lvremove -f "/dev/$VG_NAME/$SNAPSHOT_NAME"
-            BACKUP_SOURCE="$SOURCE"
-        }
-
-        BACKUP_SOURCE="$SNAPSHOT_MOUNT"
-    else
-        log WARN "LVM snapshot support not available. Proceeding with live backup."
-        BACKUP_SOURCE="$SOURCE"
-    fi
-
-    # Perform backup
-    log INFO "Starting system backup to $DESTINATION/$BACKUP_NAME"
-    if tar -I pigz --one-file-system -cf "$DESTINATION/$BACKUP_NAME" \
-        "${EXCLUDES_ARGS[@]}" -C "$BACKUP_SOURCE" .; then
-        log INFO "Backup completed successfully: $DESTINATION/$BACKUP_NAME"
+    # Perform backup using rsync
+    log INFO "Starting system backup to $BACKUP_FOLDER"
+    if rsync -aAXv "${EXCLUDES_ARGS[@]}" "$SOURCE" "$BACKUP_FOLDER"; then
+        log INFO "Backup completed successfully: $BACKUP_FOLDER"
     else
         log ERROR "Error: Backup process failed."
         exit 1
     fi
 
-    # Clean up snapshot
-    if [[ "$BACKUP_SOURCE" == "/mnt/snapshot" ]]; then
-        umount "$SNAPSHOT_MOUNT"
-        lvremove -f "/dev/$VG_NAME/$SNAPSHOT_NAME"
-        rmdir "$SNAPSHOT_MOUNT"
-        log INFO "Snapshot cleaned up."
-    fi
-
     # Remove old backups
     log INFO "Cleaning up old backups older than $RETENTION_DAYS days."
-    if find "$DESTINATION" -type f -name "*.tar.gz" -mtime +"$RETENTION_DAYS" -exec rm -f {} \;; then
+    if find "$DESTINATION" -type d -name "backup-*" -mtime +"$RETENTION_DAYS" -exec rm -rf {} \;; then
         log INFO "Old backups removed."
     else
         log WARN "Warning: Failed to remove some old backups."
