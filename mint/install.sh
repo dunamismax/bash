@@ -1197,46 +1197,20 @@ main() {
   log INFO "--------------------------------------"
   log INFO "Starting Ubuntu Automated System Configuration Script"
 
-  # --------------------------------------------------------
-  # 1) Basic System Preparation
-  # --------------------------------------------------------
+# Bash script execution order:
   backup_system
   configure_ssh_settings
   force_release_ports
   configure_timezone "America/New_York"
-
-  # --------------------------------------------------------
-  # 2) User Creation and Environment
-  # --------------------------------------------------------
   set_default_shell_and_env
-
-  # --------------------------------------------------------
-  # 3) Install Caddy and create caddyfile
-  # --------------------------------------------------------
   create_caddyfile
-
-  # --------------------------------------------------------
-  # 4) Software Installation
-  # --------------------------------------------------------
-  bootstrap_and_install_pkgs  # Installs essential system packages
-
-  # --------------------------------------------------------
-  # 5) Security and Hardening
-  # --------------------------------------------------------
+  bootstrap_and_install_pkgs
   configure_ufw
   configure_ntp
   fail2ban
-
-  # --------------------------------------------------------
-  # 6) Dev Setup
-  # --------------------------------------------------------
   install_python_build_deps
   install_dev_build_deps
   install_apt_dependencies
-
-  # --------------------------------------------------------
-  # 7) Finalization
-  # --------------------------------------------------------
   install_and_enable_plex
   install_powershell_and_zig
   download_repositories
