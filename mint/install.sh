@@ -127,47 +127,48 @@ trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
 configure_ssh_settings() {
   log INFO "Installing OpenSSH Server..."
   apt install -y openssh-server
-  local sshd_config="/etc/ssh/sshd_config"
-  log INFO "Configuring SSH settings in $sshd_config..."
+  systemctl enable sshd
+  systemctl start sshd
+  log INFO "Configuring SSH settings in /etc/ssh/sshd_config..."
 
   # Backup the current sshd_config
-  cp "$sshd_config" "${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
+  cp "/etc/ssh/sshd_config" "/etc/ssh/sshd_config.bak.$(date +%Y%m%d%H%M%S)"
   log INFO "Backup of sshd_config created."
 
   # Set Port 22
-  if grep -q "^Port " "$sshd_config"; then
-    sed -i 's/^Port .*/Port 22/' "$sshd_config"
+  if grep -q "^Port " "/etc/ssh/sshd_config"; then
+    sed -i 's/^Port .*/Port 22/' "/etc/ssh/sshd_config"
   else
-    echo "Port 22" >> "$sshd_config"
+    echo "Port 22" >> "/etc/ssh/sshd_config"
   fi
 
   # Set MaxAuthTries to 8
-  if grep -q "^MaxAuthTries " "$sshd_config"; then
-    sed -i 's/^MaxAuthTries .*/MaxAuthTries 8/' "$sshd_config"
+  if grep -q "^MaxAuthTries " "/etc/ssh/sshd_config"; then
+    sed -i 's/^MaxAuthTries .*/MaxAuthTries 8/' "/etc/ssh/sshd_config"
   else
-    echo "MaxAuthTries 8" >> "$sshd_config"
+    echo "MaxAuthTries 8" >> "/etc/ssh/sshd_config"
   fi
 
   # Set MaxSessions to 6 (controls simultaneous sessions per connection)
-  if grep -q "^MaxSessions " "$sshd_config"; then
-    sed -i 's/^MaxSessions .*/MaxSessions 6/' "$sshd_config"
+  if grep -q "^MaxSessions " "/etc/ssh/sshd_config"; then
+    sed -i 's/^MaxSessions .*/MaxSessions 6/' "/etc/ssh/sshd_config"
   else
-    echo "MaxSessions 6" >> "$sshd_config"
+    echo "MaxSessions 6" >> "/etc/ssh/sshd_config"
   fi
 
   # Additional important security settings:
   # 1. Disable root login over SSH
-  if grep -q "^PermitRootLogin " "$sshd_config"; then
-    sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' "$sshd_config"
+  if grep -q "^PermitRootLogin " "/etc/ssh/sshd_config"; then
+    sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' "/etc/ssh/sshd_config"
   else
-    echo "PermitRootLogin no" >> "$sshd_config"
+    echo "PermitRootLogin no" >> "/etc/ssh/sshd_config"
   fi
 
   # 2. Limit SSH protocol to version 2
-  if grep -q "^Protocol " "$sshd_config"; then
-    sed -i 's/^Protocol .*/Protocol 2/' "$sshd_config"
+  if grep -q "^Protocol " "/etc/ssh/sshd_config"; then
+    sed -i 's/^Protocol .*/Protocol 2/' "/etc/ssh/sshd_config"
   else
-    echo "Protocol 2" >> "$sshd_config"
+    echo "Protocol 2" >> "/etc/ssh/sshd_config"
   fi
 
   # Optionally, add other security directives as needed
