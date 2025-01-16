@@ -249,10 +249,13 @@ install_hyperland() {
     # Ensure we have the universe repository enabled
     if ! grep -q "^deb .*universe" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
         log INFO "Adding 'universe' repository to apt sources."
-        sudo add-apt-repository universe
+        sudo add-apt-repository -y universe || {
+            log ERROR "Failed to add 'universe' repository."
+            exit 1
+        }
     fi
 
-    # Update system packages
+    # Update package lists
     log INFO "Updating package lists..."
     sudo apt-get update -y || {
         log ERROR "Failed to update package lists."
@@ -260,20 +263,38 @@ install_hyperland() {
     }
 
     # Install Hyperland WM
-    log INFO "Installing Hyperland WM..."
-    sudo apt-get install -y hyprland || {
-        log ERROR "Failed to install Hyperland."
-        exit 1
-    }
+    log INFO "Installing Hyperland WM (hyprland)..."
+    if ! dpkg -l | grep -q hyprland; then
+        sudo apt-get install -y hyprland || {
+            log ERROR "Failed to install Hyperland."
+            exit 1
+        }
+    else
+        log INFO "Hyperland is already installed. Skipping."
+    fi
 
-    # Install a display manager (e.g., GDM)
+    # Install and configure a display manager (e.g., GDM)
     log INFO "Installing GDM as the display manager..."
-    sudo apt-get install -y gdm3 || {
-        log ERROR "Failed to install GDM."
-        exit 1
-    }
+    if ! dpkg -l | grep -q gdm3; then
+        sudo apt-get install -y gdm3 || {
+            log ERROR "Failed to install GDM."
+            exit 1
+        }
+    else
+        log INFO "GDM is already installed. Skipping."
+    fi
 
-    # Enable the display manager
+    # Disable other display managers
+    log INFO "Disabling any conflicting display managers..."
+    for dm in sddm lightdm ly; do
+        if systemctl is-active --quiet "$dm"; then
+            log INFO "Disabling and stopping $dm..."
+            sudo systemctl disable "$dm" || log WARN "Failed to disable $dm."
+            sudo systemctl stop "$dm" || log WARN "Failed to stop $dm."
+        fi
+    done
+
+    # Enable and start GDM
     log INFO "Enabling and starting GDM..."
     sudo systemctl enable gdm3 || {
         log ERROR "Failed to enable GDM."
