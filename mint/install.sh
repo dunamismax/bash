@@ -259,7 +259,7 @@ install_gui() {
 
     # Step 9: Install Additional Usability Packages
     log INFO "Installing additional desktop utilities..."
-    if sudo apt-get install -y gnome-terminal nautilus gnome-tweaks vlc gnome-shell-extensions fonts-ubuntu-restricted-extras; then
+    if sudo apt-get install -y gnome-terminal nautilus gnome-tweaks vlc gnome-shell-extensions fonts-ubuntu ttf-mscorefonts-installer fonts-roboto fonts-open-sans fonts-dejavu fonts-droid-fallback fonts-liberation fonts-cantarell; then
         log INFO "Successfully installed desktop utilities."
     else
         log ERROR "Failed to install desktop utilities."
