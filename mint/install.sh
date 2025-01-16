@@ -628,23 +628,6 @@ force_release_ports() {
 }
 
 ################################################################################
-# Function: set_hostname
-# Description:
-#   Sets and persists the system hostname.
-################################################################################
-set_hostname() {
-  local new_hostname="$1"
-  if [ -z "$new_hostname" ]; then
-    log "No hostname specified; skipping."
-    return
-  fi
-
-  log "Setting system hostname to '${new_hostname}'..."
-  hostnamectl set-hostname "$new_hostname" 2>&1 | tee -a "$LOG_FILE"
-  log "Hostname set to ${new_hostname}."
-}
-
-################################################################################
 # Function: configure_timezone
 # Description:
 #   Installs common timezone data (if not present), then sets the system timezone
@@ -1315,7 +1298,6 @@ main() {
   configure_sudo_access
   apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
   configure_timezone "America/New_York"
-  set_hostname "mint"
   disable_sleep_and_set_performance
 
   # --------------------------------------------------------
