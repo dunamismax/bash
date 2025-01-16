@@ -52,18 +52,9 @@ PACKAGES=(
 touch "$LOG_FILE"
 chmod 644 "$LOG_FILE"
 
-#########################################################
-# High-quality log function
-#########################################################
-# Usage examples:
-# log INFO "Starting the configuration process."
-# log WARN "This action may overwrite existing files."
-# log ERROR "Failed to install package XYZ."
-# log DEBUG "Detailed debug information."
-
-# Optional: Set verbosity (0 = silent, 1 = log to file only, 2 = log to file and console)
-VERBOSE=2
-
+################################################################################
+# Function: logging function
+################################################################################
 log() {
     local level="$1"
     shift
@@ -74,9 +65,9 @@ log() {
     # Define color codes
     local RED='\033[0;31m'
     local YELLOW='\033[0;33m'
-    local GREEN='\033[0;32m'  # INFO messages will now use green
+    local GREEN='\033[0;32m'
     local BLUE='\033[0;34m'
-    local NC='\033[0m'        # No Color
+    local NC='\033[0m'  # No Color
 
     # Validate log level and set color
     case "${level^^}" in
@@ -99,13 +90,12 @@ log() {
             ;;
     esac
 
-    # Ensure LOG_FILE is set
-    if [[ -z "${LOG_FILE:-}" ]]; then
-        LOG_FILE="/var/log/mint_setup.log"
-    fi
-
     # Ensure the log file exists and is writable
-    if [[ ! -f "$LOG_FILE" ]]; then
+    if [[ -z "${LOG_FILE:-}" ]]; then
+        LOG_FILE="/var/log/example_script.log"
+    fi
+    if [[ ! -e "$LOG_FILE" ]]; then
+        mkdir -p "$(dirname "$LOG_FILE")"
         touch "$LOG_FILE"
         chmod 644 "$LOG_FILE"
     fi
@@ -116,7 +106,7 @@ log() {
     # Append to log file
     echo "$log_entry" >> "$LOG_FILE"
 
-    # Output to console with color based on verbosity
+    # Output to console based on verbosity
     if [[ "$VERBOSE" -ge 2 ]]; then
         printf "${color}%s${NC}\n" "$log_entry" >&2
     elif [[ "$VERBOSE" -ge 1 && "$level" == "ERROR" ]]; then
