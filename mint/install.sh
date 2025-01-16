@@ -177,7 +177,7 @@ configure_ssh_settings() {
 }
 
 # ------------------------------------------------------------------------------
-# INSTALL AND CONFIGURE REGOLITH WITH GDM3
+# INSTALL AND CONFIGURE GNOME, REGOLITH, GDM
 # ------------------------------------------------------------------------------
 install_regolith() {
     log INFO "Starting installation of Regolith Desktop and related components..."
@@ -233,16 +233,15 @@ install_regolith() {
     else
         log INFO "GDM is already installed. Skipping."
     fi
-
-    # Step 6: Disable conflicting display managers
-    log INFO "Disabling any conflicting display managers..."
-    for dm in sddm lightdm ly; do
-        if systemctl is-active --quiet "$dm"; then
-            log INFO "Disabling and stopping $dm..."
-            sudo systemctl disable "$dm" || log WARN "Failed to disable $dm."
-            sudo systemctl stop "$dm" || log WARN "Failed to stop $dm."
-        fi
-    done
+    
+    # Step 6: Install Regolith Desktop
+    log INFO "Installing Gnome desktop..."
+    if sudo apt-get install -y ubuntu-gnome-desktop; then
+        log INFO "Successfully installed Gnome Desktop."
+    else
+        log ERROR "Failed to install Gnome Desktop."
+        exit 1
+    fi
 
     # Step 7: Enable and start GDM
     log INFO "Enabling GDM..."
