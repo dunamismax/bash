@@ -123,63 +123,56 @@ trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
 
 ################################################################################
 # Function: Configure SSH and security settings
+# Purpose: Install and configure OpenSSH server with best practices for security
 ################################################################################
 configure_ssh_settings() {
   log INFO "Installing OpenSSH Server..."
-  apt install -y openssh-server
-  systemctl enable sshd
-  systemctl start sshd
+  
+  # Install OpenSSH server if not already installed
+  if ! dpkg -l | grep -qw openssh-server; then
+    apt update && apt install -y openssh-server
+    log INFO "OpenSSH Server installed."
+  else
+    log INFO "OpenSSH Server is already installed."
+  fi
+
+  # Enable and start SSH service
+  systemctl enable --now sshd
+  log INFO "SSHD service enabled and started."
+
   log INFO "Configuring SSH settings in /etc/ssh/sshd_config..."
 
-  # Backup the current sshd_config
-  cp "/etc/ssh/sshd_config" "/etc/ssh/sshd_config.bak.$(date +%Y%m%d%H%M%S)"
-  log INFO "Backup of sshd_config created."
+  # Backup sshd_config before making changes
+  local sshd_config="/etc/ssh/sshd_config"
+  local backup_file="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$sshd_config" "$backup_file" && log INFO "Backup created at $backup_file."
 
-  # Set Port 22
-  if grep -q "^Port " "/etc/ssh/sshd_config"; then
-    sed -i 's/^Port .*/Port 22/' "/etc/ssh/sshd_config"
-  else
-    echo "Port 22" >> "/etc/ssh/sshd_config"
-  fi
+  # Define desired SSH settings
+  declare -A ssh_settings=(
+    ["Port"]="22"
+    ["MaxAuthTries"]="8"
+    ["MaxSessions"]="6"
+    ["PermitRootLogin"]="no"
+    ["Protocol"]="2"
+  )
 
-  # Set MaxAuthTries to 8
-  if grep -q "^MaxAuthTries " "/etc/ssh/sshd_config"; then
-    sed -i 's/^MaxAuthTries .*/MaxAuthTries 8/' "/etc/ssh/sshd_config"
-  else
-    echo "MaxAuthTries 8" >> "/etc/ssh/sshd_config"
-  fi
-
-  # Set MaxSessions to 6 (controls simultaneous sessions per connection)
-  if grep -q "^MaxSessions " "/etc/ssh/sshd_config"; then
-    sed -i 's/^MaxSessions .*/MaxSessions 6/' "/etc/ssh/sshd_config"
-  else
-    echo "MaxSessions 6" >> "/etc/ssh/sshd_config"
-  fi
-
-  # Additional important security settings:
-  # 1. Disable root login over SSH
-  if grep -q "^PermitRootLogin " "/etc/ssh/sshd_config"; then
-    sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' "/etc/ssh/sshd_config"
-  else
-    echo "PermitRootLogin no" >> "/etc/ssh/sshd_config"
-  fi
-
-  # 2. Limit SSH protocol to version 2
-  if grep -q "^Protocol " "/etc/ssh/sshd_config"; then
-    sed -i 's/^Protocol .*/Protocol 2/' "/etc/ssh/sshd_config"
-  else
-    echo "Protocol 2" >> "/etc/ssh/sshd_config"
-  fi
-
-  # Optionally, add other security directives as needed
+  # Apply SSH settings
+  for setting in "${!ssh_settings[@]}"; do
+    if grep -q "^${setting} " "$sshd_config"; then
+      sed -i "s/^${setting} .*/${setting} ${ssh_settings[$setting]}/" "$sshd_config"
+    else
+      echo "${setting} ${ssh_settings[$setting]}" >> "$sshd_config"
+    fi
+  done
 
   log INFO "SSH configuration updated. Restarting SSH service..."
 
-  # Restart SSH service to apply changes
+  # Restart SSH service and handle errors
   if systemctl restart sshd; then
     log INFO "SSHD service restarted successfully."
   else
     log ERROR "Failed to restart SSHD service. Please check the configuration."
+    return 1
   fi
 }
 
@@ -1145,6 +1138,7 @@ main() {
   # --------------------------------------------------------
   # 1) Basic System Preparation
   # --------------------------------------------------------
+  configure_ssh_settings
   backup_system "sawyer"
   force_release_ports
   configure_timezone "America/New_York"
@@ -1153,7 +1147,6 @@ main() {
   # 2) User Creation and Environment
   # --------------------------------------------------------
   set_default_shell_and_env
-  configure_ssh_settings
 
   # --------------------------------------------------------
   # 3) Install Caddy and create caddyfile
