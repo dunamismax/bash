@@ -177,50 +177,64 @@ configure_ssh_settings() {
 }
 
 # ------------------------------------------------------------------------------
-# INSTALL AND CONFIGURE HYPERLAND
+# INSTALL AND CONFIGURE REGOLITH WITH GDM3
 # ------------------------------------------------------------------------------
-install_hyperland() {
-    log INFO "Starting installation of Hyperland WM and related components..."
+install_regolith() {
+    log INFO "Starting installation of Regolith Desktop and related components..."
 
-    # Ensure we have the universe repository enabled
-    if ! grep -q "^deb .*universe" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-        log INFO "Adding 'universe' repository to apt sources."
-        sudo add-apt-repository -y universe || {
-            log ERROR "Failed to add 'universe' repository."
-            exit 1
-        }
+    # Step 1: Add Regolith's GPG key
+    log INFO "Adding Regolith's GPG key..."
+    if wget -qO - https://regolith-desktop.org/regolith.key | gpg --dearmor | \
+        sudo tee /usr/share/keyrings/regolith-archive-keyring.gpg > /dev/null; then
+        log INFO "Successfully added Regolith's GPG key."
+    else
+        log ERROR "Failed to add Regolith's GPG key."
+        exit 1
     fi
 
-    # Update package lists
+    # Step 2: Add Regolith's repository
+    log INFO "Adding Regolith's repository to apt sources..."
+    if echo "deb [arch=amd64 signed-by=/usr/share/keyrings/regolith-archive-keyring.gpg] \
+    https://regolith-desktop.org/release-3_2-ubuntu-noble-amd64 noble main" | \
+    sudo tee /etc/apt/sources.list.d/regolith.list > /dev/null; then
+        log INFO "Successfully added Regolith's repository."
+    else
+        log ERROR "Failed to add Regolith's repository."
+        exit 1
+    fi
+
+    # Step 3: Update package lists
     log INFO "Updating package lists..."
-    sudo apt-get update -y || {
+    if sudo apt-get update -y; then
+        log INFO "Successfully updated package lists."
+    else
         log ERROR "Failed to update package lists."
         exit 1
-    }
-
-    # Install Hyperland WM
-    log INFO "Installing Hyperland WM (hyprland)..."
-    if ! dpkg -l | grep -q hyprland; then
-        sudo apt-get install -y hyprland || {
-            log ERROR "Failed to install Hyperland."
-            exit 1
-        }
-    else
-        log INFO "Hyperland is already installed. Skipping."
     fi
 
-    # Install and configure a display manager (e.g., GDM)
+    # Step 4: Install Regolith Desktop
+    log INFO "Installing Regolith Desktop and related components..."
+    if sudo apt-get install -y regolith-desktop regolith-session-flashback regolith-look-lascaille; then
+        log INFO "Successfully installed Regolith Desktop."
+    else
+        log ERROR "Failed to install Regolith Desktop."
+        exit 1
+    fi
+
+    # Step 5: Install GDM3 as the display manager
     log INFO "Installing GDM as the display manager..."
     if ! dpkg -l | grep -q gdm3; then
-        sudo apt-get install -y gdm3 || {
+        if sudo apt-get install -y gdm3; then
+            log INFO "Successfully installed GDM."
+        else
             log ERROR "Failed to install GDM."
             exit 1
-        }
+        fi
     else
         log INFO "GDM is already installed. Skipping."
     fi
 
-    # Disable other display managers
+    # Step 6: Disable conflicting display managers
     log INFO "Disabling any conflicting display managers..."
     for dm in sddm lightdm ly; do
         if systemctl is-active --quiet "$dm"; then
@@ -230,18 +244,16 @@ install_hyperland() {
         fi
     done
 
-    # Enable and start GDM
-    log INFO "Enabling and starting GDM..."
-    sudo systemctl enable gdm3 || {
+    # Step 7: Enable and start GDM
+    log INFO "Enabling GDM..."
+    if sudo systemctl enable gdm3; then
+        log INFO "Successfully enabled GDM."
+    else
         log ERROR "Failed to enable GDM."
         exit 1
-    }
-    sudo systemctl start gdm3 || {
-        log ERROR "Failed to start GDM."
-        exit 1
-    }
+    fi
 
-    log INFO "Hyperland WM installation and configuration complete."
+    log INFO "Regolith Desktop installation and configuration complete."
 }
 
 ################################################################################
