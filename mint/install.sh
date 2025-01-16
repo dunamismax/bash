@@ -230,46 +230,6 @@ configure_sudo_access() {
 }
 
 ################################################################################
-# Function: overwrite_ssh_config
-# Overwrite /etc/ssh/ssh_config
-################################################################################
-overwrite_ssh_config() {
-  log "Backing up and overwriting /etc/ssh/ssh_config..."
-
-  local ssh_config="/etc/ssh/ssh_config"
-  if [ -f "$ssh_config" ]; then
-    cp "$ssh_config" "${ssh_config}.bak"
-    log "Backed up existing $ssh_config to ${ssh_config}.bak"
-  fi
-
-  cat << 'EOF' > "$ssh_config"
-# Basic mint SSH Configuration
-
-Port 22
-AddressFamily any
-ListenAddress 0.0.0.0
-PermitRootLogin no
-MaxAuthTries 6
-MaxSessions 10
-AuthorizedKeysFile      .ssh/authorized_keys
-IgnoreRhosts yes
-PasswordAuthentication yes
-KbdInteractiveAuthentication no
-UsePAM yes
-ClientAliveInterval 300
-ClientAliveCountMax 3
-Subsystem       sftp    /usr/lib/openssh/sftp-server
-EOF
-
-  chown root:root "$ssh_config"
-  chmod 644 "$ssh_config"
-  log "Completed overwriting /etc/ssh/ssh_config. Restarting ssh service..."
-
-  # Restart the service using mint's service name
-  systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
-}
-
-################################################################################
 # Function: set_default_shell_and_env
 # Description:
 #   Deletes (overwrites) and recreates ~/.profile, ~/.bash_profile, and ~/.bashrc
@@ -650,7 +610,6 @@ configure_timezone() {
 # Function: basic_security_hardening
 # Description:
 #   Applies a minimal set of security best practices on mint-based systems:
-#     1) Disables root SSH login
 #     2) Installs fail2ban if not already installed
 ################################################################################
 basic_security_hardening() {
@@ -1318,7 +1277,6 @@ main() {
   # --------------------------------------------------------
   # 5) Security and Hardening
   # --------------------------------------------------------
-  overwrite_ssh_config
   configure_ufw
   configure_ntp
 
