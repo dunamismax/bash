@@ -1,3 +1,5 @@
+#!/bin/bash
+
 ################################################################################
 # Function: Install GUI
 ################################################################################
@@ -60,3 +62,13 @@ install_gui() {
     log INFO "Installation of GUI components and Window Managers complete."
     log INFO "Consider restarting the system with 'reboot' or restarting the display manager with 'systemctl restart gdm'."
 }
+
+################################################################################
+# Main
+################################################################################
+if [ "$(id -u)" -ne 0 ]; then
+    log ERROR "This script must be run as root. Exiting."
+    exit 1
+fi
+
+install_gui
