@@ -230,34 +230,7 @@ install_gui() {
         exit 1
     fi
 
-    # Step 6: Install GDM (Display Manager)
-    log INFO "Installing GDM3 as the display manager..."
-    if sudo apt-get install -y gdm3; then
-        log INFO "Successfully installed GDM3."
-    else
-        log ERROR "Failed to install GDM3."
-        exit 1
-    fi
-
-    # Step 7: Enable GDM service
-    log INFO "Enabling GDM service to start on boot..."
-    if sudo systemctl enable gdm; then
-        log INFO "Successfully enabled GDM."
-    else
-        log ERROR "Failed to enable GDM."
-        exit 1
-    fi
-
-    # Step 8: Install Networking Tools
-    log INFO "Installing Network Manager and related GUI tools..."
-    if sudo apt-get install -y network-manager network-manager-gnome; then
-        log INFO "Successfully installed Network Manager."
-    else
-        log ERROR "Failed to install Network Manager."
-        exit 1
-    fi
-
-    # Step 9: Install Additional Usability Packages
+    # Step 6: Install Additional Usability Packages
     log INFO "Installing additional desktop utilities..."
     if sudo apt-get install -y gnome-terminal nautilus gnome-tweaks vlc gnome-shell-extensions fonts-ubuntu ttf-mscorefonts-installer fonts-roboto fonts-open-sans fonts-dejavu fonts-droid-fallback fonts-liberation fonts-cantarell; then
         log INFO "Successfully installed desktop utilities."
@@ -266,7 +239,7 @@ install_gui() {
         exit 1
     fi
 
-    # Step 10: Clean up
+    # Step 7: Clean up
     log INFO "Cleaning up unnecessary packages..."
     if sudo apt-get autoremove -y && sudo apt-get autoclean -y; then
         log INFO "System cleanup complete."
