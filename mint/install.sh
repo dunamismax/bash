@@ -176,10 +176,11 @@ configure_ssh_settings() {
   fi
 }
 
-------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Backup Function
 # ------------------------------------------------------------------------------
 backup_system() {
+    apt install -y pigz
     # Variables
     local SOURCE="/"                # Source directory for backup
     local DESTINATION="/home/sawyer/BACKUPS" # Destination for backup
