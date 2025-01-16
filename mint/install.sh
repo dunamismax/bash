@@ -221,14 +221,53 @@ backup_system() {
     # Ensure destination exists
     mkdir -p "$DESTINATION"
 
+    # Use filesystem snapshot (if supported) to ensure a consistent backup
+    if command -v lvcreate &>/dev/null && mountpoint -q "$SOURCE"; then
+        log INFO "Detected LVM support. Creating a snapshot for consistent backup."
+
+        # Create LVM snapshot
+        local VG_NAME
+        local LV_NAME
+        VG_NAME=$(df "$SOURCE" --output=source | tail -n1 | awk -F/ '{print $4}')
+        LV_NAME=$(df "$SOURCE" --output=source | tail -n1 | awk -F/ '{print $5}')
+
+        local SNAPSHOT_NAME="${LV_NAME}_snapshot"
+        lvcreate -L1G -s -n "$SNAPSHOT_NAME" "/dev/$VG_NAME/$LV_NAME" || {
+            log ERROR "Failed to create LVM snapshot. Proceeding with live backup."
+            BACKUP_SOURCE="$SOURCE"
+        }
+
+        # Mount the snapshot
+        local SNAPSHOT_MOUNT="/mnt/snapshot"
+        mkdir -p "$SNAPSHOT_MOUNT"
+        mount "/dev/$VG_NAME/$SNAPSHOT_NAME" "$SNAPSHOT_MOUNT" || {
+            log ERROR "Failed to mount snapshot. Proceeding with live backup."
+            lvremove -f "/dev/$VG_NAME/$SNAPSHOT_NAME"
+            BACKUP_SOURCE="$SOURCE"
+        }
+
+        BACKUP_SOURCE="$SNAPSHOT_MOUNT"
+    else
+        log WARN "LVM snapshot support not available. Proceeding with live backup."
+        BACKUP_SOURCE="$SOURCE"
+    fi
+
     # Perform backup
     log INFO "Starting system backup to $DESTINATION/$BACKUP_NAME"
     if tar -I pigz --one-file-system -cf "$DESTINATION/$BACKUP_NAME" \
-        "${EXCLUDES_ARGS[@]}" -C "$SOURCE" .; then
+        "${EXCLUDES_ARGS[@]}" -C "$BACKUP_SOURCE" .; then
         log INFO "Backup completed successfully: $DESTINATION/$BACKUP_NAME"
     else
         log ERROR "Error: Backup process failed."
         exit 1
+    fi
+
+    # Clean up snapshot
+    if [[ "$BACKUP_SOURCE" == "/mnt/snapshot" ]]; then
+        umount "$SNAPSHOT_MOUNT"
+        lvremove -f "/dev/$VG_NAME/$SNAPSHOT_NAME"
+        rmdir "$SNAPSHOT_MOUNT"
+        log INFO "Snapshot cleaned up."
     fi
 
     # Remove old backups
