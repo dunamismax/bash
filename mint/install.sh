@@ -130,7 +130,7 @@ trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
 ################################################################################
 configure_ssh_settings() {
   log INFO "Installing OpenSSH Server..."
-  apt install openssh-server
+  apt install -y openssh-server
   local sshd_config="/etc/ssh/sshd_config"
   log INFO "Configuring SSH settings in $sshd_config..."
 
