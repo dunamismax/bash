@@ -64,13 +64,11 @@ log() {
     fi
 }
 
-#!/usr/bin/env bash
-set -Eeuo pipefail
-trap 'echo "Script failed at line $LINENO."' ERR
+# ------------------------------------------------------------------------------
+# FIX DIRECTORY PERMISSIONS FUNCTION
+# ------------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------------
-# CONFIGURATION
-# ------------------------------------------------------------------------------
+# Configuration
 GITHUB_DIR="/home/sawyer/github"
 HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
 HUGO_DIR="/home/sawyer/github/hugo"
@@ -80,17 +78,7 @@ DIR_PERMISSIONS="755"  # Directories: rwx for owner, rx for group/others
 FILE_PERMISSIONS="644" # Files: rw for owner, r for group/others
 
 # ------------------------------------------------------------------------------
-# LOGGING FUNCTION (Simple implementation; customize as needed)
-# ------------------------------------------------------------------------------
-log() {
-  local level="$1"
-  shift
-  local message="$*"
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message"
-}
-
-# ------------------------------------------------------------------------------
-# FIX GIT PERMISSIONS FUNCTION
+# FUNCTION: fix_git_permissions
 # ------------------------------------------------------------------------------
 fix_git_permissions() {
     local git_dir="$1"
@@ -111,21 +99,21 @@ set_directory_permissions() {
 
   # 2. Set ownership for directories
   log INFO "Setting ownership for /home/sawyer/github and /home/sawyer"
-  sudo chown -R sawyer:sawyer /home/sawyer/github
-  sudo chown -R sawyer:sawyer /home/sawyer/
+  chown -R sawyer:sawyer /home/sawyer/github
+  chown -R sawyer:sawyer /home/sawyer/
 
   # 3. Set ownership and permissions for Hugo public directory
   log INFO "Setting ownership and permissions for Hugo public directory"
-  sudo chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
-  sudo chmod -R 755 "$HUGO_PUBLIC_DIR"
+  chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
+  chmod -R 755 "$HUGO_PUBLIC_DIR"
 
   # 4. Set ownership and permissions for Hugo directory and related paths
   log INFO "Setting ownership and permissions for Hugo directory"
-  sudo chown -R caddy:caddy "$HUGO_DIR"
-  sudo chmod o+rx "$SAWYER_HOME"
-  sudo chmod o+rx "$GITHUB_DIR"
-  sudo chmod o+rx "$HUGO_DIR"
-  sudo chmod o+rx "/home/sawyer/github/hugo/dunamismax.com"
+  chown -R caddy:caddy "$HUGO_DIR"
+  chmod o+rx "$SAWYER_HOME"
+  chmod o+rx "$GITHUB_DIR"
+  chmod o+rx "$HUGO_DIR"
+  chmod o+rx "/home/sawyer/github/hugo/dunamismax.com"
 
   # 5. Ensure BASE_DIR exists
   if [[ ! -d "$BASE_DIR" ]]; then
