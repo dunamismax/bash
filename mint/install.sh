@@ -178,14 +178,12 @@ backup_system() {
     fi
 }
 
-#!/usr/bin/env bash
-set -Eeuo pipefail
-trap 'echo "Script failed at line $LINENO."' ERR
+# ------------------------------------------------------------------------------
+# FIX DIRECTORY PERMISSIONS FUNCTION
+# ------------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------------
-# CONFIGURATION
-# ------------------------------------------------------------------------------
-GITHUB_DIR="$HOME/github"
+# Configuration
+GITHUB_DIR="/home/sawyer/github"
 HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
 HUGO_DIR="/home/sawyer/github/hugo"
 SAWYER_HOME="/home/sawyer"
@@ -194,17 +192,7 @@ DIR_PERMISSIONS="755"  # Directories: rwx for owner, rx for group/others
 FILE_PERMISSIONS="644" # Files: rw for owner, r for group/others
 
 # ------------------------------------------------------------------------------
-# LOGGING FUNCTION (Simple implementation; customize as needed)
-# ------------------------------------------------------------------------------
-log() {
-  local level="$1"
-  shift
-  local message="$*"
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message"
-}
-
-# ------------------------------------------------------------------------------
-# FIX GIT PERMISSIONS FUNCTION
+# FUNCTION: fix_git_permissions
 # ------------------------------------------------------------------------------
 fix_git_permissions() {
     local git_dir="$1"
