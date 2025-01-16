@@ -1,53 +1,26 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Linux Mint Automated System Configuration Script
+# Ubuntu Automated Setup Script
 # ------------------------------------------------------------------------------
-# DESCRIPTION:
-#   Automates the initial configuration of a fresh mint system by:
-#     1) Updating package repositories and installing/upgrading essential software
-#        (e.g., development tools, utilities, network tools).
-#     2) Backing up and customizing critical system configuration files
-#        (e.g., '/etc/ssh/ssh_config') to apply best practices for security
-#        and performance.
-#     3) Setting up a user account (default: "sawyer") with:
-#         - Sudo privileges
-#         - A configured Bash environment as the default shell.
-#     4) Enabling and configuring essential services, including:
-#         - UFW (firewall)
-#         - SSH (secure shell access)
-#         - Chrony (NTP synchronization)
-#     5) Installing optional tools, such as:
-#         - Caddy for web hosting and reverse proxy
-#         - Plex Media Server for multimedia streaming
-#         - Python, Go, Rust, and Zig development environments.
+# Automates fresh system configuration:
+#  • Updates repositories, installs/upgrades essential software.
+#  • Backs up and customizes key configuration files for security and performance.
+#  • Sets up user "sawyer" with sudo privileges and a configured Bash environment.
+#  • Enables/configures services: UFW, SSH, Chrony, etc.
+#  • Installs optional tools: Caddy, Plex, Python, Go, Rust, Zig, etc.
 #
-# USAGE & REQUIREMENTS:
-#   - Ensure you have administrative privileges (run as root or via `sudo`).
-#   - Review and adjust all variables (e.g., USERNAME, PACKAGES) before execution.
-#   - Works on mint and may be compatible with derivative distributions.
-#   - Backups of replaced configuration files are stored with timestamps for safety.
+# Usage:
+#  • Run as root or via sudo.
+#  • Adjust variables (USERNAME, PACKAGES, etc.) as needed.
+#  • Logs actions/errors to /var/log/ubuntu_setup.log with timestamps.
 #
-# LOGGING:
-#   - All actions and errors are logged to '/var/log/mint_setup.log'.
-#   - Logs include timestamps to aid troubleshooting and provide an audit trail.
+# Error Handling:
+#  • Uses 'set -euo pipefail' and an ERR trap for robust failure management.
 #
-# ERROR HANDLING:
-#   - 'set -euo pipefail' halts execution on errors, unbound variables, or failed pipelines.
-#   - A trap is set on 'ERR' to display helpful messages and ensure a graceful exit.
+# Compatibility:
+#  • Tested on Ubuntu 24.10. Verify on other versions.
 #
-# COMPATIBILITY:
-#   - Developed and tested on mint 20.04 and 22.04 LTS. Verify compatibility
-#     before running on older/newer versions or derivatives.
-#
-# CUSTOMIZATION:
-#   - Update variables like `USERNAME`, `PACKAGES`, and services to match your needs.
-#   - Modify optional components (e.g., Plex, Caddy) as required for your setup.
-#
-# AUTHOR & LICENSE:
-#   - Author: dunamismax
-#   - License: MIT License
-#     Permission is granted to use, copy, modify, and distribute this script
-#     for any purpose with or without attribution. Provided "as-is" without warranty.
+# Author: dunamismax | License: MIT
 # ------------------------------------------------------------------------------
 
 set -Eeuo pipefail
@@ -58,10 +31,10 @@ trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' 
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/mint_setup.log"
+LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 
-# Essential mint packages for a baseline system
+# Essential ubuntu packages for a baseline system
 # (You can expand or refine this list according to your needs.)
 PACKAGES=(
   # Shells and terminal utilities
@@ -137,30 +110,43 @@ PACKAGES=(
   restic          # Backup tool
 )
 
-# Ensure the main log file exists and is world-readable
-touch "$LOG_FILE"
-chmod 644 "$LOG_FILE"
-
 # ------------------------------------------------------------------------------
 # MAIN SCRIPT START
 # You can add functions below (e.g., apt updates, config overwrites) and then
 # call them in your "main" block at the end.
 # ------------------------------------------------------------------------------
 
-################################################################################
-# Function: log
-# Simple timestamped logger
-################################################################################
+# Ensure the log file exists and is writable
+touch "$LOG_FILE"
+chmod 644 "$LOG_FILE"
+
+#########################################################
+# High-quality log function
+#########################################################
+# Usage examples:
+# log INFO "Starting the configuration process."
+# log WARN "This action may overwrite existing files."
+# log ERROR "Failed to install package XYZ."
+
 log() {
-  local message="$1"
-  echo "[$(date +"%Y-%m-%d %H:%M:%S")] $message" | tee -a "$LOG_FILE"
+  local level="${1:-INFO}"    # Default level is INFO if not provided
+  shift                       # Remove the first argument (level)
+  local message="$*"
+  local timestamp
+  timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  # Format the log entry
+  local log_entry="[$timestamp] [$level] $message"
+
+  # Output to console and append to log file
+  echo "$log_entry" | tee -a "$LOG_FILE"
 }
 
 ################################################################################
 # Function: handle_error
 ################################################################################
 handle_error() {
-  log "An error occurred. Check the log for details."
+  log ERROR "An error occurred. Check the log for details."
 }
 
 ################################################################################
@@ -168,11 +154,11 @@ handle_error() {
 ################################################################################
 enable_sudo() {
   export PATH=$PATH:/usr/sbin
-  log "Enabling sudo."
+  log INFO "Enabling sudo."
   apt install -y sudo
   apt install -y net-tools
   usermod -aG sudo $USERNAME
-  log "User '$USERNAME' has been added to the sudo group. Log out and back in for the changes to take effect."
+  log INFO "User '$USERNAME' has been added to the sudo group. Log out and back in for the changes to take effect."
 }
 
 ################################################################################
@@ -180,9 +166,9 @@ enable_sudo() {
 # apt update/upgrade and install our base PACKAGES
 ################################################################################
 bootstrap_and_install_pkgs() {
-  log "Updating apt package list and upgrading existing packages..."
-  apt update -y 2>&1 | tee -a "$LOG_FILE"
-  apt upgrade -y 2>&1 | tee -a "$LOG_FILE"
+  log INFO "Updating apt package list and upgrading existing packages..."
+  apt update -y
+  apt upgrade -y
 
   local packages_to_install=()
   for pkg in "${PACKAGES[@]}"; do
@@ -190,21 +176,21 @@ bootstrap_and_install_pkgs() {
     if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
       packages_to_install+=("$pkg")
     else
-      log "Package '$pkg' is already installed."
+      log INFO "Package '$pkg' is already installed."
     fi
   done
 
   if [ ${#packages_to_install[@]} -gt 0 ]; then
-    log "Installing packages: ${packages_to_install[*]}"
-    apt install -y "${packages_to_install[@]}" 2>&1 | tee -a "$LOG_FILE"
+    log INFO "Installing packages: ${packages_to_install[*]}"
+    apt install -y "${packages_to_install[@]}"
   else
-    log "All listed packages are already installed. No action needed."
+    log INFO "All listed packages are already installed. No action needed."
   fi
 
-  apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
-  apt clean -y 2>&1 | tee -a "$LOG_FILE"
+  apt autoremove -y
+  apt clean -y
 
-  log "Package installation process completed."
+  log INFO "Package installation process completed."
 }
 
 ################################################################################
@@ -236,7 +222,7 @@ configure_sudo_access() {
 #   for $USERNAME.
 ################################################################################
 set_default_shell_and_env() {
-  log "Recreating .profile, .bash_profile, and .bashrc for $USERNAME..."
+  log INFO "Recreating .profile, .bash_profile, and .bashrc for $USERNAME..."
 
   # Dynamically determine the user's home directory
   local user_home
@@ -248,7 +234,7 @@ set_default_shell_and_env() {
   local profile_file="$user_home/.profile"
 
   # Overwrite the .bash_profile file with the specified contents
-  log "Creating $bash_profile_file with default content..."
+  log INFO "Creating $bash_profile_file with default content..."
   cat << 'EOF' > "$bash_profile_file"
 # ~/.bash_profile
 # Always source ~/.bashrc to ensure consistent shell environment setup
@@ -260,10 +246,10 @@ EOF
   # Set ownership and permissions for the .bash_profile file
   chown "$USERNAME":"$USERNAME" "$bash_profile_file"
   chmod 644 "$bash_profile_file"
-  log ".bash_profile created successfully."
+  log INFO ".bash_profile created successfully."
 
   # Overwrite the .profile file with the specified contents (like .bash_profile)
-  log "Creating $profile_file with default content..."
+  log INFO "Creating $profile_file with default content..."
   cat << 'EOF' > "$profile_file"
 # ~/.profile
 # Always source ~/.bashrc to ensure consistent shell environment setup
@@ -275,10 +261,10 @@ EOF
   # Set ownership and permissions for the .profile file
   chown "$USERNAME":"$USERNAME" "$profile_file"
   chmod 644 "$profile_file"
-  log ".profile created successfully."
+  log INFO ".profile created successfully."
 
   # Overwrite the .bashrc file
-  log "Creating $bashrc_file with default content..."
+  log INFO "Creating $bashrc_file with default content..."
   cat << 'EOF' > "$bashrc_file"
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # ------------------------------------------------------------------------------
@@ -498,23 +484,23 @@ EOF
   chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file" "$profile_file"
   chmod 644 "$bashrc_file" "$bash_profile_file" "$profile_file"
 
-  log "Bash configuration files (.profile, .bash_profile, and .bashrc) have been recreated for $USERNAME."
+  log INFO "Bash configuration files (.profile, .bash_profile, and .bashrc) have been recreated for $USERNAME."
 }
 
 ###############################################################################
 # Enable and configure ufw.
 ###############################################################################
 configure_ufw() {
-  log "Enabling ufw systemd service..."
+  log INFO "Enabling ufw systemd service..."
   # Ensure ufw starts on boot, then start it now
-  systemctl enable ufw 2>&1 | tee -a "$LOG_FILE"
-  systemctl start ufw  2>&1 | tee -a "$LOG_FILE"
+  systemctl enable ufw
+  systemctl start ufw
 
-  log "Activating ufw (will allow pre-configured rules)..."
+  log INFO "Activating ufw (will allow pre-configured rules)..."
   # --force ensures it doesn’t prompt for confirmation
-  ufw --force enable 2>&1 | tee -a "$LOG_FILE"
+  ufw --force enable
 
-  log "Configuring ufw rules..."
+  log INFO "Configuring ufw rules..."
   ufw allow ssh
   ufw allow http
   ufw allow 8080/tcp
@@ -534,7 +520,7 @@ configure_ufw() {
   ufw allow 32415/udp
   ufw allow 32469/tcp
 
-  log "UFW configuration complete."
+  log INFO "UFW configuration complete."
 }
 
 ###############################################################################
@@ -595,32 +581,32 @@ force_release_ports() {
 ################################################################################
 configure_timezone() {
   local tz="${1:-UTC}"  # Default to UTC if not specified
-  log "Configuring timezone to '${tz}'..."
+  log INFO "Configuring timezone to '${tz}'..."
 
   # Ensure tzdata is present (usually installed by default, but just in case)
   apt install -y tzdata
 
   # Timedatectl sets both system clock and hardware clock
-  timedatectl set-timezone "$tz" 2>&1 | tee -a "$LOG_FILE"
+  timedatectl set-timezone "$tz"
 
-  log "Timezone set to $tz."
+  log INFO "Timezone set to $tz."
 }
 
 ################################################################################
 # Function: basic_security_hardening
 # Description:
-#   Applies a minimal set of security best practices on mint-based systems:
+#   Applies a minimal set of security best practices on ubuntu-based systems:
 #     2) Installs fail2ban if not already installed
 ################################################################################
 basic_security_hardening() {
-  log "Applying basic mint security hardening..."
+  log INFO "Applying basic ubuntu security hardening..."
 
-  # 2) Install fail2ban (from mint repositories)
+  # 2) Install fail2ban (from ubuntu repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
-    log "Installing fail2ban..."
-    apt install -y fail2ban 2>&1 | tee -a "$LOG_FILE"
-    systemctl enable fail2ban 2>&1 | tee -a "$LOG_FILE"
-    systemctl start fail2ban 2>&1 | tee -a "$LOG_FILE"
+    log INFO "Installing fail2ban..."
+    apt install -y fail2ban
+    systemctl enable fail2ban
+    systemctl start fail2ban
   else
     log "fail2ban is already installed."
   fi
@@ -767,9 +753,9 @@ EOF
   # Optionally reload or restart Caddy to apply changes
   if command -v systemctl &>/dev/null; then
     log "Reloading Caddy to apply new configuration..."
-    systemctl reload caddy 2>&1 | tee -a "$LOG_FILE" || {
-      log "Reload failed, attempting restart..."
-      systemctl restart caddy 2>&1 | tee -a "$LOG_FILE"
+    systemctl reload caddy || {
+      log INFO "Reload failed, attempting restart..."
+      systemctl restart caddy
     }
   fi
 }
@@ -785,7 +771,7 @@ apt_and_settings() {
   # 1) Add Flatpak (Flathub) remote for installing Flatpak apps
   ##############################################################################
   log "Installing flatpak and configuring Flathub remote..."
-  apt install -y flatpak 2>&1 | tee -a "$LOG_FILE"
+  apt install -y flatpak
 
   # Add the Flathub remote if not already added
   if ! flatpak remote-list | grep -q 'flathub'; then
@@ -801,7 +787,7 @@ apt_and_settings() {
 ################################################################################
 # Function: configure_ntp
 # Description:
-#   Installs and configures NTP service on mint-based systems using chrony.
+#   Installs and configures NTP service on ubuntu-based systems using chrony.
 #   1) Installs chrony if not already installed.
 #   2) Backs up the existing /etc/chrony/chrony.conf (if present).
 #   3) Writes a basic chrony.conf with recommended upstream NTP servers.
@@ -813,7 +799,7 @@ configure_ntp() {
   # 1) Install chrony if it is not already installed
   if ! dpkg-query -W -f='${Status}' chrony 2>/dev/null | grep -q "install ok installed"; then
     log "Installing chrony..."
-    apt install -y chrony 2>&1 | tee -a "$LOG_FILE"
+    apt install -y chrony
   else
     log "chrony is already installed."
   fi
@@ -830,7 +816,7 @@ configure_ntp() {
 # /etc/chrony/chrony.conf - basic configuration
 
 # Pool-based time servers:
-pool 2.mint.pool.ntp.org iburst
+pool 2.ubuntu.pool.ntp.org iburst
 pool time.google.com iburst
 pool pool.ntp.org iburst
 
@@ -857,8 +843,8 @@ EOF
   log "Wrote a new chrony.conf at $chrony_conf."
 
   # 4) Enable and start chrony
-  systemctl enable chrony 2>&1 | tee -a "$LOG_FILE"
-  systemctl restart chrony 2>&1 | tee -a "$LOG_FILE"
+  systemctl enable chrony
+  systemctl restart chrony
 
   log "NTP (chrony) configuration complete."
 }
@@ -870,7 +856,7 @@ install_python_build_deps() {
     log "Installing system build dependencies..." | tee -a "$LOG_FILE"
 
     # Update package lists
-    if ! apt update -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt update -y; then
         log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
@@ -898,17 +884,17 @@ install_python_build_deps() {
         gnupg \
         libxml2-dev \
         libxmlsec1-dev \
-        --no-install-recommends 2>&1 | tee -a "$LOG_FILE"; then
+        --no-install-recommends; then
         log "Failed to install build dependencies. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
 
     # Clean up unnecessary packages and caches
-    if ! apt autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt autoremove -y; then
         log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
     fi
 
-    if ! apt clean -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt clean -y; then
         log "Failed to clean package cache." | tee -a "$LOG_FILE"
     fi
 
@@ -922,7 +908,7 @@ install_dev_build_deps() {
     log "Installing system build dependencies for C, C++, Rust, and Go..." | tee -a "$LOG_FILE"
 
     # Update package lists
-    if ! apt update -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt update -y; then
         log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
@@ -950,7 +936,7 @@ install_dev_build_deps() {
         gnupg \
         libxml2-dev \
         libxmlsec1-dev \
-        --no-install-recommends 2>&1 | tee -a "$LOG_FILE"; then
+        --no-install-recommends; then
         log "Failed to install build dependencies for C and C++. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
@@ -966,17 +952,17 @@ install_dev_build_deps() {
 
     # Install Go (use apt for simplicity, but better alternatives exist)
     if ! apt install -y \
-        golang-go 2>&1 | tee -a "$LOG_FILE"; then
+        golang-go; then
         log "Failed to install Go programming environment. Exiting." | tee -a "$LOG_FILE"
         return 1
     fi
 
     # Clean up unnecessary packages and caches
-    if ! apt autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt autoremove -y; then
         log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
     fi
 
-    if ! apt clean -y 2>&1 | tee -a "$LOG_FILE"; then
+    if ! apt clean -y; then
         log "Failed to clean package cache." | tee -a "$LOG_FILE"
     fi
 
@@ -1104,7 +1090,7 @@ disable_sleep_and_set_performance() {
 ################################################################################
 # Function: install_and_enable_plex
 # Description:
-#   This function installs Plex Media Server on mint using the official
+#   This function installs Plex Media Server on ubuntu using the official
 #   .deb package if it is not already installed. If it is already installed,
 #   the function skips the installation and proceeds. Then it enables and
 #   starts the plexmediaserver service to ensure Plex runs on system boot.
@@ -1162,7 +1148,7 @@ install_and_enable_plex() {
 
 # ------------------------------------------------------------------------------
 # install_powershell_and_zig
-#   Installs PowerShell and Zig on mint/Linux Mint.
+#   Installs PowerShell and Zig on ubuntu/Linux ubuntu.
 # ------------------------------------------------------------------------------
 install_powershell_and_zig() {
   set -euo pipefail
@@ -1217,24 +1203,24 @@ finalize_configuration() {
   log "Finalizing system configuration..."
 
   # Update and upgrade packages
-  if ! apt update -y 2>&1 | tee -a "$LOG_FILE"; then
+  if ! apt update -y; then
     log "Error: Failed to update package lists."
     return 1
   fi
 
-  if ! apt upgrade -y 2>&1 | tee -a "$LOG_FILE"; then
+  if ! apt upgrade -y; then
     log "Error: Failed to upgrade packages."
     return 1
   fi
 
   # Remove unused dependencies
   log "Performing system cleanup..."
-  if ! apt autoremove -y 2>&1 | tee -a "$LOG_FILE"; then
+  if ! apt autoremove -y; then
     log "Error: Failed to remove unused dependencies."
   fi
 
   # Clean up local package cache
-  if ! apt clean 2>&1 | tee -a "$LOG_FILE"; then
+  if ! apt clean; then
     log "Error: Failed to clean package cache."
   fi
 
@@ -1247,7 +1233,7 @@ finalize_configuration() {
 ################################################################################
 main() {
   log "--------------------------------------"
-  log "Starting mint Automated System Configuration Script"
+  log "Starting ubuntu Automated System Configuration Script"
 
   # --------------------------------------------------------
   # 1) Basic System Preparation
@@ -1299,7 +1285,7 @@ main() {
   systemctl restart caddy
 
   log "Configuration script finished successfully."
-  log "Enjoy mint!"
+  log "Enjoy ubuntu!"
   log "--------------------------------------"
 }
 
