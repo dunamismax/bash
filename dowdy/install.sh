@@ -238,8 +238,8 @@ bootstrap_and_install_pkgs() {
 configure_sudo_access() {
   # 1) Ensure sudo is installed
   echo "[INFO] Installing sudo package (if not already installed)..."
-  apt-get update -y
-  apt-get install -y sudo
+  apt update -y
+  apt install -y sudo
 
   # 2) Add the user to the 'sudo' group
   echo "[INFO] Adding '$USERNAME' to the sudo group..."
@@ -931,13 +931,13 @@ install_dev_build_deps() {
 ################################################################################
 install_apt_dependencies() {
     echo "[INFO] Updating apt caches..."
-    sudo apt-get update -y
+    sudo apt update -y
 
     # Optional: If you want to also upgrade existing packages:
-    sudo apt-get upgrade -y
+    sudo apt upgrade -y
 
     echo "[INFO] Installing apt-based dependencies..."
-    sudo apt-get install -y --no-install-recommends \
+    sudo apt install -y --no-install-recommends \
         build-essential \
         make \
         git \
@@ -970,8 +970,8 @@ install_apt_dependencies() {
         jq
 
     # Optionally remove automatically installed packages no longer needed
-    sudo apt-get autoremove -y
-    sudo apt-get clean
+    sudo apt autoremove -y
+    sudo apt clean
 }
 
 ################################################################################
@@ -995,8 +995,8 @@ disable_sleep_and_set_performance() {
 
   echo "[INFO] Installing cpufrequtils if not already installed..."
   if ! command -v cpufreq-set &>/dev/null; then
-    apt-get update -y
-    apt-get install -y cpufrequtils
+    apt update -y
+    apt install -y cpufrequtils
   fi
 
   echo "[INFO] Checking available CPU governor(s)..."
@@ -1045,11 +1045,11 @@ install_and_enable_plex() {
   fi
 
   echo "Updating apt package index..."
-  sudo apt-get update -y
+  sudo apt update -y
 
   echo "Installing prerequisites (curl) if not already installed..."
   if ! dpkg -s curl >/dev/null 2>&1; then
-    sudo apt-get install -y curl
+    sudo apt install -y curl
   fi
 
   # Change this to match the latest Plex version you want to install
@@ -1063,7 +1063,7 @@ install_and_enable_plex() {
   echo "Installing Plex Media Server..."
   if ! sudo dpkg -i "${DEB_PACKAGE}"; then
     echo "Resolving missing dependencies..."
-    sudo apt-get install -f -y
+    sudo apt install -f -y
     sudo dpkg -i "${DEB_PACKAGE}"
   fi
 
@@ -1093,8 +1093,8 @@ install_x11_and_regolith() {
 
   # 1) Ensure standard prerequisites are installed
   echo "[INFO] Installing base prerequisites..."
-  sudo apt-get update -y
-  sudo apt-get install -y wget apt-transport-https software-properties-common \
+  sudo apt update -y
+  sudo apt install -y wget apt-transport-https software-properties-common \
                           build-essential git curl file gpg
 
   # 2) (Optional) If you need PowerShell on Ubuntu
@@ -1102,8 +1102,8 @@ install_x11_and_regolith() {
   wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
   sudo dpkg -i packages-microsoft-prod.deb || true
   rm -f packages-microsoft-prod.deb
-  sudo apt-get update -y
-  sudo apt-get install -y powershell || true
+  sudo apt update -y
+  sudo apt install -y powershell || true
 
   # 3) Download and install Zig from the official source tarball
   echo "[INFO] Downloading Zig from official upstream..."
@@ -1148,8 +1148,8 @@ install_x11_and_regolith() {
 
   # 4) Install X11 dependencies
   echo "[INFO] Installing X11 dependencies..."
-  sudo apt-get update -y
-  sudo apt-get install -y \
+  sudo apt update -y
+  sudo apt install -y \
     xserver-xorg \
     xinit \
     x11-xserver-utils \

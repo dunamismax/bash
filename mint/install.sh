@@ -25,89 +25,21 @@
 
 set -Eeuo pipefail
 
-# Trap any error and output a helpful message
-trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' ERR
-
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 
-# Essential ubuntu packages for a baseline system
-# (You can expand or refine this list according to your needs.)
 PACKAGES=(
-  # Shells and terminal utilities
-  bash
-  zsh
-  fish
-  vim
-  nano
-  mc
-  screen
-  tmux
-
-  # Basic development tools
-  build-essential
-  cmake
-  hugo
-  pigz
-  exim4
-  openssh-server
-  libtool
-  pkg-config
-  libssl-dev
-  bzip2
-  libbz2-dev
-  libffi-dev
-  zlib1g-dev
-  libreadline-dev
-  libsqlite3-dev
-  tk-dev
-  xz-utils
-  libncurses5-dev
-  python3
-  python3-dev
-  python3-pip
-  python3-venv
-  libfreetype6-dev
-
-  # Generic system utilities
-  git
-  ufw
-  perl
-  curl
-  wget
-  tcpdump
-  rsync
-  htop
-  sudo
-  passwd
-  bash-completion
-  neofetch
-  tig
-  jq
-  nmap
-  tree
-  fzf
-  lynx
-  which
-  patch
-  smartmontools
-  ntfs-3g
-
-  # Virtualization (optional; remove if not needed)
-  qemu-kvm
-  libvirt-daemon-system
-  libvirt-clients
-  virtinst
-  bridge-utils
-
-  # Optional tools
-  chrony          # For time synchronization
-  fail2ban        # Intrusion prevention
-  ffmpeg          # Multimedia processing
-  restic          # Backup tool
+  bash zsh fish vim nano mc screen tmux
+  build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev
+  bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev
+  xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
+  git ufw perl curl wget tcpdump rsync htop sudo passwd bash-completion neofetch tig jq
+  nmap tree fzf lynx which patch smartmontools ntfs-3g
+  qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils
+  chrony fail2ban ffmpeg restic
 )
 
 # ------------------------------------------------------------------------------
@@ -127,19 +59,69 @@ chmod 644 "$LOG_FILE"
 # log INFO "Starting the configuration process."
 # log WARN "This action may overwrite existing files."
 # log ERROR "Failed to install package XYZ."
+# log DEBUG "Detailed debug information."
+
+# Optional: Set verbosity (0 = silent, 1 = log to file only, 2 = log to file and console)
+VERBOSE=2
 
 log() {
-  local level="${1:-INFO}"    # Default level is INFO if not provided
-  shift                       # Remove the first argument (level)
-  local message="$*"
-  local timestamp
-  timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+    local level="$1"
+    shift
+    local message="$*"
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
 
-  # Format the log entry
-  local log_entry="[$timestamp] [$level] $message"
+    # Define color codes
+    local RED='\033[0;31m'
+    local YELLOW='\033[0;33m'
+    local WHITE='\033[1;37m'  # Changed from green to white
+    local BLUE='\033[0;34m'
+    local NC='\033[0m'        # No Color
 
-  # Output to console and append to log file
-  echo "$log_entry" | tee -a "$LOG_FILE"
+    # Validate log level and set color
+    case "${level^^}" in
+        INFO)
+            local color="${WHITE}"
+            ;;
+        WARN|WARNING)
+            local color="${YELLOW}"
+            level="WARN"
+            ;;
+        ERROR)
+            local color="${RED}"
+            ;;
+        DEBUG)
+            local color="${BLUE}"
+            ;;
+        *)
+            local color="${NC}"
+            level="INFO"
+            ;;
+    esac
+
+    # Ensure LOG_FILE is set
+    if [[ -z "${LOG_FILE:-}" ]]; then
+        LOG_FILE="/var/log/mint_setup.log"
+    fi
+
+    # Ensure the log file exists and is writable
+    if [[ ! -f "$LOG_FILE" ]]; then
+        touch "$LOG_FILE"
+        chmod 644 "$LOG_FILE"
+    fi
+
+    # Format the log entry
+    local log_entry="[$timestamp] [$level] $message"
+
+    # Append to log file
+    echo "$log_entry" >> "$LOG_FILE"
+
+    # Output to console with color based on verbosity
+    if [[ "$VERBOSE" -ge 2 ]]; then
+        printf "${color}%s${NC}\n" "$log_entry" >&2
+    elif [[ "$VERBOSE" -ge 1 && "$level" == "ERROR" ]]; then
+        printf "${color}%s${NC}\n" "$log_entry" >&2
+    fi
 }
 
 ################################################################################
@@ -148,6 +130,9 @@ log() {
 handle_error() {
   log ERROR "An error occurred. Check the log for details."
 }
+
+# Trap any error and output a helpful message
+trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
 
 ################################################################################
 # Function: install and enable sudo
@@ -163,7 +148,6 @@ enable_sudo() {
 
 ################################################################################
 # Function: bootstrap_and_install_pkgs
-# apt update/upgrade and install our base PACKAGES
 ################################################################################
 bootstrap_and_install_pkgs() {
   log INFO "Updating apt package list and upgrading existing packages..."
@@ -195,31 +179,25 @@ bootstrap_and_install_pkgs() {
 
 ################################################################################
 # Function: configure_sudo_access
-# Description:
-#   1) Installs the sudo package if missing.
-#   2) Ensures $USERNAME is in the 'sudo' group.
 ################################################################################
 configure_sudo_access() {
   # 1) Ensure sudo is installed
-  echo "[INFO] Installing sudo package (if not already installed)..."
-  apt-get update -y
-  apt-get install -y sudo
+  log INFO "Installing sudo package (if not already installed)..."
+  apt update -y
+  apt install -y sudo
 
   # 2) Add the user to the 'sudo' group
-  echo "[INFO] Adding '$USERNAME' to the sudo group..."
+  log INFO "Adding '$USERNAME' to the sudo group..."
   if id "$USERNAME" &>/dev/null; then
     usermod -aG sudo "$USERNAME"
   else
-    echo "[WARNING] User '$USERNAME' does not exist. Please create the user before configuring sudo."
+    log ERROR "User '$USERNAME' does not exist. Please create the user before configuring sudo."
     return 1
   fi
 }
 
 ################################################################################
 # Function: set_default_shell_and_env
-# Description:
-#   Deletes (overwrites) and recreates ~/.profile, ~/.bash_profile, and ~/.bashrc
-#   for $USERNAME.
 ################################################################################
 set_default_shell_and_env() {
   log INFO "Recreating .profile, .bash_profile, and .bashrc for $USERNAME..."
@@ -268,21 +246,12 @@ EOF
   cat << 'EOF' > "$bashrc_file"
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # ------------------------------------------------------------------------------
-# Purpose:
-#   This file configures your interactive Bash shell, defining environment
-#   variables, initializing pyenv, setting up command history preferences,
-#   enabling a fancy prompt, providing helpful aliases, and defining functions
-#   for Python virtual environment management.
+#    ______                  ______
+#    ___  /_ ______ ____________  /_ _______________
+#    __  __ \_  __ `/__  ___/__  __ \__  ___/_  ___/
+#___ _  /_/ // /_/ / _(__  ) _  / / /_  /    / /__
+#_(_)/_.___/ \__,_/  /____/  /_/ /_/ /_/     \___/
 #
-#   It also handles bash-completion (if available), making commands more
-#   convenient to type.
-#
-# Note:
-#   - This file is read for interactive non-login shells. For login shells,
-#     ~/.bash_profile or ~/.profile typically point here if you want the same
-#     configuration (depending on your distribution).
-#   - If you have separate user-defined aliases, you can place them in
-#     ~/.bash_aliases, which is sourced at the end of this file (if it exists).
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
@@ -525,28 +494,23 @@ configure_ufw() {
 
 ###############################################################################
 # Function: force_release_ports
-# Description:
-#   1) Removes Apache2 and Caddy (if present), then performs system cleanup.
-#   2) Installs net-tools if not present.
-#   3) Checks which processes are listening on the listed ports (TCP/UDP).
-#   4) Immediately terminates those processes by sending SIGKILL (-9).
 ###############################################################################
 force_release_ports() {
   # Step 1: Remove Apache and Caddy, then autoremove
-  echo "Removing apache2 and caddy..."
+  log INFO "Removing apache2 and caddy..."
   apt purge -y apache2
   apt purge -y caddy
   apt autoremove -y
 
   # Step 2: Install net-tools if not present
-  echo "Installing net-tools..."
+  log INFO "Installing net-tools..."
   apt install -y net-tools
 
   # Step 3: Define ports to kill (TCP and UDP separately)
   local tcp_ports=("8080" "80" "443" "32400" "8324" "32469")
   local udp_ports=("80" "443" "1900" "5353" "32410" "32411" "32412" "32413" "32414" "32415")
 
-  echo "Killing any processes listening on the specified ports..."
+  log INFO "Killing any processes listening on the specified ports..."
 
   # Kill TCP processes
   for p in "${tcp_ports[@]}"; do
@@ -565,19 +529,16 @@ force_release_ports() {
     # -i UDP:$p: match UDP port
     pids="$(lsof -t -i UDP:"$p" 2>/dev/null || true)"
     if [ -n "$pids" ]; then
-      echo "Killing processes on UDP port $p: $pids"
+      log INFO "Killing processes on UDP port $p: $pids"
       kill -9 $pids
     fi
   done
 
-  echo "Ports have been forcibly released."
+  log INFO "Ports have been forcibly released."
 }
 
 ################################################################################
 # Function: configure_timezone
-# Description:
-#   Installs common timezone data (if not present), then sets the system timezone
-#   and ensures that the hardware clock is synced to localtime or UTC.
 ################################################################################
 configure_timezone() {
   local tz="${1:-UTC}"  # Default to UTC if not specified
@@ -593,100 +554,80 @@ configure_timezone() {
 }
 
 ################################################################################
-# Function: basic_security_hardening
-# Description:
-#   Applies a minimal set of security best practices on ubuntu-based systems:
-#     2) Installs fail2ban if not already installed
+# Function: fail2ban
 ################################################################################
-basic_security_hardening() {
-  log INFO "Applying basic ubuntu security hardening..."
+fail2ban() {
+  log INFO "Installing fail2ban..."
 
-  # 2) Install fail2ban (from ubuntu repositories)
+  # 1) Install fail2ban (from ubuntu repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
     log INFO "Installing fail2ban..."
     apt install -y fail2ban
     systemctl enable fail2ban
     systemctl start fail2ban
   else
-    log "fail2ban is already installed."
+    log INFO "fail2ban is already installed."
   fi
 
-  log "Security hardening steps completed."
+  log INFO "Security hardening steps completed."
 }
 
 ################################################################################
 # Function: update_repositories
 ################################################################################
-# Variables
-GITHUB_DIR="$HOME/github"
-HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
-HUGO_DIR="/home/sawyer/github/hugo"
-SAWYER_HOME="/home/sawyer"
-
-# Log function for timestamped messages
-log() {
-    echo "[$(date +"%Y-%m-%d %H:%M:%S")] $1"
-}
-
-# --------------------------------------
-# FUNCTIONS
-# --------------------------------------
-
 update_repositories() {
-    log "Creating directory"
-    mkdir -p "/home/sawyer/github"
+  log INFO "Updating github repositories"
+  local GITHUB_DIR="home/sawyer/github"
+  local HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
+  local HUGO_DIR="/home/sawyer/github/hugo"
+  local SAWYER_HOME="/home/sawyer"
 
-    log "Changing to directory /home/sawyer/github"
-    cd "/home/sawyer/github"
+  log INFO "Creating directory $GITHUB_DIR"
+  mkdir -p "$GITHUB_DIR"
 
-    # Clone repositories if they do not already exist
-    repos=(
-        "https://github.com/dunamismax/bash.git"
-        "https://github.com/dunamismax/c.git"
-        "https://github.com/dunamismax/religion.git"
-        "https://github.com/dunamismax/windows.git"
-        "https://github.com/dunamismax/hugo.git"
-        "https://github.com/dunamismax/python.git"
-    )
+  log INFO "Changing to directory $GITHUB_DIR"
+  cd "$GITHUB_DIR"
 
-    for repo in "${repos[@]}"; do
-        repo_name=$(basename "$repo" .git)
-        if [ ! -d "$repo_name" ]; then
-            log "Cloning repository $repo"
-            git clone "$repo"
-        else
-            log "Repository $repo_name already exists, skipping clone"
-        fi
-    done
+  # Clone repositories if they do not already exist
+  local repos=(
+    "https://github.com/dunamismax/bash.git"
+    "https://github.com/dunamismax/c.git"
+    "https://github.com/dunamismax/religion.git"
+    "https://github.com/dunamismax/windows.git"
+    "https://github.com/dunamismax/hugo.git"
+    "https://github.com/dunamismax/python.git"
+  )
 
-    # Set permissions and ownership for the Hugo directory
-    log "Setting ownership and permissions for Hugo public directory"
-    sudo chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
-    sudo chmod -R 755 "$HUGO_PUBLIC_DIR"
+  for repo in "${repos[@]}"; do
+    local repo_name
+    repo_name=$(basename "$repo" .git)
+    if [ ! -d "$repo_name" ]; then
+      log INFO "Cloning repository $repo"
+      git clone "$repo"
+    else
+      log INFO "Repository $repo_name already exists; skipping clone."
+    fi
+  done
 
-    log "Setting ownership and permissions for Hugo directory"
-    sudo chown -R caddy:caddy "$HUGO_DIR"
-    sudo chmod o+rx "$SAWYER_HOME"
-    sudo chmod o+rx "$GITHUB_DIR"
-    sudo chmod o+rx "$HUGO_DIR"
-    sudo chmod o+rx "/home/sawyer/github/hugo/dunamismax.com"
+  # Set permissions and ownership for the Hugo directory
+  log INFO "Setting ownership and permissions for Hugo public directory: $HUGO_PUBLIC_DIR"
+  chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
+  chmod -R 755 "$HUGO_PUBLIC_DIR"
 
-    log "Update repositories and permissions completed."
-    cd ~
+  log INFO "Setting ownership and permissions for Hugo directory: $HUGO_DIR"
+  chown -R caddy:caddy "$HUGO_DIR"
+  chmod o+rx "$SAWYER_HOME" "$GITHUB_DIR" "$HUGO_DIR" "/home/sawyer/github/hugo/dunamismax.com"
+
+  log INFO "Update repositories and permissions completed."
+
+  cd ~
 }
 
 ################################################################################
 # Function: create_caddyfile
-# Description:
-#   Creates (or overwrites) /etc/caddy/Caddyfile with the specified contents:
-#     - Global email setting
-#     - Global logging
-#     - www.dunamismax.com redirect
-#     - Main Hugo site at dunamismax.com
-#     - Nextcloud reverse proxy at cloud.dunamismax.com
 ################################################################################
 create_caddyfile() {
-  log "Creating /etc/caddy/Caddyfile..."
+  log INFO "Creating /etc/caddy/Caddyfile..."
 
   install_caddy
 
@@ -697,11 +638,19 @@ create_caddyfile() {
   # Ensure caddy directory exists
   if [ ! -d "$caddyfile_dir" ]; then
     mkdir -p "$caddyfile_dir"
-    log "Created directory $caddyfile_dir"
+    log INFO "Created directory $caddyfile_dir"
   fi
 
   # Write out the Caddyfile
   cat << 'EOF' > "$caddyfile_path"
+#####################################################################
+               __________________         _____________ ______
+_____________ _______  /______  /_____  _____  __/___(_)___  /_____
+_  ___/_  __ `/_  __  / _  __  / __  / / /__  /_  __  / __  / _  _ \
+/ /__  / /_/ / / /_/ /  / /_/ /  _  /_/ / _  __/  _  /  _  /  /  __/
+\___/  \__,_/  \__,_/   \__,_/   _\__, /  /_/     /_/   /_/   \___/
+                                 /____/
+#####################################################################
 {
     # Use this email for Let's Encrypt notifications
     email dunamismax@tutamail.com
@@ -752,63 +701,51 @@ EOF
 
   # Optionally reload or restart Caddy to apply changes
   if command -v systemctl &>/dev/null; then
-    log "Reloading Caddy to apply new configuration..."
+    log INFO "Reloading Caddy to apply new configuration..."
     systemctl reload caddy || {
-      log INFO "Reload failed, attempting restart..."
+      log ERROR "Reload failed, attempting restart..."
       systemctl restart caddy
     }
   fi
 }
 
 ################################################################################
-# Function: apt_and_settings
-#  1) Add Flatpak (Flathub) remote for installing Flatpak apps.
+# Function: Flatpak
 ################################################################################
-apt_and_settings() {
-  log "==== Starting apt_and_settings routine ===="
-
-  ##############################################################################
-  # 1) Add Flatpak (Flathub) remote for installing Flatpak apps
-  ##############################################################################
-  log "Installing flatpak and configuring Flathub remote..."
+flatpak() {
+  log INFO "Installing flatpak and configuring Flathub remote..."
   apt install -y flatpak
 
   # Add the Flathub remote if not already added
   if ! flatpak remote-list | grep -q 'flathub'; then
     flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-    log "Flathub remote added for Flatpak."
+    log INFO "Flathub remote added for Flatpak."
   else
-    log "Flathub remote already exists."
+    log INFO "Flathub remote already exists."
   fi
 
-  log "==== apt_and_settings routine completed successfully. ===="
+  log INFO "Flatpak installed."
 }
 
 ################################################################################
 # Function: configure_ntp
-# Description:
-#   Installs and configures NTP service on ubuntu-based systems using chrony.
-#   1) Installs chrony if not already installed.
-#   2) Backs up the existing /etc/chrony/chrony.conf (if present).
-#   3) Writes a basic chrony.conf with recommended upstream NTP servers.
-#   4) Enables and starts chrony.
 ################################################################################
 configure_ntp() {
-  log "Configuring NTP (chrony)..."
+  log INFO "Configuring NTP (chrony)..."
 
   # 1) Install chrony if it is not already installed
   if ! dpkg-query -W -f='${Status}' chrony 2>/dev/null | grep -q "install ok installed"; then
-    log "Installing chrony..."
+    log INFO "Installing chrony..."
     apt install -y chrony
   else
-    log "chrony is already installed."
+    log INFO "chrony is already installed."
   fi
 
   # 2) Backup existing chrony config and overwrite
   local chrony_conf="/etc/chrony/chrony.conf"
   if [ -f "$chrony_conf" ]; then
     cp "$chrony_conf" "${chrony_conf}.bak.$(date +%Y%m%d%H%M%S)"
-    log "Backed up existing $chrony_conf to ${chrony_conf}.bak.$(date +%Y%m%d%H%M%S)"
+    log INFO "Backed up existing $chrony_conf to ${chrony_conf}.bak.$(date +%Y%m%d%H%M%S)"
   fi
 
   # 3) Write a basic chrony.conf (using global NTP servers for demonstration)
@@ -840,26 +777,21 @@ hwtimestamp *
 log tracking measurements statistics
 EOF
 
-  log "Wrote a new chrony.conf at $chrony_conf."
+  log INFO "Wrote a new chrony.conf at $chrony_conf."
 
   # 4) Enable and start chrony
   systemctl enable chrony
   systemctl restart chrony
 
-  log "NTP (chrony) configuration complete."
+  log INFO "NTP (chrony) configuration complete."
 }
 
+################################################################################
 # Function to install build dependencies for compiling Python via pyenv
+################################################################################
 install_python_build_deps() {
-    LOG_FILE="/var/log/python_build_deps_install.log" # Define the log file location
 
-    log "Installing system build dependencies..." | tee -a "$LOG_FILE"
-
-    # Update package lists
-    if ! apt update -y; then
-        log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
-        return 1
-    fi
+    log INFO "Installing system build dependencies..."
 
     # Install required packages
     if ! apt install -y \
@@ -885,33 +817,26 @@ install_python_build_deps() {
         libxml2-dev \
         libxmlsec1-dev \
         --no-install-recommends; then
-        log "Failed to install build dependencies. Exiting." | tee -a "$LOG_FILE"
+        log ERROR "Failed to install build dependencies. Exiting."
         return 1
     fi
 
     # Clean up unnecessary packages and caches
     if ! apt autoremove -y; then
-        log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
+        log ERROR "Failed to autoremove unnecessary packages."
     fi
 
     if ! apt clean -y; then
-        log "Failed to clean package cache." | tee -a "$LOG_FILE"
+        log ERROR "Failed to clean package cache."
     fi
 
-    log "System build dependencies installed." | tee -a "$LOG_FILE"
+    log INFO "System build dependencies installed."
 }
 
 # Function to install build dependencies for C, C++, Rust, and Go
 install_dev_build_deps() {
-    LOG_FILE="/var/log/dev_build_deps_install.log" # Define the log file location
 
-    log "Installing system build dependencies for C, C++, Rust, and Go..." | tee -a "$LOG_FILE"
-
-    # Update package lists
-    if ! apt update -y; then
-        log "Failed to update package lists. Exiting." | tee -a "$LOG_FILE"
-        return 1
-    fi
+    log INFO "Installing system build dependencies for C, C++, Rust, and Go..."
 
     # Install required packages
     if ! apt install -y \
@@ -937,13 +862,13 @@ install_dev_build_deps() {
         libxml2-dev \
         libxmlsec1-dev \
         --no-install-recommends; then
-        log "Failed to install build dependencies for C and C++. Exiting." | tee -a "$LOG_FILE"
+        log ERROR "Failed to install build dependencies for C and C++. Exiting."
         return 1
     fi
 
     # Install Rust toolchain
-    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y >>"$LOG_FILE" 2>&1; then
-        log "Failed to install Rust toolchain. Exiting." | tee -a "$LOG_FILE"
+    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
+        log ERROR "Failed to install Rust toolchain. Exiting."
         return 1
     fi
 
@@ -953,34 +878,34 @@ install_dev_build_deps() {
     # Install Go (use apt for simplicity, but better alternatives exist)
     if ! apt install -y \
         golang-go; then
-        log "Failed to install Go programming environment. Exiting." | tee -a "$LOG_FILE"
+        log ERROR "Failed to install Go programming environment. Exiting."
         return 1
     fi
 
     # Clean up unnecessary packages and caches
     if ! apt autoremove -y; then
-        log "Failed to autoremove unnecessary packages." | tee -a "$LOG_FILE"
+        log ERROR "Failed to autoremove unnecessary packages."
     fi
 
     if ! apt clean -y; then
-        log "Failed to clean package cache." | tee -a "$LOG_FILE"
+        log ERROR "Failed to clean package cache."
     fi
 
-    log "System build dependencies for C, C++, Rust, and Go installed." | tee -a "$LOG_FILE"
+    log INFO "System build dependencies for C, C++, Rust, and Go installed."
 }
 
 ################################################################################
 # 0. Basic System Update & Core Packages
 ################################################################################
 install_apt_dependencies() {
-    echo "[INFO] Updating apt caches..."
-    sudo apt-get update -y
+    log INFO "Updating apt caches..."
+    apt update -y
 
     # Optional: If you want to also upgrade existing packages:
-    sudo apt-get upgrade -y
+    apt upgrade -y
 
-    echo "[INFO] Installing apt-based dependencies..."
-    sudo apt-get install -y --no-install-recommends \
+    log INFO "Installing apt-based dependencies..."
+    apt install -y --no-install-recommends \
         build-essential \
         make \
         git \
@@ -1013,17 +938,16 @@ install_apt_dependencies() {
         jq
 
     # Optionally remove automatically installed packages no longer needed
-    sudo apt-get autoremove -y
-    sudo apt-get clean
+    apt autoremove -y
+    apt clean
 }
 
 ################################################################################
 # Function: install_caddy
 ################################################################################
 install_caddy() {
-  log "Installing and enabling Caddy..."
+  log INFO "Installing and enabling Caddy..."
 
-  apt update -y
   apt install -y ubuntu-keyring apt-transport-https curl
 
   # Add the official Caddy GPG key
@@ -1035,88 +959,29 @@ install_caddy() {
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
     | tee /etc/apt/sources.list.d/caddy-stable.list
 
-  apt update -y
   apt install -y caddy
 
-  log "Caddy installed."
-}
-
-################################################################################
-# disable_sleep_and_set_performance
-# Description:
-#   1) Masks (disables) system sleep targets so the system never suspends.
-#   2) Installs cpufrequtils (if not present) and sets all CPU cores to
-#      "performance" governor.
-################################################################################
-disable_sleep_and_set_performance() {
-  # Ensure we run as root/sudo
-  if [ "$(id -u)" -ne 0 ]; then
-    echo "[ERROR] This function must be run as root or with sudo privileges."
-    exit 1
-  fi
-
-  echo "[INFO] Disabling system sleep, suspend, hibernate, and hybrid-sleep..."
-  systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
-  # Optionally stop them if currently active
-  systemctl stop sleep.target suspend.target hibernate.target hybrid-sleep.target 2>/dev/null || true
-
-  echo "[INFO] Installing cpufrequtils if not already installed..."
-  if ! command -v cpufreq-set &>/dev/null; then
-    apt-get update -y
-    apt-get install -y cpufrequtils
-  fi
-
-  echo "[INFO] Checking available CPU governor(s)..."
-  # It's useful to ensure "performance" is a valid governor before setting it.
-  # This might vary on certain virtualized environments.
-  if ! cpufreq-info | grep -q "performance"; then
-    echo "[WARNING] 'performance' governor not found. Your system may not support it."
-    echo "          Attempting to continue..."
-  fi
-
-  echo "[INFO] Setting CPU governor to 'performance' for all CPU cores..."
-  for cpu_gov in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
-    if [ -w "$cpu_gov" ]; then
-      echo performance > "$cpu_gov"
-    else
-      echo "[WARNING] Unable to set performance governor for $(dirname "$cpu_gov")"
-    fi
-  done
-
-  echo "[INFO] Done. Your system should no longer suspend and CPU frequency is set to performance."
-  echo "[INFO] If you want to persist governor settings across reboots, edit /etc/default/cpufrequtils."
+  log INFO "Caddy installed."
 }
 
 ################################################################################
 # Function: install_and_enable_plex
-# Description:
-#   This function installs Plex Media Server on ubuntu using the official
-#   .deb package if it is not already installed. If it is already installed,
-#   the function skips the installation and proceeds. Then it enables and
-#   starts the plexmediaserver service to ensure Plex runs on system boot.
-#   Finally, it displays how to access the Plex Web UI.
-#
-# Usage:
-#   1. Adjust the VERSION variable below as necessary.
-#   2. Call install_and_enable_plex.
-#   3. Access the Plex Web UI on http://127.0.0.1:32400/web from the same
-#      machine running Plex.
 ################################################################################
 install_and_enable_plex() {
   set -e  # Exit immediately if a command exits with a non-zero status
 
-  echo "Checking if Plex Media Server is already installed..."
+  log INFO "Checking if Plex Media Server is already installed..."
   if dpkg -s plexmediaserver >/dev/null 2>&1; then
-    echo "Plex Media Server is already installed. Skipping installation."
+    log INFO "Plex Media Server is already installed. Skipping installation."
     return
   fi
 
-  echo "Updating apt package index..."
-  sudo apt-get update -y
+  log INFO "Updating apt package index..."
+  apt update -y
 
-  echo "Installing prerequisites (curl) if not already installed..."
+  log INFO "Installing prerequisites (curl) if not already installed..."
   if ! dpkg -s curl >/dev/null 2>&1; then
-    sudo apt-get install -y curl
+    apt install -y curl
   fi
 
   # Change this to match the latest Plex version you want to install
@@ -1124,26 +989,26 @@ install_and_enable_plex() {
   local DEB_PACKAGE="plexmediaserver_${VERSION}_amd64.deb"
   local DEB_URL="https://downloads.plex.tv/plex-media-server-new/${VERSION}/debian/${DEB_PACKAGE}"
 
-  echo "Downloading Plex Media Server package from Plex..."
+  log INFO "Downloading Plex Media Server package from Plex..."
   curl -LO "${DEB_URL}"
 
-  echo "Installing Plex Media Server..."
-  if ! sudo dpkg -i "${DEB_PACKAGE}"; then
-    echo "Resolving missing dependencies..."
-    sudo apt-get install -f -y
-    sudo dpkg -i "${DEB_PACKAGE}"
+  log INFO "Installing Plex Media Server..."
+  if ! dpkg -i "${DEB_PACKAGE}"; then
+    log INFO "Resolving missing dependencies..."
+    apt install -f -y
+    dpkg -i "${DEB_PACKAGE}"
   fi
 
-  echo "Configuring any partially installed packages..."
-  sudo dpkg --configure -a
+  log INFO "Configuring any partially installed packages..."
+  dpkg --configure -a
 
-  echo "Enabling and starting plexmediaserver service..."
-  sudo systemctl enable plexmediaserver
-  sudo systemctl start plexmediaserver
+  log INFO "Enabling and starting plexmediaserver service..."
+  systemctl enable plexmediaserver
+  systemctl start plexmediaserver
 
-  echo "Plex Media Server installation complete!"
-  echo "To configure Plex, open a browser on the same machine and go to:"
-  echo "  http://127.0.0.1:32400/web"
+  log INFO "Plex Media Server installation complete!"
+  log INFO "To configure Plex, open a browser on the same machine and go to:"
+  log INFO "  http://127.0.0.1:32400/web"
 }
 
 # ------------------------------------------------------------------------------
@@ -1152,88 +1017,76 @@ install_and_enable_plex() {
 # ------------------------------------------------------------------------------
 install_powershell_and_zig() {
   set -euo pipefail
-  echo "[INFO] Starting installation of PowerShell and Zig..."
+  log INFO "Starting installation of PowerShell and Zig..."
 
   # Install PowerShell
-  echo "[INFO] Installing PowerShell..."
+  log INFO "Installing PowerShell..."
   wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
-  sudo dpkg -i packages-microsoft-prod.deb || true
+  dpkg -i packages-microsoft-prod.deb || true
   rm -f packages-microsoft-prod.deb
-  sudo apt-get update -y
-  sudo apt-get install -y powershell || true
-  echo "[INFO] PowerShell installation complete."
+  apt update -y
+  apt install -y powershell || true
+  log INFO "PowerShell installation complete."
 
   # Install Zig
-  echo "[INFO] Installing Zig..."
+  log INFO "Installing Zig..."
   ZIG_VERSION="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
   ZIG_URL="https://ziglang.org/builds/${ZIG_VERSION}.tar.xz"
   ZIG_TARBALL="/tmp/${ZIG_VERSION}.tar.xz"
   ZIG_EXTRACTED_DIR="/tmp/${ZIG_VERSION}"
   ZIG_INSTALL_DIR="/usr/local/zig"
 
-  echo "[INFO] Downloading Zig from $ZIG_URL..."
+  log INFO "Downloading Zig from $ZIG_URL..."
   wget -O "$ZIG_TARBALL" "$ZIG_URL"
 
-  echo "[INFO] Extracting Zig tarball..."
+  log INFO "Extracting Zig tarball..."
   tar xf "$ZIG_TARBALL" -C /tmp/
 
   if [[ ! -d "$ZIG_EXTRACTED_DIR" ]]; then
-    echo "[ERROR] Extraction failed: '$ZIG_EXTRACTED_DIR' does not exist!"
+    log ERROR "Extraction failed: '$ZIG_EXTRACTED_DIR' does not exist!"
     exit 1
   fi
 
-  echo "[INFO] Installing Zig to $ZIG_INSTALL_DIR..."
-  sudo rm -rf "$ZIG_INSTALL_DIR"
-  sudo mv "$ZIG_EXTRACTED_DIR" "$ZIG_INSTALL_DIR"
+  log INFO "Installing Zig to $ZIG_INSTALL_DIR..."
+  rm -rf "$ZIG_INSTALL_DIR"
+  mv "$ZIG_EXTRACTED_DIR" "$ZIG_INSTALL_DIR"
 
-  echo "[INFO] Creating symlink for Zig binary..."
-  sudo ln -sf "$ZIG_INSTALL_DIR/zig" /usr/local/bin/zig
-  sudo chmod +x /usr/local/bin/zig
+  log INFO "Creating symlink for Zig binary..."
+  ln -sf "$ZIG_INSTALL_DIR/zig" /usr/local/bin/zig
+  chmod +x /usr/local/bin/zig
 
-  echo "[INFO] Cleaning up temporary files..."
+  log INFO "Cleaning up temporary files..."
   rm -f "$ZIG_TARBALL"
 
-  echo "[INFO] Zig installation complete."
+  log INFO "Zig installation complete."
 }
 
 ################################################################################
 # Function: finalize_configuration
 ################################################################################
 finalize_configuration() {
-  log "Finalizing system configuration..."
-
-  # Update and upgrade packages
-  if ! apt update -y; then
-    log "Error: Failed to update package lists."
-    return 1
-  fi
-
-  if ! apt upgrade -y; then
-    log "Error: Failed to upgrade packages."
-    return 1
-  fi
+  log INFO "Finalizing system configuration..."
 
   # Remove unused dependencies
-  log "Performing system cleanup..."
+  log INFO "Performing system cleanup..."
   if ! apt autoremove -y; then
-    log "Error: Failed to remove unused dependencies."
+    log ERROR "Failed to remove unused dependencies."
   fi
 
   # Clean up local package cache
   if ! apt clean; then
-    log "Error: Failed to clean package cache."
+    log ERROR "Failed to clean package cache."
   fi
 
-  log "System cleanup completed."
-  log "Final configuration steps completed successfully."
+  log INFO "System cleanup completed."
 }
 
 ################################################################################
 # MAIN
 ################################################################################
 main() {
-  log "--------------------------------------"
-  log "Starting ubuntu Automated System Configuration Script"
+  log INFO "--------------------------------------"
+  log INFO "Starting Ubuntu Automated System Configuration Script"
 
   # --------------------------------------------------------
   # 1) Basic System Preparation
@@ -1241,9 +1094,8 @@ main() {
   force_release_ports
   enable_sudo
   configure_sudo_access
-  apt_and_settings   # Run apt updates/upgrades, custom APT config, etc.
+  flatpak
   configure_timezone "America/New_York"
-  disable_sleep_and_set_performance
 
   # --------------------------------------------------------
   # 2) User Creation and Environment
@@ -1265,8 +1117,7 @@ main() {
   # --------------------------------------------------------
   configure_ufw
   configure_ntp
-
-  basic_security_hardening
+  fail2ban
 
   # --------------------------------------------------------
   # 6) Dev Setup
@@ -1284,9 +1135,9 @@ main() {
   finalize_configuration
   systemctl restart caddy
 
-  log "Configuration script finished successfully."
-  log "Enjoy ubuntu!"
-  log "--------------------------------------"
+  log INFO "Configuration script finished successfully."
+  log INFO "Enjoy Ubuntu!!!"
+  log INFO "--------------------------------------"
 }
 
 # Entrypoint

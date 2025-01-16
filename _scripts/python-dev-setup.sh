@@ -18,13 +18,13 @@ command_exists() {
 ################################################################################
 install_apt_dependencies() {
     echo "[INFO] Updating apt caches..."
-    sudo apt-get update -y
+    sudo apt update -y
 
     # Optional: If you want to also upgrade existing packages:
-    sudo apt-get upgrade -y
+    sudo apt upgrade -y
 
     echo "[INFO] Installing apt-based dependencies..."
-    sudo apt-get install -y --no-install-recommends \
+    sudo apt install -y --no-install-recommends \
         build-essential \
         make \
         git \
@@ -57,8 +57,8 @@ install_apt_dependencies() {
         jq
 
     # Optionally remove automatically installed packages no longer needed
-    sudo apt-get autoremove -y
-    sudo apt-get clean
+    sudo apt autoremove -y
+    sudo apt clean
 }
 
 ################################################################################
