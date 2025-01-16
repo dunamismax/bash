@@ -673,10 +673,6 @@ configure_timezone() {
 basic_security_hardening() {
   log "Applying basic mint security hardening..."
 
-  # 1) Disable root login in ssh_config
-  sed -i 's/^\s*#*\s*PermitRootLogin\s.*/PermitRootLogin no/' /etc/ssh/ssh_config
-  systemctl restart ssh 2>&1 | tee -a "$LOG_FILE"
-
   # 2) Install fail2ban (from mint repositories)
   if ! dpkg-query -W -f='${Status}' fail2ban 2>/dev/null | grep -q "install ok installed"; then
     log "Installing fail2ban..."
