@@ -49,10 +49,6 @@ PACKAGES=(
 # call them in your "main" block at the end.
 # ------------------------------------------------------------------------------
 
-# Ensure the log file exists and is writable
-touch "$LOG_FILE"
-chmod 644 "$LOG_FILE"
-
 ################################################################################
 # Function: logging function
 ################################################################################
