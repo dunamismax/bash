@@ -176,75 +176,6 @@ configure_ssh_settings() {
   fi
 }
 
-------------------------------------------------------------------------------
-# Backup Function
-# ------------------------------------------------------------------------------
-backup_system() {
-    # Variables
-    local SOURCE="/"                # Source directory for backup
-    local DESTINATION="/home/sawyer/BACKUPS" # Destination for backup
-    local LOG_FILE="/var/log/system-backup.log" # Log file path
-    local TIMESTAMP
-    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-    local BACKUP_NAME="backup-$TIMESTAMP.tar.gz"
-    local RETENTION_DAYS=7          # Retain backups for 7 days
-
-    # Exclusions for the backup
-    local EXCLUDES=(
-        "./proc/*"
-        "./sys/*"
-        "./dev/*"
-        "./run/*"
-        "./tmp/*"
-        "./mnt/*"
-        "./media/*"
-        "./swapfile"
-        "./lost+found"
-        "./var/tmp/*"
-        "./var/cache/*"
-        "./var/log/*"
-        "./var/lib/lxcfs/*"
-        "./var/lib/docker/*"
-        "./root/.cache/*"
-        "./home/*/.cache/*"
-        "./var/lib/plexmediaserver/*"
-        "/home/sawyer/BACKUPS"
-    )
-
-    # Create exclusion string for tar
-    local EXCLUDES_ARGS=()
-    for EXCLUDE in "${EXCLUDES[@]}"; do
-        EXCLUDES_ARGS+=(--exclude="$EXCLUDE")
-    done
-
-    # Ensure destination exists
-    mkdir -p "$DESTINATION"
-
-    # Perform backup
-    log INFO "Starting system backup to $DESTINATION/$BACKUP_NAME"
-    if tar -I pigz --one-file-system -cf "$DESTINATION/$BACKUP_NAME" \
-        "${EXCLUDES_ARGS[@]}" -C "$SOURCE" .; then
-        log INFO "Backup completed successfully: $DESTINATION/$BACKUP_NAME"
-    else
-        log ERROR "Error: Backup process failed."
-        exit 1
-    fi
-
-    # Remove old backups
-    log INFO "Cleaning up old backups older than $RETENTION_DAYS days."
-    if find "$DESTINATION" -type f -name "*.tar.gz" -mtime +"$RETENTION_DAYS" -exec rm -f {} \;; then
-        log INFO "Old backups removed."
-    else
-        log WARN "Warning: Failed to remove some old backups."
-    fi
-}
-
-# ------------------------------------------------------------------------------
-# Example Usage
-# ------------------------------------------------------------------------------
-# Uncomment the lines below to execute the function directly from the script
-# backup_system "sawyer"
-
 ################################################################################
 # Function: bootstrap_and_install_pkgs
 ################################################################################
@@ -1138,7 +1069,6 @@ main() {
   # 1) Basic System Preparation
   # --------------------------------------------------------
   configure_ssh_settings
-  backup_system "sawyer"
   force_release_ports
   configure_timezone "America/New_York"
 
