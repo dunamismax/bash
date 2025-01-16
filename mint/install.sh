@@ -542,53 +542,36 @@ fail2ban() {
 }
 
 ################################################################################
-# Function: update_repositories
+# Function: download_repositories
 ################################################################################
-update_repositories() {
-  log INFO "Updating github repositories"
-  local GITHUB_DIR="home/sawyer/github"
-  local HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
-  local HUGO_DIR="/home/sawyer/github/hugo"
-  local SAWYER_HOME="/home/sawyer"
+download_repositories() {
+  log INFO "Downloading github repositories"
 
-  log INFO "Creating directory $GITHUB_DIR"
-  mkdir -p "$GITHUB_DIR"
+  log INFO "Creating github directory"
+  mkdir -p /home/sawyer/github
 
-  log INFO "Changing to directory $GITHUB_DIR"
-  cd "$GITHUB_DIR"
+  log INFO "Changing to github directory"
+  cd /home/sawyer/github
 
   # Clone repositories if they do not already exist
-  local repos=(
-    "https://github.com/dunamismax/bash.git"
-    "https://github.com/dunamismax/c.git"
-    "https://github.com/dunamismax/religion.git"
-    "https://github.com/dunamismax/windows.git"
-    "https://github.com/dunamismax/hugo.git"
-    "https://github.com/dunamismax/python.git"
-  )
-
-  for repo in "${repos[@]}"; do
-    local repo_name
-    repo_name=$(basename "$repo" .git)
-    if [ ! -d "$repo_name" ]; then
-      log INFO "Cloning repository $repo"
-      git clone "$repo"
-    else
-      log INFO "Repository $repo_name already exists; skipping clone."
-    fi
-  done
+  git clone "https://github.com/dunamismax/bash.git"
+  git clone "https://github.com/dunamismax/c.git"
+  git clone "https://github.com/dunamismax/religion.git"
+  git clone "https://github.com/dunamismax/windows.git"
+  git clone "https://github.com/dunamismax/hugo.git"
+  git clone "https://github.com/dunamismax/python.git"
+  log INFO "Download completed"
 
   # Set permissions and ownership for the Hugo directory
-  log INFO "Setting ownership and permissions for Hugo public directory: $HUGO_PUBLIC_DIR"
-  chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
-  chmod -R 755 "$HUGO_PUBLIC_DIR"
+  log INFO "Setting ownership and permissions for Hugo public directory"
+  chown -R www-data:www-data "/home/sawyer/github/hugo/dunamismax.com/public"
+  chmod -R 755 "/home/sawyer/github/hugo/dunamismax.com/public"
 
-  log INFO "Setting ownership and permissions for Hugo directory: $HUGO_DIR"
-  chown -R caddy:caddy "$HUGO_DIR"
-  chmod o+rx "$SAWYER_HOME" "$GITHUB_DIR" "$HUGO_DIR" "/home/sawyer/github/hugo/dunamismax.com"
+  log INFO "Setting ownership and permissions for Hugo directory"
+  chown -R caddy:caddy "/home/sawyer/github/hugo"
+  chmod o+rx "/home/sawyer/" "/home/sawyer/github/" "/home/sawyer/github/hugo/" "/home/sawyer/github/hugo/dunamismax.com/"
 
   log INFO "Update repositories and permissions completed."
-
   cd ~
 }
 
@@ -767,7 +750,7 @@ install_python_build_deps() {
         jq \
         gnupg \
         libxml2-dev \
-        libxmlsec1-dev \
+        libxmlsec1-dev
         --no-install-recommends; then
         log ERROR "Failed to install build dependencies. Exiting."
         return 1
@@ -812,7 +795,7 @@ install_dev_build_deps() {
         jq \
         gnupg \
         libxml2-dev \
-        libxmlsec1-dev \
+        libxmlsec1-dev
         --no-install-recommends; then
         log ERROR "Failed to install build dependencies for C and C++. Exiting."
         return 1
@@ -1080,7 +1063,7 @@ main() {
   # --------------------------------------------------------
   install_and_enable_plex
   install_powershell_and_zig
-  update_repositories
+  download_repositories
   finalize_configuration
   systemctl restart caddy
 
