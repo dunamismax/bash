@@ -712,17 +712,17 @@ EOF
 ################################################################################
 # Function: Flatpak
 ################################################################################
-flatpak() {
+flatpak_install() {
   log INFO "Installing flatpak and configuring Flathub remote..."
-  apt install -y flatpak
 
-  # Add the Flathub remote if not already added
-  if ! flatpak remote-list | grep -q 'flathub'; then
-    flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-    log INFO "Flathub remote added for Flatpak."
-  else
-    log INFO "Flathub remote already exists."
-  fi
+  # Ensure add-apt-repository command is available
+  apt install -y software-properties-common
+
+  add-apt-repository -y ppa:flatpak/stable
+  apt update -y
+  apt install -y flatpak
+  apt install -y gnome-software-plugin-flatpak
+  flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
   log INFO "Flatpak installed."
 }
@@ -1094,7 +1094,7 @@ main() {
   force_release_ports
   enable_sudo
   configure_sudo_access
-  flatpak
+  flatpak_install
   configure_timezone "America/New_York"
 
   # --------------------------------------------------------
