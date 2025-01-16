@@ -71,7 +71,7 @@ trap 'echo "Script failed at line $LINENO."' ERR
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-GITHUB_DIR="$HOME/github"
+GITHUB_DIR="/home/sawyer/github"
 HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
 HUGO_DIR="/home/sawyer/github/hugo"
 SAWYER_HOME="/home/sawyer"
