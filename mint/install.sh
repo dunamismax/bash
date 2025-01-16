@@ -180,7 +180,7 @@ configure_ssh_settings() {
 # Function: Install GUI
 ################################################################################
 install_gui() {
-    log INFO "Starting installation of KDE Plasma Desktop and related components..."
+    log INFO "Starting installation of GUI components and Window Managers..."
 
     # Ensure non-interactive environment
     export DEBIAN_FRONTEND=noninteractive
@@ -194,53 +194,53 @@ install_gui() {
         exit 10
     fi
 
-    # Step 2: Install KDE Plasma Desktop
-    log INFO "Installing KDE Plasma Desktop..."
-    if dpkg -l | grep -qw kde-full; then
-        log INFO "KDE Plasma Desktop is already installed. Skipping."
+    # Step 2: Install GNOME Desktop and GNOME Tweaks
+    log INFO "Installing GNOME Desktop and GNOME Tweaks..."
+    local gnome_packages="gnome gnome-tweaks gnome-shell-extensions gnome-software gnome-terminal gnome-control-center"
+    if dpkg -l | grep -qw gnome-shell; then
+        log INFO "GNOME Desktop is already installed. Skipping."
     else
-        if apt install -y kde-full; then
-            log INFO "Successfully installed KDE Plasma Desktop."
+        if apt install -y $gnome_packages; then
+            log INFO "Successfully installed GNOME Desktop and related packages."
         else
-            log ERROR "Failed to install KDE Plasma Desktop. Exiting."
+            log ERROR "Failed to install GNOME Desktop. Exiting."
             exit 20
         fi
     fi
 
-    # Step 3: Install Additional Usability Packages
-    log INFO "Installing additional desktop utilities..."
-    local packages="vlc fonts-ubuntu ttf-mscorefonts-installer fonts-roboto fonts-open-sans fonts-dejavu fonts-droid-fallback fonts-liberation fonts-cantarell fonts-noto"
-    if dpkg -l | grep -qw vlc && dpkg -l | grep -qw fonts-ubuntu; then
-        log INFO "All additional utilities are already installed. Skipping."
+    # Step 3: Install Fonts
+    log INFO "Installing additional fonts..."
+    local fonts="fonts-ubuntu ttf-mscorefonts-installer fonts-roboto fonts-open-sans fonts-dejavu fonts-droid-fallback fonts-liberation fonts-cantarell fonts-noto fonts-powerline"
+    if apt install -y $fonts; then
+        log INFO "Successfully installed fonts."
     else
-        if apt install -y $packages; then
-            log INFO "Successfully installed desktop utilities."
-        else
-            log ERROR "Failed to install desktop utilities. Exiting."
-            exit 30
-        fi
+        log ERROR "Failed to install fonts. Exiting."
+        exit 40
     fi
 
-# Step 4: Install Window Managers
-log INFO "Installing additional Window Managers"
-if sudo apt install -y openbox obconf tint2 compton rofi lxappearance nitrogen pcmanfm sway swaybg swaylock swayidle waybar wofi xwayland alacritty dmenu neofetch fonts-noto fonts-ubuntu fonts-dejavu pavucontrol; then
-    log INFO "Window Managers and related packages successfully installed."
-else
-    log ERROR "Failed to install Window Managers and related packages."
-    exit 1
-fi
+    # Step 4: Install Window Managers (Openbox and Sway)
+    log INFO "Installing additional Window Managers: Openbox and Sway..."
+    local wm_packages="openbox obconf tint2 compton rofi lxappearance nitrogen pcmanfm \
+                        sway swaybg swaylock swayidle waybar wofi xwayland alacritty \
+                        dmenu neofetch pavucontrol"
+    if apt install -y $wm_packages; then
+        log INFO "Successfully installed Openbox, Sway, and related packages."
+    else
+        log ERROR "Failed to install Window Managers. Exiting."
+        exit 50
+    fi
 
-# Step 5: Clean up
-log INFO "Cleaning up unnecessary packages..."
-if sudo apt autoremove -y && sudo apt autoclean -y; then
-    log INFO "System cleanup complete."
-else
-    log WARN "System cleanup encountered issues. Proceeding anyway."
-fi
+    # Step 5: Clean up
+    log INFO "Cleaning up unnecessary packages..."
+    if apt autoremove -y && apt autoclean -y; then
+        log INFO "System cleanup complete."
+    else
+        log WARN "System cleanup encountered issues. Proceeding anyway."
+    fi
 
     # Completion message
-    log INFO "KDE Plasma Desktop installation and configuration complete."
-    log INFO "Consider restarting the system or the display manager (sudo systemctl restart sddm)."
+    log INFO "Installation of GUI components and Window Managers complete."
+    log INFO "Consider restarting the system or the display manager."
 }
 
 ################################################################################
