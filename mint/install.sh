@@ -266,21 +266,21 @@ install_hyperland() {
         exit 1
     }
 
-    # Install a display manager (e.g., SDDM)
-    log INFO "Installing SDDM as the display manager..."
-    sudo apt-get install -y sddm || {
-        log ERROR "Failed to install SDDM."
+    # Install a display manager (e.g., GDM)
+    log INFO "Installing GDM as the display manager..."
+    sudo apt-get install -y gdm3 || {
+        log ERROR "Failed to install GDM."
         exit 1
     }
 
     # Enable the display manager
-    log INFO "Enabling and starting SDDM..."
-    sudo systemctl enable sddm || {
-        log ERROR "Failed to enable SDDM."
+    log INFO "Enabling and starting GDM..."
+    sudo systemctl enable gdm3 || {
+        log ERROR "Failed to enable GDM."
         exit 1
     }
-    sudo systemctl start sddm || {
-        log ERROR "Failed to start SDDM."
+    sudo systemctl start gdm3 || {
+        log ERROR "Failed to start GDM."
         exit 1
     }
 
