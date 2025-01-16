@@ -29,6 +29,7 @@ set -Eeuo pipefail
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/ubuntu_setup.log"
+VERBOSE=2
 USERNAME="sawyer"
 
 PACKAGES=(
