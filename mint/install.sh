@@ -179,7 +179,7 @@ configure_ssh_settings() {
 # ------------------------------------------------------------------------------
 # INSTALL AND CONFIGURE GNOME, REGOLITH, GDM
 # ------------------------------------------------------------------------------
-install_regolith() {
+install_gui() {
     log INFO "Starting installation of Regolith Desktop and related components..."
 
     # Step 1: Add Regolith's GPG key
@@ -220,8 +220,8 @@ install_regolith() {
         log ERROR "Failed to install Regolith Desktop."
         exit 1
     fi
-    
-    # Step 5: Install Gnome Desktop
+
+    # Step 5: Install GNOME Desktop
     log INFO "Installing Gnome desktop..."
     if sudo apt-get install -y ubuntu-gnome-desktop; then
         log INFO "Successfully installed Gnome Desktop."
@@ -230,7 +230,51 @@ install_regolith() {
         exit 1
     fi
 
-    log INFO "Regolith Desktop installation and configuration complete."
+    # Step 6: Install GDM (Display Manager)
+    log INFO "Installing GDM3 as the display manager..."
+    if sudo apt-get install -y gdm3; then
+        log INFO "Successfully installed GDM3."
+    else
+        log ERROR "Failed to install GDM3."
+        exit 1
+    fi
+
+    # Step 7: Enable GDM service
+    log INFO "Enabling GDM service to start on boot..."
+    if sudo systemctl enable gdm; then
+        log INFO "Successfully enabled GDM."
+    else
+        log ERROR "Failed to enable GDM."
+        exit 1
+    fi
+
+    # Step 8: Install Networking Tools
+    log INFO "Installing Network Manager and related GUI tools..."
+    if sudo apt-get install -y network-manager network-manager-gnome; then
+        log INFO "Successfully installed Network Manager."
+    else
+        log ERROR "Failed to install Network Manager."
+        exit 1
+    fi
+
+    # Step 9: Install Additional Usability Packages
+    log INFO "Installing additional desktop utilities..."
+    if sudo apt-get install -y gnome-terminal nautilus gnome-tweaks vlc gnome-shell-extensions fonts-ubuntu-restricted-extras; then
+        log INFO "Successfully installed desktop utilities."
+    else
+        log ERROR "Failed to install desktop utilities."
+        exit 1
+    fi
+
+    # Step 10: Clean up
+    log INFO "Cleaning up unnecessary packages..."
+    if sudo apt-get autoremove -y && sudo apt-get autoclean -y; then
+        log INFO "System cleanup complete."
+    else
+        log WARN "System cleanup encountered issues."
+    fi
+
+    log INFO "Regolith Desktop installation and configuration complete. Please reboot the system."
 }
 
 ################################################################################
@@ -1140,7 +1184,7 @@ main() {
   download_repositories
   finalize_configuration
   systemctl restart caddy
-  install_regolith
+  install_gui
 
   log INFO "Configuration script finished successfully."
   log INFO "Enjoy Ubuntu!!!"
