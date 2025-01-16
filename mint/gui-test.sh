@@ -76,6 +76,7 @@ SAWYER_HOME="/home/sawyer"
 BASE_DIR="/home/sawyer/github"
 DIR_PERMISSIONS="755"  # Directories: rwx for owner, rx for group/others
 FILE_PERMISSIONS="644" # Files: rw for owner, r for group/others
+VERBOSE=2
 
 # ------------------------------------------------------------------------------
 # FUNCTION: fix_git_permissions
