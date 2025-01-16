@@ -221,18 +221,22 @@ install_gui() {
         fi
     fi
 
-    # Step 4: Install Window Managers
-    log INFO "Installing additional Window Managers
-    apt install -y openbox obconf tint2 compton rofi lxappearance nitrogen pcmanfm sway swaybg swaylock swayidle waybar wofi xwayland alacritty dmenu neofetch fonts-noto fonts-ubuntu fonts-dejavu pavucontrol
-    log INFO "Complete"
+# Step 4: Install Window Managers
+log INFO "Installing additional Window Managers"
+if sudo apt install -y openbox obconf tint2 compton rofi lxappearance nitrogen pcmanfm sway swaybg swaylock swayidle waybar wofi xwayland alacritty dmenu neofetch fonts-noto fonts-ubuntu fonts-dejavu pavucontrol; then
+    log INFO "Window Managers and related packages successfully installed."
+else
+    log ERROR "Failed to install Window Managers and related packages."
+    exit 1
+fi
 
-    # Step 4: Clean up
-    log INFO "Cleaning up unnecessary packages..."
-    if apt autoremove -y && sudo apt-get autoclean -y; then
-        log INFO "System cleanup complete."
-    else
-        log WARN "System cleanup encountered issues. Proceeding anyway."
-    fi
+# Step 5: Clean up
+log INFO "Cleaning up unnecessary packages..."
+if sudo apt autoremove -y && sudo apt autoclean -y; then
+    log INFO "System cleanup complete."
+else
+    log WARN "System cleanup encountered issues. Proceeding anyway."
+fi
 
     # Completion message
     log INFO "KDE Plasma Desktop installation and configuration complete."
