@@ -176,78 +176,62 @@ configure_ssh_settings() {
   fi
 }
 
-# ------------------------------------------------------------------------------
-# INSTALL AND CONFIGURE GNOME, REGOLITH, GDM
-# ------------------------------------------------------------------------------
+################################################################################
+# Function: Install GUI
+################################################################################
 install_gui() {
-    log INFO "Starting installation of Regolith Desktop and related components..."
+    log INFO "Starting installation of KDE Plasma Desktop and related components..."
 
-    # Step 1: Add Regolith's GPG key
-    log INFO "Adding Regolith's GPG key..."
-    if wget -qO - https://regolith-desktop.org/regolith.key | gpg --dearmor | \
-        sudo tee /usr/share/keyrings/regolith-archive-keyring.gpg > /dev/null; then
-        log INFO "Successfully added Regolith's GPG key."
-    else
-        log ERROR "Failed to add Regolith's GPG key."
-        exit 1
-    fi
+    # Ensure non-interactive environment
+    export DEBIAN_FRONTEND=noninteractive
 
-    # Step 2: Add Regolith's repository
-    log INFO "Adding Regolith's repository to apt sources..."
-    if echo "deb [arch=amd64 signed-by=/usr/share/keyrings/regolith-archive-keyring.gpg] \
-    https://regolith-desktop.org/release-3_2-ubuntu-noble-amd64 noble main" | \
-    sudo tee /etc/apt/sources.list.d/regolith.list > /dev/null; then
-        log INFO "Successfully added Regolith's repository."
-    else
-        log ERROR "Failed to add Regolith's repository."
-        exit 1
-    fi
-
-    # Step 3: Update package lists
+    # Step 1: Update package lists
     log INFO "Updating package lists..."
     if sudo apt-get update -y; then
         log INFO "Successfully updated package lists."
     else
-        log ERROR "Failed to update package lists."
-        exit 1
+        log ERROR "Failed to update package lists. Exiting."
+        exit 10
     fi
 
-    # Step 4: Install Regolith Desktop
-    log INFO "Installing Regolith Desktop and related components..."
-    if sudo apt-get install -y regolith-desktop regolith-session-flashback regolith-look-lascaille; then
-        log INFO "Successfully installed Regolith Desktop."
+    # Step 2: Install KDE Plasma Desktop
+    log INFO "Installing KDE Plasma Desktop..."
+    if dpkg -l | grep -qw kde-full; then
+        log INFO "KDE Plasma Desktop is already installed. Skipping."
     else
-        log ERROR "Failed to install Regolith Desktop."
-        exit 1
+        if sudo apt-get install -y kde-full; then
+            log INFO "Successfully installed KDE Plasma Desktop."
+        else
+            log ERROR "Failed to install KDE Plasma Desktop. Exiting."
+            exit 20
+        fi
     fi
 
-    # Step 5: Install KDE Plasma Desktop
-    log INFO "Installing Gnome desktop..."
-    if sudo apt-get install -y kde-full; then
-        log INFO "Successfully installed KDE Plasma Desktop."
-    else
-        log ERROR "Failed to install KDE Plasma Desktop."
-        exit 1
-    fi
-
-    # Step 6: Install Additional Usability Packages
+    # Step 3: Install Additional Usability Packages
     log INFO "Installing additional desktop utilities..."
-    if sudo apt-get install -y gnome-terminal nautilus gnome-tweaks vlc gnome-shell-extensions fonts-ubuntu ttf-mscorefonts-installer fonts-roboto fonts-open-sans fonts-dejavu fonts-droid-fallback fonts-liberation fonts-cantarell; then
-        log INFO "Successfully installed desktop utilities."
+    local packages="vlc fonts-ubuntu ttf-mscorefonts-installer fonts-roboto fonts-open-sans fonts-dejavu fonts-droid-fallback fonts-liberation fonts-cantarell fonts-noto"
+    if dpkg -l | grep -qw vlc && dpkg -l | grep -qw fonts-ubuntu; then
+        log INFO "All additional utilities are already installed. Skipping."
     else
-        log ERROR "Failed to install desktop utilities."
-        exit 1
+        if sudo apt-get install -y $packages; then
+            log INFO "Successfully installed desktop utilities."
+        else
+            log ERROR "Failed to install desktop utilities. Exiting."
+            exit 30
+        fi
     fi
 
-    # Step 7: Clean up
+    # Step 4: Clean up
     log INFO "Cleaning up unnecessary packages..."
     if sudo apt-get autoremove -y && sudo apt-get autoclean -y; then
         log INFO "System cleanup complete."
     else
-        log WARN "System cleanup encountered issues."
+        log WARN "System cleanup encountered issues. Proceeding anyway."
     fi
 
-    log INFO "Regolith Desktop installation and configuration complete. Please reboot the system."
+    # Completion message
+    log INFO "KDE Plasma Desktop installation and configuration complete."
+    log INFO "Consider restarting the system or the display manager (sudo systemctl restart sddm)."
 }
 
 ################################################################################
