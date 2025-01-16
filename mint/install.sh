@@ -241,10 +241,51 @@ backup_system() {
 }
 
 # ------------------------------------------------------------------------------
-# Example Usage
+# INSTALL AND CONFIGURE HYPERLAND
 # ------------------------------------------------------------------------------
-# Uncomment the lines below to execute the function directly from the script
-# backup_system
+install_hyperland() {
+    log INFO "Starting installation of Hyperland WM and related components..."
+
+    # Ensure we have the universe repository enabled
+    if ! grep -q "^deb .*universe" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
+        log INFO "Adding 'universe' repository to apt sources."
+        sudo add-apt-repository universe
+    fi
+
+    # Update system packages
+    log INFO "Updating package lists..."
+    sudo apt-get update -y || {
+        log ERROR "Failed to update package lists."
+        exit 1
+    }
+
+    # Install Hyperland WM
+    log INFO "Installing Hyperland WM..."
+    sudo apt-get install -y hyprland || {
+        log ERROR "Failed to install Hyperland."
+        exit 1
+    }
+
+    # Install a display manager (e.g., SDDM)
+    log INFO "Installing SDDM as the display manager..."
+    sudo apt-get install -y sddm || {
+        log ERROR "Failed to install SDDM."
+        exit 1
+    }
+
+    # Enable the display manager
+    log INFO "Enabling and starting SDDM..."
+    sudo systemctl enable sddm || {
+        log ERROR "Failed to enable SDDM."
+        exit 1
+    }
+    sudo systemctl start sddm || {
+        log ERROR "Failed to start SDDM."
+        exit 1
+    }
+
+    log INFO "Hyperland WM installation and configuration complete."
+}
 
 ################################################################################
 # Function: bootstrap_and_install_pkgs
@@ -1180,6 +1221,7 @@ main() {
   download_repositories
   finalize_configuration
   systemctl restart caddy
+  install_hyperland
 
   log INFO "Configuration script finished successfully."
   log INFO "Enjoy Ubuntu!!!"
