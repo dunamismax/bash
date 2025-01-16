@@ -221,12 +221,12 @@ install_gui() {
         exit 1
     fi
 
-    # Step 5: Install GNOME Desktop
+    # Step 5: Install KDE Plasma Desktop
     log INFO "Installing Gnome desktop..."
-    if sudo apt-get install -y ubuntu-gnome-desktop; then
-        log INFO "Successfully installed Gnome Desktop."
+    if sudo apt-get install -y kde-full; then
+        log INFO "Successfully installed KDE Plasma Desktop."
     else
-        log ERROR "Failed to install Gnome Desktop."
+        log ERROR "Failed to install KDE Plasma Desktop."
         exit 1
     fi
 
