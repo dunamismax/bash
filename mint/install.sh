@@ -135,6 +135,65 @@ handle_error() {
 trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
 
 ################################################################################
+# Function: Configure SSH and security settings
+################################################################################
+configure_ssh_settings() {
+  local sshd_config="/etc/ssh/sshd_config"
+  log INFO "Configuring SSH settings in $sshd_config..."
+
+  # Backup the current sshd_config
+  cp "$sshd_config" "${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
+  log INFO "Backup of sshd_config created."
+
+  # Set Port 22
+  if grep -q "^Port " "$sshd_config"; then
+    sed -i 's/^Port .*/Port 22/' "$sshd_config"
+  else
+    echo "Port 22" >> "$sshd_config"
+  fi
+
+  # Set MaxAuthTries to 8
+  if grep -q "^MaxAuthTries " "$sshd_config"; then
+    sed -i 's/^MaxAuthTries .*/MaxAuthTries 8/' "$sshd_config"
+  else
+    echo "MaxAuthTries 8" >> "$sshd_config"
+  fi
+
+  # Set MaxSessions to 6 (controls simultaneous sessions per connection)
+  if grep -q "^MaxSessions " "$sshd_config"; then
+    sed -i 's/^MaxSessions .*/MaxSessions 6/' "$sshd_config"
+  else
+    echo "MaxSessions 6" >> "$sshd_config"
+  fi
+
+  # Additional important security settings:
+  # 1. Disable root login over SSH
+  if grep -q "^PermitRootLogin " "$sshd_config"; then
+    sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' "$sshd_config"
+  else
+    echo "PermitRootLogin no" >> "$sshd_config"
+  fi
+
+  # 2. Limit SSH protocol to version 2
+  if grep -q "^Protocol " "$sshd_config"; then
+    sed -i 's/^Protocol .*/Protocol 2/' "$sshd_config"
+  else
+    echo "Protocol 2" >> "$sshd_config"
+  fi
+
+  # Optionally, add other security directives as needed
+
+  log INFO "SSH configuration updated. Restarting SSH service..."
+
+  # Restart SSH service to apply changes
+  if systemctl restart sshd; then
+    log INFO "SSHD service restarted successfully."
+  else
+    log ERROR "Failed to restart SSHD service. Please check the configuration."
+  fi
+}
+
+################################################################################
 # Function: bootstrap_and_install_pkgs
 ################################################################################
 bootstrap_and_install_pkgs() {
@@ -1033,6 +1092,7 @@ main() {
   # 2) User Creation and Environment
   # --------------------------------------------------------
   set_default_shell_and_env
+  configure_ssh_settings
 
   # --------------------------------------------------------
   # 3) Install Caddy and create caddyfile
