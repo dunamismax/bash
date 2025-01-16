@@ -1172,18 +1172,101 @@ install_powershell_and_zig() {
 finalize_configuration() {
   log INFO "Finalizing system configuration..."
 
+  # Add Flatpak remote flathub repository if not already added
+  log INFO "Adding Flatpak flathub repository..."
+  if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo; then
+    log INFO "Flathub repository added or already exists."
+  else
+    log ERROR "Failed to add Flathub repository."
+  fi
+
+  # Install GNOME Software and Flatpak plugin
+  log INFO "Installing GNOME Software and Flatpak plugin..."
+  if apt install -y gnome-software gnome-software-plugin-flatpak; then
+    log INFO "GNOME Software and Flatpak plugin installed successfully."
+  else
+    log ERROR "Installation of GNOME Software and Flatpak plugin failed."
+  fi
+
+  # Update package list
+  log INFO "Updating package list..."
+  if apt update; then
+    log INFO "Package list updated."
+  else
+    log ERROR "Failed to update package list."
+  fi
+
+  # Upgrade installed packages
+  log INFO "Upgrading installed packages..."
+  if apt upgrade -y; then
+    log INFO "Packages upgraded."
+  else
+    log ERROR "Package upgrade failed."
+  fi
+
+  # Update Flatpak applications
+  log INFO "Updating Flatpak applications..."
+  if flatpak update -y; then
+    log INFO "Flatpak applications updated."
+  else
+    log ERROR "Failed to update Flatpak applications."
+  fi
+
+  # Refresh Snap packages (if Snap is installed)
+  log INFO "Refreshing Snap packages..."
+  if command -v snap &>/dev/null; then
+    if snap refresh; then
+      log INFO "Snap packages refreshed."
+    else
+      log ERROR "Failed to refresh Snap packages."
+    fi
+  else
+    log INFO "Snap is not installed; skipping Snap refresh."
+  fi
+
   # Remove unused dependencies
   log INFO "Performing system cleanup..."
-  if ! apt autoremove -y; then
+  if apt autoremove -y; then
+    log INFO "Unused dependencies removed."
+  else
     log ERROR "Failed to remove unused dependencies."
   fi
 
   # Clean up local package cache
-  if ! apt clean; then
+  if apt clean; then
+    log INFO "Package cache cleaned."
+  else
     log ERROR "Failed to clean package cache."
   fi
 
-  log INFO "System cleanup completed."
+  ##############################################################################
+  # Additional System Logging Information
+  ##############################################################################
+  log INFO "Collecting system information..."
+
+  # Uptime
+  log INFO "System Uptime: $(uptime -p)"
+
+  # Disk usage for root
+  log INFO "Disk Usage (root): $(df -h / | tail -1)"
+
+  # Memory usage
+  log INFO "Memory Usage: $(free -h | grep Mem)"
+
+  # CPU information
+  CPU_MODEL=$(grep 'model name' /proc/cpuinfo | uniq | awk -F': ' '{print $2}')
+  log INFO "CPU Model: ${CPU_MODEL:-Unknown}"
+
+  # Kernel version
+  log INFO "Kernel Version: $(uname -r)"
+
+  # Network configuration
+  log INFO "Network Configuration: $(ip addr show)"
+
+  # End of system information collection
+  log INFO "System information logged."
+
+  log INFO "System configuration finalized."
 }
 
 ################################################################################
