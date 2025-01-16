@@ -253,7 +253,7 @@ install_gui() {
 
     # Step 2: Install GNOME Desktop and GNOME Tweaks
     log INFO "Installing GNOME Desktop and GNOME Tweaks..."
-    local gnome_packages="gnome gnome-tweaks gnome-shell-extensions gnome-software gnome-terminal gnome-control-center gnome-shell-extension-prefs gnome-shell-extension-weather fonts-cantarell fonts-dejavu fonts-ubuntu adwaita-icon-theme-full"
+    local gnome_packages="gnome gnome-tweaks gnome-shell-extensions gnome-software gnome-terminal gnome-control-center fonts-cantarell fonts-dejavu fonts-ubuntu adwaita-icon-theme-full"
 
     for pkg in $gnome_packages; do
         if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
