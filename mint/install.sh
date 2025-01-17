@@ -1207,71 +1207,17 @@ install_vscode_cli() {
 }
 
 # ------------------------------------------------------------------------------
-# Function: Installs Jetbrains Mono font
+# Function: Installs JetBrains Mono font via package manager
 # ------------------------------------------------------------------------------
 install_jetbrainsmono() {
-  log INFO "Starting JetBrains Mono installation..."
+  log INFO "Starting JetBrains Mono installation via apt..."
 
-  # Define version and URL
-  local version="2.304"
-  local url="https://github.com/JetBrains/JetBrainsMono/releases/download/v${version}/JetBrainsMono-${version}.zip"
-
-  # Create a temporary directory for download and extraction
-  local temp_dir
-  temp_dir=$(mktemp -d)
-  pushd "$temp_dir" > /dev/null
-
-  # Download the .zip file
-  log INFO "Downloading JetBrainsMono v${version}..."
-  if ! wget -q --show-progress -O JetBrainsMono.zip "$url"; then
-    log ERROR "Failed to download the font archive."
-    popd > /dev/null
-    return 1
-  fi
-
-  # Extract the .zip file
-  log INFO "Extracting the font files..."
-  if ! unzip -q JetBrainsMono.zip; then
-    log ERROR "Failed to extract the zip file."
-    popd > /dev/null
-    return 1
-  fi
-
-  # Define source and destination directories
-  local source_dir="$temp_dir/JetBrainsMono-${version}/fonts/ttf"
-  local dest_dir="/home/sawyer/.local/share/fonts"
-
-  # Ensure destination directory exists
-  mkdir -p "$dest_dir"
-
-  # Copy .ttf files to the local fonts directory
-  log INFO "Copying font files to $dest_dir..."
-  if ! cp "$source_dir"/*.ttf "$dest_dir/"; then
-    log ERROR "Failed to copy font files."
-    popd > /dev/null
-    return 1
-  fi
-
-  # Update the font cache
-  log INFO "Updating font cache..."
-  if ! fc-cache -fv; then
-    log ERROR "Failed to update font cache."
-    popd > /dev/null
-    return 1
-  fi
-
-  # Verify the installation
-  log INFO "Verifying installation..."
-  if fc-list | grep -q "JetBrains Mono"; then
+  if apt-get install -y fonts-jetbrains-mono; then
     log INFO "JetBrains Mono fonts installed successfully."
   else
-    log WARN "JetBrains Mono fonts not found after installation."
+    log ERROR "Failed to install JetBrains Mono fonts."
+    return 1
   fi
-
-  # Cleanup
-  popd > /dev/null
-  rm -rf "$temp_dir"
-  log INFO "Temporary files cleaned up. Installation finished."
 }
 
 # ------------------------------------------------------------------------------
