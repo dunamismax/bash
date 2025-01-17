@@ -1284,10 +1284,15 @@ install_gui() {
   apt install -y connman
   systemctl enable connman
   systemctl start connman
-  
+
   log INFO "Disabling systemd-networkd..."
   systemctl disable systemd-networkd
   systemctl stop systemd-networkd
+
+  log INFO "Resetting ConnMan configuration..."
+  rm -rf /etc/connman/main.conf
+  systemctl daemon-reload
+  systemctl restart connman
 
   log INFO "Full GDM/Enlightenment/i3/XFCE installation complete."
 }
