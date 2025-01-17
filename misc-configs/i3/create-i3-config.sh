@@ -319,3 +319,34 @@ EOF
 
   log INFO "i3 configuration file created at $config_file"
 }
+
+# ------------------------------------------------------------------------------
+# MAIN
+# ------------------------------------------------------------------------------
+main() {
+    # Parse input arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                usage
+                ;;
+            *) 
+                log WARN "Unknown option: $1"
+                usage
+                ;;
+        esac
+    done
+
+    check_root
+    log INFO "Script execution started."
+
+    # Call your main functions in order
+    create_i3_config
+
+    log INFO "Script execution finished."
+}
+
+# Execute main function if script is run directly
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi
