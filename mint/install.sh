@@ -1176,7 +1176,7 @@ install_powershell_and_zig() {
 install_vscode_cli() {
   # Create a symbolic link for node to /usr/local/node
   log INFO "Creating symbolic link for Node.js..."
-  if sudo ln -s "$(which node)" /usr/local/node; then
+  if ln -s "$(which node)" /usr/local/node; then
     log INFO "Symbolic link created at /usr/local/node."
   else
     log ERROR "Failed to create symbolic link for Node.js."
