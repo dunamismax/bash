@@ -1239,7 +1239,7 @@ install_jetbrainsmono() {
 
   # Define source and destination directories
   local source_dir="$temp_dir/JetBrainsMono-${version}/fonts/ttf"
-  local dest_dir="$HOME/.local/share/fonts"
+  local dest_dir="/home/sawyer/.local/share/fonts"
 
   # Ensure destination directory exists
   mkdir -p "$dest_dir"
