@@ -1213,18 +1213,17 @@ install_gui() {
   # Install i3 window manager and its common addons
   log INFO "Installing i3 window manager and addons..."
   apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
-                     xterm alacritty ranger pavucontrol alsa-utils picom
+    xterm alacritty ranger pavucontrol alsa-utils picom
 
-# Install i3-gaps using Regolith repository
-
+  # Install i3-gaps using Regolith repository
   # 1. Register the Regolith public key to your local apt:
   wget -qO - https://regolith-desktop.org/regolith.key | \
-  gpg --dearmor | sudo tee /usr/share/keyrings/regolith-archive-keyring.gpg > /dev/null
+    gpg --dearmor | sudo tee /usr/share/keyrings/regolith-archive-keyring.gpg > /dev/null
 
   # 2. Add the repository URL to your local apt:
   echo deb "[arch=amd64 signed-by=/usr/share/keyrings/regolith-archive-keyring.gpg] \
 https://regolith-desktop.org/release-3_2-ubuntu-noble-amd64 noble main" | \
-  sudo tee /etc/apt/sources.list.d/regolith.list
+    sudo tee /etc/apt/sources.list.d/regolith.list
 
   # 3. Update package list and install i3-gaps
   apt update
