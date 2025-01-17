@@ -1275,7 +1275,7 @@ install_gui() {
 
   log INFO "Installing backup desktop environments (XFCE, i3)..."
   apt-get install -y xfce4 i3 rofi i3lock i3blocks feh xterm alacritty ranger \
-      network-manager network-manager-gnome pavucontrol alsa-utils picom \
+      pavucontrol alsa-utils picom \
       polybar fonts-powerline fonts-noto
 
   apt purge lightdm
