@@ -1268,17 +1268,17 @@ install_gui() {
   ldconfig
 
   log INFO "Installing Xorg, GDM3, and Enlightenment desktop environment..."
-  apt-get install -y xorg gdm3 enlightenment
+  apt install -y xorg gdm3 enlightenment
 
   log INFO "Enabling GDM3 for auto-start on boot..."
   systemctl enable gdm3
 
   log INFO "Installing backup desktop environments (XFCE, i3)..."
-  apt-get install -y xfce4 i3 rofi i3lock i3blocks feh xterm alacritty ranger \
+  apt install -y xfce4 i3 rofi i3lock i3blocks feh xterm alacritty ranger \
       pavucontrol alsa-utils picom \
       polybar fonts-powerline fonts-noto
 
-  apt purge lightdm
+  apt purge -y lightdm
 
   log INFO "Installing and enabling ConnMan service..."
   apt install -y connman
