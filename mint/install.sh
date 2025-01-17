@@ -34,7 +34,7 @@ USERNAME="sawyer"
 
 PACKAGES=(
   bash zsh fish vim nano mc screen tmux nodejs npm
-  build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev
+  build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
   git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq
@@ -1283,6 +1283,11 @@ install_gui() {
   log INFO "Installing and enabling ConnMan service..."
   apt install -y connman
   systemctl enable connman
+  systemctl start connman
+  
+  log INFO "Disabling systemd-networkd..."
+  systemctl disable systemd-networkd
+  systemctl stop systemd-networkd
 
   log INFO "Full GDM/Enlightenment/i3/XFCE installation complete."
 }
