@@ -33,7 +33,7 @@ VERBOSE=2
 USERNAME="sawyer"
 
 PACKAGES=(
-  bash zsh fish vim nano mc screen tmux
+  bash zsh fish vim nano mc screen tmux nodejs npm
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
@@ -406,6 +406,10 @@ esac
 # ------------------------------------------------------------------------------
 # Add your local bin directory to PATH.
 export PATH="$PATH:$HOME/.local/bin"
+export GDK_BACKEND=wayland
+export QT_QPA_PLATFORM=wayland
+export CLUTTER_BACKEND=wayland
+export XDG_SESSION_TYPE=wayland
 
 # ------------------------------------------------------------------------------
 # 3. pyenv initialization
@@ -1166,6 +1170,56 @@ install_powershell_and_zig() {
   log INFO "Zig installation complete."
 }
 
+append_wayland_variables() {
+  # Define the lines to append
+  local env_lines="
+GDK_BACKEND=wayland
+QT_QPA_PLATFORM=wayland
+CLUTTER_BACKEND=wayland
+XDG_SESSION_TYPE=wayland
+"
+
+  # Append the lines to /etc/environment using sudo
+  log INFO "Appending Wayland environment variables to /etc/environment..."
+  if echo "$env_lines" | sudo tee -a /etc/environment > /dev/null; then
+    log INFO "Successfully appended Wayland variables."
+  else
+    log ERROR "Failed to append Wayland variables."
+  fi
+}
+
+install_vscode_cli() {
+  # Create a symbolic link for node to /usr/local/node
+  log INFO "Creating symbolic link for Node.js..."
+  if sudo ln -s "$(which node)" /usr/local/node; then
+    log INFO "Symbolic link created at /usr/local/node."
+  else
+    log ERROR "Failed to create symbolic link for Node.js."
+    return 1
+  fi
+
+  # Download the Visual Studio Code CLI for Alpine Linux
+  log INFO "Downloading Visual Studio Code CLI..."
+  if curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' --output vscode_cli.tar.gz; then
+    log INFO "Downloaded vscode_cli.tar.gz successfully."
+  else
+    log ERROR "Failed to download vscode_cli.tar.gz."
+    return 1
+  fi
+
+  # Extract the downloaded tarball
+  log INFO "Extracting vscode_cli.tar.gz..."
+  if tar -xf vscode_cli.tar.gz; then
+    log INFO "Extraction completed successfully."
+  else
+    log ERROR "Failed to extract vscode_cli.tar.gz."
+    return 1
+  fi
+
+  log INFO "Visual Studio Code CLI installation steps completed."
+  log INFO "Run './code tunnel --name ubuntu-server' from ~ to run the tunnel"
+}
+
 ################################################################################
 # Function: finalize_configuration
 ################################################################################
@@ -1294,8 +1348,10 @@ main() {
   install_powershell_and_zig
   download_repositories
   set_directory_permissions
-  finalize_configuration
+  append_wayland_variables
   systemctl restart caddy
+  install_vscode_cli
+  finalize_configuration
 
   log INFO "Configuration script finished successfully."
   log INFO "Enjoy Ubuntu!!!"
