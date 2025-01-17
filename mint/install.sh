@@ -1232,8 +1232,8 @@ install_gui() {
 create_i3_config() {
   log INFO "Starting creation of i3 configuration..."
 
-  local config_dir="$HOME/.config/i3"
-  local config_file="$config_dir/config"
+  local config_dir="/home/sawyer/.config/i3"
+  local config_file="/home/sawyer/.config/i3/config"
 
   # Create configuration directory if it doesn't exist
   if [[ ! -d "$config_dir" ]]; then
