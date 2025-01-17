@@ -1206,7 +1206,7 @@ install_vscode_cli() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN FUNCTION: Installs Enlightenment Desktop and GUI
+# MAIN FUNCTION: Installs i3, GNOME Desktop, and required GUI components
 # ------------------------------------------------------------------------------
 install_gui() {
   export DEBIAN_FRONTEND=noninteractive
@@ -1217,87 +1217,36 @@ install_gui() {
     apt-get remove --purge -y lightdm
   fi
 
-  # Step 1: Installing git and Cloning
-  log INFO "Installing Git..."
+  log INFO "Updating package lists..."
   apt-get update
-  apt-get install -y git
 
-  if [ -d "efl" ]; then
-    log INFO "Repository 'efl' already exists. Pulling latest changes..."
-    cd efl
-    git pull
-    cd ..
-  else
-    log INFO "Cloning the EFL repository..."
-    git clone https://git.enlightenment.org/enlightenment/efl.git
-  fi
+  # Install Xorg and GDM
+  log INFO "Installing Xorg, GDM3, and essential GUI packages..."
+  apt-get install -y xorg gdm3
 
-  # Step 2: Installing Dependencies for EFL
-  log INFO "Installing build tools and dependencies for EFL..."
-  apt-get install -y build-essential check meson ninja-build
-
-  apt-get install -y \
-    libssl-dev libsystemd-dev libjpeg-dev libglib2.0-dev libgstreamer1.0-dev \
-    liblua5.2-dev libfreetype-dev libfontconfig-dev libfribidi-dev \
-    libavahi-client-dev libharfbuzz-dev libibus-1.0-dev libx11-dev libxext-dev \
-    libxrender-dev libgl1-mesa-dev libgif-dev libtiff5-dev libpoppler-dev \
-    libpoppler-cpp-dev libspectre-dev libraw-dev librsvg2-dev libudev-dev \
-    libmount-dev libdbus-1-dev libpulse-dev libsndfile1-dev libxcursor-dev \
-    libxcomposite-dev libxinerama-dev libxrandr-dev libxtst-dev libxss-dev \
-    libgstreamer-plugins-base1.0-dev doxygen libopenjp2-7-dev libscim-dev \
-    libxdamage-dev libwebp-dev libunwind-dev libheif-dev libavif-dev libyuv-dev \
-    libinput-dev
-
-  log INFO "Configuring, building, and installing EFL from source..."
-  cd efl
-  meson -Dlua-interpreter=lua build
-  ninja -C build
-  ninja -C build install
-  cd ..
-
-  log INFO "Updating PKG_CONFIG_PATH in /etc/profile..."
-  local profile="/etc/profile"
-  local pkg_config_line='export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig'
-  if ! grep -Fxq "${pkg_config_line}" "${profile}"; then
-    echo "${pkg_config_line}" | tee -a "${profile}" >/dev/null
-  else
-    log INFO "PKG_CONFIG_PATH line already present in ${profile}."
-  fi
-
-  log INFO "Refreshing library paths..."
-  ldconfig
-
-  log INFO "Installing Xorg, GDM3, and Enlightenment desktop environment..."
-  apt install -y xorg gdm3 enlightenment
-
+  # Enable GDM3 to auto-start on boot
   log INFO "Enabling GDM3 for auto-start on boot..."
   systemctl enable gdm3
 
-  log INFO "Installing backup desktop environments (XFCE, i3)..."
-  apt install -y xfce4 i3 rofi i3lock i3blocks feh xterm alacritty ranger \
-      pavucontrol alsa-utils picom \
-      polybar fonts-powerline fonts-noto
+  # Install i3 window manager and its common addons
+  log INFO "Installing i3 window manager and addons..."
+  apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
+                     xterm alacritty ranger pavucontrol alsa-utils picom
 
-  apt purge -y lightdm
+  # Install full GNOME desktop environment and related tools
+  log INFO "Installing GNOME desktop environment and tools..."
+  apt-get install -y ubuntu-gnome-desktop gnome-tweaks gnome-shell \
+                     gnome-control-center gnome-terminal gnome-software
 
-  log INFO "Installing and enabling ConnMan service..."
-  apt install -y connman
-  systemctl enable connman
-  systemctl start connman
+  # Install additional GNOME-specific apps and utilities if needed
+  log INFO "Installing additional GNOME-specific applications..."
+  apt-get install -y gnome-calculator gnome-screenshot gnome-system-monitor
 
-  log INFO "Disabling systemd-networkd..."
-  systemctl disable systemd-networkd
-  systemctl stop systemd-networkd
+  # Refresh library paths and complete setup
+  log INFO "Refreshing library paths..."
+  ldconfig
 
-  log INFO "Resetting ConnMan configuration..."
-  rm -rf /etc/connman/main.conf
-  systemctl daemon-reload
-  systemctl restart connman
-
-  log INFO "Enabling WiFi via ConnMan..."
-  connmanctl enable wifi
-
-  log INFO "Full GDM/Enlightenment/i3/XFCE installation complete."
+  log INFO "i3, GNOME Desktop, and GDM installation complete."
 }
 
 ################################################################################
