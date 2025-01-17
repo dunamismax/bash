@@ -102,14 +102,22 @@ usage() {
     exit 0
 }
 
-################################################################################
-# Function: Installs Enlightenment Desktop and GUI
-################################################################################
-install_enlightenment() {
+# ------------------------------------------------------------------------------
+# MAIN FUNCTION: Installs Enlightenment Desktop and GUI
+# ------------------------------------------------------------------------------
+install_gui() {
+  export DEBIAN_FRONTEND=noninteractive
+
+  # Remove LightDM if installed to avoid configuration prompts
+  if dpkg -l | grep -q lightdm; then
+    log INFO "Removing LightDM to avoid configuration prompts..."
+    apt-get remove --purge -y lightdm
+  fi
+
   # Step 1: Installing git and Cloning
   log INFO "Installing Git..."
-  apt update
-  apt install -y git
+  apt-get update
+  apt-get install -y git
 
   if [ -d "efl" ]; then
     log INFO "Repository 'efl' already exists. Pulling latest changes..."
@@ -123,9 +131,9 @@ install_enlightenment() {
 
   # Step 2: Installing Dependencies for EFL
   log INFO "Installing build tools and dependencies for EFL..."
-  apt install -y build-essential check meson ninja-build
+  apt-get install -y build-essential check meson ninja-build
 
-  apt install -y \
+  apt-get install -y \
     libssl-dev libsystemd-dev libjpeg-dev libglib2.0-dev libgstreamer1.0-dev \
     liblua5.2-dev libfreetype-dev libfontconfig-dev libfribidi-dev \
     libavahi-client-dev libharfbuzz-dev libibus-1.0-dev libx11-dev libxext-dev \
@@ -137,9 +145,6 @@ install_enlightenment() {
     libxdamage-dev libwebp-dev libunwind-dev libheif-dev libavif-dev libyuv-dev \
     libinput-dev
 
-  # NOTE: For JPEG XL support on Ubuntu < 24.04, additional steps are required.
-
-  # Step 3: Configuring, Building, and Installing EFL
   log INFO "Configuring, building, and installing EFL from source..."
   cd efl
   meson -Dlua-interpreter=lua build
@@ -147,7 +152,6 @@ install_enlightenment() {
   ninja -C build install
   cd ..
 
-  # Step 4: Post Installation Tasks for EFL
   log INFO "Updating PKG_CONFIG_PATH in /etc/profile..."
   local profile="/etc/profile"
   local pkg_config_line='export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig'
@@ -160,19 +164,19 @@ install_enlightenment() {
   log INFO "Refreshing library paths..."
   ldconfig
 
-  # Step 5: Installing Xorg, GDM3, and Enlightenment Desktop
   log INFO "Installing Xorg, GDM3, and Enlightenment desktop environment..."
-  apt install -y xorg gdm3 enlightenment
+  apt-get install -y xorg gdm3 enlightenment
 
-  # Enable and start GDM3 service for auto-start on boot
-  log INFO "Enabling GDM3..."
+  log INFO "Enabling GDM3 for auto-start on boot..."
   systemctl enable gdm3
 
-  # Install backup DE
-  log INFO "Installing XFCE and i3"
-  apt install xfce4 i3 rofi i3lock i3blocks feh xterm alacritty ranger network-manager network-manager-gnome pavucontrol alsa-utils picom polybar fonts-powerline fonts-noto
+  log INFO "Installing backup desktop environments (XFCE, i3)..."
+  apt-get install -y xfce4 i3 rofi i3lock i3blocks feh xterm alacritty ranger \
+      network-manager network-manager-gnome pavucontrol alsa-utils picom \
+      polybar fonts-powerline fonts-noto
 
-  log INFO "Full GDM / Enlightenment / i3 / XFCE installation complete."
+  apt purge lightdm
+  log INFO "Full GDM/Enlightenment/i3/XFCE installation complete."
 }
 
 # ------------------------------------------------------------------------------
@@ -196,7 +200,7 @@ main() {
     log INFO "Script execution started."
 
     # Call your main functions in order
-    install_enlightenment
+    install_gui
 
     log INFO "Script execution finished."
 }
