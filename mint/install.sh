@@ -330,9 +330,6 @@ bootstrap_and_install_pkgs() {
     log INFO "All listed packages are already installed. No action needed."
   fi
 
-  apt autoremove -y
-  apt clean -y
-
   log INFO "Package installation process completed."
 }
 
@@ -644,7 +641,6 @@ force_release_ports() {
   log INFO "Removing apache2 and caddy..."
   apt purge -y apache2
   apt purge -y caddy
-  apt autoremove -y
 
   # Step 2: Install net-tools if not present
   log INFO "Installing net-tools..."
@@ -931,15 +927,6 @@ install_python_build_deps() {
         return 1
     fi
 
-    # Clean up unnecessary packages and caches
-    if ! apt autoremove -y; then
-        log ERROR "Failed to autoremove unnecessary packages."
-    fi
-
-    if ! apt clean -y; then
-        log ERROR "Failed to clean package cache."
-    fi
-
     log INFO "System build dependencies installed."
 }
 
@@ -992,15 +979,6 @@ install_dev_build_deps() {
         return 1
     fi
 
-    # Clean up unnecessary packages and caches
-    if ! apt autoremove -y; then
-        log ERROR "Failed to autoremove unnecessary packages."
-    fi
-
-    if ! apt clean -y; then
-        log ERROR "Failed to clean package cache."
-    fi
-
     log INFO "System build dependencies for C, C++, Rust, and Go installed."
 }
 
@@ -1046,11 +1024,6 @@ install_apt_dependencies() {
         gnupg \
         lsb-release \
         jq
-
-    # Optionally remove automatically installed packages no longer needed
-    apt autoremove -y
-    apt clean
-}
 
 ################################################################################
 # Function: install_caddy
