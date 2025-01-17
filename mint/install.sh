@@ -1214,7 +1214,10 @@ install_gui() {
   # Install i3 window manager and its common addons
   log INFO "Installing i3 window manager and addons..."
   apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
-    xterm alacritty ranger pavucontrol alsa-utils picom
+    xterm alacritty ranger pavucontrol alsa-utils picom libxcb1-dev libxcb-keysyms1-dev \
+    libpango1.0-dev libxcb-util0-dev libxcb-icccm4-dev libyajl-dev libstartup-notification0-dev \
+    libxcb-randr0-dev libev-dev libxcb-cursor-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
+    libxkbcommon-x11-dev autoconf xutils-dev libtool automake libxcb-xrm-dev
 
   # Install i3-gaps using Regolith repository
   # 1. Register the Regolith public key to your local apt:
