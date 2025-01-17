@@ -1170,24 +1170,9 @@ install_powershell_and_zig() {
   log INFO "Zig installation complete."
 }
 
-append_wayland_variables() {
-  # Define the lines to append
-  local env_lines="
-GDK_BACKEND=wayland
-QT_QPA_PLATFORM=wayland
-CLUTTER_BACKEND=wayland
-XDG_SESSION_TYPE=wayland
-"
-
-  # Append the lines to /etc/environment using sudo
-  log INFO "Appending Wayland environment variables to /etc/environment..."
-  if echo "$env_lines" | sudo tee -a /etc/environment > /dev/null; then
-    log INFO "Successfully appended Wayland variables."
-  else
-    log ERROR "Failed to append Wayland variables."
-  fi
-}
-
+################################################################################
+# Function: Installs vscode cli
+################################################################################
 install_vscode_cli() {
   # Create a symbolic link for node to /usr/local/node
   log INFO "Creating symbolic link for Node.js..."
@@ -1218,6 +1203,75 @@ install_vscode_cli() {
 
   log INFO "Visual Studio Code CLI installation steps completed."
   log INFO "Run './code tunnel --name ubuntu-server' from ~ to run the tunnel"
+}
+
+################################################################################
+# Function: Installs Enlightenment Desktop and GUI
+################################################################################
+install_enlightenment() {
+  # Step 1: Installing git and Cloning
+  log INFO "Installing Git..."
+  sudo apt update
+  sudo apt install -y git
+
+  if [ -d "efl" ]; then
+    log INFO "Repository 'efl' already exists. Pulling latest changes..."
+    cd efl
+    git pull
+    cd ..
+  else
+    log INFO "Cloning the EFL repository..."
+    git clone https://git.enlightenment.org/enlightenment/efl.git
+  fi
+
+  # Step 2: Installing Dependencies for EFL
+  log INFO "Installing build tools and dependencies for EFL..."
+  sudo apt install -y build-essential check meson ninja-build
+
+  sudo apt install -y \
+    libssl-dev libsystemd-dev libjpeg-dev libglib2.0-dev libgstreamer1.0-dev \
+    liblua5.2-dev libfreetype-dev libfontconfig-dev libfribidi-dev \
+    libavahi-client-dev libharfbuzz-dev libibus-1.0-dev libx11-dev libxext-dev \
+    libxrender-dev libgl1-mesa-dev libgif-dev libtiff5-dev libpoppler-dev \
+    libpoppler-cpp-dev libspectre-dev libraw-dev librsvg2-dev libudev-dev \
+    libmount-dev libdbus-1-dev libpulse-dev libsndfile1-dev libxcursor-dev \
+    libxcomposite-dev libxinerama-dev libxrandr-dev libxtst-dev libxss-dev \
+    libgstreamer-plugins-base1.0-dev doxygen libopenjp2-7-dev libscim-dev \
+    libxdamage-dev libwebp-dev libunwind-dev libheif-dev libavif-dev libyuv-dev \
+    libinput-dev
+
+  # NOTE: For JPEG XL support on Ubuntu < 24.04, additional steps are required.
+
+  # Step 3: Configuring, Building, and Installing EFL
+  log INFO "Configuring, building, and installing EFL from source..."
+  cd efl
+  meson -Dlua-interpreter=lua build
+  ninja -C build
+  sudo ninja -C build install
+  cd ..
+
+  # Step 4: Post Installation Tasks for EFL
+  log INFO "Updating PKG_CONFIG_PATH in /etc/profile..."
+  local profile="/etc/profile"
+  local pkg_config_line='export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig'
+  if ! grep -Fxq "${pkg_config_line}" "${profile}"; then
+    echo "${pkg_config_line}" | sudo tee -a "${profile}" >/dev/null
+  else
+    log INFO "PKG_CONFIG_PATH line already present in ${profile}."
+  fi
+
+  log INFO "Refreshing library paths..."
+  sudo ldconfig
+
+  # Step 5: Installing Xorg, GDM3, and Enlightenment Desktop
+  log INFO "Installing Xorg, GDM3, and Enlightenment desktop environment..."
+  sudo apt install -y xorg gdm3 enlightenment
+
+  # Enable and start GDM3 service for auto-start on boot
+  log INFO "Enabling and starting GDM3..."
+  sudo systemctl enable gdm3
+
+  log INFO "Full Enlightenment installation complete."
 }
 
 ################################################################################
@@ -1348,7 +1402,7 @@ main() {
   install_powershell_and_zig
   download_repositories
   set_directory_permissions
-  append_wayland_variables
+  install_enlightenment
   systemctl restart caddy
   install_vscode_cli
   finalize_configuration
