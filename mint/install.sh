@@ -1268,7 +1268,7 @@ install_enlightenment() {
   sudo apt install -y xorg gdm3 enlightenment
 
   # Enable and start GDM3 service for auto-start on boot
-  log INFO "Enabling and starting GDM3..."
+  log INFO "Enabling GDM3..."
   sudo systemctl enable gdm3
 
   log INFO "Full Enlightenment installation complete."
