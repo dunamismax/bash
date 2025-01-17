@@ -1294,6 +1294,9 @@ install_gui() {
   systemctl daemon-reload
   systemctl restart connman
 
+  log INFO "Enabling WiFi via ConnMan..."
+  connmanctl enable wifi
+
   log INFO "Full GDM/Enlightenment/i3/XFCE installation complete."
 }
 
