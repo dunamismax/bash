@@ -1415,9 +1415,9 @@ main() {
   install_powershell_and_zig
   download_repositories
   set_directory_permissions
-  install_gui
   systemctl restart caddy
   install_vscode_cli
+  install_gui
   finalize_configuration
 
   log INFO "Configuration script finished successfully."
