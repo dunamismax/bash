@@ -38,7 +38,7 @@ PACKAGES=(
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
   git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq
-  nmap tree fzf lynx which patch smartmontools ntfs-3g
+  nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils
   chrony fail2ban ffmpeg restic
 )
