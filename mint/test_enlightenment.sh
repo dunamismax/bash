@@ -102,11 +102,14 @@ usage() {
     exit 0
 }
 
+################################################################################
+# Function: Installs Enlightenment Desktop and GUI
+################################################################################
 install_enlightenment() {
   # Step 1: Installing git and Cloning
   log INFO "Installing Git..."
-  sudo apt update
-  sudo apt install -y git
+  apt update
+  apt install -y git
 
   if [ -d "efl" ]; then
     log INFO "Repository 'efl' already exists. Pulling latest changes..."
@@ -120,9 +123,9 @@ install_enlightenment() {
 
   # Step 2: Installing Dependencies for EFL
   log INFO "Installing build tools and dependencies for EFL..."
-  sudo apt install -y build-essential check meson ninja-build
+  apt install -y build-essential check meson ninja-build
 
-  sudo apt install -y \
+  apt install -y \
     libssl-dev libsystemd-dev libjpeg-dev libglib2.0-dev libgstreamer1.0-dev \
     liblua5.2-dev libfreetype-dev libfontconfig-dev libfribidi-dev \
     libavahi-client-dev libharfbuzz-dev libibus-1.0-dev libx11-dev libxext-dev \
@@ -141,7 +144,7 @@ install_enlightenment() {
   cd efl
   meson -Dlua-interpreter=lua build
   ninja -C build
-  sudo ninja -C build install
+  ninja -C build install
   cd ..
 
   # Step 4: Post Installation Tasks for EFL
@@ -149,23 +152,27 @@ install_enlightenment() {
   local profile="/etc/profile"
   local pkg_config_line='export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig'
   if ! grep -Fxq "${pkg_config_line}" "${profile}"; then
-    echo "${pkg_config_line}" | sudo tee -a "${profile}" >/dev/null
+    echo "${pkg_config_line}" | tee -a "${profile}" >/dev/null
   else
     log INFO "PKG_CONFIG_PATH line already present in ${profile}."
   fi
 
   log INFO "Refreshing library paths..."
-  sudo ldconfig
+  ldconfig
 
   # Step 5: Installing Xorg, GDM3, and Enlightenment Desktop
   log INFO "Installing Xorg, GDM3, and Enlightenment desktop environment..."
-  sudo apt install -y xorg gdm3 enlightenment
+  apt install -y xorg gdm3 enlightenment
 
   # Enable and start GDM3 service for auto-start on boot
-  log INFO "Enabling and starting GDM3..."
-  sudo systemctl enable gdm3
+  log INFO "Enabling GDM3..."
+  systemctl enable gdm3
 
-  log INFO "Full Enlightenment installation complete."
+  # Install backup DE
+  log INFO "Installing XFCE and i3"
+  apt install xfce4 i3 rofi i3lock i3blocks feh xterm alacritty ranger network-manager network-manager-gnome pavucontrol alsa-utils picom polybar fonts-powerline fonts-noto
+
+  log INFO "Full GDM / Enlightenment / i3 / XFCE installation complete."
 }
 
 # ------------------------------------------------------------------------------
