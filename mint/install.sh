@@ -35,7 +35,7 @@ USERNAME="sawyer"
 PACKAGES=(
   bash zsh fish vim nano mc screen tmux nodejs npm
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill
-  bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev
+  bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
   git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq
   nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups firefox
