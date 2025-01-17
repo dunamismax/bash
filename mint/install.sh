@@ -1468,9 +1468,9 @@ finalize_configuration() {
     log ERROR "Failed to add Flathub repository."
   fi
 
-  # Install GNOME Software and Flatpak plugin
+  # Install GNOME keyring and Flatpak plugin
   log INFO "Installing GNOME Software and Flatpak plugin..."
-  if apt install -y gnome-software gnome-software-plugin-flatpak; then
+  if apt install -y gnome-keyring gnome-software-plugin-flatpak; then
     log INFO "GNOME Software and Flatpak plugin installed successfully."
   else
     log ERROR "Installation of GNOME Software and Flatpak plugin failed."
