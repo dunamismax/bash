@@ -1,10 +1,10 @@
 # ------------------------------------------------------------------------------
-#_____ ________                              _____________          
+#_____ ________                              _____________
 #___(_)__|__  /        _____________ _______ ___  __/___(_)_______ _
 #__  / ___/_ < _________  ___/_  __ \__  __ \__  /_  __  / __  __ `/
-#_  /  ____/ / _/_____// /__  / /_/ /_  / / /_  __/  _  /  _  /_/ / 
-#/_/   /____/          \___/  \____/ /_/ /_/ /_/     /_/   _\__, /  
-#                                                          /____/   
+#_  /  ____/ / _/_____// /__  / /_/ /_  / / /_  __/  _  /  _  /_/ /
+#/_/   /____/          \___/  \____/ /_/ /_/ /_/     /_/   _\__, /
+#                                                          /____/
 # ------------------------------------------------------------------------------
 # High DPI, Addons Setup, and Custom Bindings
 # ------------------------------------------------------------------------------
@@ -20,11 +20,11 @@ set $mod Mod4
 font pango:"JetBrains Mono" 16
 
 # Set default window border style and thickness
-for_window [class="^.*"] border pixel 2
+for_window [class="^.*"] border pixel 4
 
 # Apply DPI scaling using xrandr on startup
 # Replace "YOUR_MONITOR_OUTPUT" with your actual monitor identifier (e.g., eDP-1, HDMI-1)
-exec_always --no-startup-id xrandr --output YOUR_MONITOR_OUTPUT --scale 1x1 --dpi 192
+exec_always --no-startup-id xrandr --output eDP --scale 1x1 --dpi 192
 
 # ------------------------------------------------------------------------------
 # Autostart Applications
@@ -37,7 +37,7 @@ exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
 exec_always --no-startup-id ~/.config/polybar/launch.sh
 
 # Set desktop background using feh (adjust path to your wallpaper)
-exec_always --no-startup-id feh --bg-scale /path/to/your/wallpaper.jpg
+exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Tux-White-4K.jpg
 
 # ------------------------------------------------------------------------------
 # Keybindings for Launchers and Utilities
