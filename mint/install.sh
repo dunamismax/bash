@@ -1207,7 +1207,75 @@ install_vscode_cli() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN FUNCTION: Installs i3 and required GUI components
+# Function: Installs Jetbrains Mono font
+# ------------------------------------------------------------------------------
+install_jetbrainsmono() {
+  log INFO "Starting JetBrains Mono installation..."
+
+  # Define version and URL
+  local version="2.304"
+  local url="https://github.com/JetBrains/JetBrainsMono/releases/download/v${version}/JetBrainsMono-${version}.zip"
+
+  # Create a temporary directory for download and extraction
+  local temp_dir
+  temp_dir=$(mktemp -d)
+  pushd "$temp_dir" > /dev/null
+
+  # Download the .zip file
+  log INFO "Downloading JetBrainsMono v${version}..."
+  if ! wget -q --show-progress -O JetBrainsMono.zip "$url"; then
+    log ERROR "Failed to download the font archive."
+    popd > /dev/null
+    return 1
+  fi
+
+  # Extract the .zip file
+  log INFO "Extracting the font files..."
+  if ! unzip -q JetBrainsMono.zip; then
+    log ERROR "Failed to extract the zip file."
+    popd > /dev/null
+    return 1
+  fi
+
+  # Define source and destination directories
+  local source_dir="$temp_dir/JetBrainsMono-${version}/fonts/ttf"
+  local dest_dir="$HOME/.local/share/fonts"
+
+  # Ensure destination directory exists
+  mkdir -p "$dest_dir"
+
+  # Copy .ttf files to the local fonts directory
+  log INFO "Copying font files to $dest_dir..."
+  if ! cp "$source_dir"/*.ttf "$dest_dir/"; then
+    log ERROR "Failed to copy font files."
+    popd > /dev/null
+    return 1
+  fi
+
+  # Update the font cache
+  log INFO "Updating font cache..."
+  if ! fc-cache -fv; then
+    log ERROR "Failed to update font cache."
+    popd > /dev/null
+    return 1
+  fi
+
+  # Verify the installation
+  log INFO "Verifying installation..."
+  if fc-list | grep -q "JetBrains Mono"; then
+    log INFO "JetBrains Mono fonts installed successfully."
+  else
+    log WARN "JetBrains Mono fonts not found after installation."
+  fi
+
+  # Cleanup
+  popd > /dev/null
+  rm -rf "$temp_dir"
+  log INFO "Temporary files cleaned up. Installation finished."
+}
+
+# ------------------------------------------------------------------------------
+# Function: Installs i3 and required GUI components
 # ------------------------------------------------------------------------------
 install_gui() {
   export DEBIAN_FRONTEND=noninteractive
@@ -1228,11 +1296,228 @@ install_gui() {
   apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
                      xterm alacritty ranger pavucontrol alsa-utils picom
 
+  # Install i3-gaps
+  add-apt-repository ppa:regolith-linux/release
+  apt update
+  apt install i3-gaps
+
   # Refresh library paths and complete setup
   log INFO "Refreshing library paths..."
   ldconfig
 
   log INFO "Installation of i3 and GDM is complete."
+}
+
+# ------------------------------------------------------------------------------
+# Function: Create i3 config file
+# ------------------------------------------------------------------------------
+create_i3_config() {
+  log INFO "Starting creation of i3 configuration..."
+
+  local config_dir="$HOME/.config/i3"
+  local config_file="$config_dir/config"
+
+  # Create configuration directory if it doesn't exist
+  if [[ ! -d "$config_dir" ]]; then
+    mkdir -p "$config_dir"
+    log INFO "Created directory: $config_dir"
+  fi
+
+  # Backup existing config if it exists
+  if [[ -f "$config_file" ]]; then
+    local backup_file="${config_file}.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$config_file" "$backup_file"
+    log INFO "Existing i3 config backed up to $backup_file"
+  fi
+
+  # Create new i3 config file
+  cat > "$config_file" <<'EOF'
+# ------------------------------------------------------------------------------
+# i3 Configuration File
+# High DPI, Addons Setup, and Custom Bindings
+# ------------------------------------------------------------------------------
+
+# Use Mod4 (Super/Windows key) as the modifier key
+set $mod Mod4
+
+# ------------------------------------------------------------------------------
+# Appearance & DPI Scaling
+# ------------------------------------------------------------------------------
+
+# Increase default font size for high DPI displays
+font pango:DejaVu Sans Mono 16
+
+# Set default window border style and thickness
+for_window [class="^.*"] border pixel 2
+
+# Apply DPI scaling using xrandr on startup
+# Replace "YOUR_MONITOR_OUTPUT" with your actual monitor identifier (e.g., eDP-1, HDMI-1)
+exec_always --no-startup-id xrandr --output YOUR_MONITOR_OUTPUT --scale 1x1 --dpi 192
+
+# ------------------------------------------------------------------------------
+# Autostart Applications
+# ------------------------------------------------------------------------------
+
+# Start picom for compositing effects (transparency, shadows, etc.)
+exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
+
+# Launch polybar (if configured) after i3 starts
+exec_always --no-startup-id ~/.config/polybar/launch.sh
+
+# Set desktop background using feh (adjust path to your wallpaper)
+exec_always --no-startup-id feh --bg-scale /path/to/your/wallpaper.jpg
+
+# ------------------------------------------------------------------------------
+# Keybindings for Launchers and Utilities
+# ------------------------------------------------------------------------------
+
+# Launch terminal (Alacritty) with Mod+Enter
+bindsym $mod+Return exec alacritty
+
+# Launch alternative terminal (xterm) with Mod+Shift+Enter
+bindsym $mod+Shift+Return exec xterm
+
+# Launch Rofi as application launcher with Mod+d
+bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window -theme ~/.config/rofi/theme.rasi
+
+# Lock screen using i3lock with Mod+Shift+l
+bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.png
+
+# Open Ranger file manager in Alacritty with Mod+Shift+e
+bindsym $mod+Shift+e exec alacritty -e ranger
+
+# Volume control using pavucontrol with Mod+Shift+p
+bindsym $mod+Shift+p exec --no-startup-id pavucontrol
+
+# ------------------------------------------------------------------------------
+# Window Management Keybindings
+# ------------------------------------------------------------------------------
+
+# Standard window focus navigation
+bindsym $mod+j focus left
+bindsym $mod+k focus down
+bindsym $mod+l focus up
+bindsym $mod+semicolon focus right
+
+# Standard window movement
+bindsym $mod+Shift+j move left
+bindsym $mod+Shift+k move down
+bindsym $mod+Shift+l move up
+bindsym $mod+Shift+semicolon move right
+
+# Split orientation selection
+bindsym $mod+h split h
+bindsym $mod+v split v
+
+# Reload and restart i3 configuration
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+r restart
+
+# Exit i3 session
+bindsym $mod+Shift+e exec --no-startup-id i3-msg exit
+
+# ------------------------------------------------------------------------------
+# Workspace Management
+# ------------------------------------------------------------------------------
+
+# Define workspaces with icons for visual clarity
+set $ws1 ""
+set $ws2 ""
+set $ws3 ""
+set $ws4 ""
+set $ws5 ""
+set $ws6 ""
+set $ws7 ""
+set $ws8 ""
+set $ws9 ""
+
+# Switch to workspace shortcuts
+bindsym $mod+1 workspace $ws1
+bindsym $mod+2 workspace $ws2
+bindsym $mod+3 workspace $ws3
+bindsym $mod+4 workspace $ws4
+bindsym $mod+5 workspace $ws5
+bindsym $mod+6 workspace $ws6
+bindsym $mod+7 workspace $ws7
+bindsym $mod+8 workspace $ws8
+bindsym $mod+9 workspace $ws9
+
+# Move focused container to specified workspace
+bindsym $mod+Shift+1 move container to workspace $ws1
+bindsym $mod+Shift+2 move container to workspace $ws2
+bindsym $mod+Shift+3 move container to workspace $ws3
+bindsym $mod+Shift+4 move container to workspace $ws4
+bindsym $mod+Shift+5 move container to workspace $ws5
+bindsym $mod+Shift+6 move container to workspace $ws6
+bindsym $mod+Shift+7 move container to workspace $ws7
+bindsym $mod+Shift+8 move container to workspace $ws8
+bindsym $mod+Shift+9 move container to workspace $ws9
+
+# ------------------------------------------------------------------------------
+# i3blocks for Status Bar
+# ------------------------------------------------------------------------------
+
+bar {
+    status_command i3blocks
+    font pango:DejaVu Sans Mono 14
+    workspace_buttons yes
+
+    # Adjust bar height for high DPI displays
+    height 30
+
+    # Colors for the bar (customize as preferred)
+    colors {
+        background       #282828
+        statusline       #ebdbb2
+        separator        #3c3836
+
+        focused_workspace  #458588 #458588 #ffffff
+        active_workspace   #3c3836 #3c3836 #ebdbb2
+        inactive_workspace #282828 #282828 #a89984
+        urgent_workspace   #cc241d #cc241d #ffffff
+    }
+}
+
+# ------------------------------------------------------------------------------
+# Floating Windows Rules
+# ------------------------------------------------------------------------------
+
+# Allow certain applications to float
+for_window [class="^Pavucontrol$"] floating enable
+for_window [class="^Rofi$"] floating enable
+for_window [class="^feh$"] floating enable
+for_window [class="^pinentry$"] floating enable
+
+# ------------------------------------------------------------------------------
+# Miscellaneous Settings
+# ------------------------------------------------------------------------------
+
+# Use gaps between windows (requires i3-gaps)
+gaps inner 10
+gaps outer 10
+
+# Optionally set separate horizontal and vertical gaps
+# gaps horiz 10
+# gaps vert 10
+
+# Focus follows mouse pointer
+focus_follows_mouse yes
+
+# Smart border behavior: hide borders when unnecessary
+smart_borders on
+
+# ------------------------------------------------------------------------------
+# End of Configuration
+# ------------------------------------------------------------------------------
+
+# Notes:
+# - Ensure the required theme files for rofi, polybar, and picom are installed and configured.
+# - Adjust paths (for wallpapers, lockscreen images, configuration scripts) as needed.
+# - Replace "YOUR_MONITOR_OUTPUT" in the xrandr command with your actual monitor identifier.
+# - Tweak font sizes, gap values, and other settings as needed for personal preference and performance.
+EOF
+
+  log INFO "i3 configuration file created at $config_file"
 }
 
 ################################################################################
@@ -1365,6 +1650,7 @@ main() {
   set_directory_permissions
   systemctl restart caddy
   install_vscode_cli
+  install_jetbrainsmono
   install_gui
   finalize_configuration
 

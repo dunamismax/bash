@@ -1,104 +1,3 @@
-Basic Guideline / Cheat Sheet for Best Practices in Writing Bash Scripts:
-
-The following guideline is based on your current script and aims to standardize structure, design, and logging practices for bash scripts:
-
-1. Script Header and Metadata:
-	•	Start with a shebang: #!/usr/bin/env bash.
-	•	Include a comment block at the top with:
-	•	Script purpose and summary.
-	•	Author, license, and date/version if applicable.
-	•	Usage instructions or parameters.
-
-2. Safety and Strict Mode:
-	•	Use strict mode to catch errors early:
-
-set -Eeuo pipefail
-trap 'log ERROR "Script failed at line $LINENO."' ERR
-
-
-	•	Always check for root privileges when making system changes:
-
-if [ "$EUID" -ne 0 ]; then
-  echo "Please run as root."
-  exit 1
-fi
-
-
-
-3. Logging:
-	•	Implement a centralized logging function that:
-	•	Accepts log levels (INFO, WARN, ERROR, DEBUG).
-	•	Writes logs to a file with timestamps.
-	•	Optionally prints to console with color coding based on verbosity.
-	•	Use logging for all significant actions, errors, and status updates.
-
-4. Modularity and Functions:
-	•	Break the script into clear, single-purpose functions.
-	•	Each function should:
-	•	Start with a clear name and description.
-	•	Validate inputs and handle errors gracefully.
-	•	Log key steps and decisions.
-	•	Example structure for a function:
-
-function_name() {
-  log INFO "Starting function_name..."
-  # Code logic here
-  log INFO "Completed function_name."
-}
-
-
-
-5. Configuration and Variables:
-	•	Define configuration variables and arrays at the beginning of the script for easy adjustments.
-	•	Use descriptive variable names and comments to explain their purpose.
-
-6. Backup Before Changes:
-	•	Before modifying configuration files, create backups:
-
-cp "/path/to/config" "/path/to/config.bak.$(date +%Y%m%d%H%M%S)"
-
-
-
-7. Error Handling and Validation:
-	•	Check the success of critical commands:
-
-if ! command; then
-  log ERROR "Command failed: description"
-  exit 1
-fi
-
-
-	•	Use conditional checks (if [ ... ]) and loops carefully to ensure idempotence and avoid unintended actions.
-
-8. Comments and Documentation:
-	•	Add comments above blocks of logic, especially in complex functions.
-	•	Document function purposes, expected inputs, and side-effects.
-
-9. Cleanup and Finalization:
-	•	Include functions to perform cleanup of temporary files, unneeded packages, or logs.
-	•	Finalize by summarizing actions taken and any next steps for the user.
-
-10. Main Function and Entrypoint:
-	•	Use a main() function to orchestrate the script’s execution flow.
-	•	Check if the script is run directly (not sourced) before executing main:
-
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  main "$@"
-fi
-
-
-
-11. Consistent Style and Formatting:
-	•	Use consistent indentation (e.g., 2 or 4 spaces).
-	•	Maintain a consistent style for variable naming (e.g., uppercase for constants).
-	•	Group related settings and commands together within functions.
-
-12. Version Control and Distribution:
-	•	Store scripts in a version control system (like Git) for change tracking.
-	•	Document dependencies and prerequisites in comments or accompanying documentation.
-
-Cheat Sheet Template Example:
-
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: example_script.sh
@@ -114,13 +13,66 @@ trap 'log ERROR "Script failed at line $LINENO."' ERR
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/example_script.log"
 VERBOSE=2
-# Define other variables and arrays here
+# Define other configuration variables, constants, and arrays here
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
 # ------------------------------------------------------------------------------
 log() {
-  # [Insert the log function from your current script here]
+    local level="$1"
+    shift
+    local message="$*"
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # Color codes for console output
+    local RED='\033[0;31m'
+    local YELLOW='\033[0;33m'
+    local GREEN='\033[0;32m'
+    local BLUE='\033[0;34m'
+    local NC='\033[0m'  # No Color
+
+    # Determine log level color and normalization
+    case "${level^^}" in
+        INFO)
+            local color="${GREEN}"
+            ;;
+        WARN|WARNING)
+            local color="${YELLOW}"
+            level="WARN"
+            ;;
+        ERROR)
+            local color="${RED}"
+            ;;
+        DEBUG)
+            local color="${BLUE}"
+            ;;
+        *)
+            local color="${NC}"
+            level="INFO"
+            ;;
+    esac
+
+    # Ensure the log file exists
+    if [[ -z "${LOG_FILE:-}" ]]; then
+        LOG_FILE="/var/log/example_script.log"
+    fi
+    if [[ ! -e "$LOG_FILE" ]]; then
+        mkdir -p "$(dirname "$LOG_FILE")"
+        touch "$LOG_FILE"
+        chmod 644 "$LOG_FILE"
+    fi
+
+    # Format and save log entry
+    local log_entry="[$timestamp] [$level] $message"
+    echo "$log_entry" >> "$LOG_FILE"
+
+    # Conditional console output based on verbosity
+    if [[ "$VERBOSE" -ge 2 ]]; then
+        printf "${color}%s${NC}\n" "$log_entry" >&2
+    elif [[ "$VERBOSE" -ge 1 && "$level" == "ERROR" ]]; then
+        printf "${color}%s${NC}\n" "$log_entry" >&2
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -138,13 +90,13 @@ check_root() {
 # ------------------------------------------------------------------------------
 function_one() {
   log INFO "Starting function_one..."
-  # Function logic here
+  # Add your logic here, e.g., backup files, modify configs, etc.
   log INFO "Completed function_one."
 }
 
 function_two() {
   log INFO "Starting function_two..."
-  # Function logic here
+  # Add your logic here
   log INFO "Completed function_two."
 }
 
@@ -154,16 +106,56 @@ function_two() {
 main() {
   check_root
   log INFO "Script execution started."
-  
-  # Call your main functions in order
+
+  # Call the primary functions in desired order
   function_one
   function_two
-  
+
   log INFO "Script execution finished."
 }
 
+# Execute main only if the script is not sourced
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   main "$@"
 fi
 
-Using this guideline, your script, and similar scripts will maintain a consistent structure, style, and best practices for reliability, readability, and maintainability.
+### Explanation of Best Practices Implemented:
+
+1. **Header & Metadata:**
+   - Starts with a shebang and includes comments for purpose, author, license, etc.
+
+2. **Safety & Strict Mode:**
+   - Enforces strict mode (`set -Eeuo pipefail`) and traps errors.
+   - Checks for root privileges when necessary.
+
+3. **Centralized Logging:**
+   - Uses the `log` function to manage all logging with levels, timestamps, colors, and verbosity.
+
+4. **Modularity & Functions:**
+   - Splits logic into single-purpose functions with clear names, error checks, and logging.
+
+5. **Configuration & Variables:**
+   - Gathers all configuration variables at the start for easy adjustments.
+
+6. **Backup Before Changes:**
+   - Shows how to back up a configuration file before modifying.
+
+7. **Error Handling & Validation:**
+   - Validates critical commands and ensures proper error logging and exits on failure.
+
+8. **Comments & Documentation:**
+   - Includes comments and documentation for functions and logic blocks to improve readability.
+
+9. **Cleanup & Finalization:**
+   - Encourages writing cleanup functions to remove temporary files and summarize actions.
+
+10. **Main Entrypoint:**
+    - Uses a `main` function to orchestrate execution and checks if the script is executed directly.
+
+11. **Consistent Style & Formatting:**
+    - Adopts consistent indentation, variable naming conventions, and groups related commands.
+
+12. **Version Control & Distribution:**
+    - Recommends storing scripts in Git, including dependencies and prerequisites in comments.
+
+Using this template and guideline ensures that your Bash scripts are robust, easier to maintain, and follow best practices.
