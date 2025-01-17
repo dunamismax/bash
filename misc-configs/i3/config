@@ -16,8 +16,8 @@ set $mod Mod4
 # Appearance & DPI Scaling
 # ------------------------------------------------------------------------------
 
-# Increase default font size for high DPI displays
-font pango:DejaVu Sans Mono 16
+# Increase default font size for high DPI displays using JetBrains Mono
+font pango:"JetBrains Mono" 16
 
 # Set default window border style and thickness
 for_window [class="^.*"] border pixel 2
