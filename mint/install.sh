@@ -1219,19 +1219,59 @@ install_gui() {
     libxcb-randr0-dev libev-dev libxcb-cursor-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
     libxkbcommon-x11-dev autoconf xutils-dev libtool automake libxcb-xrm-dev
 
-  # Install i3-gaps using Regolith repository
-  # 1. Register the Regolith public key to your local apt:
-  wget -qO - https://regolith-desktop.org/regolith.key | \
-    gpg --dearmor | sudo tee /usr/share/keyrings/regolith-archive-keyring.gpg > /dev/null
+  log INFO "Cloning and building i3-gaps from source..."
 
-  # 2. Add the repository URL to your local apt:
-  echo deb "[arch=amd64 signed-by=/usr/share/keyrings/regolith-archive-keyring.gpg] \
-https://regolith-desktop.org/release-3_2-ubuntu-noble-amd64 noble main" | \
-    sudo tee /etc/apt/sources.list.d/regolith.list
+  # Step 1: Clone the i3 repository with the specified name
+  git clone https://www.github.com/Airblader/i3 i3-gaps || {
+    log ERROR "Failed to clone i3-gaps repository."
+    return 1
+  }
 
-  # 3. Update package list and install i3-gaps
-  apt update
-  apt install -y i3-gaps
+  # Step 2: Navigate into the cloned repository
+  cd i3-gaps || {
+    log ERROR "Failed to enter the i3-gaps directory."
+    return 1
+  }
+
+  # Step 3: Check out the 'gaps' branch and pull the latest changes
+  git checkout gaps && git pull || {
+    log ERROR "Failed to check out or pull the 'gaps' branch."
+    return 1
+  }
+
+  # Step 4: Prepare the build system
+  autoreconf --force --install || {
+    log ERROR "Failed to run autoreconf."
+    return 1
+  }
+
+  # Step 5: Create and navigate to the build directory
+  rm -rf build
+  mkdir build
+  cd build || {
+    log ERROR "Failed to create or enter the build directory."
+    return 1
+  }
+
+  # Step 6: Configure the build
+  ../configure --prefix=/usr --sysconfdir=/etc --disable-sanitizers || {
+    log ERROR "Failed to configure the build."
+    return 1
+  }
+
+  # Step 7: Build the software
+  make || {
+    log ERROR "Failed to build i3-gaps."
+    return 1
+  }
+
+  # Step 8: Install i3-gaps
+  sudo make install || {
+    log ERROR "Failed to install i3-gaps."
+    return 1
+  }
+
+  log INFO "i3-gaps installation completed successfully."
 
   # Refresh library paths and complete setup
   log INFO "Refreshing library paths..."
