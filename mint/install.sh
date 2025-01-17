@@ -24,6 +24,7 @@
 # ------------------------------------------------------------------------------
 
 set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
 # ------------------------------------------------------------------------------
 # CONFIGURATION
@@ -1206,16 +1207,10 @@ install_vscode_cli() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN FUNCTION: Installs i3, XFCE, and required GUI components
+# MAIN FUNCTION: Installs i3 and required GUI components
 # ------------------------------------------------------------------------------
 install_gui() {
   export DEBIAN_FRONTEND=noninteractive
-
-  # Remove LightDM if installed to avoid configuration prompts
-  if dpkg -l | grep -q lightdm; then
-    log INFO "Removing LightDM to avoid configuration prompts..."
-    apt-get remove --purge -y lightdm
-  fi
 
   log INFO "Updating package lists..."
   apt-get update
@@ -1233,15 +1228,11 @@ install_gui() {
   apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
                      xterm alacritty ranger pavucontrol alsa-utils picom
 
-  # Install XFCE desktop environment along with goodies
-  log INFO "Installing XFCE desktop environment and goodies..."
-  apt-get install -y xfce4 xfce4-goodies
-
   # Refresh library paths and complete setup
   log INFO "Refreshing library paths..."
   ldconfig
 
-  log INFO "Installation of i3, XFCE, and GDM is complete."
+  log INFO "Installation of i3 and GDM is complete."
 }
 
 ################################################################################
