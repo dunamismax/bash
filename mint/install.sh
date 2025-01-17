@@ -1279,6 +1279,11 @@ install_gui() {
       polybar fonts-powerline fonts-noto
 
   apt purge lightdm
+
+  log INFO "Installing and enabling ConnMan service..."
+  apt install -y connman
+  systemctl enable connman
+
   log INFO "Full GDM/Enlightenment/i3/XFCE installation complete."
 }
 
