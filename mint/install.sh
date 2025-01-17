@@ -1215,9 +1215,7 @@ install_gui() {
   apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
                      xterm alacritty ranger pavucontrol alsa-utils picom
 
-  # ------------------------------------------------------------------------------
 # Install i3-gaps using Regolith repository
-# ------------------------------------------------------------------------------
 
   # 1. Register the Regolith public key to your local apt:
   wget -qO - https://regolith-desktop.org/regolith.key | \
