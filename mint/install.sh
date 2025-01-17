@@ -1206,7 +1206,7 @@ install_vscode_cli() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN FUNCTION: Installs i3, GNOME Desktop, and required GUI components
+# MAIN FUNCTION: Installs i3 and required GUI components
 # ------------------------------------------------------------------------------
 install_gui() {
   export DEBIAN_FRONTEND=noninteractive
@@ -1233,20 +1233,11 @@ install_gui() {
   apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
                      xterm alacritty ranger pavucontrol alsa-utils picom
 
-  # Install full GNOME desktop environment and related tools
-  log INFO "Installing GNOME desktop environment and tools..."
-  apt-get install -y ubuntu-gnome-desktop gnome-tweaks gnome-shell \
-                     gnome-control-center gnome-terminal gnome-software
-
-  # Install additional GNOME-specific apps and utilities if needed
-  log INFO "Installing additional GNOME-specific applications..."
-  apt-get install -y gnome-calculator gnome-screenshot gnome-system-monitor
-
   # Refresh library paths and complete setup
   log INFO "Refreshing library paths..."
   ldconfig
 
-  log INFO "i3, GNOME Desktop, and GDM installation complete."
+  log INFO "i3 and GDM installation complete."
 }
 
 ################################################################################
