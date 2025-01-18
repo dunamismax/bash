@@ -48,6 +48,7 @@ PACKAGES=(
   nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups neovim libglib2.0-dev
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils acpid policykit-1 papirus-icon-theme
   chrony fail2ban ffmpeg restic fonts-dejavu flameshot libxfce4ui-2-dev libxfce4util-dev libgtk-3-dev libpolkit-gobject-1-dev
+  gnome-keyring seahorse
 )
 
 # ------------------------------------------------------------------------------
@@ -864,7 +865,7 @@ dotfiles_load() {
   cp /home/sawyer/github/bash/dotfiles/Caddyfile     /etc/caddy/
 
   log INFO "Copying config directories to /home/sawyer/.config..."
-  cp -r /home/sawyer/github/bash/dotfiles/bin        /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/bin        /home/sawyer/.local/
   cp -r /home/sawyer/github/bash/dotfiles/i3         /home/sawyer/.config/
   cp -r /home/sawyer/github/bash/dotfiles/polybar    /home/sawyer/.config/
   cp -r /home/sawyer/github/bash/dotfiles/rofi       /home/sawyer/.config/
