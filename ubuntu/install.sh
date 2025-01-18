@@ -42,7 +42,7 @@ USERNAME="sawyer"
 PACKAGES=(
   bash zsh fish vim nano mc screen tmux nodejs npm ninja-build meson fonts-font-awesome intltool gettext
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill fonts-ubuntu
-  bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw fonts-hack-ttf
+  bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw fonts-hack-ttf libpolkit-agent-1-dev
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev flatpak xfce4-dev-tools
   git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq fonts-dejavu-core
   nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups neovim libglib2.0-dev
