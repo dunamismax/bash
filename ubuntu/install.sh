@@ -189,18 +189,25 @@ HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
 HUGO_DIR="/home/sawyer/github/hugo"
 SAWYER_HOME="/home/sawyer"
 BASE_DIR="/home/sawyer/github"
-DIR_PERMISSIONS="755"  # Directories: rwx for owner, rx for group/others
-FILE_PERMISSIONS="644" # Files: rw for owner, r for group/others
+
+# NOTE: 700 == rwx for *owner only* (no permissions for group or others)
+#       600 == rw for *owner only* (no permissions for group or others)
+DIR_PERMISSIONS="700"   # For .git directories
+FILE_PERMISSIONS="600"  # For .git files
 
 # ------------------------------------------------------------------------------
 # FUNCTION: fix_git_permissions
 # ------------------------------------------------------------------------------
 fix_git_permissions() {
     local git_dir="$1"
-    echo "Setting permissions for $git_dir"
+    echo "Setting stricter permissions for $git_dir"
+    # Make sure the top-level .git dir has directory permissions
     chmod "$DIR_PERMISSIONS" "$git_dir"
+
+    # Apply to all subdirectories and files inside .git
     find "$git_dir" -type d -exec chmod "$DIR_PERMISSIONS" {} \;
     find "$git_dir" -type f -exec chmod "$FILE_PERMISSIONS" {} \;
+
     echo "Permissions fixed for $git_dir"
 }
 
@@ -219,7 +226,6 @@ set_directory_permissions() {
 
   # 3. Set ownership and permissions for Hugo public directory
   log INFO "Setting ownership and permissions for Hugo public directory"
-  chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
   chmod -R 755 "$HUGO_PUBLIC_DIR"
 
   # 4. Set ownership and permissions for Hugo directory and related paths
@@ -229,6 +235,7 @@ set_directory_permissions() {
   chmod o+rx "$GITHUB_DIR"
   chmod o+rx "$HUGO_DIR"
   chmod o+rx "/home/sawyer/github/hugo/dunamismax.com"
+  chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
 
   # 5. Ensure BASE_DIR exists
   if [[ ! -d "$BASE_DIR" ]]; then
@@ -239,16 +246,12 @@ set_directory_permissions() {
   log INFO "Starting permission fixes in $BASE_DIR..."
 
   # 6. Find and fix .git directory permissions
-  # Loop over each .git directory found within BASE_DIR
   while IFS= read -r -d '' git_dir; do
       fix_git_permissions "$git_dir"
   done < <(find "$BASE_DIR" -type d -name ".git" -print0)
 
   log INFO "Permission setting completed."
 }
-
-# To execute the function, simply call:
-# set_directory_permissions
 
 ################################################################################
 # Function: Configure SSH and security settings
@@ -333,266 +336,6 @@ bootstrap_and_install_pkgs() {
   log INFO "Package installation process completed."
 }
 
-################################################################################
-# Function: set_default_shell_and_env
-################################################################################
-set_default_shell_and_env() {
-  log INFO "Recreating .profile, .bash_profile, and .bashrc for $USERNAME..."
-
-  # Dynamically determine the user's home directory
-  local user_home
-  user_home=$(eval echo "~$USERNAME")
-
-  # File paths
-  local bashrc_file="$user_home/.bashrc"
-  local bash_profile_file="$user_home/.bash_profile"
-  local profile_file="$user_home/.profile"
-
-  # Overwrite the .bash_profile file with the specified contents
-  log INFO "Creating $bash_profile_file with default content..."
-  cat << 'EOF' > "$bash_profile_file"
-# ~/.bash_profile
-# Always source ~/.bashrc to ensure consistent shell environment setup
-if [ -f ~/.bashrc ]; then
-    source ~/.bashrc
-fi
-EOF
-
-  # Set ownership and permissions for the .bash_profile file
-  chown "$USERNAME":"$USERNAME" "$bash_profile_file"
-  chmod 644 "$bash_profile_file"
-  log INFO ".bash_profile created successfully."
-
-  # Overwrite the .profile file with the specified contents (like .bash_profile)
-  log INFO "Creating $profile_file with default content..."
-  cat << 'EOF' > "$profile_file"
-# ~/.profile
-# Always source ~/.bashrc to ensure consistent shell environment setup
-if [ -f ~/.bashrc ]; then
-    . ~/.bashrc
-fi
-EOF
-
-  # Set ownership and permissions for the .profile file
-  chown "$USERNAME":"$USERNAME" "$profile_file"
-  chmod 644 "$profile_file"
-  log INFO ".profile created successfully."
-
-  # Overwrite the .bashrc file
-  log INFO "Creating $bashrc_file with default content..."
-  cat << 'EOF' > "$bashrc_file"
-# ~/.bashrc: executed by bash(1) for non-login shells.
-# ------------------------------------------------------------------------------
-#        ______                  ______
-#        ___  /_ ______ ____________  /_ _______________
-#        __  __ \_  __ `/__  ___/__  __ \__  ___/_  ___/
-#    ___ _  /_/ // /_/ / _(__  ) _  / / /_  /    / /__
-#    _(_)/_.___/ \__,_/  /____/  /_/ /_/ /_/     \___/
-#
-# ------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------
-# 1. Early return if not running interactively
-# ------------------------------------------------------------------------------
-case $- in
-    *i*) ;;
-      *) return;;
-esac
-
-# ------------------------------------------------------------------------------
-# 2. Environment variables
-# ------------------------------------------------------------------------------
-# Add your local bin directory to PATH.
-export PATH="$PATH:$HOME/.local/bin"
-
-# ------------------------------------------------------------------------------
-# 3. pyenv initialization
-# ------------------------------------------------------------------------------
-# Adjust these lines according to your Python environment needs.
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-
-if command -v pyenv 1>/dev/null 2>&1; then
-    # Initialize pyenv so that it can manage your Python versions and virtualenvs.
-    eval "$(pyenv init --path)"
-    eval "$(pyenv init -)"
-fi
-
-# ------------------------------------------------------------------------------
-# 4. History preferences
-# ------------------------------------------------------------------------------
-# Do not store duplicate lines or lines that start with a space in the history.
-HISTCONTROL=ignoreboth
-
-# Allow appending to the history file (instead of overwriting it).
-shopt -s histappend
-
-# Set history limits (number of lines in memory / on disk).
-HISTSIZE=100000
-HISTFILESIZE=200000
-
-# Add timestamps to each command in history (for auditing).
-HISTTIMEFORMAT="%F %T "
-
-# Re-check window size after each command, updating LINES and COLUMNS if needed.
-shopt -s checkwinsize
-
-# ------------------------------------------------------------------------------
-# 5. Less (pager) setup
-# ------------------------------------------------------------------------------
-# Make 'less' more friendly for non-text input files, see lesspipe(1).
-[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
-
-# ------------------------------------------------------------------------------
-# 6. Bash prompt (PS1)
-# ------------------------------------------------------------------------------
-# If terminal supports color, enable a colored prompt.
-case "$TERM" in
-    xterm-color|*-256color) color_prompt=yes;;
-esac
-
-# Uncomment the line below if you always want a color prompt (if supported).
-force_color_prompt=yes
-
-if [ -n "$force_color_prompt" ]; then
-    if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
-        # We have color support; assume it's compliant with Ecma-48 (ISO/IEC-6429).
-        color_prompt=yes
-    else
-        color_prompt=
-    fi
-fi
-
-# Choose a colored or plain prompt.
-if [ "$color_prompt" = yes ]; then
-    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-else
-    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\u@\h:\w\$ '
-fi
-unset color_prompt force_color_prompt
-
-# If this is an xterm or rxvt terminal, set the window title to user@host:dir.
-case "$TERM" in
-    xterm*|rxvt*)
-        PS1="\[\e]0;${ubuntu_chroot:+($ubuntu_chroot)}\u@\h: \w\a\]$PS1"
-        ;;
-    *)
-        ;;
-esac
-
-# ------------------------------------------------------------------------------
-# 7. Color support for common commands
-# ------------------------------------------------------------------------------
-if [ -x /usr/bin/dircolors ]; then
-    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
-    alias ls='ls --color=auto'
-    # alias dir='dir --color=auto'
-    # alias vdir='vdir --color=auto'
-
-    alias grep='grep --color=auto'
-    alias fgrep='fgrep --color=auto'
-    alias egrep='egrep --color=auto'
-fi
-
-# ------------------------------------------------------------------------------
-# 8. Handy aliases
-# ------------------------------------------------------------------------------
-# Basic ls aliases
-alias ll='ls -alF'
-alias la='ls -A'
-alias l='ls -CF'
-
-# Launch ranger file manager
-alias r='ranger'
-
-# Alert alias for long running commands (use: sleep 10; alert)
-alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" \
-"$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
-
-# ------------------------------------------------------------------------------
-# 9. Python virtual environment functions and aliases
-# ------------------------------------------------------------------------------
-# Alias to quickly set up a new Python virtual environment
-alias venv='setup_venv'
-# Alias to quickly re-enable an existing Python virtual environment
-alias v='enable_venv'
-
-# Function to set up a new Python virtual environment in the current directory
-setup_venv() {
-    # If there's already a venv active, deactivate it first
-    if type deactivate &>/dev/null; then
-        echo "Deactivating current virtual environment..."
-        deactivate
-    fi
-
-    echo "Creating a new virtual environment in $(pwd)/.venv..."
-    python -m venv .venv
-
-    echo "Activating the virtual environment..."
-    source .venv/bin/activate
-
-    if [ -f requirements.txt ]; then
-        echo "Installing dependencies from requirements.txt..."
-        pip install -r requirements.txt
-    else
-        echo "No requirements.txt found. Skipping pip install."
-    fi
-
-    echo "Virtual environment setup complete."
-}
-
-# Function to re-enable an existing Python virtual environment in the current directory
-enable_venv() {
-    # If there's already a venv active, deactivate it first
-    if type deactivate &>/dev/null; then
-        echo "Deactivating current virtual environment..."
-        deactivate
-    fi
-
-    echo "Activating the virtual environment..."
-    source .venv/bin/activate
-
-    if [ -f requirements.txt ]; then
-        echo "Installing dependencies from requirements.txt..."
-        pip install -r requirements.txt
-    else
-        echo "No requirements.txt found. Skipping pip install."
-    fi
-
-    echo "Virtual environment setup complete."
-}
-
-# ------------------------------------------------------------------------------
-# 10. Load user-defined aliases from ~/.bash_aliases (if it exists)
-# ------------------------------------------------------------------------------
-if [ -f ~/.bash_aliases ]; then
-    . ~/.bash_aliases
-fi
-
-# ------------------------------------------------------------------------------
-# 11. Bash completion
-# ------------------------------------------------------------------------------
-# Enable programmable completion features if not in POSIX mode.
-# (Examples: git completion, docker completion, etc.)
-if ! shopt -oq posix; then
-    if [ -f /usr/share/bash-completion/bash_completion ]; then
-        . /usr/share/bash-completion/bash_completion
-    elif [ -f /etc/bash_completion ]; then
-        . /etc/bash_completion
-    fi
-fi
-
-# ------------------------------------------------------------------------------
-# End of ~/.bashrc
-# ------------------------------------------------------------------------------
-EOF
-
-  chown "$USERNAME":"$USERNAME" "$bashrc_file" "$bash_profile_file" "$profile_file"
-  chmod 644 "$bashrc_file" "$bash_profile_file" "$profile_file"
-
-  log INFO "Bash configuration files (.profile, .bash_profile, and .bashrc) have been recreated for $USERNAME."
-}
-
 ###############################################################################
 # Enable and configure ufw.
 ###############################################################################
@@ -633,10 +376,9 @@ configure_ufw() {
 # Function: force_release_ports
 ###############################################################################
 force_release_ports() {
-  # Step 1: Remove Apache and Caddy, then autoremove
-  log INFO "Removing apache2 and caddy..."
+  # Step 1: Remove Apache, then autoremove
+  log INFO "Removing apache2..."
   apt purge -y apache2
-  apt purge -y caddy
 
   # Step 2: Install net-tools if not present
   log INFO "Installing net-tools..."
@@ -706,127 +448,6 @@ fail2ban() {
   fi
 
   log INFO "Security hardening steps completed."
-}
-
-################################################################################
-# Function: download_repositories
-################################################################################
-download_repositories() {
-  log INFO "Downloading github repositories"
-
-  log INFO "Creating github directory"
-  mkdir -p /home/sawyer/github
-
-  log INFO "Changing to github directory"
-  cd /home/sawyer/github
-
-  # Clone repositories if they do not already exist
-  git clone "https://github.com/dunamismax/bash.git"
-  git clone "https://github.com/dunamismax/c.git"
-  git clone "https://github.com/dunamismax/religion.git"
-  git clone "https://github.com/dunamismax/windows.git"
-  git clone "https://github.com/dunamismax/hugo.git"
-  git clone "https://github.com/dunamismax/python.git"
-  log INFO "Download completed"
-
-  # Set permissions and ownership for the Hugo directory
-  log INFO "Setting ownership and permissions for Hugo public directory"
-  chown -R www-data:www-data "/home/sawyer/github/hugo/dunamismax.com/public"
-  chmod -R 755 "/home/sawyer/github/hugo/dunamismax.com/public"
-
-  log INFO "Setting ownership and permissions for Hugo directory"
-  chown -R caddy:caddy "/home/sawyer/github/hugo"
-  chmod o+rx "/home/sawyer/" "/home/sawyer/github/" "/home/sawyer/github/hugo/" "/home/sawyer/github/hugo/dunamismax.com/"
-
-  log INFO "Update repositories and permissions completed."
-  cd ~
-}
-
-################################################################################
-# Function: create_caddyfile
-################################################################################
-create_caddyfile() {
-  log INFO "Creating /etc/caddy/Caddyfile..."
-
-  install_caddy
-
-  local caddyfile_path="/etc/caddy/Caddyfile"
-  local caddyfile_dir
-  caddyfile_dir=$(dirname "$caddyfile_path")
-
-  # Ensure caddy directory exists
-  if [ ! -d "$caddyfile_dir" ]; then
-    mkdir -p "$caddyfile_dir"
-    log INFO "Created directory $caddyfile_dir"
-  fi
-
-  # Write out the Caddyfile
-  cat << 'EOF' > "$caddyfile_path"
-######################################################################
-#                __________________         _____________ ______
-# _____________ _______  /______  /_____  _____  __/___(_)___  /_____
-# _  ___/_  __ `/_  __  / _  __  / __  / / /__  /_  __  / __  / _  _ \
-# / /__  / /_/ / / /_/ /  / /_/ /  _  /_/ / _  __/  _  /  _  /  /  __/
-# \___/  \__,_/  \__,_/   \__,_/   _\__, /  /_/     /_/   /_/   \___/
-#                                  /____/
-######################################################################
-
-{
-    # Use this email for Let's Encrypt notifications
-    email dunamismax@tutamail.com
-
-    # Global logging: captures all events (including errors during startup)
-    log {
-        output file /var/log/caddy/caddy.log
-    }
-}
-
-# Redirect www to non-www
-www.dunamismax.com {
-    redir https://dunamismax.com{uri}
-}
-
-# Main website
-dunamismax.com {
-    # Serve the static files from your Hugo output folder
-    root * /home/sawyer/github/hugo/dunamismax.com/public
-    file_server
-
-    # Deny hidden files (dotfiles like .git, .htaccess, etc.), except .well-known
-    @hiddenFiles {
-        path /.*
-        not path /.well-known/*
-    }
-    respond @hiddenFiles 404
-
-    # Per-site logging: captures site-specific access and error logs
-    log {
-        output file /var/log/caddy/dunamismax_access.log
-    }
-}
-
-# Nextcloud
-cloud.dunamismax.com {
-    reverse_proxy 127.0.0.1:8080
-}
-EOF
-
-  chown root:root "$caddyfile_path"
-  chmod 644 "$caddyfile_path"
-
-  log "Caddyfile created at $caddyfile_path"
-
-  systemctl enable caddy
-  systemctl start caddy
-
-  # Optionally reload or restart Caddy to apply changes
-  if command -v systemctl &>/dev/null; then
-    log INFO "Reloading Caddy to apply new configuration..."
-    systemctl reload caddy || {
-      log ERROR "Reload failed, attempting restart..."
-      systemctl restart caddy
-    }
-  fi
 }
 
 ################################################################################
@@ -1261,6 +882,62 @@ install_gui() {
   log INFO "Installation of i3 and xfce and lightdm is complete."
 }
 
+################################################################################
+# Function: download_repositories
+################################################################################
+download_repositories() {
+  log INFO "Downloading github repositories"
+
+  log INFO "Creating github directory"
+  mkdir -p /home/sawyer/github
+
+  log INFO "Changing to github directory"
+  cd /home/sawyer/github || exit 1
+
+  # List of repositories to clone (folder name plus GitHub path)
+  # If the local folder name matches the repo name, it's easy:
+  repos=(
+    "bash"
+    "c"
+    "religion"
+    "windows"
+    "hugo"
+    "python"
+  )
+
+  # Loop over each repo, remove the folder if it exists, then clone fresh
+  for repo in "${repos[@]}"; do
+    if [ -d "$repo" ]; then
+      log INFO "Removing existing directory: $repo"
+      rm -rf "$repo"
+    fi
+
+    log INFO "Cloning repository: $repo"
+    git clone "https://github.com/dunamismax/${repo}.git"
+  done
+
+  log INFO "Download completed"
+
+  # Set permissions and ownership for the Hugo directory
+  log INFO "Setting ownership and permissions for Hugo public directory"
+  chown -R www-data:www-data "/home/sawyer/github/hugo/dunamismax.com/public"
+  chmod -R 755 "/home/sawyer/github/hugo/dunamismax.com/public"
+
+  log INFO "Setting ownership and permissions for Hugo directory"
+  chown -R caddy:caddy "/home/sawyer/github/hugo"
+  chmod o+rx "/home/sawyer/" "/home/sawyer/github/" "/home/sawyer/github/hugo/" "/home/sawyer/github/hugo/dunamismax.com/"
+
+  # Set permissions and ownership for github directory
+  chown -R sawyer:sawyer "/home/sawyer/github/bash"
+  chown -R sawyer:sawyer "/home/sawyer/github/c"
+  chown -R sawyer:sawyer "/home/sawyer/github/python"
+  chown -R sawyer:sawyer "/home/sawyer/github/religion"
+  chown -R sawyer:sawyer "/home/sawyer/github/windows"
+
+  log INFO "Update repositories and permissions completed."
+  cd ~
+}
+
 # ------------------------------------------------------------------------------
 # Function: dotfiles_load
 # ------------------------------------------------------------------------------
@@ -1278,6 +955,7 @@ dotfiles_load() {
   cp /home/sawyer/github/bash/dotfiles/.profile      /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.Xresources   /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.xprofile     /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/Caddyfile     /etc/caddy/
 
   log INFO "Copying config directories to /home/sawyer/.config..."
   cp -r /home/sawyer/github/bash/dotfiles/bin      /home/sawyer/.config/
@@ -1285,239 +963,11 @@ dotfiles_load() {
   cp -r /home/sawyer/github/bash/dotfiles/polybar  /home/sawyer/.config/
   cp -r /home/sawyer/github/bash/dotfiles/rofi     /home/sawyer/.config/
 
-  # Optionally ensure correct ownership if running as root
+  # Ensure correct ownership if running as root
   chown -R sawyer:sawyer /home/sawyer/
+  chown caddy:caddy /etc/caddy/Caddyfile
 
   log INFO "Dotfiles copied successfully."
-}
-
-# ------------------------------------------------------------------------------
-# Function: Create i3 config file
-# ------------------------------------------------------------------------------
-create_i3_config() {
-  log INFO "Starting creation of i3 configuration..."
-
-  local config_dir="/home/sawyer/.config/i3"
-  local config_file="/home/sawyer/.config/i3/config"
-
-  # Create configuration directory if it doesn't exist
-  if [[ ! -d "$config_dir" ]]; then
-    mkdir -p "$config_dir"
-    log INFO "Created directory: $config_dir"
-  fi
-
-  # Backup existing config if it exists
-  if [[ -f "$config_file" ]]; then
-    local backup_file="${config_file}.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$config_file" "$backup_file"
-    log INFO "Existing i3 config backed up to $backup_file"
-  fi
-
-  # Create new i3 config file
-  cat > "$config_file" <<'EOF'
-# ------------------------------------------------------------------------------
-#   _____ ________                              _____________
-#   ___(_)__|__  /        _____________ _______ ___  __/___(_)_______ _
-#   __  / ___/_ < _________  ___/_  __ \__  __ \__  /_  __  / __  __ `/
-#   _  /  ____/ / _/_____// /__  / /_/ /_  / / /_  __/  _  /  _  /_/ /
-#   /_/   /____/          \___/  \____/ /_/ /_/ /_/     /_/   _\__, /
-#                                                             /____/
-#  ------------------------------------------------------------------------------
-# Mod Key
-# ------------------------------------------------------------------------------
-# Use Mod4 (Super/Windows key) as the modifier key
-set $mod Mod4
-
-# ------------------------------------------------------------------------------
-# Appearance & DPI Scaling
-# ------------------------------------------------------------------------------
-# Increase default font size for high DPI displays using JetBrains Mono
-# (Optionally, you can also configure system-wide DPI via ~/.Xresources)
-font pango:"JetBrains Mono 12"
-
-# Set default window border style and thickness
-for_window [class="^.*"] border pixel 5
-
-# If you truly need to set a high DPI via xrandr, do so here:
-# (Adjust scale values as needed; e.g., 1.25x1.25 or 2x2 if it’s a 4K on a small laptop)
-exec_always --no-startup-id xrandr --output eDP --scale 1x1 --dpi 192
-exec_always --no-startup-id xrandr --output DisplayPort-1 --scale 1x1 --dpi 192
-
-# ------------------------------------------------------------------------------
-# Autostart Applications
-# ------------------------------------------------------------------------------
-# Start picom for compositing effects (transparency, shadows, etc.)
-exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
-
-# Launch polybar after i3 starts
-exec_always --no-startup-id ~/.config/polybar/launch.sh
-
-# Set desktop background using feh (adjust path to your wallpaper)
-exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Kali-Black-4K.jpg
-
-# Display switch scripts (Lenovo laptop-specific)
-exec --no-startup-id ~/.local/bin/display_daemon.sh
-exec --no-startup-id ~/.local/bin/display_switch.sh
-
-# Backup dotfiles daemon
-exec --no-startup-id ~/.local/bin/backup_dotfiles_daemon.sh
-
-# xfce tools
-exec --no-startup-id xfce4-power-manager
-exec --no-startup-id /usr/lib/xfce-polkit/xfce-polkit
-exec --no-startup-id nm-applet      # For network management
-exec --no-startup-id pasystray      # For audio system tray control
-
-# (Optional) Merge ~/.Xresources for consistent DPI, fonts, etc.
-# exec_always --no-startup-id xrdb -merge ~/.Xresources
-
-# ------------------------------------------------------------------------------
-# Keybindings: Launchers and Utilities
-# ------------------------------------------------------------------------------
-# Launch terminal (Alacritty) with Mod+Enter
-bindsym $mod+Return exec alacritty
-
-# Launch Rofi (drun, run, window) with Mod+d
-bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window \
-    -theme /home/sawyer/.config/rofi/theme.rasi
-
-# Lock screen using i3lock with Mod+Shift+l
-bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.png
-
-# Volume control using pavucontrol with Mod+Shift+p
-bindsym $mod+Shift+p exec --no-startup-id pavucontrol
-
-# (Popular) Toggle floating layout on the focused window with Mod+Shift+space
-bindsym $mod+Shift+space floating toggle
-
-# (Popular) Toggle fullscreen on the focused window with Mod+f
-bindsym $mod+f fullscreen toggle
-
-# (Popular) Take a screenshot of the entire screen (or use flameshot, etc.)
-# bindsym Print exec scrot '%Y-%m-%d-%T-screenshot.png' -e 'mv $f ~/Pictures/'
-# or:
-bindsym Print exec flameshot gui
-
-# ------------------------------------------------------------------------------
-# Window Management Keybindings
-# ------------------------------------------------------------------------------
-# Standard window focus navigation (Vim-style: j/k/l/;)
-bindsym $mod+j         focus left
-bindsym $mod+k         focus down
-bindsym $mod+l         focus up
-bindsym $mod+semicolon focus right
-
-# Standard window movement (u/i/o/p)
-bindsym $mod+u move left
-bindsym $mod+i move down
-bindsym $mod+o move up
-bindsym $mod+p move right
-
-# Split orientation selection
-bindsym $mod+h split h
-bindsym $mod+v split v
-
-# Reload and restart i3 configuration
-bindsym $mod+Shift+c reload
-bindsym $mod+Shift+r restart
-
-# Kill focused window
-bindsym $mod+Shift+q kill
-
-# Exit i3 session
-bindsym $mod+Shift+e exec --no-startup-id i3-msg exit
-
-# (Optional) Resize mode for precise resizing
-mode "resize" {
-    bindsym j resize shrink width  10 px or 10 ppt
-    bindsym k resize grow   height 10 px or 10 ppt
-    bindsym l resize shrink height 10 px or 10 ppt
-    bindsym semicolon resize grow width 10 px or 10 ppt
-
-    # Exit resize mode: press Escape or $mod+r again
-    bindsym Escape mode "default"
-    bindsym $mod+r mode "default"
-}
-# Switch to resize mode with Mod+r
-bindsym $mod+r mode "resize"
-
-# ------------------------------------------------------------------------------
-# Workspace Management
-# ------------------------------------------------------------------------------
-# Define workspaces with icons
-set $ws1 ""
-set $ws2 ""
-set $ws3 ""
-set $ws4 ""
-set $ws5 ""
-set $ws6 ""
-set $ws7 ""
-set $ws8 ""
-set $ws9 ""
-
-# Switch to workspace shortcuts
-bindsym $mod+1 workspace $ws1
-bindsym $mod+2 workspace $ws2
-bindsym $mod+3 workspace $ws3
-bindsym $mod+4 workspace $ws4
-bindsym $mod+5 workspace $ws5
-bindsym $mod+6 workspace $ws6
-bindsym $mod+7 workspace $ws7
-bindsym $mod+8 workspace $ws8
-bindsym $mod+9 workspace $ws9
-
-# Move focused container to specified workspace
-bindsym $mod+Shift+1 move container to workspace $ws1
-bindsym $mod+Shift+2 move container to workspace $ws2
-bindsym $mod+Shift+3 move container to workspace $ws3
-bindsym $mod+Shift+4 move container to workspace $ws4
-bindsym $mod+Shift+5 move container to workspace $ws5
-bindsym $mod+Shift+6 move container to workspace $ws6
-bindsym $mod+Shift+7 move container to workspace $ws7
-bindsym $mod+Shift+8 move container to workspace $ws8
-bindsym $mod+Shift+9 move container to workspace $ws9
-
-# (Optional) Auto back-and-forth to the last workspace on same binding
-# workspace_auto_back_and_forth yes
-
-# ------------------------------------------------------------------------------
-# Floating Windows Rules
-# ------------------------------------------------------------------------------
-for_window [class="^Pavucontrol$"] floating enable
-for_window [class="^Rofi$"] floating enable
-for_window [class="^feh$"] floating enable
-for_window [class="^pinentry$"] floating enable
-
-# You can also add generic floating for transient/modal/dialog windows:
-for_window [window_type="dialog"] floating enable
-for_window [window_type="modal"] floating enable
-
-# ------------------------------------------------------------------------------
-# Miscellaneous Settings
-# ------------------------------------------------------------------------------
-# Use gaps between windows (requires i3-gaps)
-gaps inner 7
-gaps outer 7
-
-# Focus follows mouse pointer (can be annoying for some)
-focus_follows_mouse yes
-
-# Smart border behavior: hide borders when only one window
-smart_borders on
-
-# (Optional) Force focus wrapping across edges
-# force_focus_wrapping yes
-
-# (Optional) Hide title bars in tiling mode (i3-gaps feature)
-# new_window normal
-# new_float normal
-
-# ------------------------------------------------------------------------------
-# End of Configuration
-# ------------------------------------------------------------------------------
-EOF
-
-  log INFO "i3 configuration file created at $config_file"
 }
 
 ################################################################################
@@ -1627,8 +1077,6 @@ main() {
   configure_ssh_settings
   force_release_ports
   configure_timezone "America/New_York"
-  set_default_shell_and_env
-  create_caddyfile
   bootstrap_and_install_pkgs
   configure_ufw
   configure_ntp
@@ -1640,7 +1088,6 @@ main() {
   install_powershell_and_zig
   download_repositories
   set_directory_permissions
-  systemctl restart caddy
   install_vscode_cli
   install_jetbrainsmono
   install_gui

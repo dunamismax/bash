@@ -53,9 +53,11 @@ textbox {
 }
 
 /* Matching Highlight */
-element normal.normal.urgent {
-    foreground:          #ff5555; /* Urgent (red) highlight */
+element.normal.urgent {
+    foreground: #ff5555; /* Urgent (red) highlight */
 }
-element normal.normal.active {
-    foreground:          #50fa7b; /* Active (green) highlight */
+
+element.normal.active {
+    foreground: #50fa7b; /* Active (green) highlight */
 }
+

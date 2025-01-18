@@ -6,6 +6,7 @@ SOURCE_DIRS=(
     "$HOME/.config/i3"
     "$HOME/.local/bin/"
     "$HOME/.config/polybar"
+    "$HOME/.config/alacritty/"
 )
 
 # Define destination directory
@@ -31,6 +32,7 @@ DOTFILES=(
     "$HOME/.fehbg"
     "$HOME/.Xresources"
     "$HOME/.xprofile"
+    "/etc/caddy/Caddyfile"
 )
 
 # Backup additional dotfiles
