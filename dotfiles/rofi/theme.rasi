@@ -1,0 +1,61 @@
+/* Dark Theme for Rofi */
+configuration {
+    font: "JetBrains Mono 12";  /* Adjust to your preferred font and size */
+    location: 0;
+    yoffset: 0;
+    xoffset: 0;
+    width: 50;  /* Adjust to control the width of the Rofi window */
+    lines: 10;  /* Number of visible entries */
+    columns: 1;
+}
+
+/* Main Background and Window */
+* {
+    background:          #1e1e2e;  /* Dark background */
+    foreground:          #c0caf5;  /* Light text */
+    spacing:             5;       /* Space between entries */
+    border:              2;
+    border-color:        #44475a; /* Subtle border color */
+    separator:           #44475a; /* Separator color */
+}
+
+/* Selected Item */
+element selected {
+    background:          #44475a; /* Highlighted background */
+    foreground:          #f8f8f2; /* Highlighted text */
+    padding:             2;
+}
+
+/* Normal Items */
+element {
+    padding:             2;
+    background:          transparent;
+    foreground:          #c0caf5;
+}
+
+/* Scrollbar */
+scrollbar {
+    handle:              #6272a4;
+    background:          #282a36;
+    width:               10;
+}
+
+/* Input Field (Prompt) */
+inputbar {
+    foreground:          #8be9fd;
+    background:          #1e1e2e;
+}
+
+/* Text Box (Query) */
+textbox {
+    foreground:          #f1fa8c;
+    background:          #1e1e2e;
+}
+
+/* Matching Highlight */
+element normal.normal.urgent {
+    foreground:          #ff5555; /* Urgent (red) highlight */
+}
+element normal.normal.active {
+    foreground:          #50fa7b; /* Active (green) highlight */
+}
