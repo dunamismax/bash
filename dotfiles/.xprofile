@@ -1,31 +1,12 @@
 #!/usr/bin/env bash
 #
 # ~/.xprofile
-# This file is sourced when your X session starts (e.g., via LightDM).
-# It unifies all HiDPI and font scaling settings in one place.
+# Sourced by LightDM. Ensures autorandr is run on login.
 
-################################################################################
-# 1) Merge Xresources (for Xft DPI, font rendering, etc.)
-################################################################################
-if [ -f ~/.Xresources ]; then
-    xrdb -merge ~/.Xresources
+# Run autorandr on session start
+if command -v autorandr >/dev/null 2>&1; then
+    autorandr --change
 fi
 
-################################################################################
-# 2) GTK scaling for XFCE (and other GTK apps)
-################################################################################
-# Sets the scale factor to 2 (about 2×) for high DPI displays.
-# Adjust to 1.5 or 2.0 (only integer values are supported in older XFCE versions).
-xfconf-query --channel xsettings --property /Gdk/WindowScalingFactor --set 2
-
-################################################################################
-# 3) Qt scaling
-################################################################################
-# **Manual 2× scaling** (disable auto, force 2×):
-export QT_AUTO_SCREEN_SCALE_FACTOR=0
-export QT_SCALE_FACTOR=2
-
-################################################################################
-# End of ~/.xprofile
-################################################################################
-
+# Optionally, if you want a fallback for the rare case that autorandr doesn't detect:
+# xrdb -merge ~/.Xresources-1080p

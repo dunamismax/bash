@@ -46,6 +46,9 @@ exec --no-startup-id /usr/lib/xfce-polkit/xfce-polkit
 exec --no-startup-id nm-applet      # For network management
 exec --no-startup-id pasystray      # For audio system tray control
 
+# autorandr display scale switching (when changing from 4K monitor to 1080p monitor on Lenovo)
+exec_always --no-startup-id autorandr --change
+
 # ------------------------------------------------------------------------------
 # Keybindings: Launchers and Utilities
 # ------------------------------------------------------------------------------
@@ -53,10 +56,7 @@ exec --no-startup-id pasystray      # For audio system tray control
 bindsym $mod+Return exec alacritty
 
 # Launch Rofi (drun, run, window) with Mod+d
-bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window -theme ~/.config/rofi/theme.rasi
-
-# The below might be the correct one, try it if the above errors:
-# bindsym $mod+d exec --no-startup-id rofi -show drun -theme ~/.config/rofi/theme.rasi
+bindsym $mod+d exec --no-startup-id rofi -show drun -theme ~/.config/rofi/theme.rasi
 
 # Lock screen using i3lock with Mod+Shift+l
 bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.png

@@ -7,6 +7,7 @@ SOURCE_DIRS=(
     "$HOME/.local/bin/"
     "$HOME/.config/polybar"
     "$HOME/.config/alacritty/"
+    "$HOME/.config/autorandr/"
 )
 
 # Define destination directory
@@ -34,6 +35,8 @@ DOTFILES=(
     "$HOME/.xprofile"
     "/etc/caddy/Caddyfile"
     "/etc/chrony/chrony.conf"
+    "$HOME/.Xresources-1080p"
+    "$HOME/.Xresources-4k"
 )
 
 # Backup additional dotfiles
