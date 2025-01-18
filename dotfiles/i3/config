@@ -34,8 +34,8 @@ exec_always --no-startup-id ~/.config/polybar/launch.sh
 exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Kali-Black-4K.jpg
 
 # Display switch scripts (Lenovo laptop-specific)
-exec --no-startup-id ~/.local/bin/display_daemon.sh
-exec --no-startup-id ~/.local/bin/display_switch.sh
+# exec --no-startup-id ~/.local/bin/display_daemon.sh
+# exec --no-startup-id ~/.local/bin/display_switch.sh
 
 # Backup dotfiles daemon
 exec --no-startup-id ~/.local/bin/backup_dotfiles_daemon.sh
@@ -47,7 +47,7 @@ exec --no-startup-id nm-applet      # For network management
 exec --no-startup-id pasystray      # For audio system tray control
 
 # autorandr display scale switching (when changing from 4K monitor to 1080p monitor on Lenovo)
-exec_always --no-startup-id autorandr --change
+# exec_always --no-startup-id autorandr --change
 
 # ------------------------------------------------------------------------------
 # Keybindings: Launchers and Utilities

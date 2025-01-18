@@ -24445,3 +24445,412 @@ sending incremental file list
 sent 81 bytes  received 12 bytes  186.00 bytes/sec
 total size is 1,755  speedup is 18.87
 sending incremental file list
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+./
+backup_log.txt
+config
+
+sent 907,119 bytes  received 57 bytes  1,814,352.00 bytes/sec
+total size is 913,548  speedup is 1.01
+sending incremental file list
+./
+
+sent 439 bytes  received 19 bytes  916.00 bytes/sec
+total size is 35,210  speedup is 76.88
+sending incremental file list
+
+sent 102 bytes  received 12 bytes  228.00 bytes/sec
+total size is 4,309  speedup is 37.80
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+fourKSetup/config
+laptopOnly/config
+
+sent 1,176 bytes  received 56 bytes  2,464.00 bytes/sec
+total size is 2,707  speedup is 2.20
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+.fehbg
+
+sent 224 bytes  received 35 bytes  518.00 bytes/sec
+total size is 115  speedup is 0.44
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 06:12:02 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 901,738 bytes  received 35 bytes  1,803,546.00 bytes/sec
+total size is 915,589  speedup is 1.02
+sending incremental file list
+
+sent 432 bytes  received 12 bytes  888.00 bytes/sec
+total size is 35,210  speedup is 79.30
+sending incremental file list
+
+sent 102 bytes  received 12 bytes  228.00 bytes/sec
+total size is 4,309  speedup is 37.80
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+fourKSetup/config
+
+sent 716 bytes  received 37 bytes  1,506.00 bytes/sec
+total size is 2,707  speedup is 3.59
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+.fehbg
+
+sent 223 bytes  received 35 bytes  516.00 bytes/sec
+total size is 115  speedup is 0.45
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 06:13:03 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 903,746 bytes  received 35 bytes  1,807,562.00 bytes/sec
+total size is 917,597  speedup is 1.02
+sending incremental file list
+
+sent 432 bytes  received 12 bytes  888.00 bytes/sec
+total size is 35,210  speedup is 79.30
+sending incremental file list
+
+sent 102 bytes  received 12 bytes  228.00 bytes/sec
+total size is 4,309  speedup is 37.80
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 253 bytes  received 14 bytes  534.00 bytes/sec
+total size is 2,707  speedup is 10.14
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 06:14:04 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 905,727 bytes  received 35 bytes  1,811,524.00 bytes/sec
+total size is 919,578  speedup is 1.02
+sending incremental file list
+
+sent 432 bytes  received 12 bytes  888.00 bytes/sec
+total size is 35,210  speedup is 79.30
+sending incremental file list
+
+sent 102 bytes  received 12 bytes  228.00 bytes/sec
+total size is 4,309  speedup is 37.80
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 253 bytes  received 14 bytes  534.00 bytes/sec
+total size is 2,707  speedup is 10.14
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 06:15:05 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 907,707 bytes  received 35 bytes  1,815,484.00 bytes/sec
+total size is 921,559  speedup is 1.02
+sending incremental file list
+
+sent 432 bytes  received 12 bytes  888.00 bytes/sec
+total size is 35,210  speedup is 79.30
+sending incremental file list
+
+sent 102 bytes  received 12 bytes  228.00 bytes/sec
+total size is 4,309  speedup is 37.80
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 253 bytes  received 14 bytes  534.00 bytes/sec
+total size is 2,707  speedup is 10.14
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 06:16:05 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 909,689 bytes  received 35 bytes  1,819,448.00 bytes/sec
+total size is 923,540  speedup is 1.02
+sending incremental file list
+
+sent 432 bytes  received 12 bytes  888.00 bytes/sec
+total size is 35,210  speedup is 79.30
+sending incremental file list
+
+sent 102 bytes  received 12 bytes  228.00 bytes/sec
+total size is 4,309  speedup is 37.80
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 253 bytes  received 14 bytes  534.00 bytes/sec
+total size is 2,707  speedup is 10.14
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 06:17:06 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
