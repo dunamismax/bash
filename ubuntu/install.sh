@@ -763,6 +763,7 @@ install_gui() {
   rm -rf "$build_dir"
 
   log INFO "xfce-polkit installed successfully."
+  cd /home/sawyer
 
   # Refresh library paths and complete setup
   log INFO "Refreshing library paths..."
