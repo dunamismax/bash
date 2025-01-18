@@ -21,9 +21,6 @@ font pango:"JetBrains Mono 12"
 # Set default window border style and thickness
 for_window [class="^.*"] border pixel 5
 
-# Load and use .Xresources for HighDPI settings and scaling universally
-exec_always --no-startup-id xrdb -merge ~/.Xresources
-
 # ------------------------------------------------------------------------------
 # Autostart Applications
 # ------------------------------------------------------------------------------
