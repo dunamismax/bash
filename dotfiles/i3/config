@@ -5,60 +5,65 @@
 #   _  /  ____/ / _/_____// /__  / /_/ /_  / / /_  __/  _  /  _  /_/ /
 #   /_/   /____/          \___/  \____/ /_/ /_/ /_/     /_/   _\__, /
 #                                                             /____/
+#  ------------------------------------------------------------------------------
+# Mod Key
 # ------------------------------------------------------------------------------
-# High DPI, Addons Setup, and Custom Bindings
-# ------------------------------------------------------------------------------
-
 # Use Mod4 (Super/Windows key) as the modifier key
 set $mod Mod4
 
 # ------------------------------------------------------------------------------
 # Appearance & DPI Scaling
 # ------------------------------------------------------------------------------
-
 # Increase default font size for high DPI displays using JetBrains Mono
-font pango:"JetBrains Mono" 12
+# (Optionally, you can also configure system-wide DPI via ~/.Xresources)
+font pango:"JetBrains Mono 12"
 
 # Set default window border style and thickness
 for_window [class="^.*"] border pixel 5
 
-# Apply DPI scaling using xrandr on startup to the eDP (Lenovo laptop display)
+# If you truly need to set a high DPI via xrandr, do so here:
+# (Adjust scale values as needed; e.g., 1.25x1.25 or 2x2 if it’s a 4K on a small laptop)
 exec_always --no-startup-id xrandr --output eDP --scale 1x1 --dpi 192
-
-# Apply DPI scaling using xrandr on startup to the DisplayPort-1 (4K Dell display)
 exec_always --no-startup-id xrandr --output DisplayPort-1 --scale 1x1 --dpi 192
 
 # ------------------------------------------------------------------------------
 # Autostart Applications
 # ------------------------------------------------------------------------------
-
 # Start picom for compositing effects (transparency, shadows, etc.)
 exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
 
 # Launch polybar (if configured) after i3 starts
+# NOTE: If you are using Polybar exclusively, you might disable the i3 bar below.
 exec_always --no-startup-id ~/.config/polybar/launch.sh
 
 # Set desktop background using feh (adjust path to your wallpaper)
 exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Kali-Black-4K.jpg
 
-# Display switch polling daemon script (Lenovo laptop specific)
+# Display switch scripts (Lenovo laptop-specific)
 exec --no-startup-id ~/.local/bin/display_daemon.sh
-
-# Display switch run at startup one time
 exec --no-startup-id ~/.local/bin/display_switch.sh
 
 # Backup dotfiles daemon
 exec --no-startup-id ~/.local/bin/backup_dotfiles_daemon.sh
 
-# ------------------------------------------------------------------------------
-# Keybindings for Launchers and Utilities
-# ------------------------------------------------------------------------------
+# xfce tools
+exec --no-startup-id xfce4-power-manager
+exec --no-startup-id /usr/lib/xfce-polkit/xfce-polkit
+exec --no-startup-id nm-applet      # For network management
+exec --no-startup-id pasystray      # For audio system tray control
 
+# (Optional) Merge ~/.Xresources for consistent DPI, fonts, etc.
+# exec_always --no-startup-id xrdb -merge ~/.Xresources
+
+# ------------------------------------------------------------------------------
+# Keybindings: Launchers and Utilities
+# ------------------------------------------------------------------------------
 # Launch terminal (Alacritty) with Mod+Enter
 bindsym $mod+Return exec alacritty
 
-# Launch Rofi as application launcher with Mod+d
-bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window -theme /home/sawyer/.config/rofi/theme.rasi
+# Launch Rofi (drun, run, window) with Mod+d
+bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window \
+    -theme /home/sawyer/.config/rofi/theme.rasi
 
 # Lock screen using i3lock with Mod+Shift+l
 bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.png
@@ -66,17 +71,27 @@ bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.pn
 # Volume control using pavucontrol with Mod+Shift+p
 bindsym $mod+Shift+p exec --no-startup-id pavucontrol
 
+# (Popular) Toggle floating layout on the focused window with Mod+Shift+space
+bindsym $mod+Shift+space floating toggle
+
+# (Popular) Toggle fullscreen on the focused window with Mod+f
+bindsym $mod+f fullscreen toggle
+
+# (Popular) Take a screenshot of the entire screen (or use flameshot, etc.)
+# bindsym Print exec scrot '%Y-%m-%d-%T-screenshot.png' -e 'mv $f ~/Pictures/'
+# or:
+# bindsym Print exec flameshot gui
+
 # ------------------------------------------------------------------------------
 # Window Management Keybindings
 # ------------------------------------------------------------------------------
-
-# Standard window focus navigation
-bindsym $mod+j focus left
-bindsym $mod+k focus down
-bindsym $mod+l focus up
+# Standard window focus navigation (Vim-style: j/k/l/;)
+bindsym $mod+j         focus left
+bindsym $mod+k         focus down
+bindsym $mod+l         focus up
 bindsym $mod+semicolon focus right
 
-# Standard window movement
+# Standard window movement (u/i/o/p)
 bindsym $mod+u move left
 bindsym $mod+i move down
 bindsym $mod+o move up
@@ -96,11 +111,24 @@ bindsym $mod+Shift+q kill
 # Exit i3 session
 bindsym $mod+Shift+e exec --no-startup-id i3-msg exit
 
+# (Optional) Resize mode for precise resizing
+mode "resize" {
+    bindsym j resize shrink width  10 px or 10 ppt
+    bindsym k resize grow   height 10 px or 10 ppt
+    bindsym l resize shrink height 10 px or 10 ppt
+    bindsym semicolon resize grow width 10 px or 10 ppt
+    
+    # Exit resize mode: press Escape or $mod+r again
+    bindsym Escape mode "default"
+    bindsym $mod+r mode "default"
+}
+# Switch to resize mode with Mod+r
+bindsym $mod+r mode "resize"
+
 # ------------------------------------------------------------------------------
 # Workspace Management
 # ------------------------------------------------------------------------------
-
-# Define workspaces with icons for visual clarity
+# Define workspaces with icons
 set $ws1 ""
 set $ws2 ""
 set $ws3 ""
@@ -133,19 +161,22 @@ bindsym $mod+Shift+7 move container to workspace $ws7
 bindsym $mod+Shift+8 move container to workspace $ws8
 bindsym $mod+Shift+9 move container to workspace $ws9
 
-# ------------------------------------------------------------------------------
-# i3blocks for Status Bar
-# ------------------------------------------------------------------------------
+# (Optional) Auto back-and-forth to the last workspace on same binding
+# workspace_auto_back_and_forth yes
 
+# ------------------------------------------------------------------------------
+# i3 Bar / i3blocks (If you still use the i3 bar instead of Polybar)
+# ------------------------------------------------------------------------------
+# NOTE: If you solely use Polybar, you can comment out the entire 'bar { }' block
 bar {
     status_command i3blocks
-    font pango:JetBrains Mono 12
+    font pango:"JetBrains Mono 12"
     workspace_buttons yes
 
     # Adjust bar height for high DPI displays
     height 40
 
-    # Colors for the bar (customize as preferred)
+    # Basic color scheme (customize)
     colors {
         background       #282828
         statusline       #ebdbb2
@@ -161,26 +192,34 @@ bar {
 # ------------------------------------------------------------------------------
 # Floating Windows Rules
 # ------------------------------------------------------------------------------
-
-# Allow certain applications to float
 for_window [class="^Pavucontrol$"] floating enable
 for_window [class="^Rofi$"] floating enable
 for_window [class="^feh$"] floating enable
 for_window [class="^pinentry$"] floating enable
 
+# You can also add generic floating for transient/modal/dialog windows:
+# for_window [window_type="dialog"] floating enable
+# for_window [window_type="modal"] floating enable
+
 # ------------------------------------------------------------------------------
 # Miscellaneous Settings
 # ------------------------------------------------------------------------------
-
 # Use gaps between windows (requires i3-gaps)
 gaps inner 7
 gaps outer 7
 
-# Focus follows mouse pointer
+# Focus follows mouse pointer (can be annoying for some)
 focus_follows_mouse yes
 
-# Smart border behavior: hide borders when unnecessary
+# Smart border behavior: hide borders when only one window
 smart_borders on
+
+# (Optional) Force focus wrapping across edges
+# force_focus_wrapping yes
+
+# (Optional) Hide title bars in tiling mode (i3-gaps feature)
+# new_window normal
+# new_float normal
 
 # ------------------------------------------------------------------------------
 # End of Configuration
