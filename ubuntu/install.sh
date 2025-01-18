@@ -26,6 +26,12 @@
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
+# Check if script is run as root
+if [[ $(id -u) -ne 0 ]]; then
+  echo "This script must be run as root (e.g., sudo $0). Exiting."
+  exit 1
+fi
+
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
@@ -37,7 +43,7 @@ PACKAGES=(
   bash zsh fish vim nano mc screen tmux nodejs npm ninja-build meson fonts-font-awesome
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill fonts-ubuntu
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw fonts-hack-ttf
-  xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
+  xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev flatpak
   git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq fonts-dejavu-core
   nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups neovim
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils acpid policykit-1 papirus-icon-theme
@@ -49,6 +55,9 @@ PACKAGES=(
 # You can add functions below (e.g., apt updates, config overwrites) and then
 # call them in your "main" block at the end.
 # ------------------------------------------------------------------------------
+
+# Performing initial apt update
+apt update
 
 ################################################################################
 # Function: logging function
@@ -188,7 +197,7 @@ configure_ssh_settings() {
 
   # Install OpenSSH server if not already installed
   if ! dpkg -l | grep -qw openssh-server; then
-    apt update && apt install -y openssh-server
+    apt install -y openssh-server
     log INFO "OpenSSH Server installed."
   else
     log INFO "OpenSSH Server is already installed."
@@ -239,7 +248,6 @@ configure_ssh_settings() {
 ################################################################################
 bootstrap_and_install_pkgs() {
   log INFO "Updating apt package list and upgrading existing packages..."
-  apt update -y
   apt upgrade -y
 
   local packages_to_install=()
@@ -404,7 +412,6 @@ configure_ntp() {
 install_all_build_dependencies() {
     # 1) Update and upgrade system packages
     log INFO "Updating apt caches and upgrading packages..."
-    apt update -y
     apt upgrade -y
 
     # 2) Install all APT-based dependencies in one shot
@@ -513,9 +520,6 @@ install_and_enable_plex() {
     return
   fi
 
-  log INFO "Updating apt package index..."
-  apt update -y
-
   log INFO "Installing prerequisites (curl) if not already installed..."
   if ! dpkg -s curl >/dev/null 2>&1; then
     apt install -y curl
@@ -572,7 +576,6 @@ install_powershell_and_zig() {
   wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
   dpkg -i packages-microsoft-prod.deb || true
   rm -f packages-microsoft-prod.deb
-  apt update -y
   apt install -y powershell || true
   log INFO "PowerShell installation complete."
 
@@ -675,27 +678,20 @@ install_jetbrainsmono() {
 }
 
 # ------------------------------------------------------------------------------
-# Function: Installs Pipewire and Pulseaudio and sets Pipewire as default
+# Function: Installs Pipewire, removes Pulseaudio, and sets Pipewire as default
 # ------------------------------------------------------------------------------
 switch_to_pipewire() {
-    echo "Installing PipeWire and related packages..."
-    # Typically requires sudo/root for apt install
-    apt install -y \
-        pulseaudio \
-        pipewire \
-        pipewire-audio-client-libraries \
-        pipewire-pulse \
-        wireplumber
+  # 1. Remove PulseAudio
+  sudo apt remove --purge pulseaudio
 
-    echo "Disabling and stopping PulseAudio services..."
-    systemctl --user --now disable pulseaudio.service pulseaudio.socket
-    systemctl --user stop pulseaudio.service pulseaudio.socket
+  # 2. Install PipeWire and related packages
+  sudo apt install pipewire pipewire-pulse pipewire-alsa wireplumber
 
-    echo "Enabling and starting PipeWire services..."
-    systemctl --user --now enable pipewire pipewire-pulse wireplumber
-    systemctl --user start pipewire pipewire-pulse wireplumber
+  # 3. Enable and start the PipeWire-based services (per user)
+  systemctl --user --now enable pipewire pipewire-pulse wireplumber
+  systemctl --user start pipewire pipewire-pulse wireplumber
 
-    echo "PipeWire is now set as the default sound server."
+  echo "PipeWire is now set as the default sound server."
 }
 
 # ------------------------------------------------------------------------------
@@ -947,14 +943,6 @@ finalize_configuration() {
     log ERROR "Failed to add Flathub repository."
   fi
 
-  # Update package list
-  log INFO "Updating package list..."
-  if apt update; then
-    log INFO "Package list updated."
-  else
-    log ERROR "Failed to update package list."
-  fi
-
   # Upgrade installed packages
   log INFO "Upgrading installed packages..."
   if apt upgrade -y; then
@@ -962,6 +950,9 @@ finalize_configuration() {
   else
     log ERROR "Package upgrade failed."
   fi
+
+  # Configure Flatpak
+  flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
   # Update Flatpak applications
   log INFO "Updating Flatpak applications..."
@@ -981,14 +972,6 @@ finalize_configuration() {
     fi
   else
     log INFO "Snap is not installed; skipping Snap refresh."
-  fi
-
-  # Remove unused dependencies
-  log INFO "Performing system cleanup..."
-  if apt autoremove -y; then
-    log INFO "Unused dependencies removed."
-  else
-    log ERROR "Failed to remove unused dependencies."
   fi
 
   # Clean up local package cache
