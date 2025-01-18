@@ -552,34 +552,14 @@ install_and_enable_plex() {
 }
 
 # ------------------------------------------------------------------------------
-# install_powershell_and_zig
-#   Installs PowerShell on Ubuntu and only installs Zig if it's not already
-#   present on the system.
+# Function: install zig
 # ------------------------------------------------------------------------------
-install_powershell_and_zig() {
+install_zig() {
   set -euo pipefail
-  log INFO "Starting installation of PowerShell and Zig..."
+  log INFO "Starting installation of Zig..."
 
   # ------------------------
-  # 0. Check for Powershell
-  # ------------------------
-  if command -v powershell &>/dev/null; then
-    log INFO "Powershell is already installed. Skipping Powershell installation."
-    return 0
-  fi
-
-  # ------------------------
-  # 1. Install PowerShell
-  # ------------------------
-  log INFO "Installing PowerShell..."
-  wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
-  dpkg -i packages-microsoft-prod.deb || true
-  rm -f packages-microsoft-prod.deb
-  apt install -y powershell || true
-  log INFO "PowerShell installation complete."
-
-  # ------------------------
-  # 2. Check for Zig
+  # 1. Check for Zig
   # ------------------------
   if command -v zig &>/dev/null; then
     log INFO "Zig is already installed. Skipping Zig installation."
@@ -587,7 +567,7 @@ install_powershell_and_zig() {
   fi
 
   # ------------------------
-  # 3. Install Zig
+  # 2. Install Zig
   # ------------------------
   log INFO "Installing Zig..."
   ZIG_VERSION="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
@@ -1038,7 +1018,7 @@ main() {
   fail2ban
   install_all_build_dependencies
   install_and_enable_plex
-  install_powershell_and_zig
+  install_zig
   install_caddy
   download_repositories
   set_directory_permissions
