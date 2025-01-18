@@ -15,9 +15,9 @@ Xft.hintstyle: hintslight
 ! Subpixel layout: rgb (LCDs), bgr, vrgb, vbgr, none
 Xft.rgba: rgb
 
-! (Optional) Xft.lcdfilter can improve subpixel rendering if you like
+! Xft.lcdfilter can improve subpixel rendering if you like
 Xft.lcdfilter: lcddefault
 
-! (Optional) You can also set cursor size for HiDPI
+! You can also set cursor size for HiDPI
 Xcursor.size: 32
 
