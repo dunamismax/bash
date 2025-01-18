@@ -5041,3 +5041,51 @@ sending incremental file list
 sent 62 bytes  received 12 bytes  148.00 bytes/sec
 total size is 115  speedup is 1.55
 Backup completed at Sat Jan 18 09:31:32 AM EST 2025.
+sending incremental file list
+
+sent 85 bytes  received 12 bytes  194.00 bytes/sec
+total size is 1,540  speedup is 15.88
+sending incremental file list
+backup_log.txt
+
+sent 318,602 bytes  received 35 bytes  637,274.00 bytes/sec
+total size is 331,955  speedup is 1.04
+sending incremental file list
+
+sent 79 bytes  received 12 bytes  182.00 bytes/sec
+total size is 142  speedup is 1.56
+sending incremental file list
+
+sent 57 bytes  received 12 bytes  138.00 bytes/sec
+total size is 0  speedup is 0.00
+sending incremental file list
+
+sent 181 bytes  received 12 bytes  386.00 bytes/sec
+total size is 1,622  speedup is 8.40
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,601  speedup is 101.35
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+Dotfile /home/sawyer/.local does not exist, skipping.
+sending incremental file list
+
+sent 68 bytes  received 12 bytes  160.00 bytes/sec
+total size is 8,348  speedup is 104.35
+sending incremental file list
+
+sent 62 bytes  received 12 bytes  148.00 bytes/sec
+total size is 115  speedup is 1.55
+Backup completed at Sat Jan 18 09:32:32 AM EST 2025.
+sending incremental file list
+
+sent 85 bytes  received 12 bytes  194.00 bytes/sec
+total size is 1,540  speedup is 15.88
+sending incremental file list

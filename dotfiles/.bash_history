@@ -616,3 +616,41 @@ sudo nano ~/.config/i3/config
 cd ~
 #1737207963
 npm install --save nord
+#1737209082
+l
+#1737209087
+l .config/
+#1737209204
+cd github/bash/dotfiles/
+#1737209205
+ls
+#1737209206
+ls -a
+#1737209212
+rm .bash_history 
+#1737209218
+rm .bash_profile 
+#1737209220
+rm .bashrc 
+#1737209226
+ls -a
+#1737209230
+rm -rf .config/
+#1737209234
+rm -rf .fehbg 
+#1737209238
+rm -rf .profile 
+#1737209239
+ls -a
+#1737210561
+cd ~
+#1737210578
+nano ~/.config/i3/config
+#1737210669
+cd .local/bin/
+#1737210669
+ls
+#1737210675
+nano backup_dotfiles.sh
+#1737210713
+./backup_dotfiles.sh
