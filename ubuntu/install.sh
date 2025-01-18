@@ -711,45 +711,6 @@ install_gui() {
   apt-get install -y xfce4 xfce4-goodies xfce4-session xfce4-power-manager thunar thunar-volman gvfs-backends \
     lightdm lightdm-gtk-greeter xfce4-settings xfce4-terminal xfce4-notifyd xfce4-screenshooter \
     xfce4-taskmanager ristretto mousepad parole pipewire pavucontrol arc-theme adwaita-icon-theme
-
-  # Installing xfce-polkit from Source
-
-  # Define the repository URL
-  local repo_url="https://github.com/ncopa/xfce-polkit.git"
-  local build_dir="/tmp/xfce-polkit-build"
-
-  # Create a temporary build directory
-  log INFO "Creating build directory at $build_dir"
-  rm -rf "$build_dir"
-  mkdir -p "$build_dir"
-
-  # Clone the repository
-  log INFO "Cloning xfce-polkit repository..."
-  git clone "$repo_url" "$build_dir"
-
-  # Navigate to the repository root
-  cd "$build_dir"
-
-  # Build and install xfce-polkit
-  log INFO "Building and installing xfce-polkit..."
-  mkdir build
-  cd build
-  meson --prefix=/usr ..
-  ninja
-  sudo ninja install
-
-  # Clean up temporary build directory
-  log INFO "Cleaning up..."
-  rm -rf "$build_dir"
-
-  log INFO "xfce-polkit installed successfully."
-  cd /home/sawyer
-
-  # Refresh library paths and complete setup
-  log INFO "Refreshing library paths..."
-  ldconfig
-
-  log INFO "Installation of i3 and xfce and lightdm is complete."
 }
 
 ################################################################################
