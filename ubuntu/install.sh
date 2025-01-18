@@ -623,8 +623,14 @@ install_powershell_and_zig() {
 # Function: Installs vscode cli
 ################################################################################
 install_vscode_cli() {
-  # Create a symbolic link for node to /usr/local/node
   log INFO "Creating symbolic link for Node.js..."
+
+  # If /usr/local/node already exists (as a file, directory, or symlink), remove it.
+  if [ -e "/usr/local/node" ] || [ -L "/usr/local/node" ]; then
+    rm -f "/usr/local/node"
+  fi
+
+  # Create the symbolic link
   if ln -s "$(which node)" /usr/local/node; then
     log INFO "Symbolic link created at /usr/local/node."
   else
