@@ -677,33 +677,27 @@ install_jetbrainsmono() {
 }
 
 # ------------------------------------------------------------------------------
-# Function: Installs Pipewire, removes Pulseaudio, and sets Pipewire as default
+# Function: Installs PipeWire, removes PulseAudio, and enables PipeWire user services globally
 # ------------------------------------------------------------------------------
 switch_to_pipewire() {
-  # Who should actually own/run the PipeWire user services?
-  # Use $SUDO_USER if you invoked the script with "sudo ./install.sh".
-  # Otherwise, set this manually to your actual username.
-  local TARGET_USER="${SUDO_USER:-sawyer}"
-
   log INFO "Installing PipeWire and setting it to default."
 
   log INFO "1. Remove PulseAudio."
   apt remove --purge -y pulseaudio
 
-  log INFO "2. Install PipeWire and related packages."
+  log INFO "2. Update repositories and install PipeWire-related packages."
   apt update
   apt install -y pipewire pipewire-pulse pipewire-alsa wireplumber
 
-  log INFO "3. Enable lingering for user '${TARGET_USER}'."
-  # This ensures a user systemd instance can be started even if they're not logged in.
-  loginctl enable-linger "${TARGET_USER}"
+  log INFO "3. Enable PipeWire user services globally."
+  # This means any user who logs in will have these services started in their session.
+  systemctl --global enable pipewire.service pipewire-pulse.service wireplumber.service
 
-  log INFO "4. Enable and start the PipeWire-based services (per user)."
-  # Use 'runuser' to execute commands as the target user in their user session.
-  runuser -u "${TARGET_USER}" -- \
-    systemctl --user enable --now pipewire pipewire-pulse wireplumber
+  # Optionally, mask PulseAudio’s user services so they can’t be started again:
+  # systemctl --global mask pulseaudio.service pulseaudio.socket
 
-  log INFO "PipeWire is now set as the default sound server for user '${TARGET_USER}'."
+  log INFO "PipeWire user services have been globally enabled."
+  log INFO "They will start automatically for each user at login."
 }
 
 # ------------------------------------------------------------------------------
