@@ -680,17 +680,30 @@ install_jetbrainsmono() {
 # Function: Installs Pipewire, removes Pulseaudio, and sets Pipewire as default
 # ------------------------------------------------------------------------------
 switch_to_pipewire() {
-  # 1. Remove PulseAudio
-  sudo apt remove --purge pulseaudio
+  # Who should actually own/run the PipeWire user services?
+  # Use $SUDO_USER if you invoked the script with "sudo ./install.sh".
+  # Otherwise, set this manually to your actual username.
+  local TARGET_USER="${SUDO_USER:-sawyer}"
 
-  # 2. Install PipeWire and related packages
-  sudo apt install pipewire pipewire-pulse pipewire-alsa wireplumber
+  log INFO "Installing PipeWire and setting it to default."
 
-  # 3. Enable and start the PipeWire-based services (per user)
-  systemctl --user --now enable pipewire pipewire-pulse wireplumber
-  systemctl --user start pipewire pipewire-pulse wireplumber
+  log INFO "1. Remove PulseAudio."
+  apt remove --purge -y pulseaudio
 
-  echo "PipeWire is now set as the default sound server."
+  log INFO "2. Install PipeWire and related packages."
+  apt update
+  apt install -y pipewire pipewire-pulse pipewire-alsa wireplumber
+
+  log INFO "3. Enable lingering for user '${TARGET_USER}'."
+  # This ensures a user systemd instance can be started even if they're not logged in.
+  loginctl enable-linger "${TARGET_USER}"
+
+  log INFO "4. Enable and start the PipeWire-based services (per user)."
+  # Use 'runuser' to execute commands as the target user in their user session.
+  runuser -u "${TARGET_USER}" -- \
+    systemctl --user enable --now pipewire pipewire-pulse wireplumber
+
+  log INFO "PipeWire is now set as the default sound server for user '${TARGET_USER}'."
 }
 
 # ------------------------------------------------------------------------------
