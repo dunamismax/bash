@@ -1,0 +1,3 @@
+[ -f ~/.Xresources ] && xrdb -merge ~/.Xresources
+xfconf-query --channel xsettings --property /Gdk/WindowScalingFactor --set 2
+

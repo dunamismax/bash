@@ -654,3 +654,11 @@ ls
 nano backup_dotfiles.sh
 #1737210713
 ./backup_dotfiles.sh
+#1737214886
+l
+#1737214893
+cd .local/bin
+#1737214894
+l
+#1737214905
+nano backup_dotfiles.sh

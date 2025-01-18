@@ -383,11 +383,11 @@ EOF
   cat << 'EOF' > "$bashrc_file"
 # ~/.bashrc: executed by bash(1) for non-login shells.
 # ------------------------------------------------------------------------------
-#    ______                  ______
-#    ___  /_ ______ ____________  /_ _______________
-#    __  __ \_  __ `/__  ___/__  __ \__  ___/_  ___/
-#___ _  /_/ // /_/ / _(__  ) _  / / /_  /    / /__
-#_(_)/_.___/ \__,_/  /____/  /_/ /_/ /_/     \___/
+#        ______                  ______
+#        ___  /_ ______ ____________  /_ _______________
+#        __  __ \_  __ `/__  ___/__  __ \__  ___/_  ___/
+#    ___ _  /_/ // /_/ / _(__  ) _  / / /_  /    / /__
+#    _(_)/_.___/ \__,_/  /____/  /_/ /_/ /_/     \___/
 #
 # ------------------------------------------------------------------------------
 
@@ -404,10 +404,11 @@ esac
 # ------------------------------------------------------------------------------
 # Add your local bin directory to PATH.
 export PATH="$PATH:$HOME/.local/bin"
-export GDK_BACKEND=wayland
-export QT_QPA_PLATFORM=wayland
-export CLUTTER_BACKEND=wayland
-export XDG_SESSION_TYPE=wayland
+
+# If you want a specific scale, e.g. 2, do:
+# export QT_SCALE_FACTOR=2
+export QT_AUTO_SCREEN_SCALE_FACTOR=2
+export QT_SCALE_FACTOR=2
 
 # ------------------------------------------------------------------------------
 # 3. pyenv initialization
@@ -1266,6 +1267,36 @@ install_gui() {
 }
 
 # ------------------------------------------------------------------------------
+# Function: dotfiles_load
+# ------------------------------------------------------------------------------
+# Copies specified dotfiles into /home/sawyer and ~/.config
+# Adjust permissions, ownership, or backup logic as desired.
+# ------------------------------------------------------------------------------
+dotfiles_load() {
+  log INFO "Creating necessary directories..."
+  mkdir -p /home/sawyer/.config
+
+  log INFO "Copying dotfiles to /home/sawyer..."
+  cp /home/sawyer/github/bash/dotfiles/.bash_profile /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.bashrc       /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.fehbg        /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.profile      /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.Xresources   /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.xprofile     /home/sawyer/
+
+  log INFO "Copying config directories to /home/sawyer/.config..."
+  cp -r /home/sawyer/github/bash/dotfiles/bin      /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/i3       /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/polybar  /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/rofi     /home/sawyer/.config/
+
+  # Optionally ensure correct ownership if running as root
+  chown -R sawyer:sawyer /home/sawyer/
+
+  log INFO "Dotfiles copied successfully."
+}
+
+# ------------------------------------------------------------------------------
 # Function: Create i3 config file
 # ------------------------------------------------------------------------------
 create_i3_config() {
@@ -1290,83 +1321,102 @@ create_i3_config() {
   # Create new i3 config file
   cat > "$config_file" <<'EOF'
 # ------------------------------------------------------------------------------
-#_____ ________                              _____________
-#___(_)__|__  /        _____________ _______ ___  __/___(_)_______ _
-#__  / ___/_ < _________  ___/_  __ \__  __ \__  /_  __  / __  __ `/
-#_  /  ____/ / _/_____// /__  / /_/ /_  / / /_  __/  _  /  _  /_/ /
-#/_/   /____/          \___/  \____/ /_/ /_/ /_/     /_/   _\__, /
-#                                                          /____/
+#   _____ ________                              _____________
+#   ___(_)__|__  /        _____________ _______ ___  __/___(_)_______ _
+#   __  / ___/_ < _________  ___/_  __ \__  __ \__  /_  __  / __  __ `/
+#   _  /  ____/ / _/_____// /__  / /_/ /_  / / /_  __/  _  /  _  /_/ /
+#   /_/   /____/          \___/  \____/ /_/ /_/ /_/     /_/   _\__, /
+#                                                             /____/
+#  ------------------------------------------------------------------------------
+# Mod Key
 # ------------------------------------------------------------------------------
-# High DPI, Addons Setup, and Custom Bindings
-# ------------------------------------------------------------------------------
-
 # Use Mod4 (Super/Windows key) as the modifier key
 set $mod Mod4
 
 # ------------------------------------------------------------------------------
 # Appearance & DPI Scaling
 # ------------------------------------------------------------------------------
-
 # Increase default font size for high DPI displays using JetBrains Mono
-font pango:"JetBrains Mono" 16
+# (Optionally, you can also configure system-wide DPI via ~/.Xresources)
+font pango:"JetBrains Mono 12"
 
 # Set default window border style and thickness
-for_window [class="^.*"] border pixel 2
+for_window [class="^.*"] border pixel 5
 
-# Apply DPI scaling using xrandr on startup
-# Replace "YOUR_MONITOR_OUTPUT" with your actual monitor identifier (e.g., eDP-1, HDMI-1)
-exec_always --no-startup-id xrandr --output YOUR_MONITOR_OUTPUT --scale 1x1 --dpi 192
+# If you truly need to set a high DPI via xrandr, do so here:
+# (Adjust scale values as needed; e.g., 1.25x1.25 or 2x2 if it’s a 4K on a small laptop)
+exec_always --no-startup-id xrandr --output eDP --scale 1x1 --dpi 192
+exec_always --no-startup-id xrandr --output DisplayPort-1 --scale 1x1 --dpi 192
 
 # ------------------------------------------------------------------------------
 # Autostart Applications
 # ------------------------------------------------------------------------------
-
 # Start picom for compositing effects (transparency, shadows, etc.)
 exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
 
-# Launch polybar (if configured) after i3 starts
+# Launch polybar after i3 starts
 exec_always --no-startup-id ~/.config/polybar/launch.sh
 
 # Set desktop background using feh (adjust path to your wallpaper)
-exec_always --no-startup-id feh --bg-scale /path/to/your/wallpaper.jpg
+exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Kali-Black-4K.jpg
+
+# Display switch scripts (Lenovo laptop-specific)
+exec --no-startup-id ~/.local/bin/display_daemon.sh
+exec --no-startup-id ~/.local/bin/display_switch.sh
+
+# Backup dotfiles daemon
+exec --no-startup-id ~/.local/bin/backup_dotfiles_daemon.sh
+
+# xfce tools
+exec --no-startup-id xfce4-power-manager
+exec --no-startup-id /usr/lib/xfce-polkit/xfce-polkit
+exec --no-startup-id nm-applet      # For network management
+exec --no-startup-id pasystray      # For audio system tray control
+
+# (Optional) Merge ~/.Xresources for consistent DPI, fonts, etc.
+# exec_always --no-startup-id xrdb -merge ~/.Xresources
 
 # ------------------------------------------------------------------------------
-# Keybindings for Launchers and Utilities
+# Keybindings: Launchers and Utilities
 # ------------------------------------------------------------------------------
-
 # Launch terminal (Alacritty) with Mod+Enter
 bindsym $mod+Return exec alacritty
 
-# Launch alternative terminal (xterm) with Mod+Shift+Enter
-bindsym $mod+Shift+Return exec xterm
-
-# Launch Rofi as application launcher with Mod+d
-bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window -theme ~/.config/rofi/theme.rasi
+# Launch Rofi (drun, run, window) with Mod+d
+bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window \
+    -theme /home/sawyer/.config/rofi/theme.rasi
 
 # Lock screen using i3lock with Mod+Shift+l
 bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.png
 
-# Open Ranger file manager in Alacritty with Mod+Shift+e
-bindsym $mod+Shift+e exec alacritty -e ranger
-
 # Volume control using pavucontrol with Mod+Shift+p
 bindsym $mod+Shift+p exec --no-startup-id pavucontrol
+
+# (Popular) Toggle floating layout on the focused window with Mod+Shift+space
+bindsym $mod+Shift+space floating toggle
+
+# (Popular) Toggle fullscreen on the focused window with Mod+f
+bindsym $mod+f fullscreen toggle
+
+# (Popular) Take a screenshot of the entire screen (or use flameshot, etc.)
+# bindsym Print exec scrot '%Y-%m-%d-%T-screenshot.png' -e 'mv $f ~/Pictures/'
+# or:
+bindsym Print exec flameshot gui
 
 # ------------------------------------------------------------------------------
 # Window Management Keybindings
 # ------------------------------------------------------------------------------
-
-# Standard window focus navigation
-bindsym $mod+j focus left
-bindsym $mod+k focus down
-bindsym $mod+l focus up
+# Standard window focus navigation (Vim-style: j/k/l/;)
+bindsym $mod+j         focus left
+bindsym $mod+k         focus down
+bindsym $mod+l         focus up
 bindsym $mod+semicolon focus right
 
-# Standard window movement
-bindsym $mod+Shift+j move left
-bindsym $mod+Shift+k move down
-bindsym $mod+Shift+l move up
-bindsym $mod+Shift+semicolon move right
+# Standard window movement (u/i/o/p)
+bindsym $mod+u move left
+bindsym $mod+i move down
+bindsym $mod+o move up
+bindsym $mod+p move right
 
 # Split orientation selection
 bindsym $mod+h split h
@@ -1376,14 +1426,30 @@ bindsym $mod+v split v
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+r restart
 
+# Kill focused window
+bindsym $mod+Shift+q kill
+
 # Exit i3 session
 bindsym $mod+Shift+e exec --no-startup-id i3-msg exit
+
+# (Optional) Resize mode for precise resizing
+mode "resize" {
+    bindsym j resize shrink width  10 px or 10 ppt
+    bindsym k resize grow   height 10 px or 10 ppt
+    bindsym l resize shrink height 10 px or 10 ppt
+    bindsym semicolon resize grow width 10 px or 10 ppt
+
+    # Exit resize mode: press Escape or $mod+r again
+    bindsym Escape mode "default"
+    bindsym $mod+r mode "default"
+}
+# Switch to resize mode with Mod+r
+bindsym $mod+r mode "resize"
 
 # ------------------------------------------------------------------------------
 # Workspace Management
 # ------------------------------------------------------------------------------
-
-# Define workspaces with icons for visual clarity
+# Define workspaces with icons
 set $ws1 ""
 set $ws2 ""
 set $ws3 ""
@@ -1416,68 +1482,44 @@ bindsym $mod+Shift+7 move container to workspace $ws7
 bindsym $mod+Shift+8 move container to workspace $ws8
 bindsym $mod+Shift+9 move container to workspace $ws9
 
-# ------------------------------------------------------------------------------
-# i3blocks for Status Bar
-# ------------------------------------------------------------------------------
-
-bar {
-    status_command i3blocks
-    font pango:DejaVu Sans Mono 14
-    workspace_buttons yes
-
-    # Adjust bar height for high DPI displays
-    height 30
-
-    # Colors for the bar (customize as preferred)
-    colors {
-        background       #282828
-        statusline       #ebdbb2
-        separator        #3c3836
-
-        focused_workspace  #458588 #458588 #ffffff
-        active_workspace   #3c3836 #3c3836 #ebdbb2
-        inactive_workspace #282828 #282828 #a89984
-        urgent_workspace   #cc241d #cc241d #ffffff
-    }
-}
+# (Optional) Auto back-and-forth to the last workspace on same binding
+# workspace_auto_back_and_forth yes
 
 # ------------------------------------------------------------------------------
 # Floating Windows Rules
 # ------------------------------------------------------------------------------
-
-# Allow certain applications to float
 for_window [class="^Pavucontrol$"] floating enable
 for_window [class="^Rofi$"] floating enable
 for_window [class="^feh$"] floating enable
 for_window [class="^pinentry$"] floating enable
 
+# You can also add generic floating for transient/modal/dialog windows:
+for_window [window_type="dialog"] floating enable
+for_window [window_type="modal"] floating enable
+
 # ------------------------------------------------------------------------------
 # Miscellaneous Settings
 # ------------------------------------------------------------------------------
-
 # Use gaps between windows (requires i3-gaps)
-gaps inner 10
-gaps outer 10
+gaps inner 7
+gaps outer 7
 
-# Optionally set separate horizontal and vertical gaps
-# gaps horiz 10
-# gaps vert 10
-
-# Focus follows mouse pointer
+# Focus follows mouse pointer (can be annoying for some)
 focus_follows_mouse yes
 
-# Smart border behavior: hide borders when unnecessary
+# Smart border behavior: hide borders when only one window
 smart_borders on
+
+# (Optional) Force focus wrapping across edges
+# force_focus_wrapping yes
+
+# (Optional) Hide title bars in tiling mode (i3-gaps feature)
+# new_window normal
+# new_float normal
 
 # ------------------------------------------------------------------------------
 # End of Configuration
 # ------------------------------------------------------------------------------
-
-# Notes:
-# - Ensure the required theme files for rofi, polybar, and picom are installed and configured.
-# - Adjust paths (for wallpapers, lockscreen images, configuration scripts) as needed.
-# - Replace "YOUR_MONITOR_OUTPUT" in the xrandr command with your actual monitor identifier.
-# - Tweak font sizes, gap values, and other settings as needed for personal preference and performance.
 EOF
 
   log INFO "i3 configuration file created at $config_file"
@@ -1607,6 +1649,7 @@ main() {
   install_vscode_cli
   install_jetbrainsmono
   install_gui
+  dotfiles_load
   finalize_configuration
 
   log INFO "Configuration script finished successfully."

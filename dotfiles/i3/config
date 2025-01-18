@@ -21,10 +21,8 @@ font pango:"JetBrains Mono 12"
 # Set default window border style and thickness
 for_window [class="^.*"] border pixel 5
 
-# If you truly need to set a high DPI via xrandr, do so here:
-# (Adjust scale values as needed; e.g., 1.25x1.25 or 2x2 if it’s a 4K on a small laptop)
-exec_always --no-startup-id xrandr --output eDP --scale 1x1 --dpi 192
-exec_always --no-startup-id xrandr --output DisplayPort-1 --scale 1x1 --dpi 192
+# Load and use .Xresources for HighDPI settings and scaling universally
+exec_always --no-startup-id xrdb -merge ~/.Xresources
 
 # ------------------------------------------------------------------------------
 # Autostart Applications
@@ -32,8 +30,7 @@ exec_always --no-startup-id xrandr --output DisplayPort-1 --scale 1x1 --dpi 192
 # Start picom for compositing effects (transparency, shadows, etc.)
 exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
 
-# Launch polybar (if configured) after i3 starts
-# NOTE: If you are using Polybar exclusively, you might disable the i3 bar below.
+# Kill any existing Polybar process, then launch
 exec_always --no-startup-id ~/.config/polybar/launch.sh
 
 # Set desktop background using feh (adjust path to your wallpaper)
@@ -51,9 +48,6 @@ exec --no-startup-id xfce4-power-manager
 exec --no-startup-id /usr/lib/xfce-polkit/xfce-polkit
 exec --no-startup-id nm-applet      # For network management
 exec --no-startup-id pasystray      # For audio system tray control
-
-# (Optional) Merge ~/.Xresources for consistent DPI, fonts, etc.
-# exec_always --no-startup-id xrdb -merge ~/.Xresources
 
 # ------------------------------------------------------------------------------
 # Keybindings: Launchers and Utilities
@@ -80,7 +74,7 @@ bindsym $mod+f fullscreen toggle
 # (Popular) Take a screenshot of the entire screen (or use flameshot, etc.)
 # bindsym Print exec scrot '%Y-%m-%d-%T-screenshot.png' -e 'mv $f ~/Pictures/'
 # or:
-# bindsym Print exec flameshot gui
+bindsym Print exec flameshot gui
 
 # ------------------------------------------------------------------------------
 # Window Management Keybindings
@@ -165,31 +159,6 @@ bindsym $mod+Shift+9 move container to workspace $ws9
 # workspace_auto_back_and_forth yes
 
 # ------------------------------------------------------------------------------
-# i3 Bar / i3blocks (If you still use the i3 bar instead of Polybar)
-# ------------------------------------------------------------------------------
-# NOTE: If you solely use Polybar, you can comment out the entire 'bar { }' block
-bar {
-    status_command i3blocks
-    font pango:"JetBrains Mono 12"
-    workspace_buttons yes
-
-    # Adjust bar height for high DPI displays
-    height 40
-
-    # Basic color scheme (customize)
-    colors {
-        background       #282828
-        statusline       #ebdbb2
-        separator        #3c3836
-
-        focused_workspace  #458588 #458588 #ffffff
-        active_workspace   #3c3836 #3c3836 #ebdbb2
-        inactive_workspace #282828 #282828 #a89984
-        urgent_workspace   #cc241d #cc241d #ffffff
-    }
-}
-
-# ------------------------------------------------------------------------------
 # Floating Windows Rules
 # ------------------------------------------------------------------------------
 for_window [class="^Pavucontrol$"] floating enable
@@ -198,8 +167,8 @@ for_window [class="^feh$"] floating enable
 for_window [class="^pinentry$"] floating enable
 
 # You can also add generic floating for transient/modal/dialog windows:
-# for_window [window_type="dialog"] floating enable
-# for_window [window_type="modal"] floating enable
+for_window [window_type="dialog"] floating enable
+for_window [window_type="modal"] floating enable
 
 # ------------------------------------------------------------------------------
 # Miscellaneous Settings

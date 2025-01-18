@@ -7,6 +7,7 @@ SOURCE_DIRS=(
     "$HOME/.config/gtk-3.0"
     "$HOME/.config/gtk-4.0"
     "$HOME/.local/bin/"
+    "$HOME/.config/polybar"
 )
 
 # Define destination directory
@@ -32,6 +33,8 @@ DOTFILES=(
     "$HOME/.local"
     "$HOME/.bash_history"
     "$HOME/.fehbg"
+    "$HOME/.Xresources"
+    "$HOME/.xprofile"
 )
 
 # Backup additional dotfiles

@@ -1,0 +1,8 @@
+# ~/.Xresources
+
+Xft.dpi: 192    ! Example for ~2x scaling, adjust to your liking
+Xft.antialias: 1
+Xft.hinting: 1
+Xft.hintstyle: hintslight
+Xft.rgba: rgb
+
