@@ -25,9 +25,7 @@ done
 # Additional files (dotfiles) to backup
 DOTFILES=(
     "$HOME/.bashrc"
-    "$HOME/.zshrc"
     "$HOME/.profile"
-    "$HOME/.vimrc"
     "$HOME/.gitconfig"
     "$HOME/.Xresources"
     "$HOME/.xinitrc"
