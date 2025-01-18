@@ -434,7 +434,6 @@ install_all_build_dependencies() {
         software-properties-common \
         apt-transport-https \
         gnupg \
-        gupg2 \
         lsb-release \
         jq \
         pkg-config \
