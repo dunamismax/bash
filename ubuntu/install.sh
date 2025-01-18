@@ -40,7 +40,7 @@ VERBOSE=2
 USERNAME="sawyer"
 
 PACKAGES=(
-  bash zsh fish vim nano mc screen tmux nodejs npm ninja-build meson fonts-font-awesome
+  bash zsh fish vim nano mc screen tmux nodejs npm ninja-build meson fonts-font-awesome intltool gettext
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill fonts-ubuntu
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw fonts-hack-ttf
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev flatpak xfce4-dev-tools
