@@ -26,10 +26,10 @@ done
 DOTFILES=(
     "$HOME/.bashrc"
     "$HOME/.profile"
-    "$HOME/.gitconfig"
-    "$HOME/.Xresources"
-    "$HOME/.xinitrc"
-    "$HOME/.gtkrc-2.0"
+    "$HOME/.bash_profile"
+    "$HOME/.local"
+    "$HOME/.bash_history"
+    "$HOME/.fehbg"
 )
 
 # Backup additional dotfiles
