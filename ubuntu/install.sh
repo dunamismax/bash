@@ -43,11 +43,11 @@ PACKAGES=(
   bash zsh fish vim nano mc screen tmux nodejs npm ninja-build meson fonts-font-awesome
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill fonts-ubuntu
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw fonts-hack-ttf
-  xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev flatpak
+  xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev flatpak xfce4-dev-tools
   git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq fonts-dejavu-core
-  nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups neovim
+  nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups neovim libglib2.0-dev
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils acpid policykit-1 papirus-icon-theme
-  chrony fail2ban ffmpeg restic fonts-dejavu flameshot
+  chrony fail2ban ffmpeg restic fonts-dejavu flameshot libxfce4ui-2-dev libxfce4util-dev libgtk-3-dev libpolkit-gobject-1-dev
 )
 
 # ------------------------------------------------------------------------------
