@@ -4,8 +4,6 @@
 SOURCE_DIRS=(
     "$HOME/.config/rofi"
     "$HOME/.config/i3"
-    "$HOME/.config/gtk-3.0"
-    "$HOME/.config/gtk-4.0"
     "$HOME/.local/bin/"
     "$HOME/.config/polybar"
 )
@@ -30,8 +28,6 @@ DOTFILES=(
     "$HOME/.bashrc"
     "$HOME/.profile"
     "$HOME/.bash_profile"
-    "$HOME/.local"
-    "$HOME/.bash_history"
     "$HOME/.fehbg"
     "$HOME/.Xresources"
     "$HOME/.xprofile"
