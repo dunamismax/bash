@@ -179,80 +179,6 @@ backup_system() {
     fi
 }
 
-# ------------------------------------------------------------------------------
-# FIX DIRECTORY PERMISSIONS FUNCTION
-# ------------------------------------------------------------------------------
-
-# Configuration
-GITHUB_DIR="/home/sawyer/github"
-HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
-HUGO_DIR="/home/sawyer/github/hugo"
-SAWYER_HOME="/home/sawyer"
-BASE_DIR="/home/sawyer/github"
-
-# NOTE: 700 == rwx for *owner only* (no permissions for group or others)
-#       600 == rw for *owner only* (no permissions for group or others)
-DIR_PERMISSIONS="700"   # For .git directories
-FILE_PERMISSIONS="600"  # For .git files
-
-# ------------------------------------------------------------------------------
-# FUNCTION: fix_git_permissions
-# ------------------------------------------------------------------------------
-fix_git_permissions() {
-    local git_dir="$1"
-    echo "Setting stricter permissions for $git_dir"
-    # Make sure the top-level .git dir has directory permissions
-    chmod "$DIR_PERMISSIONS" "$git_dir"
-
-    # Apply to all subdirectories and files inside .git
-    find "$git_dir" -type d -exec chmod "$DIR_PERMISSIONS" {} \;
-    find "$git_dir" -type f -exec chmod "$FILE_PERMISSIONS" {} \;
-
-    echo "Permissions fixed for $git_dir"
-}
-
-# ------------------------------------------------------------------------------
-# MAIN FUNCTION: set_directory_permissions
-# ------------------------------------------------------------------------------
-set_directory_permissions() {
-  # 1. Make all .sh files executable under GITHUB_DIR
-  log INFO "Making all .sh files executable under $GITHUB_DIR"
-  find "$GITHUB_DIR" -type f -name "*.sh" -exec chmod +x {} \;
-
-  # 2. Set ownership for directories
-  log INFO "Setting ownership for /home/sawyer/github and /home/sawyer"
-  chown -R sawyer:sawyer /home/sawyer/github
-  chown -R sawyer:sawyer /home/sawyer/
-
-  # 3. Set ownership and permissions for Hugo public directory
-  log INFO "Setting ownership and permissions for Hugo public directory"
-  chmod -R 755 "$HUGO_PUBLIC_DIR"
-
-  # 4. Set ownership and permissions for Hugo directory and related paths
-  log INFO "Setting ownership and permissions for Hugo directory"
-  chown -R caddy:caddy "$HUGO_DIR"
-  chmod o+rx "$SAWYER_HOME"
-  chmod o+rx "$GITHUB_DIR"
-  chmod o+rx "$HUGO_DIR"
-  chmod o+rx "/home/sawyer/github/hugo/dunamismax.com"
-  chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
-
-  # 5. Ensure BASE_DIR exists
-  if [[ ! -d "$BASE_DIR" ]]; then
-      echo "Error: Base directory $BASE_DIR does not exist."
-      exit 1
-  fi
-
-  log INFO "Starting permission fixes in $BASE_DIR..."
-
-  # 6. Find and fix .git directory permissions
-  while IFS= read -r -d '' git_dir; do
-      fix_git_permissions "$git_dir"
-  done < <(find "$BASE_DIR" -type d -name ".git" -print0)
-
-  log INFO "Permission setting completed."
-}
-
 ################################################################################
 # Function: Configure SSH and security settings
 # Purpose: Install and configure OpenSSH server with best practices for security
@@ -464,45 +390,7 @@ configure_ntp() {
     log INFO "chrony is already installed."
   fi
 
-  # 2) Backup existing chrony config and overwrite
-  local chrony_conf="/etc/chrony/chrony.conf"
-  if [ -f "$chrony_conf" ]; then
-    cp "$chrony_conf" "${chrony_conf}.bak.$(date +%Y%m%d%H%M%S)"
-    log INFO "Backed up existing $chrony_conf to ${chrony_conf}.bak.$(date +%Y%m%d%H%M%S)"
-  fi
-
-  # 3) Write a basic chrony.conf (using global NTP servers for demonstration)
-  cat << 'EOF' > "$chrony_conf"
-# /etc/chrony/chrony.conf - basic configuration
-
-# Pool-based time servers:
-pool 2.ubuntu.pool.ntp.org iburst
-pool time.google.com iburst
-pool pool.ntp.org iburst
-
-# Allow only localhost by default
-allow 127.0.0.1
-allow ::1
-
-# Record the rate at which the system clock gains/losses time.
-driftfile /var/lib/chrony/chrony.drift
-
-# Save NTS keys and cookies.
-ntsdumpdir /var/lib/chrony
-
-# Enable kernel synchronization of the hardware clock
-rtcsync
-
-# Enable hardware timestamping on all interfaces that support it
-hwtimestamp *
-
-# Increase logging for debugging, comment out in production
-log tracking measurements statistics
-EOF
-
-  log INFO "Wrote a new chrony.conf at $chrony_conf."
-
-  # 4) Enable and start chrony
+  # 2) Enable and start chrony
   systemctl enable chrony
   systemctl restart chrony
 
@@ -510,109 +398,25 @@ EOF
 }
 
 ################################################################################
-# Function to install build dependencies for compiling Python via pyenv
+# Combined Function: Installs APT dependencies for Python & C/C++ build, Rust,
+# and Go, plus basic system updates, core packages, etc.
 ################################################################################
-install_python_build_deps() {
+install_all_build_dependencies() {
+    # 1) Update and upgrade system packages
+    log INFO "Updating apt caches and upgrading packages..."
+    apt update -y
+    apt upgrade -y
 
-    log INFO "Installing system build dependencies..."
-
-    # Install required packages
-    if ! apt install -y \
+    # 2) Install all APT-based dependencies in one shot
+    log INFO "Installing apt-based build dependencies for Python, C, C++, Rust, and Go..."
+    if ! apt install -y --no-install-recommends \
+        # General essentials
         build-essential \
-        git \
-        curl \
-        wget \
-        ca-certificates \
-        libssl-dev \
-        libbz2-dev \
-        libffi-dev \
-        zlib1g-dev \
-        libreadline-dev \
-        libsqlite3-dev \
-        libncurses5-dev \
-        libncursesw5-dev \
-        xz-utils \
-        liblzma-dev \
-        tk-dev \
-        llvm \
-        jq \
-        gnupg \
-        libxml2-dev \
-        libxmlsec1-dev
-        --no-install-recommends; then
-        log ERROR "Failed to install build dependencies. Exiting."
-        return 1
-    fi
-
-    log INFO "System build dependencies installed."
-}
-
-# Function to install build dependencies for C, C++, Rust, and Go
-install_dev_build_deps() {
-
-    log INFO "Installing system build dependencies for C, C++, Rust, and Go..."
-
-    # Install required packages
-    if ! apt install -y \
-        build-essential \
+        make \
         gcc \
         g++ \
         clang \
         cmake \
-        git \
-        curl \
-        wget \
-        ca-certificates \
-        make \
-        llvm \
-        gdb \
-        libssl-dev \
-        libbz2-dev \
-        libffi-dev \
-        zlib1g-dev \
-        pkg-config \
-        jq \
-        gnupg \
-        libxml2-dev \
-        libxmlsec1-dev
-        --no-install-recommends; then
-        log ERROR "Failed to install build dependencies for C and C++. Exiting."
-        return 1
-    fi
-
-    # Install Rust toolchain
-    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
-        log ERROR "Failed to install Rust toolchain. Exiting."
-        return 1
-    fi
-
-    # Add Rust binaries to PATH (for current session)
-    export PATH="$HOME/.cargo/bin:$PATH"
-
-    # Install Go (use apt for simplicity, but better alternatives exist)
-    if ! apt install -y \
-        golang-go; then
-        log ERROR "Failed to install Go programming environment. Exiting."
-        return 1
-    fi
-
-    log INFO "System build dependencies for C, C++, Rust, and Go installed."
-}
-
-################################################################################
-# 0. Basic System Update & Core Packages
-################################################################################
-install_apt_dependencies() {
-    log INFO "Updating apt caches..."
-    apt update -y
-
-    # Optional: If you want to also upgrade existing packages:
-    apt upgrade -y
-
-    log INFO "Installing apt-based dependencies..."
-    apt install -y --no-install-recommends \
-        build-essential \
-        make \
         git \
         curl \
         wget \
@@ -621,12 +425,22 @@ install_apt_dependencies() {
         unzip \
         zip \
         ca-certificates \
+        software-properties-common \
+        apt-transport-https \
+        gnupg \
+        gnupg2 \
+        lsb-release \
+        jq \
+        pkg-config \
+        # Python-related build deps
         libssl-dev \
+        libbz2-dev \
         libffi-dev \
         zlib1g-dev \
-        libbz2-dev \
         libreadline-dev \
         libsqlite3-dev \
+        tk-dev \
+        libncurses5-dev \
         libncursesw5-dev \
         libgdbm-dev \
         libnss3-dev \
@@ -634,13 +448,38 @@ install_apt_dependencies() {
         xz-utils \
         libxml2-dev \
         libxmlsec1-dev \
-        tk-dev \
-        llvm \
-        software-properties-common \
-        apt-transport-https \
-        gnupg \
-        lsb-release \
-        jq
+        # C/C++ debugging & LLVM
+        gdb \
+        llvm
+    then
+        log ERROR "Failed to install all apt-based dependencies. Exiting."
+        return 1
+    fi
+
+    log INFO "All apt-based build dependencies installed successfully."
+
+    # 3) Install Rust toolchain
+    log INFO "Installing Rust toolchain via rustup..."
+    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
+        log ERROR "Failed to install Rust toolchain. Exiting."
+        return 1
+    fi
+
+    # Make Rust available in the current session
+    export PATH="$HOME/.cargo/bin:$PATH"
+    log INFO "Rust toolchain installed and added to PATH."
+
+    # 4) Install Go
+    log INFO "Installing Go..."
+    if ! apt install -y golang-go; then
+        log ERROR "Failed to install Go programming environment. Exiting."
+        return 1
+    fi
+
+    log INFO "Go installed."
+
+    # 5) Final message
+    log INFO "All dependencies (system, Python, C/C++, Rust, Go) installed successfully."
 }
 
 ################################################################################
@@ -714,13 +553,24 @@ install_and_enable_plex() {
 
 # ------------------------------------------------------------------------------
 # install_powershell_and_zig
-#   Installs PowerShell and Zig on ubuntu/Linux ubuntu.
+#   Installs PowerShell on Ubuntu and only installs Zig if it's not already
+#   present on the system.
 # ------------------------------------------------------------------------------
 install_powershell_and_zig() {
   set -euo pipefail
   log INFO "Starting installation of PowerShell and Zig..."
 
-  # Install PowerShell
+  # ------------------------
+  # 0. Check for Powershell
+  # ------------------------
+  if command -v powershell &>/dev/null; then
+    log INFO "Powershell is already installed. Skipping Powershell installation."
+    return 0
+  fi
+
+  # ------------------------
+  # 1. Install PowerShell
+  # ------------------------
   log INFO "Installing PowerShell..."
   wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb
   dpkg -i packages-microsoft-prod.deb || true
@@ -729,7 +579,17 @@ install_powershell_and_zig() {
   apt install -y powershell || true
   log INFO "PowerShell installation complete."
 
-  # Install Zig
+  # ------------------------
+  # 2. Check for Zig
+  # ------------------------
+  if command -v zig &>/dev/null; then
+    log INFO "Zig is already installed. Skipping Zig installation."
+    return 0
+  fi
+
+  # ------------------------
+  # 3. Install Zig
+  # ------------------------
   log INFO "Installing Zig..."
   ZIG_VERSION="zig-linux-x86_64-0.14.0-dev.2643+fb43e91b2"
   ZIG_URL="https://ziglang.org/builds/${ZIG_VERSION}.tar.xz"
@@ -939,6 +799,80 @@ download_repositories() {
 }
 
 # ------------------------------------------------------------------------------
+# FIX DIRECTORY PERMISSIONS FUNCTION
+# ------------------------------------------------------------------------------
+
+# Configuration
+GITHUB_DIR="/home/sawyer/github"
+HUGO_PUBLIC_DIR="/home/sawyer/github/hugo/dunamismax.com/public"
+HUGO_DIR="/home/sawyer/github/hugo"
+SAWYER_HOME="/home/sawyer"
+BASE_DIR="/home/sawyer/github"
+
+# NOTE: 700 == rwx for *owner only* (no permissions for group or others)
+#       600 == rw for *owner only* (no permissions for group or others)
+DIR_PERMISSIONS="700"   # For .git directories
+FILE_PERMISSIONS="600"  # For .git files
+
+# ------------------------------------------------------------------------------
+# FUNCTION: fix_git_permissions
+# ------------------------------------------------------------------------------
+fix_git_permissions() {
+    local git_dir="$1"
+    echo "Setting stricter permissions for $git_dir"
+    # Make sure the top-level .git dir has directory permissions
+    chmod "$DIR_PERMISSIONS" "$git_dir"
+
+    # Apply to all subdirectories and files inside .git
+    find "$git_dir" -type d -exec chmod "$DIR_PERMISSIONS" {} \;
+    find "$git_dir" -type f -exec chmod "$FILE_PERMISSIONS" {} \;
+
+    echo "Permissions fixed for $git_dir"
+}
+
+# ------------------------------------------------------------------------------
+# MAIN FUNCTION: set_directory_permissions
+# ------------------------------------------------------------------------------
+set_directory_permissions() {
+  # 1. Make all .sh files executable under GITHUB_DIR
+  log INFO "Making all .sh files executable under $GITHUB_DIR"
+  find "$GITHUB_DIR" -type f -name "*.sh" -exec chmod +x {} \;
+
+  # 2. Set ownership for directories
+  log INFO "Setting ownership for /home/sawyer/github and /home/sawyer"
+  chown -R sawyer:sawyer /home/sawyer/github
+  chown -R sawyer:sawyer /home/sawyer/
+
+  # 3. Set ownership and permissions for Hugo public directory
+  log INFO "Setting ownership and permissions for Hugo public directory"
+  chmod -R 755 "$HUGO_PUBLIC_DIR"
+
+  # 4. Set ownership and permissions for Hugo directory and related paths
+  log INFO "Setting ownership and permissions for Hugo directory"
+  chown -R caddy:caddy "$HUGO_DIR"
+  chmod o+rx "$SAWYER_HOME"
+  chmod o+rx "$GITHUB_DIR"
+  chmod o+rx "$HUGO_DIR"
+  chmod o+rx "/home/sawyer/github/hugo/dunamismax.com"
+  chown -R www-data:www-data "$HUGO_PUBLIC_DIR"
+
+  # 5. Ensure BASE_DIR exists
+  if [[ ! -d "$BASE_DIR" ]]; then
+      echo "Error: Base directory $BASE_DIR does not exist."
+      exit 1
+  fi
+
+  log INFO "Starting permission fixes in $BASE_DIR..."
+
+  # 6. Find and fix .git directory permissions
+  while IFS= read -r -d '' git_dir; do
+      fix_git_permissions "$git_dir"
+  done < <(find "$BASE_DIR" -type d -name ".git" -print0)
+
+  log INFO "Permission setting completed."
+}
+
+# ------------------------------------------------------------------------------
 # Function: dotfiles_load
 # ------------------------------------------------------------------------------
 # Copies specified dotfiles into /home/sawyer and ~/.config
@@ -955,13 +889,15 @@ dotfiles_load() {
   cp /home/sawyer/github/bash/dotfiles/.profile      /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.Xresources   /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.xprofile     /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/chrony.conf   /etc/chrony/
   cp /home/sawyer/github/bash/dotfiles/Caddyfile     /etc/caddy/
 
   log INFO "Copying config directories to /home/sawyer/.config..."
-  cp -r /home/sawyer/github/bash/dotfiles/bin      /home/sawyer/.config/
-  cp -r /home/sawyer/github/bash/dotfiles/i3       /home/sawyer/.config/
-  cp -r /home/sawyer/github/bash/dotfiles/polybar  /home/sawyer/.config/
-  cp -r /home/sawyer/github/bash/dotfiles/rofi     /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/bin        /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/i3         /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/polybar    /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/rofi       /home/sawyer/.config/
+  cp -r /home/sawyer/github/bash/dotfiles/alacritty  /home/sawyer/.config/
 
   # Ensure correct ownership if running as root
   chown -R sawyer:sawyer /home/sawyer/
@@ -1076,14 +1012,12 @@ main() {
   backup_system
   configure_ssh_settings
   force_release_ports
-  configure_timezone "America/New_York"
   bootstrap_and_install_pkgs
+  configure_timezone "America/New_York"
   configure_ufw
   configure_ntp
   fail2ban
-  install_python_build_deps
-  install_dev_build_deps
-  install_apt_dependencies
+  install_all_build_dependencies
   install_and_enable_plex
   install_powershell_and_zig
   download_repositories

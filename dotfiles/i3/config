@@ -53,8 +53,10 @@ exec --no-startup-id pasystray      # For audio system tray control
 bindsym $mod+Return exec alacritty
 
 # Launch Rofi (drun, run, window) with Mod+d
-bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window \
-    -theme /home/sawyer/.config/rofi/theme.rasi
+bindsym $mod+d exec --no-startup-id rofi -show drun -modi drun,run,window -theme ~/.config/rofi/theme.rasi
+
+# The below might be the correct one, try it if the above errors:
+# bindsym $mod+d exec --no-startup-id rofi -show drun -theme ~/.config/rofi/theme.rasi
 
 # Lock screen using i3lock with Mod+Shift+l
 bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.png

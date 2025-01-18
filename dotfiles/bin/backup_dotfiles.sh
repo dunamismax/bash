@@ -33,6 +33,7 @@ DOTFILES=(
     "$HOME/.Xresources"
     "$HOME/.xprofile"
     "/etc/caddy/Caddyfile"
+    "/etc/chrony/chrony.conf"
 )
 
 # Backup additional dotfiles
