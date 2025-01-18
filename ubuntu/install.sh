@@ -48,7 +48,7 @@ PACKAGES=(
   nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups neovim libglib2.0-dev
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils acpid policykit-1 papirus-icon-theme
   chrony fail2ban ffmpeg restic fonts-dejavu flameshot libxfce4ui-2-dev libxfce4util-dev libgtk-3-dev libpolkit-gobject-1-dev
-  gnome-keyring seahorse
+  gnome-keyring seahorse gnome-software gnome-software-plugin-flatpak
 )
 
 # ------------------------------------------------------------------------------
@@ -855,15 +855,16 @@ dotfiles_load() {
   mkdir -p /home/sawyer/.config
 
   log INFO "Copying dotfiles to /home/sawyer..."
-  cp /home/sawyer/github/bash/dotfiles/.bash_profile /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.bashrc       /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.fehbg        /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.profile      /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.Xresources   /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.xprofile     /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.xprofile     /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/chrony.conf   /etc/chrony/
-  cp /home/sawyer/github/bash/dotfiles/Caddyfile     /etc/caddy/
+  cp /home/sawyer/github/bash/dotfiles/.bash_profile        /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.bashrc              /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.fehbg               /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.profile             /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.Xresources          /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.xprofile            /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.Xresources-1080p    /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/.Xresources-4k       /home/sawyer/
+  cp /home/sawyer/github/bash/dotfiles/chrony.conf          /etc/chrony/
+  cp /home/sawyer/github/bash/dotfiles/Caddyfile            /etc/caddy/
 
   log INFO "Copying config directories to /home/sawyer/..."
   cp -r /home/sawyer/github/bash/dotfiles/bin        /home/sawyer/.local/
