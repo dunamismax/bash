@@ -34,7 +34,7 @@ VERBOSE=2
 USERNAME="sawyer"
 
 PACKAGES=(
-  bash zsh fish vim nano mc screen tmux nodejs npm
+  bash zsh fish vim nano mc screen tmux nodejs npm ninja-build meson
   build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill
   bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw
   xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev
@@ -256,7 +256,7 @@ set_directory_permissions() {
 ################################################################################
 configure_ssh_settings() {
   log INFO "Installing OpenSSH Server..."
-  
+
   # Install OpenSSH server if not already installed
   if ! dpkg -l | grep -qw openssh-server; then
     apt update && apt install -y openssh-server
@@ -1223,8 +1223,40 @@ install_gui() {
   # Install xfce and its common addons
   log INFO "Installing xfce and addons..."
   apt-get install -y xfce4 xfce4-goodies xfce4-session xfce4-power-manager thunar thunar-volman gvfs-backends \
-    lightdm lightdm-gtk-greeter xfce4-settings xfce4-terminal xfce4-notifyd xfce4-screenshooter \
-    xfce4-taskmanager ristretto mousepad parole pipewire pavucontrol arc-theme adwaita-icon-theme
+    lightdm lightdm-gtk-greeter xfce4-settings xfce4-terminal xfce4-notifyd xfce4-screenshooter polkit glib \
+    xfce4-taskmanager ristretto mousepad parole pipewire pavucontrol arc-theme adwaita-icon-theme libxfce4ui
+
+  # Installing xfce-polkit from Source
+
+  # Define the repository URL
+  local repo_url="https://github.com/ncopa/xfce-polkit.git"
+  local build_dir="/tmp/xfce-polkit-build"
+
+  # Create a temporary build directory
+  log INFO "Creating build directory at $build_dir"
+  rm -rf "$build_dir"
+  mkdir -p "$build_dir"
+
+  # Clone the repository
+  log INFO "Cloning xfce-polkit repository..."
+  git clone "$repo_url" "$build_dir"
+
+  # Navigate to the repository root
+  cd "$build_dir"
+
+  # Build and install xfce-polkit
+  log INFO "Building and installing xfce-polkit..."
+  mkdir build
+  cd build
+  meson --prefix=/usr ..
+  ninja
+  sudo ninja install
+
+  # Clean up temporary build directory
+  log INFO "Cleaning up..."
+  rm -rf "$build_dir"
+
+  log INFO "xfce-polkit installed successfully."
 
   # Refresh library paths and complete setup
   log INFO "Refreshing library paths..."
