@@ -675,6 +675,30 @@ install_jetbrainsmono() {
 }
 
 # ------------------------------------------------------------------------------
+# Function: Installs Pipewire and Pulseaudio and sets Pipewire as default
+# ------------------------------------------------------------------------------
+switch_to_pipewire() {
+    echo "Installing PipeWire and related packages..."
+    # Typically requires sudo/root for apt install
+    apt install -y \
+        pulseaudio \
+        pipewire \
+        pipewire-audio-client-libraries \
+        pipewire-pulse \
+        wireplumber
+
+    echo "Disabling and stopping PulseAudio services..."
+    systemctl --user --now disable pulseaudio.service pulseaudio.socket
+    systemctl --user stop pulseaudio.service pulseaudio.socket
+
+    echo "Enabling and starting PipeWire services..."
+    systemctl --user --now enable pipewire pipewire-pulse wireplumber
+    systemctl --user start pipewire pipewire-pulse wireplumber
+
+    echo "PipeWire is now set as the default sound server."
+}
+
+# ------------------------------------------------------------------------------
 # Function: Installs i3, xfce, and required GUI components
 # ------------------------------------------------------------------------------
 install_gui() {
@@ -703,8 +727,8 @@ install_gui() {
   # Install xfce and its common addons
   log INFO "Installing xfce and addons..."
   apt-get install -y xfce4 xfce4-goodies xfce4-session xfce4-power-manager thunar thunar-volman gvfs-backends \
-    lightdm lightdm-gtk-greeter xfce4-settings xfce4-terminal xfce4-notifyd xfce4-screenshooter polkit glib \
-    xfce4-taskmanager ristretto mousepad parole pipewire pavucontrol arc-theme adwaita-icon-theme libxfce4ui
+    lightdm lightdm-gtk-greeter xfce4-settings xfce4-terminal xfce4-notifyd xfce4-screenshooter \
+    xfce4-taskmanager ristretto mousepad parole pipewire pavucontrol arc-theme adwaita-icon-theme
 
   # Installing xfce-polkit from Source
 
@@ -1027,6 +1051,7 @@ main() {
   set_directory_permissions
   install_vscode_cli
   install_jetbrainsmono
+  switch_to_pipewire
   install_gui
   dotfiles_load
   finalize_configuration
