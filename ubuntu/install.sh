@@ -409,8 +409,7 @@ install_all_build_dependencies() {
 
     # 2) Install all APT-based dependencies in one shot
     log INFO "Installing apt-based build dependencies for Python, C, C++, Rust, and Go..."
-    if ! apt install -y --no-install-recommends \
-        # General essentials
+      if ! apt install -y --no-install-recommends \
         build-essential \
         make \
         gcc \
@@ -428,11 +427,10 @@ install_all_build_dependencies() {
         software-properties-common \
         apt-transport-https \
         gnupg \
-        gnupg2 \
+        gupg2 \
         lsb-release \
         jq \
         pkg-config \
-        # Python-related build deps
         libssl-dev \
         libbz2-dev \
         libffi-dev \
@@ -448,7 +446,6 @@ install_all_build_dependencies() {
         xz-utils \
         libxml2-dev \
         libxmlsec1-dev \
-        # C/C++ debugging & LLVM
         gdb \
         llvm
     then
