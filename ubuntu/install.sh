@@ -1195,7 +1195,7 @@ install_jetbrainsmono() {
 }
 
 # ------------------------------------------------------------------------------
-# Function: Installs i3 and required GUI components
+# Function: Installs i3, xfce, and required GUI components
 # ------------------------------------------------------------------------------
 install_gui() {
   export DEBIAN_FRONTEND=noninteractive
@@ -1203,13 +1203,14 @@ install_gui() {
   log INFO "Updating package lists..."
   apt-get update
 
-  # Install Xorg and GDM3
-  log INFO "Installing Xorg, GDM3, and essential GUI packages..."
-  apt-get install -y xorg gdm3
+  # Install Xorg and lightdm
+  log INFO "Installing Xorg, lightdm, and essential GUI packages..."
+  apt-get install -y xorg lightdm
 
-  # Enable GDM3 to auto-start on boot
-  log INFO "Enabling GDM3 for auto-start on boot..."
-  systemctl enable gdm3
+  # Set LightDM as the default display manager
+  log INFO "Configuring LightDM as the default display manager..."
+  debconf-set-selections <<< "lightdm shared/default-x-display-manager select lightdm"
+  systemctl enable lightdm
 
   # Install i3 window manager and its common addons
   log INFO "Installing i3 window manager and addons..."
@@ -1219,11 +1220,17 @@ install_gui() {
     libxcb-randr0-dev libev-dev libxcb-cursor-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
     libxkbcommon-x11-dev autoconf xutils-dev libtool automake libxcb-xrm-dev
 
+  # Install xfce and its common addons
+  log INFO "Installing xfce and addons..."
+  apt-get install -y xfce4 xfce4-goodies xfce4-session xfce4-power-manager thunar thunar-volman gvfs-backends \
+    lightdm lightdm-gtk-greeter xfce4-settings xfce4-terminal xfce4-notifyd xfce4-screenshooter \
+    xfce4-taskmanager ristretto mousepad parole pipewire pavucontrol arc-theme adwaita-icon-theme
+
   # Refresh library paths and complete setup
   log INFO "Refreshing library paths..."
   ldconfig
 
-  log INFO "Installation of i3 and GDM is complete."
+  log INFO "Installation of i3 and xfce and lightdm is complete."
 }
 
 # ------------------------------------------------------------------------------
