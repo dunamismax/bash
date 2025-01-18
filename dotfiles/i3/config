@@ -180,12 +180,12 @@ focus_follows_mouse yes
 # Smart border behavior: hide borders when only one window
 smart_borders on
 
-# (Optional) Force focus wrapping across edges
-# force_focus_wrapping yes
+# Force focus wrapping across edges
+force_focus_wrapping yes
 
-# (Optional) Hide title bars in tiling mode (i3-gaps feature)
-# new_window normal
-# new_float normal
+# Hide title bars in tiling mode (i3-gaps feature)
+new_window none
+new_float normal
 
 # ------------------------------------------------------------------------------
 # End of Configuration

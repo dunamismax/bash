@@ -405,11 +405,6 @@ esac
 # Add your local bin directory to PATH.
 export PATH="$PATH:$HOME/.local/bin"
 
-# If you want a specific scale, e.g. 2, do:
-# export QT_SCALE_FACTOR=2
-export QT_AUTO_SCREEN_SCALE_FACTOR=2
-export QT_SCALE_FACTOR=2
-
 # ------------------------------------------------------------------------------
 # 3. pyenv initialization
 # ------------------------------------------------------------------------------
