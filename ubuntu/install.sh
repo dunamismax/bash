@@ -941,6 +941,8 @@ dotfiles_load() {
 finalize_configuration() {
   log INFO "Finalizing system configuration..."
 
+  cd /home/sawyer
+
   # Add Flatpak remote flathub repository if not already added
   log INFO "Adding Flatpak flathub repository..."
   if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo; then
