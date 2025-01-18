@@ -1038,6 +1038,7 @@ main() {
   install_all_build_dependencies
   install_and_enable_plex
   install_powershell_and_zig
+  install_caddy
   download_repositories
   set_directory_permissions
   install_vscode_cli
