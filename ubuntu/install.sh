@@ -48,7 +48,7 @@ PACKAGES=(
   nmap tree fzf lynx which patch smartmontools ntfs-3g ubuntu-restricted-extras cups neovim libglib2.0-dev
   qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils acpid policykit-1 papirus-icon-theme
   chrony fail2ban ffmpeg restic fonts-dejavu flameshot libxfce4ui-2-dev libxfce4util-dev libgtk-3-dev libpolkit-gobject-1-dev
-  gnome-keyring seahorse gnome-software gnome-software-plugin-flatpak
+  gnome-keyring seahorse
 )
 
 # ------------------------------------------------------------------------------
@@ -657,63 +657,6 @@ install_jetbrainsmono() {
   fi
 }
 
-# ------------------------------------------------------------------------------
-# Function: Installs PipeWire, removes PulseAudio, and enables PipeWire user services globally
-# ------------------------------------------------------------------------------
-switch_to_pipewire() {
-  log INFO "Installing PipeWire and setting it to default."
-
-  log INFO "1. Remove PulseAudio."
-  apt remove --purge -y pulseaudio
-
-  log INFO "2. Update repositories and install PipeWire-related packages."
-  apt update
-  apt install -y pipewire pipewire-pulse pipewire-alsa wireplumber
-
-  log INFO "3. Enable PipeWire user services globally."
-  # This means any user who logs in will have these services started in their session.
-  systemctl --global enable pipewire.service pipewire-pulse.service wireplumber.service
-
-  # Optionally, mask PulseAudio’s user services so they can’t be started again:
-  # systemctl --global mask pulseaudio.service pulseaudio.socket
-
-  log INFO "PipeWire user services have been globally enabled."
-  log INFO "They will start automatically for each user at login."
-}
-
-# ------------------------------------------------------------------------------
-# Function: Installs i3, xfce, and required GUI components
-# ------------------------------------------------------------------------------
-install_gui() {
-  export DEBIAN_FRONTEND=noninteractive
-
-  log INFO "Updating package lists..."
-  apt-get update
-
-  # Install Xorg and lightdm
-  log INFO "Installing Xorg, lightdm, and essential GUI packages..."
-  apt-get install -y xorg lightdm
-
-  # Set LightDM as the default display manager
-  log INFO "Configuring LightDM as the default display manager..."
-  debconf-set-selections <<< "lightdm shared/default-x-display-manager select lightdm"
-  systemctl enable lightdm
-
-  # Install i3 window manager and its common addons
-  log INFO "Installing i3 window manager and addons..."
-  apt-get install -y i3 i3blocks i3lock rofi feh polybar fonts-powerline fonts-noto \
-    xterm alacritty ranger pavucontrol alsa-utils picom libxcb1-dev libxcb-keysyms1-dev \
-    libpango1.0-dev libxcb-util0-dev libxcb-icccm4-dev libyajl-dev libstartup-notification0-dev \
-    libxcb-randr0-dev libev-dev libxcb-cursor-dev libxcb-xinerama0-dev libxcb-xkb-dev libxkbcommon-dev \
-    libxkbcommon-x11-dev autoconf xutils-dev libtool automake libxcb-xrm-dev
-
-  # Install xfce and its common addons
-  log INFO "Installing xfce and addons..."
-  apt-get install -y xfce4 xfce4-goodies xfce4-session xfce4-power-manager thunar thunar-volman gvfs-backends \
-    lightdm lightdm-gtk-greeter xfce4-settings xfce4-terminal xfce4-notifyd xfce4-screenshooter \
-    xfce4-taskmanager ristretto mousepad parole pipewire pavucontrol arc-theme adwaita-icon-theme
-}
-
 ################################################################################
 # Function: download_repositories
 ################################################################################
@@ -983,8 +926,6 @@ main() {
   set_directory_permissions
   install_vscode_cli
   install_jetbrainsmono
-  switch_to_pipewire
-  install_gui
   dotfiles_load
   finalize_configuration
 
