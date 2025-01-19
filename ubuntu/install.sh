@@ -859,20 +859,14 @@ dotfiles_load() {
   cp /home/sawyer/github/bash/dotfiles/.bashrc              /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.fehbg               /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.profile             /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.Xresources          /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.xprofile            /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.Xresources-1080p    /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.Xresources-4k       /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/chrony.conf          /etc/chrony/
   cp /home/sawyer/github/bash/dotfiles/Caddyfile            /etc/caddy/
 
   log INFO "Copying config directories to /home/sawyer/..."
   cp -r /home/sawyer/github/bash/dotfiles/bin        /home/sawyer/.local/
   cp -r /home/sawyer/github/bash/dotfiles/i3         /home/sawyer/.config/
-  cp -r /home/sawyer/github/bash/dotfiles/polybar    /home/sawyer/.config/
   cp -r /home/sawyer/github/bash/dotfiles/rofi       /home/sawyer/.config/
   cp -r /home/sawyer/github/bash/dotfiles/alacritty  /home/sawyer/.config/
-  cp -r /home/sawyer/github/bash/dotfiles/autorandr  /home/sawyer/.config/
 
   # Ensure correct ownership if running as root
   chown -R sawyer:sawyer /home/sawyer/
