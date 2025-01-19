@@ -5,7 +5,7 @@
 #   _  /  ____/ / _/_____// /__  / /_/ /_  / / /_  __/  _  /  _  /_/ /
 #   /_/   /____/          \___/  \____/ /_/ /_/ /_/     /_/   _\__, /
 #                                                             /____/
-#  ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Mod Key
 # ------------------------------------------------------------------------------
 # Use Mod4 (Super/Windows key) as the modifier key
@@ -15,7 +15,6 @@ set $mod Mod4
 # Appearance & DPI Scaling
 # ------------------------------------------------------------------------------
 # Increase default font size for high DPI displays using JetBrains Mono
-# (Optionally, you can also configure system-wide DPI via ~/.Xresources)
 font pango:"JetBrains Mono 12"
 
 # Set default window border style and thickness
@@ -26,9 +25,6 @@ for_window [class="^.*"] border pixel 5
 # ------------------------------------------------------------------------------
 # Start picom for compositing effects (transparency, shadows, etc.)
 exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
-
-# Kill any existing Polybar process, then launch
-exec_always --no-startup-id ~/.config/polybar/launch.sh
 
 # Set desktop background using feh (adjust path to your wallpaper)
 exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Kali-Black-4K.jpg
@@ -188,6 +184,33 @@ force_focus_wrapping yes
 # Hide title bars in tiling mode (i3-gaps feature)
 new_window none
 new_float normal
+
+# ------------------------------------------------------------------------------
+# i3bar Configuration
+# ------------------------------------------------------------------------------
+bar {
+    status_command i3status
+    tray_output primary
+    position bottom
+    
+    # Optional color configuration
+    colors {
+        background #282c34
+        statusline #ffffff
+        separator  #666666
+
+        focused_workspace  #4C7899 #285577 #ffffff
+        active_workspace   #333333 #5f676a #ffffff
+        inactive_workspace #333333 #222222 #888888
+        urgent_workspace   #2f343a #900000 #ffffff
+    }
+
+    # Hide the binding mode indicator if you prefer
+    binding_mode_indicator no
+
+    # Show workspace buttons
+    workspace_buttons yes
+}
 
 # ------------------------------------------------------------------------------
 # End of Configuration

@@ -27782,3 +27782,2116 @@ sending incremental file list
 sent 82 bytes  received 12 bytes  188.00 bytes/sec
 total size is 1,755  speedup is 18.67
 sending incremental file list
+backup_log.txt
+
+sent 999,097 bytes  received 35 bytes  1,998,264.00 bytes/sec
+total size is 1,012,925  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+sending incremental file list
+
+sent 106 bytes  received 12 bytes  236.00 bytes/sec
+total size is 3,905  speedup is 33.09
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 253 bytes  received 14 bytes  534.00 bytes/sec
+total size is 2,707  speedup is 10.14
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+.fehbg
+
+sent 223 bytes  received 35 bytes  516.00 bytes/sec
+total size is 115  speedup is 0.45
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:02:40 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,001,089 bytes  received 35 bytes  2,002,248.00 bytes/sec
+total size is 1,014,916  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+sending incremental file list
+
+sent 106 bytes  received 12 bytes  236.00 bytes/sec
+total size is 3,905  speedup is 33.09
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 253 bytes  received 14 bytes  534.00 bytes/sec
+total size is 2,707  speedup is 10.14
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:03:41 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,003,074 bytes  received 35 bytes  2,006,218.00 bytes/sec
+total size is 1,016,901  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+sending incremental file list
+
+sent 106 bytes  received 12 bytes  236.00 bytes/sec
+total size is 3,905  speedup is 33.09
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+laptopOnly/config
+
+sent 715 bytes  received 37 bytes  1,504.00 bytes/sec
+total size is 2,707  speedup is 3.60
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+.fehbg
+
+sent 224 bytes  received 35 bytes  518.00 bytes/sec
+total size is 115  speedup is 0.44
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:05:08 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,005,085 bytes  received 35 bytes  2,010,240.00 bytes/sec
+total size is 1,018,913  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+sending incremental file list
+
+sent 106 bytes  received 12 bytes  236.00 bytes/sec
+total size is 3,905  speedup is 33.09
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 62 bytes  received 12 bytes  148.00 bytes/sec
+total size is 115  speedup is 1.55
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:06:08 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,007,071 bytes  received 35 bytes  2,014,212.00 bytes/sec
+total size is 1,020,898  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+sending incremental file list
+
+sent 106 bytes  received 12 bytes  236.00 bytes/sec
+total size is 3,905  speedup is 33.09
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 62 bytes  received 12 bytes  148.00 bytes/sec
+total size is 115  speedup is 1.55
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:07:09 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,009,056 bytes  received 35 bytes  2,018,182.00 bytes/sec
+total size is 1,022,883  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+sending incremental file list
+
+sent 106 bytes  received 12 bytes  236.00 bytes/sec
+total size is 3,905  speedup is 33.09
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 62 bytes  received 12 bytes  148.00 bytes/sec
+total size is 115  speedup is 1.55
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:08:10 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+./
+backup_log.txt
+config
+
+sent 1,019,068 bytes  received 57 bytes  2,038,250.00 bytes/sec
+total size is 1,025,470  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+sending incremental file list
+
+sent 106 bytes  received 12 bytes  236.00 bytes/sec
+total size is 3,905  speedup is 33.09
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+.fehbg
+
+sent 224 bytes  received 35 bytes  518.00 bytes/sec
+total size is 115  speedup is 0.44
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:09:11 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,013,041 bytes  received 35 bytes  2,026,152.00 bytes/sec
+total size is 1,027,473  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+.fehbg
+
+sent 224 bytes  received 35 bytes  518.00 bytes/sec
+total size is 115  speedup is 0.44
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:10:11 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+./
+backup_log.txt
+config
+
+sent 1,022,974 bytes  received 57 bytes  2,046,062.00 bytes/sec
+total size is 1,029,377  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+laptopOnly/config
+
+sent 716 bytes  received 37 bytes  1,506.00 bytes/sec
+total size is 2,707  speedup is 3.59
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+.fehbg
+
+sent 223 bytes  received 35 bytes  516.00 bytes/sec
+total size is 115  speedup is 0.45
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:18:14 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,016,953 bytes  received 35 bytes  2,033,976.00 bytes/sec
+total size is 1,031,343  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+laptopOnly/config
+
+sent 715 bytes  received 37 bytes  1,504.00 bytes/sec
+total size is 2,707  speedup is 3.60
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:19:15 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,018,901 bytes  received 35 bytes  2,037,872.00 bytes/sec
+total size is 1,033,291  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:20:16 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,020,829 bytes  received 35 bytes  2,041,728.00 bytes/sec
+total size is 1,035,220  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:21:16 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,022,759 bytes  received 35 bytes  2,045,588.00 bytes/sec
+total size is 1,037,149  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:22:17 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,024,688 bytes  received 35 bytes  2,049,446.00 bytes/sec
+total size is 1,039,078  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:23:18 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,026,617 bytes  received 35 bytes  2,053,304.00 bytes/sec
+total size is 1,041,007  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:24:19 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,028,545 bytes  received 35 bytes  2,057,160.00 bytes/sec
+total size is 1,042,936  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:25:19 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,030,475 bytes  received 35 bytes  2,061,020.00 bytes/sec
+total size is 1,044,865  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:26:20 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,032,404 bytes  received 35 bytes  2,064,878.00 bytes/sec
+total size is 1,046,794  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:27:21 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,034,333 bytes  received 35 bytes  2,068,736.00 bytes/sec
+total size is 1,048,723  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:28:22 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,036,261 bytes  received 35 bytes  2,072,592.00 bytes/sec
+total size is 1,050,652  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:29:22 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,038,191 bytes  received 35 bytes  2,076,452.00 bytes/sec
+total size is 1,052,581  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:30:23 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,040,120 bytes  received 35 bytes  2,080,310.00 bytes/sec
+total size is 1,054,510  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:31:24 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,042,049 bytes  received 35 bytes  2,084,168.00 bytes/sec
+total size is 1,056,439  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:32:25 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,043,977 bytes  received 35 bytes  2,088,024.00 bytes/sec
+total size is 1,058,368  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:33:25 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,045,907 bytes  received 35 bytes  2,091,884.00 bytes/sec
+total size is 1,060,297  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:34:26 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,047,836 bytes  received 35 bytes  2,095,742.00 bytes/sec
+total size is 1,062,226  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:35:27 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,049,772 bytes  received 35 bytes  2,099,614.00 bytes/sec
+total size is 1,064,155  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:36:27 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,051,701 bytes  received 35 bytes  2,103,472.00 bytes/sec
+total size is 1,066,084  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:37:28 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,053,631 bytes  received 35 bytes  2,107,332.00 bytes/sec
+total size is 1,068,013  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:38:29 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,055,560 bytes  received 35 bytes  2,111,190.00 bytes/sec
+total size is 1,069,942  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:39:30 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,057,488 bytes  received 35 bytes  2,115,046.00 bytes/sec
+total size is 1,071,871  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:40:30 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,059,418 bytes  received 35 bytes  2,118,906.00 bytes/sec
+total size is 1,073,800  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+
+sent 252 bytes  received 14 bytes  532.00 bytes/sec
+total size is 2,707  speedup is 10.18
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:41:31 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
+backup_log.txt
+
+sent 1,061,347 bytes  received 35 bytes  2,122,764.00 bytes/sec
+total size is 1,075,729  speedup is 1.01
+sending incremental file list
+
+sent 471 bytes  received 12 bytes  966.00 bytes/sec
+total size is 37,664  speedup is 77.98
+Directory /home/sawyer/.config/polybar does not exist, skipping.
+sending incremental file list
+
+sent 86 bytes  received 12 bytes  196.00 bytes/sec
+total size is 2,273  speedup is 23.19
+sending incremental file list
+laptopOnly/config
+
+sent 716 bytes  received 37 bytes  1,506.00 bytes/sec
+total size is 2,707  speedup is 3.59
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 7,500  speedup is 100.00
+sending incremental file list
+
+sent 64 bytes  received 12 bytes  152.00 bytes/sec
+total size is 129  speedup is 1.70
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 139  speedup is 1.72
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 115  speedup is 1.58
+sending incremental file list
+
+sent 67 bytes  received 12 bytes  158.00 bytes/sec
+total size is 571  speedup is 7.23
+sending incremental file list
+
+sent 65 bytes  received 12 bytes  154.00 bytes/sec
+total size is 320  speedup is 4.16
+sending incremental file list
+
+sent 63 bytes  received 12 bytes  150.00 bytes/sec
+total size is 1,416  speedup is 18.88
+sending incremental file list
+
+sent 61 bytes  received 12 bytes  146.00 bytes/sec
+total size is 625  speedup is 8.56
+sending incremental file list
+
+sent 73 bytes  received 12 bytes  170.00 bytes/sec
+total size is 175  speedup is 2.06
+sending incremental file list
+
+sent 69 bytes  received 12 bytes  162.00 bytes/sec
+total size is 185  speedup is 2.28
+Backup completed at Sat Jan 18 07:42:32 PM EST 2025.
+sending incremental file list
+
+sent 82 bytes  received 12 bytes  188.00 bytes/sec
+total size is 1,755  speedup is 18.67
+sending incremental file list
