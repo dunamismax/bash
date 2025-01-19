@@ -1,0 +1,172 @@
+# /etc/nixos/configuration.nix
+{ config, pkgs, ... }:
+
+{
+  # Basic system configurations
+  imports =
+    [ 
+      # Include additional modules if needed
+    ];
+
+  # System settings
+  time.timeZone = "America/New_York";
+  networking.hostName = "nixos-machine"; # Set your hostname
+  services.openssh.enable = true;
+  services.openssh.settings = {
+    Port = 22;
+    PermitRootLogin = "no";
+    MaxAuthTries = 8;
+    MaxSessions = 6;
+    Protocol = 2;
+  };
+
+  # Firewall configuration using NixOS's built-in firewall (iptables/nftables)
+  networking.firewall.enable = true;
+  networking.firewall.allowedTCPPorts = [ 22 80 443 8080 32400 8324 32469 ];
+  networking.firewall.allowedUDPPorts = [ 80 443 1900 5353 32410 32411 32412 32413 32414 32415 ];
+
+  # NTP service (Chrony)
+  services.chrony.enable = true;
+
+  # Fail2Ban service
+  services.fail2ban.enable = true;
+
+  # Package installations
+  environment.systemPackages = with pkgs; [
+    bash
+    zsh
+    fish
+    vim
+    nano
+    mc
+    screen
+    tmux
+    nodejs
+    npm
+    ninja
+    meson
+    font-awesome-ttf
+    intltool
+    gettext
+    cmake
+    hugo
+    pigz
+    openssh
+    libtool
+    pkg-config
+    openssl
+    rfkill
+    bzip2
+    python3
+    python3Packages.virtualenv
+    python3Packages.pip
+    python3Packages.setuptools
+    python3Packages.wheel
+    libfreetype
+    flatpak
+    xfce4-dev-tools
+    git
+    ufw  # Although ufw is less needed on NixOS since firewall is built-in
+    perl
+    curl
+    wget
+    tcpdump
+    rsync
+    htop
+    bashCompletion
+    neofetch
+    tig
+    jq
+    nmap
+    tree
+    fzf
+    lynx
+    which
+    patch
+    smartmontools
+    ntfs3g
+    cups
+    neovim
+    libglib
+    qemu_kvm
+    libvirt
+    virtinst
+    bridge_utils
+    acpid
+    policykit
+    papirus-icon-theme
+    fail2ban
+    ffmpeg
+    flameshot
+    libxfce4ui
+    libxfce4util
+    libgtk3
+    gnome-keyring
+    seahorse
+    # Add more packages from the PACKAGES list as needed
+  ];
+
+  # User configuration
+  users.users.sawyer = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" "libvirt" ];
+    shell = pkgs.bashInteractive;
+    home = "/home/sawyer";
+    # Public keys, password, etc. can be specified here
+  };
+
+  # Plex installation: If Plex is available in Nixpkgs, you can add it as a service
+  services.plexmediaserver = {
+    enable = true;
+    # additional plex configuration options if available
+  };
+
+  # Caddy installation and configuration
+  services.caddy = {
+    enable = true;
+    package = pkgs.caddy;  # Use the package from Nixpkgs
+    # If custom Caddyfile is needed:
+    # extraConfig = builtins.readFile /etc/caddy/Caddyfile;
+    # Or configure via options if supported.
+  };
+
+  # Zig installation from nixpkgs
+  environment.systemPackages = with pkgs; [
+    zig
+    # Add other packages that were installed later (Go, Rust toolchain, etc.)
+  ] ++ config.environment.systemPackages;
+
+  # Go installation 
+  environment.systemPackages = with pkgs; [
+    go
+  ] ++ config.environment.systemPackages;
+
+  # Rust toolchain can be installed as a user environment tool or declared system-wide
+  environment.systemPackages = with pkgs; [
+    rustup
+  ] ++ config.environment.systemPackages;
+
+  # Flatpak setup - add flathub repository if needed
+  users.users.sawyer.openssh.authorizedKeys.keys = [
+    # Add SSH keys for user sawyer
+  ];
+  
+  # Custom activation script if needed for tasks not covered declaratively
+  system.activationScripts.myCustom = ''
+    #!/bin/sh
+    # Place custom imperative commands here,
+    # such as additional repository cloning, dotfile copying, or permission fixes.
+    # This script runs during activation of the configuration.
+  '';
+
+  # Enable acpid
+  services.acpid.enable = true;
+
+  # Locale and keyboard settings
+  i18n.defaultLocale = "en_US.UTF-8";
+  console.keyMap = "us";
+
+  # Filesystem and permissions can be managed by additional scripts or manually if necessary.
+
+  # Additional configuration...
+}
