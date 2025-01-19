@@ -2,49 +2,41 @@
 ;; Polybar Configuration
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-[bar/example]
-; The monitor where the bar should appear.
-; If you have a multi-monitor setup, you can specify which monitor by name
-; e.g. monitor = DisplayPort-1
-; If left blank, it usually auto-detects or uses the primary monitor.
+[bar/mybar]
+; Which monitor to display on (leave empty for auto-detect).
 monitor =
 
+; Full width, taller height for better readability
 width = 100%
-height = 36
+height = 40
 fixed-center = true
 
-; Background and foreground colors (example uses a "gruvbox" style scheme)
+; Gruvbox-inspired colors
 background = #FF282828
 foreground = #FFebdbb2
 
-; Use a nice anti-aliased font. If you’re using icons (e.g. Font Awesome or Nerd Fonts),
-; be sure to include them. If you want bigger fonts for HiDPI, increase the size.
-font-0 = JetBrains Mono:size=12;2
-font-1 = FontAwesome:size=12;2
+;-------------------------------------------------------------------
+; FONTS
+;-------------------------------------------------------------------
+font-0 = "FiraCode Nerd Font:style=Regular:size=14"
 
-; These margins/gaps can help if your bar doesn't look right on a HiDPI display
-; or if you want some offset from screen edges.
-padding-left = 2
-padding-right = 2
+; Extra padding around modules
+padding-left = 5
+padding-right = 5
 
-; Bar border
+; No border
 border-size = 0
 border-color = #000000
 
-; Set the modules you want. Typically:
-;   modules-left = i3
-;   modules-center =
-;   modules-right = volume memory cpu battery date
-;
+; Modules to display (left, center, right)
 modules-left = i3
 modules-center =
 modules-right = volume memory cpu battery date
 
-; If you want tray icons (system tray), enable this line:
+; System tray on the right
 tray-position = right
-; tray-background = ${colors.background}
-; tray-padding = 5
-; tray-offset-x = 0
+tray-background = ${bar/mybar.background}
+tray-padding = 5
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Module: i3 - Show i3 workspaces
@@ -53,25 +45,24 @@ tray-position = right
 type = internal/i3
 icon-spacing = 2
 
-; Label settings for different states
 label-focused = %index% %name%
 label-focused-background = #FF458588
 label-focused-foreground = #FFFFFFFF
 label-focused-underline = #FF83a598
 
 label-unfocused = %index% %name%
-label-unfocused-background = ${bar.background}
+label-unfocused-background = ${bar/mybar.background}
 label-unfocused-foreground = #FFa89984
 
 label-visible = %index% %name%
-label-visible-background = ${bar.background}
+label-visible-background = ${bar/mybar.background}
 label-visible-foreground = #FFebdbb2
 
 label-urgent = %index% %name%
 label-urgent-background = #FFcc241d
 label-urgent-foreground = #FFFFFFFF
 
-; Scroll or click actions to switch workspace
+; Optional scroll or click actions
 ; button-1 = focus
 ; scroll-up = prev
 ; scroll-down = next
@@ -81,13 +72,14 @@ label-urgent-foreground = #FFFFFFFF
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 [module/volume]
 type = internal/volume
+
+; Show “icon percentage%” when unmuted, “icon muted” otherwise
 format-volume = " %percentage%%"
 format-muted = " muted"
 
-; Use pactl or pamixer or alsa
-; If you're using PulseAudio:
+; If using PulseAudio:
 use-ui = true
-; If you prefer pamixer:
+; If using pamixer, uncomment:
 ; mixer = pamixer
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -96,6 +88,7 @@ use-ui = true
 [module/memory]
 type = internal/memory
 interval = 5
+; e.g. “ 2.1G/7.9G”
 format = " %used%/%total%"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -104,20 +97,22 @@ format = " %used%/%total%"
 [module/cpu]
 type = internal/cpu
 interval = 5
+; e.g. “ 12%”
 format = " %percentage%%"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Module: battery
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; (Only if you have a battery, e.g., on a laptop)
 [module/battery]
 type = internal/battery
 battery = BAT0
 adapter = AC
 poll-interval = 10
-format-charging = " %percentage%%% time %time%"
-format-discharging = "  %percentage%%% time %time%"
-format-full = "  100%%"
+
+; Different icons if charging or discharging
+format-charging = " %percentage%%% (%time%)"
+format-discharging = " %percentage%%% (%time%)"
+format-full = " 100%%"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Module: date
