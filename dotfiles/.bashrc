@@ -61,8 +61,9 @@ shopt -s checkwinsize
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
 # ------------------------------------------------------------------------------
-# 6. Bash prompt (PS1)
+# 6. Bash prompt (PS1) with Nord color theme
 # ------------------------------------------------------------------------------
+
 # If terminal supports color, enable a colored prompt.
 case "$TERM" in
     xterm-color|*-256color) color_prompt=yes;;
@@ -80,9 +81,11 @@ if [ -n "$force_color_prompt" ]; then
     fi
 fi
 
-# Choose a colored or plain prompt.
+# Choose a colored or plain prompt using Nord colors.
 if [ "$color_prompt" = yes ]; then
-    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+    PS1='${ubuntu_chroot:+($ubuntu_chroot)}'\
+'\[\033[38;2;136;192;208m\]\u@\h\[\033[00m\]:'\
+'\[\033[38;2;94;129;172m\]\w\[\033[00m\]\$ '
 else
     PS1='${ubuntu_chroot:+($ubuntu_chroot)}\u@\h:\w\$ '
 fi

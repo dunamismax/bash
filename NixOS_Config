@@ -1,0 +1,83 @@
+# /etc/nixos/configuration.nix
+{ config, pkgs, ... }:
+
+{
+  imports = [ ];
+
+  ############################
+  # Basic System Configurations
+  ############################
+
+  time.timeZone = "America/New_York";
+  i18n.defaultLocale = "en_US.UTF-8";
+  console.keyMap = "us";
+
+  networking.hostName = "nixos-machine";
+  networking.firewall.enable = true;
+  networking.firewall.allowedTCPPorts = [ 22 80 443 8080 32400 8324 32469 ];
+  networking.firewall.allowedUDPPorts = [ 80 443 1900 5353 32410 32411 32412 32413 32414 32415 ];
+
+  ############################
+  # Services Configuration
+  ############################
+
+  services.openssh = {
+    enable = true;
+    settings = {
+      Port = 22;
+      PermitRootLogin = "no";
+      MaxAuthTries = 8;
+      MaxSessions = 6;
+      Protocol = 2;
+    };
+  };
+
+  services.chrony.enable = true;
+  services.fail2ban.enable = true;
+  services.acpid.enable = true;
+  services.plexmediaserver.enable = true;
+
+  services.caddy = {
+    enable = true;
+    package = pkgs.caddy;
+  };
+
+  ############################
+  # User Configuration
+  ############################
+
+  users.users.sawyer = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" "libvirt" ];
+    shell = pkgs.bashInteractive;
+    home = "/home/sawyer";
+    openssh.authorizedKeys.keys = [ ];
+  };
+
+  ############################
+  # Package Management
+  ############################
+
+  environment.systemPackages = with pkgs; [
+    bash bashCompletion zsh fish vim nano neovim mc fzf
+    screen tmux
+    nodejs npm ninja meson cmake go rustup zig git pkg-config libtool curl wget patch
+    python3 python3Packages.virtualenv python3Packages.pip python3Packages.setuptools python3Packages.wheel
+    libfreetype intltool gettext openssl rfkill bzip2 libglib libgtk3 libxfce4ui libxfce4util
+    flatpak
+    xfce4-dev-tools papirus-icon-theme flameshot seahorse gnome-keyring
+    tcpdump rsync htop neofetch tig jq nmap tree lynx which smartmontools ntfs3g cups ffmpeg
+    qemu_kvm libvirt virtinst bridge_utils policykit
+    plexmediaserver
+    ufw openssh fail2ban pigz hugo
+  ];
+
+  ############################
+  # Custom Activation Scripts
+  ############################
+
+  system.activationScripts.myCustom = ''
+    #!/bin/sh
+    # Custom imperative commands can be added here if needed.
+  '';
+}
