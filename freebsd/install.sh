@@ -175,24 +175,38 @@ install_pkgs() {
     PACKAGES=(
     # Development tools
     gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext
+    gmake svn valgrind doxygen ccache shellcheck diffutils
 
     # Scripting and utilities
-    bash zsh fish vim nano emacs tmux screen htop iftop tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc
+    bash zsh fish vim nano emacs tmux screen tmate mosh htop iftop iotop glances 
+    tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx 
+    smartmontools neofetch screenfetch ncdu dos2unix figlet toilet pandoc ripgrep 
+    ag silversearcher-ag
 
     # Libraries for Python & C/C++ build
     libffi readline sqlite3 ncurses gdbm nss lzma libxml2
 
     # Networking, system admin, and hacking utilities
-    nmap netcat socat tcpdump wireshark aircrack-ng john hydra
+    nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool
+    bmon ethtool whois zabbix-agent prometheus-node-exporter bind-tools
 
     # Languages and runtimes
-    python39 go
+    python39 go ruby php node perl5 rust openjdk
 
-    # Additional helpful tools
-    jq pigz fzf lynx smartmontools neofetch
+    # Containers and virtualization
+    docker vagrant qemu bhyve
+
+    # Web hosting tools
+    nginx php-fpm postgresql mariadb105-server redis certbot
+
+    # File and backup management
+    duplicity borgbackup zfsnap rclone
 
     # System monitoring and logging
-    syslog-ng
+    syslog-ng grafana prometheus netdata
+
+    # Miscellaneous tools
+    iostat procstat gstat lsof powertop sysutils/bsdstats truss
 )
 
     log INFO "Installing pkg-based build dependencies and popular packages..."
