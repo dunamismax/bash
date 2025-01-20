@@ -282,30 +282,21 @@ configure_ssh_settings() {
   log INFO "Backup of sshd_config created at $backup_file."
 
   # Apply security best practices to sshd_config
-  declare -A sshd_settings=(
-    ["Port"]="22"
-    ["Protocol"]="2"
-    ["MaxAuthTries"]="3"
-    ["PermitRootLogin"]="no"
-    ["PasswordAuthentication"]="no"
-    ["ChallengeResponseAuthentication"]="no"
-    ["UsePAM"]="no"
-    ["X11Forwarding"]="no"
-    ["AllowTcpForwarding"]="no"
-    ["PermitEmptyPasswords"]="no"
-    ["ClientAliveInterval"]="300"
-    ["ClientAliveCountMax"]="2"
-    ["LogLevel"]="VERBOSE"
-  )
-
-  log INFO "Applying hardening settings to $sshd_config..."
-  for setting in "${!sshd_settings[@]}"; do
-    if grep -q "^\s*${setting}\s" "$sshd_config"; then
-      sed -i '' "s|^\s*${setting}[[:space:]]\+.*|${setting} ${sshd_settings[$setting]}|" "$sshd_config"
-    else
-      echo "${setting} ${sshd_settings[$setting]}" >> "$sshd_config"
-    fi
-  done
+  cat > "$sshd_config" <<EOF
+Port 22
+Protocol 2
+MaxAuthTries 3
+PermitRootLogin no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+UsePAM no
+X11Forwarding no
+AllowTcpForwarding no
+PermitEmptyPasswords no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+LogLevel VERBOSE
+EOF
 
   log INFO "SSH configuration updated. Restarting sshd service..."
 
