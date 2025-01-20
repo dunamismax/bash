@@ -298,8 +298,8 @@ configure_ssh_settings() {
   log INFO "Applying hardening settings to $sshd_config..."
   for setting in "${!sshd_settings[@]}"; do
     # If setting exists, replace it; if not, append it
-    if grep -q "^\s*${setting}\s" "$sshd_config"; then
-      sed -i '' "s/^\s*${setting}\s\+.*/${setting} ${sshd_settings[$setting]}/" "$sshd_config"
+    if grep -q "^s*${setting}\s" "$sshd_config"; then
+      sed -i '' "s/^s*${setting}\s\+.*/${setting} ${sshd_settings[$setting]}/" "$sshd_config"
     else
       echo "${setting} ${sshd_settings[$setting]}" >> "$sshd_config"
     fi
