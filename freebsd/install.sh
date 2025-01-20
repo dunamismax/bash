@@ -406,15 +406,12 @@ install_zig() {
   fi
 
   log INFO "Installing Zig..."
-  ZIG_VERSION="0.14.0"  # Adjust version as needed
   ZIG_TARBALL="/tmp/zig.tar.xz"
   ZIG_INSTALL_DIR="/usr/local/zig"
-
-  # Download prebuilt FreeBSD Zig binary if available, otherwise adjust URL accordingly.
-  ZIG_URL="https://ziglang.org/builds/freebsd-x86_64/zig-${ZIG_VERSION}.tar.xz"
+  ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.2847+db8ed730e.tar.xz"
 
   log INFO "Downloading Zig from $ZIG_URL..."
-  if ! fetch -o "$ZIG_TARBALL" "$ZIG_URL"; then
+  if ! curl -L "$ZIG_URL" -o "$ZIG_TARBALL"; then
     log ERROR "Failed to download Zig."
     return 1
   fi
@@ -422,13 +419,13 @@ install_zig() {
   log INFO "Extracting Zig tarball..."
   tar xf "$ZIG_TARBALL" -C /tmp/
 
-  # Adjust extracted directory name based on the tarball's structure
+  # Get the extracted directory name
   ZIG_EXTRACTED_DIR=$(tar -tf "$ZIG_TARBALL" | head -1 | cut -f1 -d"/")
   ZIG_EXTRACTED_DIR="/tmp/${ZIG_EXTRACTED_DIR}"
 
   if [[ ! -d "$ZIG_EXTRACTED_DIR" ]]; then
     log ERROR "Extraction failed: '$ZIG_EXTRACTED_DIR' does not exist!"
-    exit 1
+    return 1
   fi
 
   log INFO "Installing Zig to $ZIG_INSTALL_DIR..."
