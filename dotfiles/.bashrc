@@ -41,18 +41,12 @@ fi
 # Do not store duplicate lines or lines that start with a space in the history.
 HISTCONTROL=ignoreboth
 
-# Allow appending to the history file (instead of overwriting it).
-shopt -s histappend
-
 # Set history limits (number of lines in memory / on disk).
 HISTSIZE=100000
 HISTFILESIZE=200000
 
 # Add timestamps to each command in history (for auditing).
 HISTTIMEFORMAT="%F %T "
-
-# Re-check window size after each command, updating LINES and COLUMNS if needed.
-shopt -s checkwinsize
 
 # ------------------------------------------------------------------------------
 # 5. Less (pager) setup
