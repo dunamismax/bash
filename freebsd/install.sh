@@ -174,24 +174,22 @@ install_pkgs() {
 
     PACKAGES=(
     # Development tools
-    gcc clang cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext
+    gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext
 
     # Scripting and utilities
-    bash zsh fish vim nano emacs tmux screen htop iftop tree wget curl rsync \
-    unzip zip ca_root_nss sudo less man neovim mc
+    bash zsh fish vim nano emacs tmux screen htop iftop tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc
 
     # Libraries for Python & C/C++ build
-    libbz2 libffi zlib readline sqlite3 tk ncurses gdbm nss lzma libxml2
+    libffi readline sqlite3 ncurses gdbm nss lzma libxml2
 
     # Networking, system admin, and hacking utilities
-    ssh nmap netcat socat tcpdump wireshark aircrack-ng john \
-    hydra
+    nmap netcat socat tcpdump wireshark aircrack-ng john hydra
 
     # Languages and runtimes
     python39 go
 
     # Additional helpful tools
-    jq pigz p7zip xz fzf lynx smartmontools neofetch
+    jq pigz fzf lynx smartmontools neofetch
 
     # System monitoring and logging
     syslog-ng
