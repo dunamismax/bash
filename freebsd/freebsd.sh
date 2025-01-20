@@ -1,6 +1,83 @@
 #!/usr/local/bin/bash
-# FreeBSD Automated Setup Script
-# Author: dunamismax | License: MIT
+# =============================================================================
+#                     FreeBSD System Configuration Script
+# =============================================================================
+#
+# PURPOSE
+# -------
+# Automates the setup and hardening of a fresh FreeBSD installation with 
+# security-focused defaults and essential development tools.
+#
+# FEATURES
+# --------
+# System Configuration:
+#   • Updates system and package repositories
+#   • Installs and configures core system utilities
+#   • Implements security hardening measures
+#   • Sets up logging and monitoring
+#
+# Security:
+#   • Configures PF firewall with reasonable defaults
+#   • Hardens SSH configuration
+#   • Implements secure file permissions
+#   • Sets up system auditing
+#
+# Development Environment:
+#   • Installs development tools (Python, Go, Rust, Zig)
+#   • Configures version control systems
+#   • Sets up build environments
+#   • Installs container tools
+#
+# PREREQUISITES
+# ------------
+# • Fresh FreeBSD 13.0+ installation
+# • Root access or sudo privileges
+# • Internet connectivity
+# • Minimum 10GB free disk space
+#
+# USAGE
+# -----
+# 1. Review and adjust configuration variables:
+#    USERNAME="sawyer"        # Primary user account
+#    GITHUB_DIR="/home/${USERNAME}/github"
+#    LOG_FILE="/var/log/freebsd_setup.log"
+#    VERBOSE=2                # Logging detail (0=quiet, 1=normal, 2=debug)
+#
+# 2. Execute with root privileges:
+#    # ./setup.sh             # As root
+#    $ sudo ./setup.sh        # Via sudo
+#
+# LOGGING
+# -------
+# • All operations logged to /var/log/freebsd_setup.log
+# • Log levels: INFO, WARN, ERROR, DEBUG
+# • Console output controlled by VERBOSE setting
+#
+# ERROR HANDLING
+# -------------
+# • Strict error checking (set -euo pipefail)
+# • Trapped errors with line number reporting
+# • Automatic cleanup on script termination
+# • Transaction logging for all operations
+#
+# RECOVERY
+# --------
+# • Configuration backups stored with .bak extension
+# • Log file contains all executed operations
+# • Safe to re-run on partial completion
+#
+# AUTHOR
+# ------
+# dunamismax <https://github.com/dunamismax>
+#
+# LICENSE
+# -------
+# MIT License
+# Copyright (c) 2024 dunamismax
+#
+# =============================================================================
+
+set -Eeuo pipefail
 
 set -Eeuo pipefail
 
@@ -132,6 +209,15 @@ LoginGraceTime 30
 ClientAliveInterval 300
 ClientAliveCountMax 2
 TCPKeepAlive yes
+
+# Additional security measures
+StrictModes yes
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+GSSAPIAuthentication no
+KerberosAuthentication no
+HostbasedAuthentication no
+IgnoreRhosts yes
 
 # Logging
 LogLevel VERBOSE
@@ -326,53 +412,6 @@ fix_permissions() {
     return 0
 }
 
-install_zig() {
-    local version="0.14.0-dev.2847+db8ed730e"
-    local install_dir="/usr/local/zig"
-    local tarball="/tmp/zig.tar.xz"
-    local url="https://ziglang.org/builds/zig-linux-x86_64-${version}.tar.xz"
-    
-    log INFO "Installing Zig..."
-    
-    # Skip if already installed
-    if command -v zig >/dev/null 2>&1; then
-        log INFO "Zig already installed"
-        return 0
-    fi
-    
-    # Download and extract
-    curl -L "$url" -o "$tarball" || {
-        log ERROR "Failed to download Zig"
-        return 1
-    }
-    
-    # Get extracted directory name and extract
-    local extracted_dir="/tmp/$(tar -tf "$tarball" | head -1 | cut -f1 -d"/")"
-    tar xf "$tarball" -C /tmp/ || {
-        log ERROR "Failed to extract Zig"
-        rm -f "$tarball"
-        return 1
-    }
-    
-    # Install
-    rm -rf "$install_dir"
-    mv "$extracted_dir" "$install_dir" || {
-        log ERROR "Failed to install Zig"
-        rm -f "$tarball"
-        return 1
-    }
-    
-    # Create symlink and set permissions
-    ln -sf "$install_dir/zig" /usr/local/bin/zig
-    chmod +x /usr/local/bin/zig
-    
-    # Cleanup
-    rm -f "$tarball"
-    
-    log INFO "Zig installation complete"
-    return 0
-}
-
 setup_dotfiles() {
     # Base paths
     local user_home="/home/${USERNAME}"
@@ -453,7 +492,6 @@ main() {
     install_pkgs
     configure_ssh
     configure_pf
-    install_zig
     download_repos
     fix_permissions
     setup_dotfiles
