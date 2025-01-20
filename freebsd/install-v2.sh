@@ -802,7 +802,7 @@ main() {
   log INFO "Starting FreeBSD Automated System Configuration Script"
 
   # Bash script execution order:
-  
+
   # System backup temporarily disabled for testing
   # backup_system
   install_pkgs
