@@ -187,26 +187,25 @@ install_pkgs() {
     libffi readline sqlite3 ncurses gdbm nss lzma libxml2
 
     # Networking, system admin, and hacking utilities
-    nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool
-    bmon ethtool whois zabbix-agent prometheus-node-exporter bind-tools
+    nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon ethtool whois bind-tools
 
     # Languages and runtimes
-    python39 go ruby php node perl5 rust openjdk
+    python39 go ruby perl5 rust
 
     # Containers and virtualization
-    docker vagrant qemu bhyve
+    docker vagrant qemu
 
     # Web hosting tools
-    nginx php-fpm postgresql mariadb105-server redis certbot
+    nginx mysql
 
     # File and backup management
-    duplicity borgbackup zfsnap rclone
+    rclone
 
     # System monitoring and logging
     syslog-ng grafana prometheus netdata
 
     # Miscellaneous tools
-    iostat procstat gstat lsof powertop sysutils/bsdstats truss
+    lsof sysutils bsdstats
 )
 
     log INFO "Installing pkg-based build dependencies and popular packages..."
