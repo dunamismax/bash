@@ -28,153 +28,12 @@ SYSCTL_CONF="/etc/sysctl.conf"
 PF_CONF="/etc/pf.conf"
 MONITORING_DIR="/var/monitoring"
 
-# Development Tools and Build System
-PACKAGES="
-    # Core Development Tools - Essential compilers and build utilities
-    devel/git                 # Modern distributed version control system
-    devel/git-base           # Core git tools
-    devel/git-docs           # Git documentation
-    lang/gcc10               # GNU Compiler Collection (GCC) version 10
-    lang/clang              # LLVM C/C++/Objective-C compiler
-    devel/llvm              # Low Level Virtual Machine compiler infrastructure
-    devel/gdb               # GNU Debugger for software debugging
-    devel/lldb              # Next generation high-performance debugger
-    devel/cmake             # Cross-platform make system
-    devel/ninja-build       # Small build system with focus on speed
-    devel/bmake            # NetBSD make for package building
-    devel/autoconf          # Generate configuration scripts
-    devel/automake         # GNU Standards-compliant Makefile generator
-    devel/libtool          # Generic shared library support script
-    devel/pkgconf          # Package compiler and linker metadata toolkit
-    devel/ccache           # Compiler cache to speed up recompilation
-    devel/patch            # Apply a diff file to originals
-    devel/bison            # GNU yacc implementation
-    devel/flex             # Fast lexical analyzer generator
-
-    # Version Control Systems - Additional VCS tools
-    devel/mercurial        # Distributed source control management tool
-    devel/subversion       # Enterprise-class centralized version control
-    devel/cvs              # Concurrent Versions System
-    devel/fossil          # Distributed version control system
-
-    # Development Libraries - Common libraries for software development
-    devel/boost-libs       # Free portable C++ libraries
-    devel/boost-headers    # Boost C++ headers
-    devel/boost-docs       # Boost documentation
-    devel/boost-build      # Boost.Build framework
-    devel/ncurses         # CRT screen handling and optimization package
-    devel/readline        # GNU library for editing command lines
-    devel/gettext         # Tools for multi-lingual messages
-    databases/db4         # Berkeley DB version 4
-    devel/zlib            # General purpose data compression library
-    security/openssl      # Secure Socket Layer toolkit
-    textproc/libxml2      # XML parser library from W3C
-    textproc/libxslt      # XSLT parser library from W3C
-    devel/pcre2           # Perl Compatible Regular Expressions library
-    devel/json-c          # JSON implementation in C
-    devel/yaml-cpp        # YAML parser and emitter for C++
-
-    # Development Environments - Text editors and IDEs
-    editors/vim           # Vim text editor
-    editors/neovim        # Modern Vim-based text editor
-    editors/emacs         # GNU Emacs text editor
-    devel/ctags           # Code indexing and navigation tool
-    devel/cscope         # Source code browser
-    devel/global         # Global source code tag system
-    devel/kdevelop       # Integrated Development Environment for KDE
-
-    # Shell and Terminal Tools - Enhanced shell experience
-    shells/zsh            # Z shell with many improvements
-    misc/tmux             # Terminal multiplexer
-    shells/bash           # GNU Bourne Again Shell
-    shells/tcsh           # Enhanced C shell
-    misc/screen          # Multi-screen window manager
-    shells/fish          # Friendly Interactive Shell
-
-    # Documentation Tools - For creating and managing documentation
-    devel/doxygen         # Documentation system for C++, C, and other languages
-    textproc/py-sphinx    # Python documentation generator
-    textproc/asciidoc     # Text based document generation
-    textproc/groff        # GNU troff text processing system
-    print/texinfo         # GNU documentation formatting system
-    textproc/mandoc       # NetBSD documentation formatting tools
-
-    # Build and Debug Tools - For complex software projects
-    devel/gdb             # GNU source-level debugger
-    devel/valgrind        # Dynamic analysis tools
-    devel/cgdb           # Curses-based interface to GDB
-    devel/nemiver        # GNOME graphical debugger
-    devel/ddd            # Data Display Debugger with graphical interface
-
-    # Network Development - Tools for network programming
-    net/libpcap          # System-independent packet capture library
-    net/tcpdump          # Network traffic monitoring tool
-    security/libssh      # SSH protocol implementation library
-    net/wget            # GNU wget download utility
-    www/curl            # Command line tool for transferring data
-    net/mtr             # Network diagnostic tool
-
-    # Database Development - Database servers and clients
-    databases/mysql80-server     # MySQL 8.0 database server
-    databases/mysql80-client     # MySQL 8.0 client
-    databases/postgresql14-server # PostgreSQL 14 database server
-    databases/postgresql14-client # PostgreSQL 14 client
-    databases/sqlite3           # SQLite 3 embedded database
-    databases/redis            # Advanced key-value store
-    databases/mongodb         # Document-oriented database
-
-    # Web Development - Web servers and related tools
-    www/nginx             # Lightweight HTTP server and reverse proxy
-    www/apache24         # Apache 2.4 web server
-    www/php81            # PHP 8.1 scripting language
-    www/php81-fpm        # FastCGI Process Manager for PHP
-    www/node16           # NodeJS JavaScript runtime
-
-    # Testing Tools - Software for testing and quality assurance
-    devel/cppunit         # C++ unit testing framework
-    devel/googletest      # Google C++ testing framework
-    devel/py-test         # Python testing tool
-    devel/ruby-rspec      # Behavior Driven Development for Ruby
-
-    # System Analysis - Performance monitoring and analysis
-    sysutils/top          # System and process monitor
-    sysutils/htop         # Enhanced system monitor
-    sysutils/sysbench     # System performance benchmark
-    sysutils/fio          # Flexible I/O tester
-    sysutils/bonnie++     # Performance test of filesystem I/O
-    
-    # Security Tools - Security and encryption utilities
-    security/gnupg2       # GNU Privacy Guard
-    security/aide         # Advanced Intrusion Detection Environment
-    security/opencdk      # Open Crypto Development Kit
-    security/sudo         # Execute commands as superuser
-    security/password-store # Password management tool
-    
-    # File and Text Processing - Text manipulation tools
-    textproc/ripgrep      # Fast grep replacement
-    sysutils/fd           # Simple find replacement
-    textproc/jq           # Lightweight JSON processor
-    textproc/yq           # YAML processor
-    textproc/xmlstarlet   # XML transformation utility
-    textproc/pandoc       # Universal document converter
-    
-    # Source Code Analysis - Code quality and analysis tools
-    devel/cppcheck        # Static analysis tool for C/C++ code
-    devel/clang-static-analyzer # Clang static analyzer
-    devel/splint         # Tool for statically checking C programs
-    devel/astyle         # Source code formatter for C, C++, Java
-
-    # Configuration Management - System configuration tools
-    sysutils/ansible      # Simple IT automation
-    sysutils/puppet       # Configuration management framework
-    sysutils/salt        # Remote execution and configuration system
-
-    # Backup Tools - Data backup and synchronization
-    net/rsync            # Fast incremental file transfer
-    sysutils/duplicity   # Encrypted bandwidth-efficient backup
-    sysutils/bacula-client # Network backup solution client
-    sysutils/dar         # Disk ARchive
-"
+# -----------------------------------------------------------------------------
+# Error Handling Configuration
+# -----------------------------------------------------------------------------
+ERROR_LOG_DIR="/var/log/system-errors"
+ERROR_LOG="${ERROR_LOG_DIR}/errors.log"
+ERROR_LOG_MAX_SIZE=$((10 * 1024 * 1024))  # 10MB in bytes
 
 # Enable automatic dependency resolution
 PKG_OPTIONS="automatic-dependency=yes"
@@ -183,149 +42,839 @@ PKG_OPTIONS="automatic-dependency=yes"
 PKG_PATH="http://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/amd64/10.1/All"
 
 # -----------------------------------------------------------------------------
-# Enhanced Logging with Timestamps and Log Levels
+# Advanced Error Handling and Diagnostics System
 # -----------------------------------------------------------------------------
-log() {
-    local level="$1"
-    shift
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    printf "[%s] [%s] %s\n" "$timestamp" "$level" "$*" | tee -a "$LOG_FILE"
+
+# Initialize error handling system
+init_error_handling() {
+    # Create error logging directory with secure permissions
+    ERROR_LOG_DIR="/var/log/system-errors"
+    if ! mkdir -p "$ERROR_LOG_DIR"; then
+        printf "CRITICAL: Failed to create error log directory\n" >&2
+        exit 1
+    fi
+    chmod 750 "$ERROR_LOG_DIR"
+
+    # Create rotating error log
+    ERROR_LOG="${ERROR_LOG_DIR}/errors.log"
+    touch "$ERROR_LOG" || exit 1
+    chmod 640 "$ERROR_LOG"
+
+    # Maximum size for error log (10MB)
+    ERROR_LOG_MAX_SIZE=$((10 * 1024 * 1024))
 }
 
-log_info() { log "INFO" "$@"; }
-log_warn() { log "WARN" "$@"; }
-log_error() { log "ERROR" "$@"; }
-log_debug() { log "DEBUG" "$@"; }
+# Function to rotate error log if it gets too large
+rotate_error_log() {
+    if [ -f "$ERROR_LOG" ]; then
+        _size=$(stat -f %z "$ERROR_LOG" 2>/dev/null || echo 0)
+        if [ "$_size" -gt "$ERROR_LOG_MAX_SIZE" ]; then
+            _timestamp=$(date +%Y%m%d_%H%M%S)
+            mv "$ERROR_LOG" "${ERROR_LOG}.${_timestamp}"
+            touch "$ERROR_LOG"
+            chmod 640 "$ERROR_LOG"
 
-# -----------------------------------------------------------------------------
-# Improved Error Handling with Stack Traces
-# -----------------------------------------------------------------------------
+            # Remove old logs (keep last 5)
+            ls -t "${ERROR_LOG}".* 2>/dev/null | tail -n +6 | xargs rm -f
+        fi
+    fi
+}
+
+# Function to capture system state
+capture_system_state() {
+    _error_id="$1"
+    _state_file="${ERROR_LOG_DIR}/state_${_error_id}.log"
+
+    {
+        echo "System State Snapshot (Error ID: $_error_id)"
+        echo "----------------------------------------"
+        echo "Timestamp: $(date)"
+        echo "Hostname: $(hostname)"
+        echo "Kernel: $(uname -v)"
+        echo "Uptime: $(uptime)"
+
+        echo "\nMemory Status:"
+        vmstat
+
+        echo "\nProcess Status:"
+        ps -auxww
+
+        echo "\nFile Descriptor Status:"
+        ulimit -a
+
+        echo "\nNetwork Connections:"
+        netstat -an
+
+        echo "\nLast 10 System Messages:"
+        tail -n 10 /var/log/messages
+
+        echo "\nMount Points:"
+        df -h
+
+        echo "\nOpen Files:"
+        lsof 2>/dev/null
+
+    } > "$_state_file"
+}
+
+# Function to generate unique error ID
+generate_error_id() {
+    printf "%s_%s_%s" "$(date +%Y%m%d_%H%M%S)" "$(hostname)" "$(dd if=/dev/urandom bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+}
+
+# Function to format stack trace
+format_stack_trace() {
+    _pid=$$
+    _error_id="$1"
+    _line_no="$2"
+    _cmd="$3"
+
+    {
+        echo "Stack Trace (Error ID: $_error_id)"
+        echo "----------------------------------------"
+        echo "Process ID: $_pid"
+        echo "Command: $_cmd"
+        echo "Exit Code: ${4:-Unknown}"
+        echo "Line Number: $_line_no"
+        echo "Script: $0"
+        echo "Current Directory: $(pwd)"
+        echo "User: $(id -un)"
+        echo "Time: $(date)"
+
+        # Generate stack trace
+        _frame=0
+        echo "\nCall Stack:"
+        while caller $_frame >/dev/null 2>&1; do
+            caller $_frame | awk '{
+                printf "  [Frame %d] Line %d in function %s (File: %s)\n",
+                       NR, $1, $2, $3
+            }'
+            _frame=$((_frame + 1))
+        done
+
+        # Show environment variables
+        echo "\nEnvironment Variables:"
+        env | sort
+
+        # Show script fragment around error
+        if [ -f "$0" ]; then
+            echo "\nCode Context:"
+            _start=$((_line_no - 5))
+            [ $_start -lt 1 ] && _start=1
+            _end=$((_line_no + 5))
+            sed -n "${_start},${_end}p" "$0" | awk '{
+                printf "%s%d%s %s\n",
+                       NR == ENVIRON["_line_no"] ? ">" : " ",
+                       NR,
+                       NR == ENVIRON["_line_no"] ? "*" : " ",
+                       $0
+            }' "_line_no=$_line_no"
+        fi
+
+    } >> "$ERROR_LOG"
+}
+
+# Main error handler function
 handle_error() {
-    local line_no="$1"
-    local command="$2"
-    log_error "Error occurred in command '$command' at line $line_no"
-    # Print stack trace
-    local frame=0
-    while caller $frame; do
-        ((frame++))
-    done | awk '{ print "  called from line " $1 }' | tee -a "$LOG_FILE"
-    exit 1
+    _line_no="$1"
+    _cmd="$2"
+    _exit_code="$3"
+
+    # Generate unique error ID for tracking
+    _error_id=$(generate_error_id)
+
+    # Rotate log if needed
+    rotate_error_log
+
+    # Log the error
+    log_error "Error occurred [ID: $_error_id] in command '$_cmd' at line $_line_no (Exit Code: $_exit_code)"
+
+    # Format and save stack trace
+    format_stack_trace "$_error_id" "$_line_no" "$_cmd" "$_exit_code"
+
+    # Capture system state
+    capture_system_state "$_error_id"
+
+    # Attempt recovery based on error type
+    case "$_cmd" in
+        *pkg_add*)
+            log_warn "Package installation failed, attempting cleanup..."
+            pkg_delete -f "${_cmd##* }" 2>/dev/null
+            ;;
+        *mount*)
+            log_warn "Mount operation failed, checking filesystem..."
+            fsck -y "${_cmd##* }" 2>/dev/null
+            ;;
+        *rm*|*mv*|*cp*)
+            log_warn "File operation failed, checking permissions..."
+            ls -la "${_cmd##* }" 2>/dev/null
+            ;;
+    esac
+
+    # Check for critical system states
+    _mem_free=$(vmstat | awk 'NR==3{print $4}')
+    _disk_free=$(df -k / | awk 'NR==2{print $4}')
+
+    if [ "$_mem_free" -lt 1024 ] || [ "$_disk_free" -lt 102400 ]; then
+        log_error "CRITICAL: System resources critically low!"
+        echo "Emergency system state saved to ${ERROR_LOG_DIR}/emergency_${_error_id}.state"
+        capture_system_state "emergency_${_error_id}"
+    fi
+
+    # Notify administrator
+    if [ -x /usr/bin/mail ]; then
+        {
+            echo "Error occurred in system configuration script"
+            echo "Error ID: $_error_id"
+            echo "Command: $_cmd"
+            echo "Line: $_line_no"
+            echo "Time: $(date)"
+            echo "\nPlease check $ERROR_LOG for complete details"
+        } | mail -s "System Configuration Error on $(hostname)" root
+    fi
+
+    # Set exit code
+    exit "${_exit_code:-1}"
 }
 
-trap 'handle_error ${LINENO} "${BASH_COMMAND}"' ERR
+# Initialize error handling
+init_error_handling
+
+# Set up error trap
+trap 'handle_error ${LINENO} "$_" "$?"' ERR
 
 # -----------------------------------------------------------------------------
-# System Performance Optimization
+# Enhanced Logging System
+# Provides structured logging with timestamps, levels, and fallback handling
 # -----------------------------------------------------------------------------
+
+# Define log levels with severity numbers for filtering
+LOG_LEVEL_DEBUG=10
+LOG_LEVEL_INFO=20
+LOG_LEVEL_WARN=30
+LOG_LEVEL_ERROR=40
+
+# Set default minimum log level (can be overridden)
+: "${MIN_LOG_LEVEL:=$LOG_LEVEL_INFO}"
+
+# Internal function to get numeric level from string
+_get_log_level() {
+    case "$1" in
+        DEBUG) echo "$LOG_LEVEL_DEBUG" ;;
+        INFO)  echo "$LOG_LEVEL_INFO" ;;
+        WARN)  echo "$LOG_LEVEL_WARN" ;;
+        ERROR) echo "$LOG_LEVEL_ERROR" ;;
+        *)     echo "$LOG_LEVEL_INFO" ;;  # Default to INFO for unknown levels
+    esac
+}
+
+# Internal function to format timestamps consistently
+_get_timestamp() {
+    # Attempt to get timestamp, fall back to Unix time if date command fails
+    date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || \
+    date '+%s' 2>/dev/null || \
+    echo "TIMESTAMP_ERROR"
+}
+
+# Main logging function with enhanced error handling
+log() {
+    # Validate input
+    if [ $# -lt 2 ]; then
+        printf '[%s] [ERROR] Invalid log call: insufficient arguments\n' "$(_get_timestamp)" >&2
+        return 1
+    fi
+
+    _level="$1"
+    shift
+
+    # Check if we should log this level
+    _level_num="$(_get_log_level "$_level")"
+    _min_level_num="$(_get_log_level "${MIN_LOG_LEVEL:-INFO}")"
+
+    if [ "$_level_num" -ge "$_min_level_num" ]; then
+        # Get timestamp with fallback handling
+        _timestamp="$(_get_timestamp)"
+
+        # Ensure LOG_FILE is set and directory exists
+        if [ -n "${LOG_FILE:-}" ]; then
+            _log_dir="$(dirname "$LOG_FILE")"
+            if ! mkdir -p "$_log_dir" 2>/dev/null; then
+                printf '[%s] [ERROR] Failed to create log directory: %s\n' "$_timestamp" "$_log_dir" >&2
+                return 1
+            fi
+
+            # Attempt to log to file and terminal
+            if ! printf '[%s] [%s] %s\n' "$_timestamp" "$_level" "$*" | tee -a "$LOG_FILE" 2>/dev/null; then
+                # If tee fails, try direct console output
+                printf '[%s] [%s] %s\n' "$_timestamp" "$_level" "$*" >&2
+                printf '[%s] [ERROR] Failed to write to log file: %s\n' "$_timestamp" "$LOG_FILE" >&2
+                return 1
+            fi
+        else
+            # No log file specified, output to console only
+            printf '[%s] [%s] %s\n' "$_timestamp" "$_level" "$*"
+        fi
+    fi
+    return 0
+}
+
+# Wrapper functions for different log levels
+log_debug() {
+    log "DEBUG" "$@"
+}
+
+log_info() {
+    log "INFO" "$@"
+}
+
+log_warn() {
+    log "WARN" "$@"
+}
+
+log_error() {
+    log "ERROR" "$@"
+}
+
+# Function to set minimum log level
+set_log_level() {
+    case "$1" in
+        DEBUG|INFO|WARN|ERROR)
+            MIN_LOG_LEVEL="$1"
+            log_info "Log level set to $1"
+            ;;
+        *)
+            log_error "Invalid log level: $1. Using default (INFO)"
+            MIN_LOG_LEVEL="INFO"
+            ;;
+    esac
+}
+
+# -----------------------------------------------------------------------------
+# Package Management Configuration
+# -----------------------------------------------------------------------------
+
+# Use a heredoc with a temporary file to store package list
+# This avoids Bash-specific array constructs while maintaining readability
+create_package_list() {
+    _tmp_packages=$(mktemp) || {
+        log_error "Failed to create temporary package file"
+        return 1
+    }
+
+    # Write package list using here document
+    # The leading tab is important for proper heredoc operation
+    cat > "$_tmp_packages" << 'END_PACKAGES'
+# Core Development Tools
+devel/git                 # Modern distributed version control system
+devel/git-base           # Core git tools
+devel/git-docs           # Git documentation
+lang/gcc10               # GNU Compiler Collection (GCC) version 10
+lang/clang              # LLVM C/C++/Objective-C compiler
+devel/llvm              # Low Level Virtual Machine compiler infrastructure
+devel/gdb               # GNU Debugger
+devel/lldb              # Next generation debugger
+devel/cmake             # Cross-platform make system
+devel/ninja-build       # Small build system
+devel/bmake            # NetBSD make
+devel/autoconf          # Generate configuration scripts
+devel/automake         # GNU Standards-compliant Makefile generator
+devel/libtool          # Generic shared library support script
+devel/pkgconf          # Package compiler and linker metadata toolkit
+devel/ccache           # Compiler cache
+
+# Development Libraries
+devel/boost-libs       # Free portable C++ libraries
+devel/boost-headers    # Boost C++ headers
+devel/ncurses         # CRT screen handling package
+devel/readline        # GNU library for editing command lines
+devel/gettext         # Tools for multi-lingual messages
+devel/zlib            # General purpose compression library
+security/openssl      # Secure Socket Layer toolkit
+
+# Editors and Development Environments
+editors/vim           # Vim text editor
+editors/neovim        # Modern Vim-based text editor
+devel/ctags           # Code indexing and navigation tool
+devel/cscope         # Source code browser
+
+# Shell and Terminal Tools
+shells/zsh            # Z shell with improvements
+misc/tmux             # Terminal multiplexer
+shells/bash           # GNU Bourne Again Shell
+misc/screen          # Multi-screen window manager
+
+# Testing and Debug Tools
+devel/gdb             # GNU source-level debugger
+devel/valgrind        # Dynamic analysis tools
+devel/cgdb           # Curses-based interface to GDB
+
+# Security Tools
+security/gnupg2       # GNU Privacy Guard
+security/aide         # Advanced Intrusion Detection Environment
+security/sudo         # Execute commands as superuser
+END_PACKAGES
+
+    echo "$_tmp_packages"
+}
+
+# Function to process and install packages
+install_packages() {
+    log_info "Starting package installation process..."
+
+    # Get temporary package list file
+    _pkg_list=$(create_package_list)
+    if [ -z "$_pkg_list" ] || [ ! -f "$_pkg_list" ]; then
+        log_error "Failed to create package list"
+        return 1
+    }
+
+    # Cleanup handler for temporary file
+    trap 'rm -f "$_pkg_list"' EXIT
+
+    # Initialize counters using portable arithmetic
+    _total=0
+    _success=0
+    _failed=0
+    _skipped=0
+
+    # Create temporary files for tracking package status
+    _tmp_dir=$(mktemp -d) || {
+        log_error "Failed to create temporary directory"
+        return 1
+    }
+
+    _success_list="${_tmp_dir}/success"
+    _failed_list="${_tmp_dir}/failed"
+    _skipped_list="${_tmp_dir}/skipped"
+
+    touch "$_success_list" "$_failed_list" "$_skipped_list"
+
+    # Process each package
+    while read -r _line; do
+        # Skip comments and empty lines
+        case "$_line" in
+            ''|'#'*) continue ;;
+        esac
+
+        # Extract package name (everything before the first '#' or space)
+        _package=$(echo "$_line" | sed 's/[[:space:]].*$//' | sed 's/#.*$//')
+        [ -z "$_package" ] && continue
+
+        _total=$((_total + 1))
+
+        log_info "Processing package: $_package"
+
+        # Check if package is already installed
+        if pkg_info -e "$_package" >/dev/null 2>&1; then
+            log_info "Package $_package is already installed"
+            echo "$_package" >> "$_skipped_list"
+            _skipped=$((_skipped + 1))
+            continue
+        fi
+
+        # Attempt installation with conflict resolution
+        if ! pkg_add -U "$_package" >/dev/null 2>&1; then
+            if pkg_info -e "$_package" >/dev/null 2>&1; then
+                log_warn "Package conflict detected for $_package, attempting resolution"
+                if pkg_delete -f "$_package" >/dev/null 2>&1 && \
+                   pkg_add -U "$_package" >/dev/null 2>&1; then
+                    log_info "Successfully resolved conflict and installed $_package"
+                    echo "$_package" >> "$_success_list"
+                    _success=$((_success + 1))
+                    continue
+                fi
+            fi
+            log_error "Failed to install $_package"
+            echo "$_package" >> "$_failed_list"
+            _failed=$((_failed + 1))
+
+            # Check if this is a critical package
+            case "$_package" in
+                openssl|nginx|pkg-config|gcc|clang)
+                    log_error "Critical package $_package failed to install. Aborting."
+                    return 1
+                    ;;
+            esac
+        else
+            log_info "Successfully installed $_package"
+            echo "$_package" >> "$_success_list"
+            _success=$((_success + 1))
+        fi
+    done < "$_pkg_list"
+
+    # Generate installation report
+    {
+        echo "Package Installation Report"
+        echo "=========================="
+        echo "Total packages processed: $_total"
+        echo "Successfully installed: $_success"
+        echo "Already installed (skipped): $_skipped"
+        echo "Failed installations: $_failed"
+
+        if [ "$_failed" -gt 0 ]; then
+            echo "Failed packages:"
+            cat "$_failed_list"
+        fi
+
+        if [ "$_success" -gt 0 ]; then
+            echo "Newly installed packages:"
+            cat "$_success_list"
+        fi
+    } > "$LOG_FILE.pkg_report"
+
+    # Cleanup temporary directory
+    rm -rf "$_tmp_dir"
+
+    log_info "Package installation completed. See $LOG_FILE.pkg_report for details"
+
+    # Determine overall success
+    if [ "$_failed" -eq 0 ]; then
+        return 0
+    elif [ "$_success" -gt "$((_total * 90 / 100))" ]; then
+        log_warn "Installation completed with some failures"
+        return 0
+    else
+        log_error "Too many package installation failures"
+        return 1
+    fi
+}
+
 configure_system_performance() {
-    log_info "Configuring system performance parameters..."
+    log_info "Beginning comprehensive system performance configuration..."
 
-    # Create or update /etc/sysctl.conf with optimized values
-    cat > "$SYSCTL_CONF" << 'EOF'
-# Network performance tuning
-net.inet.tcp.recvbuf_max=2097152
-net.inet.tcp.sendbuf_max=2097152
-net.inet.tcp.sendbuf_auto=1
-net.inet.tcp.recvbuf_auto=1
-net.inet.tcp.msl=15000
-net.inet.tcp.always_keepalive=1
+    # First, gather system information and calculate optimal values
+    get_system_info() {
+        # Get physical memory in bytes and convert to MB for easier calculations
+        _phys_mem=$(sysctl -n hw.physmem)
+        _mem_mb=$((_phys_mem / 1024 / 1024))
 
-# Virtual memory tuning
-vm.aslr=1
+        # Get number of CPUs/cores
+        _ncpu=$(sysctl -n hw.ncpu)
+
+        # Get CPU architecture and features
+        _machine=$(sysctl -n hw.machine)
+        _machine_arch=$(sysctl -n hw.machine_arch)
+
+        # Get page size for memory calculations
+        _page_size=$(sysctl -n hw.pagesize)
+
+        # Calculate available memory after reserving 20% for system operations
+        _usable_mem=$((_mem_mb * 80 / 100))
+
+        log_info "System information gathered: $_ncpu CPUs, $_mem_mb MB RAM"
+    }
+
+    # Calculate optimal TCP buffer sizes based on bandwidth-delay product
+    calculate_tcp_buffers() {
+        # Start with baseline RTT of 100ms and estimate bandwidth
+        # Use fio or similar tool to estimate disk bandwidth if available
+        _rtt_ms=100
+        _bandwidth_mbps=1000  # Conservative estimate for gigabit ethernet
+
+        # Calculate bandwidth-delay product (BDP)
+        # BDP = bandwidth * RTT
+        _bdp_bytes=$((_bandwidth_mbps * 1024 * 1024 * _rtt_ms / 8000))
+
+        # Set maximum buffer size to 2 * BDP, with a reasonable minimum
+        _tcp_buffer_max=$((_bdp_bytes * 2))
+        [ $_tcp_buffer_max -lt 2097152 ] && _tcp_buffer_max=2097152
+
+        # Calculate default buffer size as BDP/2
+        _tcp_buffer_default=$((_tcp_buffer_max / 4))
+    }
+
+    # Calculate optimal kernel memory parameters
+    calculate_kernel_memory() {
+        # Calculate maximum number of file descriptors based on available memory
+        # Rule of thumb: 256 bytes per file descriptor
+        _max_files=$((_usable_mem * 1024 * 1024 / 256))
+
+        # Calculate maximum number of processes
+        # Rule of thumb: ~1MB per process minimum
+        _max_procs=$((_usable_mem / 2))
+        [ $_max_procs -gt 32768 ] && _max_procs=32768
+
+        # Calculate shared memory limits
+        _shmmax=$((_phys_mem / 2))
+        _shmall=$((_shmmax / _page_size))
+    }
+
+    # Create temporary file for sysctl configuration
+    _tmp_config=$(mktemp) || {
+        log_error "Failed to create temporary file"
+        return 1
+    }
+
+    # Ensure cleanup on exit
+    trap 'rm -f "$_tmp_config"' EXIT
+
+    # Gather system information and calculate optimal values
+    get_system_info
+    calculate_tcp_buffers
+    calculate_kernel_memory
+
+    # Write comprehensive system configuration
+    cat > "$_tmp_config" << EOF || {
+        log_error "Failed to write sysctl configuration"
+        return 1
+    }
+# -----------------------------------------------------------------------------
+# NetBSD System Performance Configuration
+# Generated: $(date)
+# System: $_machine_arch with $_ncpu CPUs and $_mem_mb MB RAM
+# -----------------------------------------------------------------------------
+
+# Network Performance Tuning
+# -------------------------
+# TCP buffer sizes calculated based on bandwidth-delay product
+net.inet.tcp.recvbuf_max=$_tcp_buffer_max
+net.inet.tcp.sendbuf_max=$_tcp_buffer_max
+net.inet.tcp.recvbuf_default=$_tcp_buffer_default
+net.inet.tcp.sendbuf_default=$_tcp_buffer_default
+
+# Enable TCP window scaling and timestamps for better performance
+net.inet.tcp.rfc1323=1
+
+# TCP connection tuning
+net.inet.tcp.init_win=4
+net.inet.tcp.mss_ifmtu=1
+net.inet.tcp.sack.enable=1
+net.inet.tcp.path_mtu_discovery=1
+
+# Memory Management
+# ----------------
+# Shared memory limits
+kern.ipc.shmmax=$_shmmax
+kern.ipc.shmall=$_shmall
+
+# File system and I/O tuning
+# -------------------------
+kern.maxfiles=$_max_files
+kern.maxproc=$_max_procs
+
+# Enable asynchronous I/O
+kern.aio.max=2048
+
+# VM system tuning
+# ---------------
+vm.anonmin=10
+vm.filemin=10
+vm.execmin=5
+
+# When free memory drops below this percentage, start intensive page reclamation
 vm.defer_swapspace_pageouts=1
 vm.swapencrypt.enable=1
-vm.overcommit=1
 
-# File system tuning
-kern.maxvnodes=250000
-kern.maxproc=99999
-kern.maxfiles=99999
+# Buffer cache tuning
+# ------------------
+kern.bufcache=$((_usable_mem * 20 / 100))
+kern.filecache=$((_usable_mem * 40 / 100))
 
-# Security enhancements
-security.bsd.see_other_uids=0
-security.bsd.see_other_gids=0
-security.bsd.unprivileged_proc_debug=0
 EOF
 
-    # Apply sysctl settings
-    sysctl -p
+    # Verify configuration syntax before applying
+    if ! sysctl -n kern.hostname >/dev/null 2>&1; then
+        log_error "Sysctl appears to be non-functional"
+        return 1
+    }
 
-    log_info "System performance parameters configured"
+    # Back up existing configuration if it exists
+    if [ -f "$SYSCTL_CONF" ]; then
+        _backup="${SYSCTL_CONF}.$(date +%Y%m%d_%H%M%S)"
+        if ! cp "$SYSCTL_CONF" "$_backup"; then
+            log_error "Failed to backup existing configuration"
+            return 1
+        fi
+        log_info "Created backup of existing configuration at $_backup"
+    fi
+
+    # Move new configuration into place
+    if ! mv "$_tmp_config" "$SYSCTL_CONF"; then
+        log_error "Failed to install sysctl configuration"
+        return 1
+    fi
+
+    # Apply settings with error checking
+    if ! sysctl -f "$SYSCTL_CONF"; then
+        log_error "Failed to apply sysctl settings"
+        # Attempt to restore backup if it exists
+        if [ -f "$_backup" ]; then
+            log_warn "Attempting to restore previous configuration"
+            mv "$_backup" "$SYSCTL_CONF"
+            sysctl -f "$SYSCTL_CONF"
+        fi
+        return 1
+    fi
+
+    # Verify key settings were applied
+    verify_settings() {
+        _failed=0
+        while read -r _setting _expected; do
+            _actual=$(sysctl -n "$_setting" 2>/dev/null)
+            if [ "$_actual" != "$_expected" ]; then
+                log_warn "Setting $setting not applied correctly: expected $_expected, got $_actual"
+                _failed=$((_failed + 1))
+            fi
+        done << EOF
+net.inet.tcp.recvbuf_max $_tcp_buffer_max
+net.inet.tcp.sendbuf_max $_tcp_buffer_max
+EOF
+
+        return $_failed
+    }
+
+    if ! verify_settings; then
+        log_warn "Some settings may not have been applied correctly"
+    fi
+
+    log_info "System performance configuration completed successfully"
+    log_info "It is recommended to monitor system performance and adjust these values as needed"
 }
 
 configure_comprehensive_security() {
-    log_info "Configuring comprehensive security measures..."
+    log_info "Beginning comprehensive security configuration for NetBSD..."
 
-    # Create directory for security-related configurations
+    # Define critical paths and configuration files
     SECURITY_DIR="/etc/security"
-    mkdir -p "${SECURITY_DIR}"
+    PF_CONF="/etc/pf.conf"
+    SYSCTL_CONF="/etc/sysctl.conf"
+    AIDE_CONF="/etc/aide.conf"
+    AIDE_DB="/var/lib/aide"
+    PERIODIC_DIR="/etc/periodic/security"
 
-    # Configure PF firewall with enhanced ruleset
-    cat > "$PF_CONF" << 'EOF'
-# Macro definitions
-ext_if = "em0"  # Change to match your external interface
+    # Create required directories with secure permissions
+    for _dir in "$SECURITY_DIR" "$AIDE_DB" "$PERIODIC_DIR"; do
+        if ! mkdir -p "$_dir"; then
+            log_error "Failed to create directory: $_dir"
+            return 1
+        fi
+        chmod 750 "$_dir"
+    done
+
+    # Detect network interfaces for PF configuration
+    detect_network_interfaces() {
+        # Get the primary external interface
+        _ext_if=$(netstat -rn | grep '^default' | awk '{print $7}')
+        if [ -z "$_ext_if" ]; then
+            log_warn "Could not detect external interface, defaulting to em0"
+            _ext_if="em0"
+        }
+        log_info "Detected external interface: $_ext_if"
+        return 0
+    }
+
+    # Configure PF with dynamic interface detection and enhanced security
+    configure_pf() {
+        _tmp_pf=$(mktemp) || return 1
+
+        # Detect network interfaces
+        detect_network_interfaces || return 1
+
+        cat > "$_tmp_pf" << EOF
+# -----------------------------------------------------------------------------
+# NetBSD PF Firewall Configuration
+# Generated: $(date)
+# -----------------------------------------------------------------------------
+
+# Interface and Network Definitions
+ext_if = "$_ext_if"
 tcp_services = "{ ssh, http, https }"
 icmp_types = "{ echoreq, unreach }"
 private_nets = "{ 10/8, 172.16/12, 192.168/16 }"
 
-# Options
+# Tuning Options
+set limit states 100000
+set limit src-nodes 50000
+set optimization aggressive
 set block-policy drop
 set fingerprints "/etc/pf.os"
 set skip on lo0
 set state-policy if-bound
-set optimization aggressive
+set timeout { tcp.first 120, tcp.established 86400, tcp.closing 60 }
 
-# Normalization and scrubbing
-match in all scrub (no-df max-mss 1440)
-match out all scrub (no-df max-mss 1440)
+# Queueing for DDoS mitigation
+queue rootq on \$ext_if bandwidth 100M max 100M
+queue std parent rootq bandwidth 95M min 5M max 100M default
 
-# NAT and filtering
+# Traffic Normalization
+scrub in on \$ext_if all fragment reassemble min-ttl 15 max-mss 1440
+scrub out on \$ext_if all random-id
+
+# Default Policies
 block in all
 block out all
-
-# Allow outbound traffic
-pass out quick
+block quick from <bruteforce>
+block quick from <flood>
 
 # Anti-spoofing
-antispoof quick for $ext_if inet
+antispoof quick for \$ext_if inet
 
-# Allow established connections
-pass in quick on $ext_if proto tcp from any to any modulate state flags S/SA keep state
-pass in quick on $ext_if proto udp from any to any keep state
+# Outbound Traffic
+pass out quick on \$ext_if all modulate state flags S/SA keep state
 
-# Allow specific services
-pass in on $ext_if inet proto tcp to any port $tcp_services flags S/SA keep state
-pass in inet proto icmp all icmp-type $icmp_types keep state
+# Established Connections
+pass in quick on \$ext_if proto tcp from any to any modulate state \
+    flags S/SA keep state
+pass in quick on \$ext_if proto udp from any to any keep state
 
-# Rate limiting for SSH
-table <bruteforce> persist
-block quick from <bruteforce>
-pass in on $ext_if inet proto tcp to any port ssh \
+# Service-specific Rules
+pass in on \$ext_if inet proto tcp to any port \$tcp_services \
     flags S/SA keep state \
-    (max-src-conn 10, max-src-conn-rate 3/5, \
+    (max-src-conn 100, max-src-conn-rate 15/5, \
+     overload <flood> flush global)
+
+# SSH Brute-force Protection
+table <bruteforce> persist
+pass in on \$ext_if inet proto tcp to any port ssh \
+    flags S/SA keep state \
+    (max-src-conn 5, max-src-conn-rate 3/60, \
      overload <bruteforce> flush global)
 
-# Protection against flooding
-table <flood> persist
-block quick from <flood>
-pass in quick proto { tcp, udp } from any to any port domain keep state \
-    (max-src-conn-rate 100/10, overload <flood> flush global)
+# ICMP Control
+pass in inet proto icmp all icmp-type \$icmp_types keep state
+
+# Logging
+pass log (all) quick on \$ext_if proto tcp from any to any port ssh
 EOF
 
-    # Configure enhanced auditing system
-    cat > "${SECURITY_DIR}/audit.conf" << 'EOF'
-dir:/var/audit
-flags:lo,aa,ad,ex,fd,fm,fw,ip,na,pc,nt
-minfree:5
-naflags:lo,aa,ad,ex,fd,fm,fw,ip,na,pc,nt
-policy:cnt,argv,arge
-filesz:2M
-expire-after:10M
-EOF
+        # Validate and apply PF configuration
+        if ! pfctl -nf "$_tmp_pf"; then
+            log_error "PF configuration validation failed"
+            rm -f "$_tmp_pf"
+            return 1
+        fi
 
-    # Configure system-wide security settings via sysctl
-    cat > "$SYSCTL_CONF" << 'EOF'
-# Core Security Settings
+        # Back up existing configuration
+        if [ -f "$PF_CONF" ]; then
+            cp "$PF_CONF" "${PF_CONF}.$(date +%Y%m%d_%H%M%S)"
+        fi
+
+        # Install new configuration
+        mv "$_tmp_pf" "$PF_CONF"
+        chmod 600 "$PF_CONF"
+
+        # Enable and load PF
+        pfctl -e && pfctl -f "$PF_CONF"
+        return $?
+    }
+
+    # Configure system security parameters
+    configure_sysctl_security() {
+        _tmp_sysctl=$(mktemp) || return 1
+
+        # Calculate memory-based security parameters
+        _phys_mem=$(sysctl -n hw.physmem)
+        _max_proc_ratio=$((_phys_mem / 1048576 / 32))  # 1 proc per 32MB
+        [ $_max_proc_ratio -gt 1024 ] && _max_proc_ratio=1024
+
+        cat > "$_tmp_sysctl" << EOF
+# -----------------------------------------------------------------------------
+# NetBSD Security Sysctl Configuration
+# Generated: $(date)
+# -----------------------------------------------------------------------------
+
+# Process and Memory Security
+kern.maxproc=$_max_proc_ratio
 security.bsd.see_other_uids=0
 security.bsd.see_other_gids=0
 security.bsd.unprivileged_read_msgbuf=0
@@ -333,7 +882,7 @@ security.bsd.hardlink_check_uid=1
 security.bsd.hardlink_check_gid=1
 security.bsd.unprivileged_proc_debug=0
 
-# Network Security
+# Network Security Hardening
 net.inet.tcp.blackhole=2
 net.inet.udp.blackhole=1
 net.inet.ip.random_id=1
@@ -343,77 +892,206 @@ net.inet6.ip6.redirect=0
 net.inet.icmp.bmcastecho=0
 net.inet6.icmp6.rediraccept=0
 net.inet.tcp.always_keepalive=1
+net.inet.tcp.msl=7200
+net.inet.tcp.syn_cache_limit=100000
+net.inet.tcp.synbucketlimit=100
 
 # Memory Protection
 vm.pmap.pg_ps_enabled=1
 vm.defer_swapspace_pageouts=1
 vm.swapencrypt.enable=1
-vm.overcommit=1
+vm.overcommit=0
+vm.max_map_count=262144
+
+# Core Security
+kern.securelevel=1
+kern.sugid_coredump=0
 EOF
 
-    # Set up intrusion detection with AIDE
-    cat > "/etc/aide.conf" << 'EOF'
-# AIDE configuration
+        if ! mv "$_tmp_sysctl" "$SYSCTL_CONF"; then
+            log_error "Failed to install sysctl security configuration"
+            rm -f "$_tmp_sysctl"
+            return 1
+        fi
+
+        # Apply sysctl settings
+        sysctl -f "$SYSCTL_CONF"
+        return $?
+    }
+
+    # Configure AIDE intrusion detection
+    configure_aide() {
+        _tmp_aide=$(mktemp) || return 1
+
+        cat > "$_tmp_aide" << 'EOF'
+# -----------------------------------------------------------------------------
+# AIDE Configuration for NetBSD
+# -----------------------------------------------------------------------------
+
+# Database configuration
 database=file:/var/lib/aide/aide.db
 database_out=file:/var/lib/aide/aide.db.new
 gzip_dbout=yes
+verbose=5
 
-# Define groups of files with specific monitoring requirements
-Binlib = p+i+n+u+g+s+b+m+c+md5+sha1
-ConfFiles = p+i+n+u+g+s+m+c+md5+sha1
-Logs = p+n+u+g+S
-Devices = p+i+n+u+g+s+b+c+md5+sha1
-Databases = p+n+u+g
-StaticDir = p+i+n+u+g
-ManPages = p+i+n+u+g+s+b+m+c+md5
+# Monitoring groups with detailed attributes
+PERMS = p+i+u+g+acl
+CONTENT = sha256+sha512
+EVERYTHING = R+a+b+c+d+i+m+n+p+s+u+g+acl+xattrs+sha256+sha512
 
-# Monitor critical system directories
-/bin Binlib
-/sbin Binlib
-/usr/bin Binlib
-/usr/sbin Binlib
-/etc ConfFiles
-/var/log Logs
-/dev Devices
+# Critical system binaries
+/bin$ EVERYTHING
+/sbin$ EVERYTHING
+/usr/bin$ EVERYTHING
+/usr/sbin$ EVERYTHING
+/usr/lib$ EVERYTHING
+/usr/libexec$ EVERYTHING
+
+# System configuration
+/etc$ CONTENT+PERMS
+!/etc/mtab
+!/etc/.*~
+
+# Security-specific files
+/etc/passwd CONTENT+PERMS
+/etc/master.passwd CONTENT+PERMS
+/etc/group CONTENT+PERMS
+/etc/spwd.db CONTENT+PERMS
+/etc/pwd.db CONTENT+PERMS
+
+# Log files - check permissions only
+/var/log$ PERMS
+!/var/log/.*
+!/var/log/lastlog
+
+# Devices - check permissions and ownership
+/dev$ PERMS
 EOF
 
-    # Initialize AIDE database
-    aide --init
-    mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+        if ! mv "$_tmp_aide" "$AIDE_CONF"; then
+            log_error "Failed to install AIDE configuration"
+            rm -f "$_tmp_aide"
+            return 1
+        fi
 
-    # Set secure permissions on critical files
-    chmod 600 /etc/master.passwd /etc/spwd.db
-    chmod 644 /etc/passwd /etc/pwd.db
-    chmod 600 /etc/aide.conf
-    chmod 600 "${SECURITY_DIR}/audit.conf"
+        # Initialize AIDE database
+        if ! aide --init; then
+            log_error "Failed to initialize AIDE database"
+            return 1
+        fi
 
-    # Enable and start security services
-    pfctl -f "$PF_CONF"
-    pfctl -e
-    sysctl -p
+        mv "${AIDE_DB}/aide.db.new" "${AIDE_DB}/aide.db"
+        chmod 600 "${AIDE_DB}/aide.db"
+        return 0
+    }
 
-    # Set up daily security checks
-    cat > "/etc/periodic/security/daily.local" << 'EOF'
+    # Set up periodic security checks
+    configure_security_checks() {
+        cat > "${PERIODIC_DIR}/daily.local" << 'EOF'
 #!/bin/sh
-# Daily security checks
+# -----------------------------------------------------------------------------
+# Daily Security Audit Script
+# -----------------------------------------------------------------------------
 
-# Run AIDE check
-aide --check
+LOGDIR="/var/log/security"
+mkdir -p "$LOGDIR"
+TODAY=$(date +%Y%m%d)
+LOG="${LOGDIR}/audit_${TODAY}.log"
 
-# Check for failed login attempts
-grep "Failed password" /var/log/authlog | \
-    awk '{print $1,$2,$3,$11}' | \
-    sort | uniq -c
+{
+    echo "Security Audit Report - $(date)"
+    echo "================================"
 
-# Check for modifications to critical files
-find /etc -type f -mtime -1 -ls
+    # AIDE integrity check
+    echo "\nFile Integrity Check:"
+    aide --check
 
-# Check active network connections
-netstat -an | grep ESTABLISHED
+    # Login Attempts Analysis
+    echo "\nFailed Login Attempts:"
+    grep "Failed password" /var/log/authlog | \
+        awk '{print $1,$2,$3,$11}' | \
+        sort | uniq -c | \
+        sort -rn | head -10
+
+    # Process Accounting
+    echo "\nUnusual Process Activity:"
+    ps auxww | awk '$3 > 50.0 || $4 > 50.0'
+
+    # Network Connections
+    echo "\nEstablished Network Connections:"
+    netstat -an | grep ESTABLISHED
+
+    # File Permission Changes
+    echo "\nRecent Permission Changes in /etc:"
+    find /etc -type f -mtime -1 -ls
+
+    # Listening Services
+    echo "\nListening Services:"
+    netstat -an | grep LISTEN
+
+    # Check for SUID/SGID Files
+    echo "\nNew SUID/SGID Files:"
+    find / -type f \( -perm -4000 -o -perm -2000 \) -mtime -1 -ls 2>/dev/null
+
+} > "$LOG"
+
+# Send report to root if significant findings exist
+if grep -q "FAILED\|WARNING\|ERROR" "$LOG"; then
+    mail -s "Security Audit Alert - $(hostname)" root < "$LOG"
+fi
 EOF
-    chmod 750 "/etc/periodic/security/daily.local"
 
-    log_info "Comprehensive security measures configured successfully"
+        chmod 750 "${PERIODIC_DIR}/daily.local"
+    }
+
+    # Execute configuration functions with error handling
+    log_info "Configuring PF firewall..."
+    if ! configure_pf; then
+        log_error "PF configuration failed"
+        return 1
+    fi
+
+    log_info "Configuring system security parameters..."
+    if ! configure_sysctl_security; then
+        log_error "Sysctl security configuration failed"
+        return 1
+    fi
+
+    log_info "Configuring AIDE intrusion detection..."
+    if ! configure_aide; then
+        log_error "AIDE configuration failed"
+        return 1
+    fi
+
+    log_info "Setting up security checks..."
+    if ! configure_security_checks; then
+        log_error "Security checks configuration failed"
+        return 1
+    fi
+
+    # Verify critical file permissions
+    verify_file_permissions() {
+        _failed=0
+        for _file in \
+            /etc/master.passwd \
+            /etc/spwd.db \
+            "$PF_CONF" \
+            "$AIDE_CONF"
+        do
+            if ! chmod 600 "$_file"; then
+                log_error "Failed to set permissions on $_file"
+                _failed=$((_failed + 1))
+            fi
+        done
+        return $_failed
+    }
+
+    if ! verify_file_permissions; then
+        log_warn "Some file permissions could not be set correctly"
+    fi
+
+    log_info "Security configuration completed successfully"
+    log_info "Please review logs and test security measures before deploying to production"
 }
 
 # -----------------------------------------------------------------------------
@@ -1269,6 +1947,180 @@ EOF
     log_info "Documentation available in ${KERNEL_DEV_DIR}/docs/README.md"
 }
 
+# Container environment directories
+create_container_dirs() {
+    _base_dir="/usr/local/container-env"
+    log_info "Creating container environment directory structure at $_base_dir"
+
+    for _dir in \
+        buildenv \
+        images \
+        compose \
+        scripts \
+        registry \
+        volumes \
+        configs \
+        templates \
+        security
+    do
+        _target_dir="${_base_dir}/${_dir}"
+        if ! mkdir -p "$_target_dir"; then
+            log_error "Failed to create container directory: $_target_dir"
+            return 1
+        fi
+        if ! chmod 750 "$_target_dir"; then
+            log_error "Failed to set permissions on: $_target_dir"
+            return 1
+        fi
+        log_debug "Created container directory: $_target_dir"
+    done
+}
+
+# Testing environment directories
+create_test_dirs() {
+    _base_dir="/usr/local/test-env"
+    log_info "Creating test environment directory structure at $_base_dir"
+
+    for _dir in \
+        unit \
+        integration \
+        performance \
+        security \
+        results \
+        scripts \
+        templates \
+        fixtures
+    do
+        _target_dir="${_base_dir}/${_dir}"
+        if ! mkdir -p "$_target_dir"; then
+            log_error "Failed to create test directory: $_target_dir"
+            return 1
+        fi
+        if ! chmod 750 "$_target_dir"; then
+            log_error "Failed to set permissions on: $_target_dir"
+            return 1
+        fi
+        log_debug "Created test directory: $_target_dir"
+    done
+}
+
+# Development environment directories
+create_dev_dirs() {
+    _base_dir="/home/${USERNAME}/development"
+    log_info "Creating development environment directory structure at $_base_dir"
+
+    for _dir in \
+        projects \
+        toolchains \
+        scripts \
+        docs \
+        build \
+        samples \
+        libraries \
+        environments
+    do
+        _target_dir="${_base_dir}/${_dir}"
+        if ! mkdir -p "$_target_dir"; then
+            log_error "Failed to create development directory: $_target_dir"
+            return 1
+        fi
+        if ! chmod 750 "$_target_dir"; then
+            log_error "Failed to set permissions on: $_target_dir"
+            return 1
+        fi
+        log_debug "Created development directory: $_target_dir"
+    done
+}
+
+create_all_directories() {
+    log_info "Beginning directory structure creation process"
+
+    # Ensure we have required permissions
+    if [ "$(id -u)" -ne 0 ]; then
+        log_error "Directory creation requires root privileges"
+        return 1
+    }
+
+    # Verify USERNAME is set
+    if [ -z "${USERNAME:-}" ]; then
+        log_error "USERNAME variable is not set"
+        return 1
+    }
+
+    # Check for available disk space (require at least 100MB)
+    _available_space=$(df -k /usr/local | awk 'NR==2 {print $4}')
+    if [ "${_available_space:-0}" -lt 102400 ]; then
+        log_error "Insufficient disk space available: ${_available_space}K"
+        return 1
+    }
+
+    # Create parent directories first
+    for _parent in \
+        /usr/local \
+        /home/"${USERNAME}" \
+        /var/log
+    do
+        if ! mkdir -p "$_parent"; then
+            log_error "Failed to create parent directory: $_parent"
+            return 1
+        fi
+        log_debug "Ensured parent directory exists: $_parent"
+    done
+
+    # Track creation progress
+    _created=0
+    _failed=0
+
+    # Create container directories
+    if create_container_dirs; then
+        _created=$((_created + 1))
+        log_info "Container directories created successfully"
+    else
+        _failed=$((_failed + 1))
+        log_error "Failed to create container directories"
+    fi
+
+    # Create test directories
+    if create_test_dirs; then
+        _created=$((_created + 1))
+        log_info "Test directories created successfully"
+    else
+        _failed=$((_failed + 1))
+        log_error "Failed to create test directories"
+    fi
+
+    # Create development directories
+    if create_dev_dirs; then
+        _created=$((_created + 1))
+        log_info "Development directories created successfully"
+    else
+        _failed=$((_failed + 1))
+        log_error "Failed to create development directories"
+    fi
+
+    # Set SELinux contexts if SELinux is enabled
+    if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+        log_info "Setting SELinux contexts"
+        if ! restorecon -R /usr/local /home/"${USERNAME}"; then
+            log_warn "Failed to set SELinux contexts"
+        fi
+    fi
+
+    # Generate summary report
+    log_info "Directory creation summary:"
+    log_info "- Successfully created: $_created directory sets"
+    log_info "- Failed to create: $_failed directory sets"
+
+    # Check if any operations failed
+    if [ "$_failed" -gt 0 ]; then
+        log_error "Some directory creation operations failed"
+        return 1
+    fi
+
+    log_info "All directory structures created successfully"
+    return 0
+}
+
 monitor_system_health() {
     log_info "Setting up system health monitoring and reporting framework..."
 
@@ -1466,15 +2318,71 @@ echo "System Health Trend Analysis"
 echo "Last ${DAYS_TO_ANALYZE} days"
 echo "----------------------------------------"
 
-# Analyze CPU usage trends
-echo "\nCPU Usage Trends:"
-grep "cpu_usage" "${METRICS_DIR}"/* | \
-    awk -F',' '{sum+=$3; count++} END {printf "Average: %.2f%%\n", sum/count}'
+# CPU Usage Trends Analysis
+echo "CPU Usage Trends:"
+if [ -d "${METRICS_DIR}" ]; then
+    # Use temporary file for storing grep results
+    _cpu_data="/tmp/cpu_analysis.$$"
 
-# Analyze memory usage trends
-echo "\nMemory Usage Trends:"
-grep "memory_usage" "${METRICS_DIR}"/* | \
-    awk -F',' '{sum+=$3; count++} END {printf "Average: %.2f%%\n", sum/count}'
+    # Safely collect CPU data
+    grep "cpu_usage" "${METRICS_DIR}"/* > "${_cpu_data}" 2>/dev/null || true
+
+    if [ -s "${_cpu_data}" ]; then
+        awk -F',' '
+            BEGIN { sum = 0; count = 0; }
+            {
+                if (NF >= 3 && $3 ~ /^[0-9.]+$/) {
+                    sum += $3;
+                    count++;
+                }
+            }
+            END {
+                if (count > 0) {
+                    printf "Average: %.2f%%\n", sum/count;
+                } else {
+                    print "No valid data found";
+                }
+            }' "${_cpu_data}"
+    else
+        echo "No CPU usage data available"
+    fi
+    rm -f "${_cpu_data}"
+else
+    echo "Metrics directory not found"
+fi
+
+# Memory Usage Trends Analysis
+echo "Memory Usage Trends:"
+if [ -d "${METRICS_DIR}" ]; then
+    # Use temporary file for storing grep results
+    _mem_data="/tmp/mem_analysis.$$"
+
+    # Safely collect memory data
+    grep "memory_usage" "${METRICS_DIR}"/* > "${_mem_data}" 2>/dev/null || true
+
+    if [ -s "${_mem_data}" ]; then
+        awk -F',' '
+            BEGIN { sum = 0; count = 0; }
+            {
+                if (NF >= 3 && $3 ~ /^[0-9.]+$/) {
+                    sum += $3;
+                    count++;
+                }
+            }
+            END {
+                if (count > 0) {
+                    printf "Average: %.2f%%\n", sum/count;
+                } else {
+                    print "No valid data found";
+                }
+            }' "${_mem_data}"
+    else
+        echo "No memory usage data available"
+    fi
+    rm -f "${_mem_data}"
+else
+    echo "Metrics directory not found"
+fi
 
 # Analyze disk usage trends
 echo "\nDisk Usage Trends:"
@@ -1570,24 +2478,7 @@ configure_container_environment() {
     log_info "Setting up comprehensive container and virtualization development environment..."
 
     # Create structured directory hierarchy for container development
-    CONTAINER_BASE="/usr/local/container-env"
-    CONTAINER_DIRS=(
-        "buildenv"     # Build environments and Dockerfiles
-        "images"       # Local image storage
-        "compose"      # Docker Compose projects
-        "scripts"      # Utility scripts
-        "registry"     # Local registry data
-        "volumes"      # Persistent volume data
-        "configs"      # Container configurations
-        "templates"    # Template files
-        "security"     # Security policies and configs
-    )
-
-    # Create directories with proper permissions
-    for dir in "${CONTAINER_DIRS[@]}"; do
-        mkdir -p "${CONTAINER_BASE}/${dir}"
-        chmod 750 "${CONTAINER_BASE}/${dir}"
-    done
+    create_container_dirs
 
     # Configure container runtime environment
     cat > "/etc/containers/containers.conf" << 'EOF'
@@ -1638,19 +2529,19 @@ EOF
     cat > "${CONTAINER_BASE}/configs/registry.yml" << 'EOF'
 version: 0.1
 log:
-  fields:
+fields:
     service: registry
 storage:
-  cache:
+cache:
     blobdescriptor: inmemory
-  filesystem:
+filesystem:
     rootdirectory: /var/lib/registry
 http:
-  addr: :5000
-  headers:
+addr: :5000
+headers:
     X-Content-Type-Options: [nosniff]
 health:
-  storagedriver:
+storagedriver:
     enabled: true
     interval: 10s
     threshold: 3
@@ -1798,23 +2689,7 @@ configure_testing_environment() {
     log_info "Setting up comprehensive testing environment..."
 
     # Create structured directory hierarchy for testing
-    TEST_BASE="/usr/local/test-env"
-    TEST_DIRS=(
-        "unit"           # Unit test frameworks and configurations
-        "integration"    # Integration testing tools
-        "performance"    # Performance testing tools and configs
-        "security"       # Security testing frameworks
-        "results"        # Test results storage
-        "scripts"        # Testing utility scripts
-        "templates"      # Test templates and examples
-        "fixtures"       # Test data and fixtures
-    )
-
-    # Create directories with appropriate permissions
-    for dir in "${TEST_DIRS[@]}"; do
-        mkdir -p "${TEST_BASE}/${dir}"
-        chmod 750 "${TEST_BASE}/${dir}"
-    done
+    create_test_dirs
 
     # Create performance testing configuration file
     cat > "${TEST_BASE}/performance/benchmark.conf" << 'EOF'
@@ -2066,158 +2941,202 @@ EOF
     log_info "Run 'source ~/.zshrc' to load new testing aliases"
 }
 
-install_packages() {
-    log_info "Starting package installation process..."
-
-    # Verify pkg_add is available
-    if ! command -v pkg_add >/dev/null 2>&1; then
-        log_error "pkg_add not found. Please install pkgsrc-tools first."
-        return 1
-    }
-
-    # Create temporary directory for package management
-    PKG_TEMP_DIR=$(mktemp -d /tmp/pkg_install.XXXXXX)
-    if [ ! -d "$PKG_TEMP_DIR" ]; then
-        log_error "Failed to create temporary directory"
-        return 1
-    }
-
-    # Cleanup function for temporary files
-    cleanup_pkg_temp() {
-        log_debug "Cleaning up temporary package files..."
-        rm -rf "$PKG_TEMP_DIR"
-    }
-    trap cleanup_pkg_temp EXIT
-
-    # Update PKG_PATH if defined
-    if [ -n "${PKG_PATH:-}" ]; then
-        export PKG_PATH
-        log_info "Using package repository: $PKG_PATH"
-    fi
-
-    # Update package database
-    log_info "Updating package database..."
-    if ! pkg_add -u >/dev/null 2>&1; then
-        log_warn "Package database update failed, continuing with installation"
-    fi
-
-    # Create a list of packages to install
-    echo "$PACKAGES" | grep -v '^#' | tr -s '[:space:]' '\n' > "$PKG_TEMP_DIR/pkg_list"
-
-    # Initialize counters
-    total_packages=$(wc -l < "$PKG_TEMP_DIR/pkg_list")
-    installed_count=0
-    failed_count=0
-    skipped_count=0
-
-    # Create lists for tracking
-    touch "$PKG_TEMP_DIR/failed_packages"
-    touch "$PKG_TEMP_DIR/installed_packages"
-    touch "$PKG_TEMP_DIR/skipped_packages"
-
-    log_info "Beginning installation of $total_packages packages..."
-
-    # Process each package
-    while read -r package; do
-        # Skip empty lines
-        [ -z "$package" ] && continue
-
-        # Skip comments
-        [[ "$package" =~ ^#.*$ ]] && continue
-
-        log_info "Processing package: $package"
-
-        # Check if package is already installed
-        if pkg_info -e "$package" >/dev/null 2>&1; then
-            log_info "Package $package is already installed, skipping"
-            echo "$package" >> "$PKG_TEMP_DIR/skipped_packages"
-            ((skipped_count++))
-            continue
-        fi
-
-        # Attempt to install the package
-        if pkg_add -U "$package" >/dev/null 2>&1; then
-            log_info "Successfully installed $package"
-            echo "$package" >> "$PKG_TEMP_DIR/installed_packages"
-            ((installed_count++))
-        else
-            log_error "Failed to install $package"
-            echo "$package" >> "$PKG_TEMP_DIR/failed_packages"
-            ((failed_count++))
-
-            # Check if this is a critical package
-            case "$package" in
-                "openssl"|"nginx"|"pkg-config"|"gcc"|"clang")
-                    log_error "Critical package $package failed to install. Aborting."
-                    return 1
-                    ;;
-            esac
-        fi
-
-        # Report progress
-        progress=$((100 * (installed_count + failed_count + skipped_count) / total_packages))
-        log_info "Installation progress: $progress% ($((installed_count + failed_count + skipped_count))/$total_packages)"
-
-    done < "$PKG_TEMP_DIR/pkg_list"
-
-    # Generate installation report
-    {
-        echo "Package Installation Report"
-        echo "=========================="
-        echo "Total packages processed: $total_packages"
-        echo "Successfully installed: $installed_count"
-        echo "Already installed (skipped): $skipped_count"
-        echo "Failed installations: $failed_count"
-
-        if [ $failed_count -gt 0 ]; then
-            echo -e "\nFailed packages:"
-            cat "$PKG_TEMP_DIR/failed_packages"
-        fi
-
-        if [ $installed_count -gt 0 ]; then
-            echo -e "\nNewly installed packages:"
-            cat "$PKG_TEMP_DIR/installed_packages"
-        fi
-    } > "$LOG_FILE.pkg_report"
-
-    log_info "Package installation completed. See $LOG_FILE.pkg_report for details"
-
-    # Determine if the installation was successful enough to continue
-    if [ $failed_count -eq 0 ]; then
-        log_info "All packages were installed successfully"
-        return 0
-    elif [ $installed_count -gt $((total_packages * 90 / 100)) ]; then
-        log_warn "Installation completed with some failures, but enough packages installed to continue"
-        return 0
-    else
-        log_error "Too many package installation failures. Please check $LOG_FILE.pkg_report"
-        return 1
-    fi
-}
-
 configure_ssh() {
-    log_info "Configuring SSH with enhanced security settings..."
+    log_info "Starting SSH configuration with enhanced security settings..."
 
-    # Define SSH configuration directory and files
-    SSH_CONFIG="/etc/ssh/sshd_config"
-    SSH_CONFIG_DIR="/etc/ssh"
-    MODULI_FILE="${SSH_CONFIG_DIR}/moduli"
+    # Define configuration paths
+    _ssh_config="/etc/ssh/sshd_config"
+    _ssh_dir="/etc/ssh"
+    _empty_dir="/var/empty/sshd"
+    _moduli_file="${_ssh_dir}/moduli"
 
-    # Backup original configuration
-    if [ -f "$SSH_CONFIG" ]; then
-        cp "$SSH_CONFIG" "${SSH_CONFIG}.backup.$(date +%Y%m%d)"
-        log_info "Created backup of original SSH configuration"
-    fi
-
-    # Generate new host keys if they don't exist or are outdated
-    for key_type in rsa ed25519; do
-        key_file="${SSH_CONFIG_DIR}/ssh_host_${key_type}_key"
-        if [ ! -f "$key_file" ] || [ "$(stat -f %m "$key_file")" -lt "$(date -v-365d +%s)" ]; then
-            log_info "Generating new $key_type host key..."
-            rm -f "$key_file" "${key_file}.pub"
-            ssh-keygen -t "$key_type" -f "$key_file" -N "" -q
+    # Check for required commands
+    for _cmd in ssh-keygen sshd; do
+        if ! command -v "$_cmd" >/dev/null 2>&1; then
+            log_error "Required command '$_cmd' not found"
+            return 1
         fi
     done
+
+    # Ensure SSH directories exist with proper permissions
+    for _dir in "$_ssh_dir" "$_empty_dir"; do
+        if ! mkdir -p "$_dir"; then
+            log_error "Failed to create directory: $_dir"
+            return 1
+        fi
+        chmod 755 "$_dir"
+    done
+
+    # Backup existing configuration
+    if [ -f "$_ssh_config" ]; then
+        _backup="${_ssh_config}.backup.$(date +%Y%m%d)"
+        if ! cp "$_ssh_config" "$_backup"; then
+            log_error "Failed to create SSH config backup"
+            return 1
+        fi
+        log_info "Created backup of SSH configuration at $_backup"
+    fi
+
+    # Generate new host keys with proper error handling
+    for _key_type in rsa ed25519; do
+        _key_file="${_ssh_dir}/ssh_host_${_key_type}_key"
+
+        # Check if key needs regeneration
+        if [ ! -f "$_key_file" ] || [ "$(stat -f %m "$_key_file")" -lt "$(date -v-365d +%s)" ]; then
+            log_info "Generating new $_key_type host key..."
+
+            # Remove old keys if they exist
+            rm -f "$_key_file" "${_key_file}.pub"
+
+            if ! ssh-keygen -t "$_key_type" -f "$_key_file" -N "" -q; then
+                log_error "Failed to generate $_key_type host key"
+                return 1
+            fi
+
+            # Set proper permissions
+            chmod 600 "$_key_file"
+            chmod 644 "${_key_file}.pub"
+        fi
+    done
+
+    # Generate DH moduli if needed
+    if [ ! -f "$_moduli_file" ] || [ "$(stat -f %m "$_moduli_file")" -lt "$(date -v-30d +%s)" ]; then
+        log_info "Generating new DH moduli (this may take a while)..."
+
+        # Create temporary file for moduli generation
+        _tmp_moduli=$(mktemp) || {
+            log_error "Failed to create temporary file for moduli generation"
+            return 1
+        }
+
+        if ! ssh-keygen -M generate -O bits=3072 -o "$_tmp_moduli"; then
+            log_error "Failed to generate DH moduli"
+            rm -f "$_tmp_moduli"
+            return 1
+        fi
+
+        if ! ssh-keygen -M screen -f "$_tmp_moduli" -o "$_moduli_file"; then
+            log_error "Failed to screen DH moduli"
+            rm -f "$_tmp_moduli"
+            return 1
+        fi
+
+        rm -f "$_tmp_moduli"
+        chmod 644 "$_moduli_file"
+    fi
+
+    # Create new sshd configuration with secure settings
+    _tmp_config=$(mktemp) || {
+        log_error "Failed to create temporary config file"
+        return 1
+    }
+
+    cat > "$_tmp_config" << 'EOF' || {
+        log_error "Failed to write SSH configuration"
+        rm -f "$_tmp_config"
+        return 1
+    }
+# Security and authentication settings
+Protocol 2
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+# Authentication methods
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitRootLogin no
+MaxAuthTries 3
+AuthenticationMethods publickey
+
+# Access control
+AllowUsers sawyer
+AllowGroups wheel
+
+# Network settings
+AddressFamily inet
+Port 22
+ListenAddress 0.0.0.0
+LoginGraceTime 30
+MaxStartups 10:30:100
+TCPKeepAlive yes
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# Cryptographic settings
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group16-sha512
+
+# Security settings
+UsePAM yes
+X11Forwarding no
+AllowTcpForwarding no
+PermitTunnel no
+PermitUserEnvironment no
+EOF
+
+    # Move configuration into place with proper permissions
+    if ! mv "$_tmp_config" "$_ssh_config"; then
+        log_error "Failed to install SSH configuration"
+        rm -f "$_tmp_config"
+        return 1
+    fi
+    chmod 600 "$_ssh_config"
+
+    # Create or update SSH monitoring script
+    _monitor_script="/usr/local/sbin/ssh-monitor"
+    cat > "$_monitor_script" << 'EOF' || {
+        log_error "Failed to create SSH monitoring script"
+        return 1
+    }
+#!/bin/sh
+# Monitor SSH connections and record statistics
+
+_log_dir="/var/log/ssh-monitor"
+mkdir -p "$_log_dir"
+
+# Record current connections
+netstat -an | grep ":22 " > "${_log_dir}/connections.$(date +%Y%m%d)"
+
+# Monitor for potential brute force attempts
+_attempts_file="${_log_dir}/failed_attempts.$(date +%Y%m%d)"
+grep "Failed password" /var/log/authlog | \
+    awk '{print $1,$2,$3,$11}' | sort | uniq -c > "$_attempts_file"
+
+# Alert if there are too many failed attempts
+_failed_count=$(wc -l < "$_attempts_file")
+if [ "$_failed_count" -gt 100 ]; then
+    echo "Warning: High number of failed SSH attempts: $_failed_count" | \
+        mail -s "SSH Attack Warning - $(hostname)" root
+fi
+
+# Cleanup old logs (keep 30 days)
+find "$_log_dir" -type f -mtime +30 -delete
+EOF
+
+    chmod 700 "$_monitor_script"
+
+    # Add monitoring to cron if not already present
+    if ! grep -q ssh-monitor /etc/cron.d/ssh-monitor 2>/dev/null; then
+        echo "0 * * * * root /usr/local/sbin/ssh-monitor" > /etc/cron.d/ssh-monitor
+    fi
+
+    # Test configuration before restarting
+    if ! sshd -t; then
+        log_error "SSH configuration test failed"
+        return 1
+    fi
+
+    # Restart SSH service
+    if ! /etc/rc.d/sshd restart >/dev/null 2>&1; then
+        log_error "Failed to restart SSH service"
+        return 1
+    fi
+
+    log_info "SSH configuration completed successfully"
+    log_info "Please test new connection before closing this session"
+    return 0
+}
 
     # Create or regenerate DH moduli if needed
     if [ ! -f "$MODULI_FILE" ] || [ "$(stat -f %m "$MODULI_FILE")" -lt "$(date -v-30d +%s)" ]; then
@@ -2407,23 +3326,7 @@ setup_development() {
     log_info "Setting up comprehensive development environment..."
 
     # Create development directory structure
-    DEV_BASE="/home/${USERNAME}/development"
-    DEV_DIRS=(
-        "projects"          # Main projects directory
-        "toolchains"        # Custom toolchains
-        "scripts"           # Development scripts
-        "docs"             # Documentation
-        "build"            # Build outputs
-        "samples"          # Code samples and templates
-        "libraries"        # Local libraries
-        "environments"     # Virtual environments
-    )
-
-    # Create the directory structure with appropriate permissions
-    for dir in "${DEV_DIRS[@]}"; do
-        mkdir -p "${DEV_BASE}/${dir}"
-        chmod 750 "${DEV_BASE}/${dir}"
-    done
+    create_dev_dirs
 
     # Set up compiler and toolchain configurations
     cat > "${DEV_BASE}/toolchains/gcc.conf" << 'EOF'
@@ -2765,6 +3668,7 @@ main() {
     configure_comprehensive_security
     configure_container_environment
     configure_testing_environment
+    create_all_directories
     setup_zsh
 
     log_info "Enhanced system configuration complete."
