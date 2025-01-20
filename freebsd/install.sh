@@ -175,19 +175,18 @@ install_pkgs() {
     PACKAGES=(
     # Development tools
     gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext
-    gmake svn valgrind doxygen ccache shellcheck diffutils
+    gmake valgrind doxygen ccache shellcheck diffutils
 
     # Scripting and utilities
-    bash zsh fish vim nano emacs tmux screen tmate mosh htop iftop iotop glances 
+    bash zsh fish vim nano emacs tmux screen tmate mosh htop iftop
     tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx 
-    smartmontools neofetch screenfetch ncdu dos2unix figlet toilet pandoc ripgrep 
-    ag silversearcher-ag
+    smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep
 
     # Libraries for Python & C/C++ build
     libffi readline sqlite3 ncurses gdbm nss lzma libxml2
 
     # Networking, system admin, and hacking utilities
-    nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon ethtool whois bind-tools
+    nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon whois bind-tools
 
     # Languages and runtimes
     python39 go ruby perl5 rust
@@ -196,7 +195,7 @@ install_pkgs() {
     docker vagrant qemu
 
     # Web hosting tools
-    nginx mysql
+    nginx
 
     # File and backup management
     rclone
@@ -205,7 +204,7 @@ install_pkgs() {
     syslog-ng grafana prometheus netdata
 
     # Miscellaneous tools
-    lsof sysutils bsdstats
+    lsof bsdstats
 )
 
     log INFO "Installing pkg-based build dependencies and popular packages..."
