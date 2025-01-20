@@ -299,8 +299,46 @@ configure_pf() {
     if [[ -z "$ext_if" ]]; then
         log ERROR "Could not detect external interface"
         return 1
-    fi  # Fixed the extra curly brace here
+    fi
     log INFO "Detected external interface: $ext_if"
+
+    # Load PF kernel module if not already loaded
+    if ! kldstat | grep -q pf; then
+        log INFO "Loading PF kernel module..."
+        if ! kldload pf; then
+            log ERROR "Failed to load PF kernel module"
+            return 1
+        fi
+    fi
+
+    # Load related modules
+    for module in pflog pfsync; do
+        if ! kldstat | grep -q $module; then
+            log INFO "Loading $module kernel module..."
+            kldload $module || log WARN "Failed to load $module module"
+        fi
+    done
+
+    # Ensure PF module loads at boot
+    if ! grep -q 'pf_load="YES"' /boot/loader.conf; then
+        echo 'pf_load="YES"' >> /boot/loader.conf
+        echo 'pflog_load="YES"' >> /boot/loader.conf
+        echo 'pfsync_load="YES"' >> /boot/loader.conf
+    fi
+
+    # Wait for PF device to be available
+    for i in {1..5}; do
+        if [[ -c "/dev/pf" ]]; then
+            break
+        fi
+        log INFO "Waiting for PF device to be available (attempt $i)..."
+        sleep 1
+    done
+
+    if [[ ! -c "/dev/pf" ]]; then
+        log ERROR "PF device file not found after waiting"
+        return 1
+    fi
 
     # Backup existing config if present
     if [[ -f "$pf_conf" ]]; then
@@ -363,11 +401,10 @@ EOF
     log INFO "PF configuration test passed"
 
     # Enable PF in rc.conf
-    if ! sysrc pf_enable=YES; then
+    if ! sysrc pf_enable=YES pflog_enable=YES; then
         log ERROR "Failed to enable PF in rc.conf"
         return 1
-    fi  # Also fixed similar issue here
-
+    fi
     log INFO "Enabled PF in rc.conf"
 
     # Load and activate the configuration
@@ -376,6 +413,9 @@ EOF
         return 1
     fi
     log INFO "Successfully loaded and activated PF configuration"
+
+    # Start pflog service
+    service pflog start || log WARN "Failed to start pflog service"
 
     return 0
 }
