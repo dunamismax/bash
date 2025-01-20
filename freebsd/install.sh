@@ -493,22 +493,46 @@ install_vscode_cli() {
 }
 
 ################################################################################
-# Function: install_jetbrainsmono
+# Function: install_font
+# Purpose: Download and install the specified font on FreeBSD.
+# Globals: None
+# Arguments: None
+# Returns:
+#   0 - Success
+#   1 - Failure
 ################################################################################
-install_jetbrainsmono() {
-  log INFO "Starting JetBrains Mono installation via pkg..."
+install_font() {
+  local font_url="https://github.com/ryanoasis/nerd-fonts/raw/master/patched-fonts/FiraCode/Regular/FiraCodeNerdFont-Regular.ttf"
+  local font_dir="/usr/local/share/fonts/nerd-fonts"
+  local font_file="FiraCodeNerdFont-Regular.ttf"
 
-  # FreeBSD may not have JetBrains Mono in default repositories; adjust accordingly.
-  if pkg info --installed fonts-jetbrains-mono >/dev/null 2>&1; then
-    log INFO "JetBrains Mono fonts are already installed."
-  else
-    if pkg install -y fonts-jetbrains-mono; then
-      log INFO "JetBrains Mono fonts installed successfully."
-    else
-      log ERROR "Failed to install JetBrains Mono fonts."
+  log INFO "Starting font installation..."
+
+  # Create the font directory if it doesn't exist
+  if [ ! -d "$font_dir" ]; then
+    log INFO "Creating font directory: $font_dir"
+    if ! mkdir -p "$font_dir"; then
+      log ERROR "Failed to create font directory: $font_dir"
       return 1
     fi
   fi
+
+  # Download the font
+  log INFO "Downloading font from $font_url"
+  if ! fetch -o "$font_dir/$font_file" "$font_url"; then
+    log ERROR "Failed to download font from $font_url"
+    return 1
+  fi
+
+  # Refresh font cache
+  log INFO "Refreshing font cache..."
+  if ! fc-cache -fv >/dev/null 2>&1; then
+    log ERROR "Failed to refresh font cache."
+    return 1
+  fi
+
+  log INFO "Font installation completed successfully."
+  return 0
 }
 
 ################################################################################
@@ -796,7 +820,7 @@ main() {
   download_repositories
   set_directory_permissions
   install_vscode_cli
-  install_jetbrainsmono
+  install_font
   dotfiles_load
   finalize_configuration
 
