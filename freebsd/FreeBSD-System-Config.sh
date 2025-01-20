@@ -2221,7 +2221,7 @@ configure_security_monitoring() {
         local _script="${SECURITY_PATHS[PERIODIC_DIR]}/daily.security"
 
         cat > "$_script" << 'EOF'
-#!/bin/sh
+
 # -----------------------------------------------------------------------------
 # Comprehensive Daily Security Audit Script
 # Performs extensive system security checks and generates detailed reports
@@ -2410,7 +2410,7 @@ EOF
 
         # Generate backup script
         cat > "/usr/local/sbin/security-backup" << 'EOF'
-#!/bin/sh
+
 # -----------------------------------------------------------------------------
 # Comprehensive Security Backup Script
 # Performs automated backups of security-critical system components
@@ -2862,7 +2862,7 @@ EOF
         local _install_script="/home/$USERNAME/install_nvim_plugins.sh"
 
         cat > "$_install_script" << 'EOF'
-#!/bin/sh
+
 # Install Neovim plugins and language servers
 nvim --headless -c 'autocmd User PackerComplete quitall' -c 'PackerSync'
 
@@ -3639,7 +3639,7 @@ EOF
     log_info "Creating kernel build utility script"
     local _build_script="${_tools_dir}/build-kernel"
     cat > "$_build_script" << 'EOF'
-#!/bin/sh
+
 # FreeBSD Kernel Build Helper
 
 set -e
@@ -3684,7 +3684,7 @@ EOF
     log_info "Creating crash analysis utility"
     local _crash_script="${_tools_dir}/analyze-crash"
     cat > "$_crash_script" << 'EOF'
-#!/bin/sh
+
 # FreeBSD Kernel Crash Analysis Tool
 
 DUMP="$1"
@@ -3865,7 +3865,7 @@ EOF
     log_info "Setting up kernel test framework"
     local _test_script="${_tests_dir}/run-tests"
     cat > "$_test_script" << 'EOF'
-#!/bin/sh
+
 # FreeBSD Kernel Test Framework
 
 # Run kernel test suite
@@ -4656,7 +4656,7 @@ configure_networking() {
 
     # Create network initialization script
     cat > "${_temp_dir}/container-network" << 'EOL'
-#!/bin/sh
+
 
 # PROVIDE: container_network
 # REQUIRE: NETWORKING
@@ -4800,7 +4800,7 @@ install_management_scripts() {
 
     # Create build script with advanced security features
     cat > "${_temp_dir}/build-secure-container" << 'EOL'
-#!/bin/sh
+
 # Enhanced container build script with security scanning and best practices enforcement
 
 set -e
@@ -5337,7 +5337,7 @@ setup_test_runners() {
 
     # Create the main test execution script
     cat > "${_temp_dir}/run-performance-tests" << 'EOL'
-#!/bin/sh
+
 # FreeBSD Performance Test Runner
 # This script executes comprehensive system performance tests and generates
 # detailed reports with DTrace integration for deep system analysis.
@@ -5635,7 +5635,7 @@ EOL
 
     # Create a test data generator for consistent test fixtures
     cat > "${_temp_dir}/generate-test-data" << 'EOL'
-#!/bin/sh
+
 # Test Data Generator for FreeBSD Testing Environment
 
 set -e
@@ -5770,7 +5770,7 @@ create_test_utilities() {
 
     # Create test analysis utilities
     cat > "${_temp_dir}/analyze-results" << 'EOL'
-#!/bin/sh
+
 # Test Results Analysis Utility
 
 set -e
@@ -5944,7 +5944,7 @@ EOL
 
     # Create reporting utilities
     cat > "${_temp_dir}/generate-report" << 'EOL'
-#!/bin/sh
+
 # Test Report Generator
 
 set -e
@@ -6794,7 +6794,7 @@ setup_monitoring() {
     mkdir -p "$(dirname $_monitor_script)"
 
     cat > "$_monitor_script" << 'EOF'
-#!/bin/sh
+
 # Enhanced SSH Connection Monitor and Security Analyzer
 
 set -e
@@ -7606,7 +7606,7 @@ LLDBSCRIPT
 
     # Set up debugging shortcuts and utilities
     cat > .debug/debug_helpers.sh << 'DEBUGHELP'
-#!/bin/sh
+
 # Debugging Helper Functions for Development
 
 # Enhanced core dump analysis
@@ -7814,7 +7814,7 @@ EOF
 
     # Create an aggregated debugging profile
     cat > .debug/debug_profile.sh << 'EOF'
-#!/bin/sh
+
 # Comprehensive debugging environment setup
 
 # Source all debug configurations
