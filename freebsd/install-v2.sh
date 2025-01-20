@@ -381,26 +381,7 @@ configure_ssh_settings() {
     log INFO "SSH server configuration completed successfully."
     return 0
 }
-​​​​​​​​​​
-    # Verify network connectivity
-    retry_count=0
-    while [ ${retry_count} -lt ${TIMEOUT} ]; do
-        if sockstat -4 -l | grep -q "plex.*:32400"; then
-            log INFO "Plex Media Server is listening on port 32400."
-            break
-        fi
-        retry_count=$((retry_count + 1))
-        sleep 1
-    done
-
-    if [ ${retry_count} -eq ${TIMEOUT} ]; then
-        log WARNING "Plex Media Server is running but may not be listening on port 32400."
-    fi
-
-    log INFO "Plex Media Server setup completed successfully."
-    return 0
-}
-
+​​​​​​​
 ################################################################################
 # Function: install_zig
 ################################################################################
