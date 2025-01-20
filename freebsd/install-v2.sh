@@ -300,9 +300,13 @@ EOF
   log INFO "OpenSSH Server configuration and hardening completed."
 }
 
+Here's the improved version of the Caddy installation function with enhanced error handling, configuration checks, and better flow control:
+
+```bash
 ################################################################################
 # Function: install_caddy
-# Purpose: Install Caddy on FreeBSD, enable it in rc.conf, and start the service.
+# Purpose: Install Caddy on FreeBSD, enable it in rc.conf, configure it,
+#          and start the service.
 # Globals: None
 # Arguments: None
 # Returns:
@@ -310,38 +314,153 @@ EOF
 #   1 - Failure
 ################################################################################
 install_caddy() {
-  log INFO "Installing Caddy..."
+    local caddy_service="caddy"
+    local pkg_name="caddy"
+    local rc_enabled
+    local service_status
+    local caddy_user="www"
+    local caddy_group="www"
+    local caddy_config_dir="/usr/local/etc/caddy"
+    local caddy_data_dir="/var/db/caddy"
+    local caddy_config_file="${caddy_config_dir}/Caddyfile"
 
-  # Check if Caddy is already installed
-  if ! pkg info caddy >/dev/null 2>&1; then
-    log INFO "Caddy is not installed. Installing via pkg..."
-    if ! pkg install -y caddy; then
-      log ERROR "Failed to install Caddy. Aborting."
-      return 1
+    log INFO "Starting Caddy setup process..."
+
+    # Check if Caddy is already installed and running
+    if pkg info "${pkg_name}" >/dev/null 2>&1; then
+        log INFO "Caddy is already installed."
+        
+        # Check if service is already enabled in rc.conf
+        rc_enabled=$(sysrc -n ${caddy_service}_enable 2>/dev/null)
+        if [ "${rc_enabled}" = "YES" ]; then
+            log INFO "Caddy is already enabled in rc.conf."
+            
+            # Check if service is running
+            service_status=$(service ${caddy_service} status 2>/dev/null)
+            if [ $? -eq 0 ]; then
+                log INFO "Caddy is already running."
+            fi
+        fi
+    else
+        # Update package repository
+        log INFO "Updating package repository..."
+        if ! pkg update >/dev/null 2>&1; then
+            log ERROR "Failed to update package repository."
+            return 1
+        fi
+
+        # Install Caddy
+        log INFO "Installing Caddy..."
+        if ! pkg install -y "${pkg_name}"; then
+            log ERROR "Failed to install Caddy."
+            return 1
+        fi
+        log INFO "Caddy installation successful."
     fi
-    log INFO "Caddy installation successful."
-  else
-    log INFO "Caddy is already installed."
-  fi
 
-  # Enable Caddy in rc.conf
-  log INFO "Enabling Caddy service in rc.conf..."
-  if ! sysrc caddy_enable="YES" >/dev/null 2>&1; then
-    log ERROR "Failed to enable Caddy in rc.conf."
-    return 1
-  fi
+    # Create required directories if they don't exist
+    for dir in "${caddy_config_dir}" "${caddy_data_dir}"; do
+        if [ ! -d "${dir}" ]; then
+            log INFO "Creating directory: ${dir}"
+            if ! mkdir -p "${dir}"; then
+                log ERROR "Failed to create directory: ${dir}"
+                return 1
+            fi
+            chown ${caddy_user}:${caddy_group} "${dir}"
+            chmod 755 "${dir}"
+        fi
+    done
 
-  # Start the Caddy service
-  log INFO "Starting Caddy service..."
-  if ! service caddy start >/dev/null 2>&1; then
-    log ERROR "Failed to start Caddy service."
-    return 1
-  fi
-
-  log INFO "Caddy has been installed, enabled, and started successfully."
-  return 0
+    # Create default Caddyfile if it doesn't exist
+    if [ ! -f "${caddy_config_file}" ]; then
+        log INFO "Creating default Caddyfile..."
+        cat > "${caddy_config_file}" << 'EOF'
+# Default Caddyfile
+{
+    # Global options
+    admin off  # Disable admin interface for security
+    persist_config off  # Disable config persistence
+    # Default storage location
+    storage file_system {
+        root /var/db/caddy
+    }
 }
 
+# Default server block
+:80 {
+    # Respond with 404 by default
+    respond "Not Found" 404
+}
+EOF
+        if [ $? -ne 0 ]; then
+            log ERROR "Failed to create default Caddyfile."
+            return 1
+        fi
+        chown ${caddy_user}:${caddy_group} "${caddy_config_file}"
+        chmod 644 "${caddy_config_file}"
+    fi
+
+    # Enable in rc.conf if not already enabled
+    if [ "${rc_enabled}" != "YES" ]; then
+        log INFO "Enabling Caddy in rc.conf..."
+        if ! sysrc ${caddy_service}_enable="YES" >/dev/null 2>&1; then
+            log ERROR "Failed to enable Caddy in rc.conf."
+            return 1
+        fi
+        
+        # Set additional rc.conf parameters
+        if ! sysrc caddy_config="${caddy_config_file}" >/dev/null 2>&1; then
+            log ERROR "Failed to set Caddy config path in rc.conf."
+            return 1
+        fi
+        
+        if ! sysrc caddy_user="${caddy_user}" >/dev/null 2>&1; then
+            log ERROR "Failed to set Caddy user in rc.conf."
+            return 1
+        fi
+    fi
+
+    # Validate Caddyfile syntax
+    log INFO "Validating Caddy configuration..."
+    if ! caddy validate --config "${caddy_config_file}" >/dev/null 2>&1; then
+        log ERROR "Caddy configuration validation failed."
+        return 1
+    fi
+
+    # Start or restart the service
+    if [ -n "${service_status}" ] && [ $? -eq 0 ]; then
+        log INFO "Restarting Caddy service..."
+        if ! service ${caddy_service} restart >/dev/null 2>&1; then
+            log ERROR "Failed to restart Caddy service."
+            return 1
+        fi
+    else
+        log INFO "Starting Caddy service..."
+        if ! service ${caddy_service} start >/dev/null 2>&1; then
+            log ERROR "Failed to start Caddy service."
+            return 1
+        fi
+    fi
+
+    # Verify service is running
+    if ! service ${caddy_service} status >/dev/null 2>&1; then
+        log ERROR "Caddy service failed to start properly."
+        return 1
+    fi
+
+    # Wait for Caddy to initialize
+    sleep 2
+
+    # Check if Caddy is listening on port 80
+    if ! sockstat -l | grep -q ":80"; then
+        log ERROR "Caddy is not listening on port 80."
+        return 1
+    fi
+
+    log INFO "Caddy setup completed successfully."
+    return 0
+}
+​​​​​​​​​​​​​​​​
 ################################################################################
 # Function: install_and_enable_plex
 # Purpose: Install Plex Media Server on FreeBSD, enable it in rc.conf, and start it.
