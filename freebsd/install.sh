@@ -321,22 +321,44 @@ configure_ssh_settings() {
 
 ################################################################################
 # Function: install_caddy
+# Purpose: Install Caddy on FreeBSD, enable it in rc.conf, and start the service.
+# Globals: None
+# Arguments: None
+# Returns:
+#   0 - Success
+#   1 - Failure
 ################################################################################
 install_caddy() {
   log INFO "Installing Caddy..."
 
-  # On FreeBSD, Caddy can typically be installed directly via pkg
+  # Check if Caddy is already installed
   if ! pkg info caddy >/dev/null 2>&1; then
+    log INFO "Caddy is not installed. Installing via pkg..."
     if ! pkg install -y caddy; then
-      log ERROR "Failed to install Caddy."
+      log ERROR "Failed to install Caddy. Aborting."
       return 1
     fi
+    log INFO "Caddy installation successful."
   else
     log INFO "Caddy is already installed."
   fi
 
-  log INFO "Caddy installed."
-  # Enable caddy service if needed via rc.conf manual configuration.
+  # Enable Caddy in rc.conf
+  log INFO "Enabling Caddy service in rc.conf..."
+  if ! sysrc caddy_enable="YES" >/dev/null 2>&1; then
+    log ERROR "Failed to enable Caddy in rc.conf."
+    return 1
+  fi
+
+  # Start the Caddy service
+  log INFO "Starting Caddy service..."
+  if ! service caddy start >/dev/null 2>&1; then
+    log ERROR "Failed to start Caddy service."
+    return 1
+  fi
+
+  log INFO "Caddy has been installed, enabled, and started successfully."
+  return 0
 }
 
 ################################################################################
