@@ -752,7 +752,7 @@ dotfiles_load() {
 
   # Ensure correct ownership if running as root
   chown -R sawyer:sawyer /home/sawyer/
-  chown caddy:caddy /usr/local/etc/Caddyfile 2>/dev/null  # Adjust path if needed
+  chown sawyer:sawyer /usr/local/etc/Caddyfile 2>/dev/null  # Adjust path if needed
 
   log INFO "Dotfiles copied successfully."
 }
