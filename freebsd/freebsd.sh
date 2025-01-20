@@ -295,12 +295,12 @@ block quick from { <bruteforce>, <flood>, <scanners>, <malware> }
 
 # Allow outbound and essential inbound
 pass out quick on \$ext_if all modulate state
-pass in on \$ext_if inet proto tcp to any port { ssh, http, https, smtp, imaps } \
-    flags S/SA keep state (max-src-conn 100, max-src-conn-rate 15/5, \
+pass in on \$ext_if inet proto tcp to any port { ssh, http, https, smtp, imaps } \\
+    flags S/SA keep state (max-src-conn 100, max-src-conn-rate 15/5, \\
     overload <flood> flush global)
-pass in on \$ext_if inet proto udp to any port { domain, ntp } keep state \
+pass in on \$ext_if inet proto udp to any port { domain, ntp } keep state \\
     (max-src-states 100, max-src-conn-rate 10/5, overload <flood> flush global)
-pass in inet proto icmp all icmp-type { echoreq, unreach } keep state \
+pass in inet proto icmp all icmp-type { echoreq, unreach } keep state \\
     (max-src-conn-rate 10/10, overload <flood> flush global)
 EOF
 
@@ -308,7 +308,7 @@ EOF
     pfctl -nf "$pf_conf" || return 1
     sysrc pf_enable=YES
     pfctl -ef "$pf_conf" || return 1
-}​​​​​​​​​​​​​​​​
+}
 
 download_repos() {
     log INFO "Downloading repositories..."
