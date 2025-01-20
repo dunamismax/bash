@@ -329,10 +329,10 @@ rotate_backups() {
     local _total_backups=$(wc -l < "$_temp_list")
     if [ "$_total_backups" -gt "$_max_backups" ]; then
         local _remove_count=$((_total_backups - _max_backups))
-        
+
         # Log the rotation action
         log_info "Rotating backups in $_backup_dir: removing $_remove_count old backup(s)"
-        
+
         # Remove old backups while keeping the most recent ones
         tail -n "$_remove_count" "$_temp_list" | while read -r backup; do
             if [ -f "$backup" ]; then
@@ -608,7 +608,7 @@ init_logging() {
 # Enhanced log management with rotation and compression
 manage_logs() {
     local _current_size
-    
+
     # Check if log file exists
     if [ ! -f "$LOG_FILE" ]; then
         return 0
@@ -621,15 +621,15 @@ manage_logs() {
     if [ "$_current_size" -gt "$LOG_MAX_SIZE" ]; then
         local _timestamp=$(date +%Y%m%d_%H%M%S)
         local _rotated_log="${LOG_FILE}.${_timestamp}"
-        
+
         # Rotate the current log file
         if mv "$LOG_FILE" "$_rotated_log"; then
             # Create new log file with correct permissions
             touch "$LOG_FILE"
             chmod 640 "$LOG_FILE"
-            
+
             # Compress the rotated log in background
-            (gzip "$_rotated_log" && 
+            (gzip "$_rotated_log" &&
              mv "${_rotated_log}.gz" "${LOG_DIR}/archive/" &)
         else
             echo "Failed to rotate log file: $LOG_FILE" >&2
@@ -665,7 +665,7 @@ log() {
         # Write to log file and stdout
         if [ -n "${LOG_FILE:-}" ]; then
             echo "$_log_entry" | tee -a "$LOG_FILE"
-            
+
             # Check log size and rotate if necessary
             manage_logs
         else
@@ -698,7 +698,7 @@ set_log_level() {
 # Generate log summary report
 generate_log_summary() {
     local _output_file="${LOG_DIR}/summary_$(date +%Y%m%d_%H%M%S).txt"
-    
+
     {
         echo "Log Summary Report"
         echo "================="
@@ -707,12 +707,12 @@ generate_log_summary() {
         echo "Error Statistics (last 24 hours):"
         grep -h "\[ERROR\]" "$LOG_FILE" "${LOG_DIR}/archive/"*.gz | \
             sort | uniq -c | sort -nr
-        
+
         echo
         echo "Warning Statistics (last 24 hours):"
         grep -h "\[WARN\]" "$LOG_FILE" "${LOG_DIR}/archive/"*.gz | \
             sort | uniq -c | sort -nr
-        
+
         echo
         echo "Log Size Statistics:"
         du -h "$LOG_FILE" "${LOG_DIR}/archive/"*.gz 2>/dev/null | \
@@ -739,22 +739,22 @@ verify_service_state() {
     local _port="$2"
     local _timeout="${3:-30}"  # Maximum seconds to wait for service
     local _start_time=$(date +%s)
-    
+
     # Check if service is running
     while true; do
         if service "$_service" status >/dev/null 2>&1; then
             break
         fi
-        
+
         # Check timeout
         if [ $(($(date +%s) - _start_time)) -gt "$_timeout" ]; then
             log_error "Service $_service failed to start within $_timeout seconds"
             return 1
         fi
-        
+
         sleep 1
     done
-    
+
     # Verify port is listening
     if [ -n "$_port" ]; then
         _start_time=$(date +%s)
@@ -762,16 +762,16 @@ verify_service_state() {
             if sockstat -l | grep -q ":$_port "; then
                 break
             fi
-            
+
             if [ $(($(date +%s) - _start_time)) -gt "$_timeout" ]; then
                 log_error "Service $_service is not listening on port $_port after $_timeout seconds"
                 return 1
             fi
-            
+
             sleep 1
         done
     fi
-    
+
     log_info "Service $_service successfully verified"
     return 0
 }
