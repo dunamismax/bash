@@ -166,18 +166,18 @@ backup_system() {
 }
 
 ################################################################################
-# Combined Function: Installs pkg dependencies for Python & C/C++ build, Rust,
-# Go, and various popular utilities, plus basic system updates, core packages, etc.
+# Function: install_pkgs
+# Purpose: Installs a comprehensive set of packages for development, system 
+# administration, networking, and security.
 ################################################################################
-install_all_build_dependencies() {
-    # 1) Update and upgrade system packages
+install_pkgs() {
+    # --- Part 1: Install Packages and Tools ---
     log INFO "Updating pkg repositories and upgrading packages..."
     if ! pkg upgrade -y; then
         log ERROR "System upgrade failed. Exiting."
         return 1
     fi
 
-    # 2) Define a comprehensive list of popular and recommended packages
     PACKAGES=(
         # Development tools
         gcc clang cmake git pkgconf openssl llvm autoconf automake libtool
@@ -189,14 +189,15 @@ install_all_build_dependencies() {
         # Libraries for Python & C/C++ build
         libbz2 libffi zlib readline sqlite3 tk ncurses gdbm nss lzma libxml2 libxmlsec1
 
-        # Networking and system utilities
-        openssh nmap netcat socat tcpdump
+        # Networking, system admin, and hacking utilities
+        openssh nmap netcat socat tcpdump wireshark tshark aircrack-ng john \
+        hydra metasploit-framework netcat-openbsd
 
         # Languages and runtimes
         python39 python39-pip go node npm
 
         # Additional helpful tools
-        jq pigz p7zip xz
+        jq pigz p7zip xz fzf lynx smartmontools ntfs-3g neovim
 
         # Documentation and man pages
         man-pages
@@ -211,27 +212,23 @@ install_all_build_dependencies() {
         libpng libjpeg
     )
 
-    # 3) Install all pkg-based dependencies in one shot
     log INFO "Installing pkg-based build dependencies and popular packages..."
     if ! pkg install -y "${PACKAGES[@]}"; then
         log ERROR "Failed to install one or more pkg-based dependencies. Exiting."
         return 1
     fi
-
     log INFO "All pkg-based build dependencies and recommended packages installed successfully."
 
-    # 4) Install Rust toolchain
+    # Install Rust toolchain
     log INFO "Installing Rust toolchain via rustup..."
     if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
         log ERROR "Failed to install Rust toolchain. Exiting."
         return 1
     fi
-
-    # Make Rust available in the current session
     export PATH="$HOME/.cargo/bin:$PATH"
     log INFO "Rust toolchain installed and added to PATH."
 
-    # 5) Install Go using pkg (already included in PACKAGES but ensuring it's present)
+    # Ensure Go is installed
     if ! pkg info go >/dev/null 2>&1; then
         log INFO "Installing Go..."
         if ! pkg install -y go; then
@@ -242,9 +239,6 @@ install_all_build_dependencies() {
     else
         log INFO "Go is already installed."
     fi
-
-    # 6) Final message
-    log INFO "All dependencies (system, Python, C/C++, Rust, Go, and popular utilities) installed successfully."
 }
 
 ################################################################################
@@ -788,7 +782,7 @@ main() {
 
   # Bash script execution order:
   backup_system
-  install_all_build_dependencies
+  install_pkgs
   configure_ssh_settings
   configure_pf
   configure_ntp
