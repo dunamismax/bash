@@ -300,9 +300,6 @@ EOF
   log INFO "OpenSSH Server configuration and hardening completed."
 }
 
-Here's the improved version of the Caddy installation function with enhanced error handling, configuration checks, and better flow control:
-
-```bash
 ################################################################################
 # Function: install_caddy
 # Purpose: Install Caddy on FreeBSD, enable it in rc.conf, configure it,
@@ -358,9 +355,6 @@ install_caddy() {
         log INFO "Caddy installation successful."
     fi
 
-    I'll modify the directory creation section to handle each directory individually and add better error handling:
-
-```bash
     # Create and set up Caddy config directory
     if [ ! -d "${caddy_config_dir}" ]; then
         log INFO "Creating Caddy config directory..."
