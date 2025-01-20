@@ -1,21 +1,29 @@
 #!/bin/sh
 # -----------------------------------------------------------------------------
-# NetBSD System Configuration Script with Enhanced Features
+# NetBSD Comprehensive Configuration and Hardening Script
 # -----------------------------------------------------------------------------
-# Purpose:
-#   Perform a comprehensive configuration of a fresh NetBSD installation.
-#   The script optimizes the system for development, security, and performance.
+# Description:
+#   This Ash script automates the full configuration of a fresh NetBSD 
+#   installation. It is designed to enhance development capabilities, enforce 
+#   security best practices, and optimize system performance.
 #
-# Features:
-#   - Sets up a development environment (including Neovim and Zsh)
-#   - Applies system hardening and security configurations
-#   - Optimizes system performance settings
-#   - Configures regular backups
-#   - Tunes network settings for optimal operation
-#   - Sets up comprehensive monitoring and health checks
+# Key Capabilities:
+#   • Establishes a modern development environment (Neovim, Zsh, and more)
+#   • Implements robust system hardening and security policies
+#   • Tunes kernel and network parameters for peak performance
+#   • Sets up automated regular backup routines
+#   • Configures a comprehensive system monitoring and health-check framework
+#   • Prepares containerization, testing, and development environments
+#
+# Execution:
+#   Run this script as the root user to automatically apply all configurations.
+#   It features detailed logging, error handling, and step-by-step progress 
+#   reporting to ensure a seamless setup.
+#
+# Note:
+#   The script exits immediately on any error and treats unset variables as
+#   errors to maintain stability and prevent misconfiguration.
 # -----------------------------------------------------------------------------
-
-# Exit immediately if any command exits with a non-zero status and treat unset variables as errors.
 set -eu
 
 # -----------------------------------------------------------------------------
