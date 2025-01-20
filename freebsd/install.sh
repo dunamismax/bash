@@ -248,6 +248,90 @@ install_all_build_dependencies() {
 }
 
 ################################################################################
+# Function: configure_ssh_settings
+# Purpose: Install and configure OpenSSH server on FreeBSD with security best practices
+################################################################################
+configure_ssh_settings() {
+  log INFO "Installing OpenSSH Server..."
+
+  # Install OpenSSH server if not already installed
+  if ! pkg info openssh-portable >/dev/null 2>&1; then
+    if ! pkg install -y openssh-portable; then
+      log ERROR "Failed to install OpenSSH Server."
+      return 1
+    fi
+    log INFO "OpenSSH Server installed."
+  else
+    log INFO "OpenSSH Server is already installed."
+  fi
+
+  # Enable sshd service in rc.conf if not already enabled
+  if ! grep -q '^sshd_enable="YES"' /etc/rc.conf; then
+    echo 'sshd_enable="YES"' >> /etc/rc.conf
+    log INFO "Enabled sshd in /etc/rc.conf."
+  else
+    log INFO "sshd is already enabled in /etc/rc.conf."
+  fi
+
+  # Start/restart the sshd service
+  service sshd restart
+  if [ $? -eq 0 ]; then
+    log INFO "sshd service restarted successfully."
+  else
+    log ERROR "Failed to restart sshd service."
+    return 1
+  fi
+
+  # Define the sshd_config path
+  local sshd_config="/usr/local/etc/ssh/sshd_config"
+
+  # Backup the existing sshd_config
+  local backup_file="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
+  cp "$sshd_config" "$backup_file" && log INFO "Backup of sshd_config created at $backup_file."
+
+  # Apply security best practices to sshd_config
+  # Define desired SSH settings for hardening
+  declare -A sshd_settings=(
+    ["Port"]="22"                  # Consider changing to non-standard port
+    ["Protocol"]="2"
+    ["MaxAuthTries"]="3"
+    ["PermitRootLogin"]="no"
+    ["PasswordAuthentication"]="no"  # Encourage key-based auth
+    ["ChallengeResponseAuthentication"]="no"
+    ["UsePAM"]="no"
+    ["X11Forwarding"]="no"
+    ["AllowTcpForwarding"]="no"
+    ["PermitEmptyPasswords"]="no"
+    ["ClientAliveInterval"]="300"
+    ["ClientAliveCountMax"]="2"
+    ["LogLevel"]="VERBOSE"
+  )
+
+  log INFO "Applying hardening settings to $sshd_config..."
+  for setting in "${!sshd_settings[@]}"; do
+    # If setting exists, replace it; if not, append it
+    if grep -q "^\s*${setting}\s" "$sshd_config"; then
+      sed -i '' "s/^\s*${setting}\s\+.*/${setting} ${sshd_settings[$setting]}/" "$sshd_config"
+    else
+      echo "${setting} ${sshd_settings[$setting]}" >> "$sshd_config"
+    fi
+  done
+
+  log INFO "SSH configuration updated. Restarting sshd service..."
+
+  # Restart sshd to apply changes
+  service sshd restart
+  if [ $? -eq 0 ]; then
+    log INFO "sshd restarted successfully with new settings."
+  else
+    log ERROR "Failed to restart sshd after configuration change."
+    return 1
+  fi
+
+  log INFO "OpenSSH Server configuration and hardening completed."
+}
+
+################################################################################
 # Function: install_caddy
 ################################################################################
 install_caddy() {
