@@ -722,28 +722,69 @@ EOF
   log INFO "PF firewall configuration complete."
 }
 
-# ------------------------------------------------------------------------------
-# Function: dotfiles_load
-# ------------------------------------------------------------------------------
-dotfiles_load() {
-  log INFO "Creating necessary directories..."
-  mkdir -p /home/sawyer/.config
+setup_dotfiles() {
+    # Base paths
+    local user_home="/home/${USERNAME}"
+    local dotfiles_dir="${user_home}/github/bash/dotfiles"
+    local config_dir="${user_home}/.config"
+    local local_dir="${user_home}/.local"
+    
+    log INFO "Setting up dotfiles..."
 
-  log INFO "Copying dotfiles to /home/sawyer..."
-  cp /home/sawyer/github/bash/dotfiles/.bash_profile        /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.bashrc              /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.profile             /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/Caddyfile            /usr/local/etc/Caddyfile     # Adjust path if needed
+    # Verify source directory exists
+    [[ ! -d "$dotfiles_dir" ]] && {
+        log ERROR "Dotfiles directory not found: $dotfiles_dir"
+        return 1
+    }
 
-  log INFO "Copying config directories to /home/sawyer/..."
-  cp -r /home/sawyer/github/bash/dotfiles/bin        /home/sawyer/.local/
-  cp -r /home/sawyer/github/bash/dotfiles/alacritty  /home/sawyer/.config/
+    # Create necessary directories
+    mkdir -p "$config_dir" "$local_dir/bin" || {
+        log ERROR "Failed to create config directories"
+        return 1
+    }
 
-  # Ensure correct ownership if running as root
-  chown -R sawyer:sawyer /home/sawyer/
-  chown sawyer:sawyer /usr/local/etc/Caddyfile 2>/dev/null  # Adjust path if needed
+    # Define files to copy (source:destination)
+    local files=(
+        "${dotfiles_dir}/.bash_profile:${user_home}/"
+        "${dotfiles_dir}/.bashrc:${user_home}/"
+        "${dotfiles_dir}/.profile:${user_home}/"
+        "${dotfiles_dir}/Caddyfile:/usr/local/etc/"
+    )
 
-  log INFO "Dotfiles copied successfully."
+    # Define directories to copy (source:destination)
+    local dirs=(
+        "${dotfiles_dir}/bin:${local_dir}"
+        "${dotfiles_dir}/alacritty:${config_dir}"
+    )
+
+    # Copy files
+    for item in "${files[@]}"; do
+        local src="${item%:*}"
+        local dst="${item#*:}"
+        if [[ -f "$src" ]]; then
+            cp "$src" "$dst" || log WARN "Failed to copy: $src"
+        else
+            log WARN "Source file not found: $src"
+        fi
+    done
+
+    # Copy directories
+    for item in "${dirs[@]}"; do
+        local src="${item%:*}"
+        local dst="${item#*:}"
+        if [[ -d "$src" ]]; then
+            cp -r "$src" "$dst" || log WARN "Failed to copy: $src"
+        else
+            log WARN "Source directory not found: $src"
+        fi
+    done
+
+    # Set permissions
+    chown -R "${USERNAME}:${USERNAME}" "$user_home"
+    chown "${USERNAME}:${USERNAME}" /usr/local/etc/Caddyfile 2>/dev/null
+
+    log INFO "Dotfiles setup complete"
+    return 0
 }
 
 # ------------------------------------------------------------------------------
