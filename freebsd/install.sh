@@ -710,9 +710,6 @@ main() {
   # Bash script execution order:
   backup_system
   configure_ssh_settings
-  force_release_ports
-  bootstrap_and_install_pkgs
-  configure_timezone "America/New_York"
   configure_ufw
   configure_ntp
   fail2ban
