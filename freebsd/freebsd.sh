@@ -38,6 +38,7 @@ install_pkgs() {
         log ERROR "Failed to update/upgrade packages"
         return 1
     }
+}
     
     PACKAGES="\
         # Development tools
