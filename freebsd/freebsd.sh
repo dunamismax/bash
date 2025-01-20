@@ -100,17 +100,32 @@ log() {
     # Colors - using declare -A for associative array
     declare -A colors
     colors=(
-        [INFO]='\033[0;32m'
-        [WARN]='\033[0;33m'
-        [ERROR]='\033[0;31m'
-        [DEBUG]='\033[0;34m'
+        [INFO]=$'\033[0;32m'
+        [WARN]=$'\033[0;33m'
+        [ERROR]=$'\033[0;31m'
+        [DEBUG]=$'\033[0;34m'
     )
-    local NC='\033[0m'
+    local NC=$'\033[0m'
     
-    [[ ! -e "$LOG_FILE" ]] && { mkdir -p "$(dirname "$LOG_FILE")"; touch "$LOG_FILE"; chmod 644 "$LOG_FILE"; }
+    # Create log file if it doesn't exist
+    [[ ! -e "$LOG_FILE" ]] && { 
+        mkdir -p "$(dirname "$LOG_FILE")"; 
+        touch "$LOG_FILE"; 
+        chmod 644 "$LOG_FILE"; 
+    }
     
+    # Write to log file without colors
     echo "[$timestamp] [$level] $message" >> "$LOG_FILE"
-    [[ "$VERBOSE" -ge 2 ]] && printf "${colors[$level]:-$NC}[$timestamp] [$level] $message${NC}\n"
+    
+    # Print to console with colors if verbose mode is enabled
+    if [[ "$VERBOSE" -ge 2 ]]; then
+        printf "%b[%s] [%s] %s%b\n" \
+            "${colors[$level]:-$NC}" \
+            "$timestamp" \
+            "$level" \
+            "$message" \
+            "$NC"
+    fi
 }
 
 trap 'log ERROR "Script failed at line $LINENO"' ERR
