@@ -166,6 +166,27 @@ backup_system() {
 ################################################################################
 install_pkgs() {
     # --- Part 1: Install Packages and Tools ---
+
+    # Detect package requiring spellcheck
+    detect_spellcheck_dependency() {
+        local culprit=""
+        for pkg in "${PACKAGES[@]}"; do
+            if pkg info -d "$pkg" 2>/dev/null | grep -q "spellcheck"; then
+                culprit="$pkg"
+                break
+            fi
+        done
+
+        if [[ -n "$culprit" ]]; then
+            log ERROR "Package '$culprit' requires spellcheck dependency"
+        else
+            log INFO "No package found requiring spellcheck dependency"
+        fi
+    }
+
+    # Call the function after package installation
+    detect_spellcheck_dependency
+    
     log INFO "Updating pkg repositories and upgrading packages..."
     if ! pkg upgrade -y; then
         log ERROR "System upgrade failed. Exiting."
