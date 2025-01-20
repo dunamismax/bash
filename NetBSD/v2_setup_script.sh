@@ -1,0 +1,2776 @@
+#!/bin/sh
+# -----------------------------------------------------------------------------
+# NetBSD System Configuration Script with Enhanced Features
+# -----------------------------------------------------------------------------
+# Purpose: Comprehensive configuration of a fresh NetBSD installation optimized
+# for development, security, and performance.
+#
+# Features:
+# - Development environment setup (including neovim and zsh)
+# - System hardening and security configuration
+# - Performance optimization
+# - Backup configuration
+# - Network optimization
+# - Monitoring setup
+# -----------------------------------------------------------------------------
+
+set -e
+set -u  # Treat unset variables as errors
+set -o pipefail  # Fail if any command in a pipe fails
+
+# -----------------------------------------------------------------------------
+# Configuration Variables
+# -----------------------------------------------------------------------------
+LOG_FILE="/var/log/setup.log"
+USERNAME="sawyer"
+BACKUP_DIR="/var/backups"
+SYSCTL_CONF="/etc/sysctl.conf"
+PF_CONF="/etc/pf.conf"
+MONITORING_DIR="/var/monitoring"
+
+# Development Tools and Build System
+PACKAGES="
+    # Core Development Tools - Essential compilers and build utilities
+    devel/git                 # Modern distributed version control system
+    devel/git-base           # Core git tools
+    devel/git-docs           # Git documentation
+    lang/gcc10               # GNU Compiler Collection (GCC) version 10
+    lang/clang              # LLVM C/C++/Objective-C compiler
+    devel/llvm              # Low Level Virtual Machine compiler infrastructure
+    devel/gdb               # GNU Debugger for software debugging
+    devel/lldb              # Next generation high-performance debugger
+    devel/cmake             # Cross-platform make system
+    devel/ninja-build       # Small build system with focus on speed
+    devel/bmake            # NetBSD make for package building
+    devel/autoconf          # Generate configuration scripts
+    devel/automake         # GNU Standards-compliant Makefile generator
+    devel/libtool          # Generic shared library support script
+    devel/pkgconf          # Package compiler and linker metadata toolkit
+    devel/ccache           # Compiler cache to speed up recompilation
+    devel/patch            # Apply a diff file to originals
+    devel/bison            # GNU yacc implementation
+    devel/flex             # Fast lexical analyzer generator
+
+    # Version Control Systems - Additional VCS tools
+    devel/mercurial        # Distributed source control management tool
+    devel/subversion       # Enterprise-class centralized version control
+    devel/cvs              # Concurrent Versions System
+    devel/fossil          # Distributed version control system
+
+    # Development Libraries - Common libraries for software development
+    devel/boost-libs       # Free portable C++ libraries
+    devel/boost-headers    # Boost C++ headers
+    devel/boost-docs       # Boost documentation
+    devel/boost-build      # Boost.Build framework
+    devel/ncurses         # CRT screen handling and optimization package
+    devel/readline        # GNU library for editing command lines
+    devel/gettext         # Tools for multi-lingual messages
+    databases/db4         # Berkeley DB version 4
+    devel/zlib            # General purpose data compression library
+    security/openssl      # Secure Socket Layer toolkit
+    textproc/libxml2      # XML parser library from W3C
+    textproc/libxslt      # XSLT parser library from W3C
+    devel/pcre2           # Perl Compatible Regular Expressions library
+    devel/json-c          # JSON implementation in C
+    devel/yaml-cpp        # YAML parser and emitter for C++
+
+    # Development Environments - Text editors and IDEs
+    editors/vim           # Vim text editor
+    editors/neovim        # Modern Vim-based text editor
+    editors/emacs         # GNU Emacs text editor
+    devel/ctags           # Code indexing and navigation tool
+    devel/cscope         # Source code browser
+    devel/global         # Global source code tag system
+    devel/kdevelop       # Integrated Development Environment for KDE
+
+    # Shell and Terminal Tools - Enhanced shell experience
+    shells/zsh            # Z shell with many improvements
+    misc/tmux             # Terminal multiplexer
+    shells/bash           # GNU Bourne Again Shell
+    shells/tcsh           # Enhanced C shell
+    misc/screen          # Multi-screen window manager
+    shells/fish          # Friendly Interactive Shell
+
+    # Documentation Tools - For creating and managing documentation
+    devel/doxygen         # Documentation system for C++, C, and other languages
+    textproc/py-sphinx    # Python documentation generator
+    textproc/asciidoc     # Text based document generation
+    textproc/groff        # GNU troff text processing system
+    print/texinfo         # GNU documentation formatting system
+    textproc/mandoc       # NetBSD documentation formatting tools
+
+    # Build and Debug Tools - For complex software projects
+    devel/gdb             # GNU source-level debugger
+    devel/valgrind        # Dynamic analysis tools
+    devel/cgdb           # Curses-based interface to GDB
+    devel/nemiver        # GNOME graphical debugger
+    devel/ddd            # Data Display Debugger with graphical interface
+
+    # Network Development - Tools for network programming
+    net/libpcap          # System-independent packet capture library
+    net/tcpdump          # Network traffic monitoring tool
+    security/libssh      # SSH protocol implementation library
+    net/wget            # GNU wget download utility
+    www/curl            # Command line tool for transferring data
+    net/mtr             # Network diagnostic tool
+
+    # Database Development - Database servers and clients
+    databases/mysql80-server     # MySQL 8.0 database server
+    databases/mysql80-client     # MySQL 8.0 client
+    databases/postgresql14-server # PostgreSQL 14 database server
+    databases/postgresql14-client # PostgreSQL 14 client
+    databases/sqlite3           # SQLite 3 embedded database
+    databases/redis            # Advanced key-value store
+    databases/mongodb         # Document-oriented database
+
+    # Web Development - Web servers and related tools
+    www/nginx             # Lightweight HTTP server and reverse proxy
+    www/apache24         # Apache 2.4 web server
+    www/php81            # PHP 8.1 scripting language
+    www/php81-fpm        # FastCGI Process Manager for PHP
+    www/node16           # NodeJS JavaScript runtime
+
+    # Testing Tools - Software for testing and quality assurance
+    devel/cppunit         # C++ unit testing framework
+    devel/googletest      # Google C++ testing framework
+    devel/py-test         # Python testing tool
+    devel/ruby-rspec      # Behavior Driven Development for Ruby
+
+    # System Analysis - Performance monitoring and analysis
+    sysutils/top          # System and process monitor
+    sysutils/htop         # Enhanced system monitor
+    sysutils/sysbench     # System performance benchmark
+    sysutils/fio          # Flexible I/O tester
+    sysutils/bonnie++     # Performance test of filesystem I/O
+    
+    # Security Tools - Security and encryption utilities
+    security/gnupg2       # GNU Privacy Guard
+    security/aide         # Advanced Intrusion Detection Environment
+    security/opencdk      # Open Crypto Development Kit
+    security/sudo         # Execute commands as superuser
+    security/password-store # Password management tool
+    
+    # File and Text Processing - Text manipulation tools
+    textproc/ripgrep      # Fast grep replacement
+    sysutils/fd           # Simple find replacement
+    textproc/jq           # Lightweight JSON processor
+    textproc/yq           # YAML processor
+    textproc/xmlstarlet   # XML transformation utility
+    textproc/pandoc       # Universal document converter
+    
+    # Source Code Analysis - Code quality and analysis tools
+    devel/cppcheck        # Static analysis tool for C/C++ code
+    devel/clang-static-analyzer # Clang static analyzer
+    devel/splint         # Tool for statically checking C programs
+    devel/astyle         # Source code formatter for C, C++, Java
+
+    # Configuration Management - System configuration tools
+    sysutils/ansible      # Simple IT automation
+    sysutils/puppet       # Configuration management framework
+    sysutils/salt        # Remote execution and configuration system
+
+    # Backup Tools - Data backup and synchronization
+    net/rsync            # Fast incremental file transfer
+    sysutils/duplicity   # Encrypted bandwidth-efficient backup
+    sysutils/bacula-client # Network backup solution client
+    sysutils/dar         # Disk ARchive
+"
+
+# Enable automatic dependency resolution
+PKG_OPTIONS="automatic-dependency=yes"
+
+# Set preferred mirror
+PKG_PATH="http://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/amd64/10.1/All"
+
+# -----------------------------------------------------------------------------
+# Enhanced Logging with Timestamps and Log Levels
+# -----------------------------------------------------------------------------
+log() {
+    local level="$1"
+    shift
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    printf "[%s] [%s] %s\n" "$timestamp" "$level" "$*" | tee -a "$LOG_FILE"
+}
+
+log_info() { log "INFO" "$@"; }
+log_warn() { log "WARN" "$@"; }
+log_error() { log "ERROR" "$@"; }
+log_debug() { log "DEBUG" "$@"; }
+
+# -----------------------------------------------------------------------------
+# Improved Error Handling with Stack Traces
+# -----------------------------------------------------------------------------
+handle_error() {
+    local line_no="$1"
+    local command="$2"
+    log_error "Error occurred in command '$command' at line $line_no"
+    # Print stack trace
+    local frame=0
+    while caller $frame; do
+        ((frame++))
+    done | awk '{ print "  called from line " $1 }' | tee -a "$LOG_FILE"
+    exit 1
+}
+
+trap 'handle_error ${LINENO} "${BASH_COMMAND}"' ERR
+
+# -----------------------------------------------------------------------------
+# System Performance Optimization
+# -----------------------------------------------------------------------------
+configure_system_performance() {
+    log_info "Configuring system performance parameters..."
+
+    # Create or update /etc/sysctl.conf with optimized values
+    cat > "$SYSCTL_CONF" << 'EOF'
+# Network performance tuning
+net.inet.tcp.recvbuf_max=2097152
+net.inet.tcp.sendbuf_max=2097152
+net.inet.tcp.sendbuf_auto=1
+net.inet.tcp.recvbuf_auto=1
+net.inet.tcp.msl=15000
+net.inet.tcp.always_keepalive=1
+
+# Virtual memory tuning
+vm.aslr=1
+vm.defer_swapspace_pageouts=1
+vm.swapencrypt.enable=1
+vm.overcommit=1
+
+# File system tuning
+kern.maxvnodes=250000
+kern.maxproc=99999
+kern.maxfiles=99999
+
+# Security enhancements
+security.bsd.see_other_uids=0
+security.bsd.see_other_gids=0
+security.bsd.unprivileged_proc_debug=0
+EOF
+
+    # Apply sysctl settings
+    sysctl -p
+
+    log_info "System performance parameters configured"
+}
+
+configure_comprehensive_security() {
+    log_info "Configuring comprehensive security measures..."
+
+    # Create directory for security-related configurations
+    SECURITY_DIR="/etc/security"
+    mkdir -p "${SECURITY_DIR}"
+
+    # Configure PF firewall with enhanced ruleset
+    cat > "$PF_CONF" << 'EOF'
+# Macro definitions
+ext_if = "em0"  # Change to match your external interface
+tcp_services = "{ ssh, http, https }"
+icmp_types = "{ echoreq, unreach }"
+private_nets = "{ 10/8, 172.16/12, 192.168/16 }"
+
+# Options
+set block-policy drop
+set fingerprints "/etc/pf.os"
+set skip on lo0
+set state-policy if-bound
+set optimization aggressive
+
+# Normalization and scrubbing
+match in all scrub (no-df max-mss 1440)
+match out all scrub (no-df max-mss 1440)
+
+# NAT and filtering
+block in all
+block out all
+
+# Allow outbound traffic
+pass out quick
+
+# Anti-spoofing
+antispoof quick for $ext_if inet
+
+# Allow established connections
+pass in quick on $ext_if proto tcp from any to any modulate state flags S/SA keep state
+pass in quick on $ext_if proto udp from any to any keep state
+
+# Allow specific services
+pass in on $ext_if inet proto tcp to any port $tcp_services flags S/SA keep state
+pass in inet proto icmp all icmp-type $icmp_types keep state
+
+# Rate limiting for SSH
+table <bruteforce> persist
+block quick from <bruteforce>
+pass in on $ext_if inet proto tcp to any port ssh \
+    flags S/SA keep state \
+    (max-src-conn 10, max-src-conn-rate 3/5, \
+     overload <bruteforce> flush global)
+
+# Protection against flooding
+table <flood> persist
+block quick from <flood>
+pass in quick proto { tcp, udp } from any to any port domain keep state \
+    (max-src-conn-rate 100/10, overload <flood> flush global)
+EOF
+
+    # Configure enhanced auditing system
+    cat > "${SECURITY_DIR}/audit.conf" << 'EOF'
+dir:/var/audit
+flags:lo,aa,ad,ex,fd,fm,fw,ip,na,pc,nt
+minfree:5
+naflags:lo,aa,ad,ex,fd,fm,fw,ip,na,pc,nt
+policy:cnt,argv,arge
+filesz:2M
+expire-after:10M
+EOF
+
+    # Configure system-wide security settings via sysctl
+    cat > "$SYSCTL_CONF" << 'EOF'
+# Core Security Settings
+security.bsd.see_other_uids=0
+security.bsd.see_other_gids=0
+security.bsd.unprivileged_read_msgbuf=0
+security.bsd.hardlink_check_uid=1
+security.bsd.hardlink_check_gid=1
+security.bsd.unprivileged_proc_debug=0
+
+# Network Security
+net.inet.tcp.blackhole=2
+net.inet.udp.blackhole=1
+net.inet.ip.random_id=1
+net.inet.tcp.drop_synfin=1
+net.inet.ip.redirect=0
+net.inet6.ip6.redirect=0
+net.inet.icmp.bmcastecho=0
+net.inet6.icmp6.rediraccept=0
+net.inet.tcp.always_keepalive=1
+
+# Memory Protection
+vm.pmap.pg_ps_enabled=1
+vm.defer_swapspace_pageouts=1
+vm.swapencrypt.enable=1
+vm.overcommit=1
+EOF
+
+    # Set up intrusion detection with AIDE
+    cat > "/etc/aide.conf" << 'EOF'
+# AIDE configuration
+database=file:/var/lib/aide/aide.db
+database_out=file:/var/lib/aide/aide.db.new
+gzip_dbout=yes
+
+# Define groups of files with specific monitoring requirements
+Binlib = p+i+n+u+g+s+b+m+c+md5+sha1
+ConfFiles = p+i+n+u+g+s+m+c+md5+sha1
+Logs = p+n+u+g+S
+Devices = p+i+n+u+g+s+b+c+md5+sha1
+Databases = p+n+u+g
+StaticDir = p+i+n+u+g
+ManPages = p+i+n+u+g+s+b+m+c+md5
+
+# Monitor critical system directories
+/bin Binlib
+/sbin Binlib
+/usr/bin Binlib
+/usr/sbin Binlib
+/etc ConfFiles
+/var/log Logs
+/dev Devices
+EOF
+
+    # Initialize AIDE database
+    aide --init
+    mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+
+    # Set secure permissions on critical files
+    chmod 600 /etc/master.passwd /etc/spwd.db
+    chmod 644 /etc/passwd /etc/pwd.db
+    chmod 600 /etc/aide.conf
+    chmod 600 "${SECURITY_DIR}/audit.conf"
+
+    # Enable and start security services
+    pfctl -f "$PF_CONF"
+    pfctl -e
+    sysctl -p
+
+    # Set up daily security checks
+    cat > "/etc/periodic/security/daily.local" << 'EOF'
+#!/bin/sh
+# Daily security checks
+
+# Run AIDE check
+aide --check
+
+# Check for failed login attempts
+grep "Failed password" /var/log/authlog | \
+    awk '{print $1,$2,$3,$11}' | \
+    sort | uniq -c
+
+# Check for modifications to critical files
+find /etc -type f -mtime -1 -ls
+
+# Check active network connections
+netstat -an | grep ESTABLISHED
+EOF
+    chmod 750 "/etc/periodic/security/daily.local"
+
+    log_info "Comprehensive security measures configured successfully"
+}
+
+# -----------------------------------------------------------------------------
+# Backup Configuration
+# -----------------------------------------------------------------------------
+setup_backup_system() {
+    log_info "Configuring backup system..."
+
+    # Create backup directories
+    mkdir -p "$BACKUP_DIR"/{daily,weekly,monthly}
+    chmod 700 "$BACKUP_DIR"
+
+    # Create backup script
+    cat > "/usr/local/sbin/system-backup" << 'EOF'
+#!/bin/sh
+DATE=$(date +%Y%m%d)
+BACKUP_ROOT="/var/backups"
+
+# Function to create backup
+create_backup() {
+    local type="$1"
+    local dest="$BACKUP_ROOT/$type"
+
+    tar czf "$dest/system-$DATE.tar.gz" \
+        --exclude=/proc \
+        --exclude=/tmp \
+        --exclude=/var/tmp \
+        --exclude=/var/backups \
+        --exclude=/var/cache \
+        /etc /var/db /home
+
+    # Rotate old backups
+    find "$dest" -type f -mtime +30 -delete
+}
+
+# Create backups
+create_backup "daily"
+[ "$(date +%u)" = "7" ] && create_backup "weekly"
+[ "$(date +%d)" = "01" ] && create_backup "monthly"
+EOF
+
+    chmod 700 "/usr/local/sbin/system-backup"
+
+    # Add to daily cron
+    echo "0 1 * * * root /usr/local/sbin/system-backup" > /etc/cron.d/system-backup
+
+    log_info "Backup system configured"
+}
+
+# -----------------------------------------------------------------------------
+# Configure ZSH with modern features while maintaining simplicity
+# -----------------------------------------------------------------------------
+setup_zsh() {
+    log "Setting up ZSH configuration..."
+
+    # Create ZSH configuration directory structure
+    ZSH_CONFIG_DIR="/home/$USERNAME"
+    mkdir -p "$ZSH_CONFIG_DIR"/.zsh
+
+    # Install zimfw (ZSH framework)
+    curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh
+
+    # Create main .zshrc configuration
+    cat > "$ZSH_CONFIG_DIR/.zshrc" << 'EOF'
+# -----------------------------------------------------------------------------
+# ZSH Configuration
+# Inspired by modern shell practices while maintaining simplicity
+# -----------------------------------------------------------------------------
+
+# Core ZSH Settings
+# -----------------------------------------------------------------------------
+setopt AUTO_CD              # Change directory without cd
+setopt EXTENDED_GLOB        # Extended globbing
+setopt NOTIFY              # Report status of background jobs immediately
+setopt APPEND_HISTORY      # Append to history instead of overwriting
+setopt EXTENDED_HISTORY    # Save timestamp and duration
+setopt SHARE_HISTORY       # Share history between sessions
+setopt HIST_EXPIRE_DUPS_FIRST
+setopt HIST_IGNORE_DUPS
+setopt HIST_FIND_NO_DUPS
+setopt HIST_REDUCE_BLANKS
+
+# History Configuration
+# -----------------------------------------------------------------------------
+HISTFILE=~/.zsh_history
+HISTSIZE=50000
+SAVEHIST=10000
+
+# Environment Variables
+# -----------------------------------------------------------------------------
+export EDITOR='nvim'
+export VISUAL='nvim'
+export PAGER='less'
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export TERM=xterm-256color
+
+# Path Configuration
+# -----------------------------------------------------------------------------
+typeset -U path
+path=(
+    ~/.local/bin
+    ~/.cargo/bin
+    ~/.npm-global/bin
+    $path
+)
+
+# Aliases
+# -----------------------------------------------------------------------------
+alias ls='ls -F --color=auto'
+alias ll='ls -lh'
+alias la='ls -lah'
+alias grep='grep --color=auto'
+alias vi='nvim'
+alias vim='nvim'
+alias tree='tree -C'
+alias dc='cd'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias mkdir='mkdir -p'
+alias df='df -h'
+alias du='du -h'
+alias free='free -m'
+alias g='git'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gst='git status'
+
+# Key Bindings
+# -----------------------------------------------------------------------------
+bindkey -e  # Use emacs key bindings
+bindkey '^[[A' history-substring-search-up
+bindkey '^[[B' history-substring-search-down
+bindkey '^[[H' beginning-of-line
+bindkey '^[[F' end-of-line
+bindkey '^[[3~' delete-char
+bindkey '^[[1;5C' forward-word
+bindkey '^[[1;5D' backward-word
+
+# Auto Completion
+# -----------------------------------------------------------------------------
+autoload -Uz compinit
+compinit -d ~/.cache/zcompdump
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+zstyle ':completion:*' verbose yes
+zstyle ':completion:*' group-name ''
+zstyle ':completion:*:descriptions' format '%F{green}-- %d --%f'
+
+# Plugin Configuration
+# -----------------------------------------------------------------------------
+# Source external plugins
+source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
+source ~/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+# FZF Integration
+# -----------------------------------------------------------------------------
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+# Custom Functions
+# -----------------------------------------------------------------------------
+# Quick directory navigation
+function mkcd() { mkdir -p "$@" && cd "$@"; }
+
+# Enhanced git log
+function glog() {
+    git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+}
+
+# Quick find
+function ff() { find . -name "*$1*" }
+
+# System update shortcut
+function update() {
+    echo "Updating system packages..."
+    sudo pkg_add -u
+    echo "Updating npm packages..."
+    npm update -g
+    echo "Updating pip packages..."
+    pip3 list --outdated --format=freeze | grep -v '^\-e' | cut -d = -f 1 | xargs -n1 pip3 install -U
+}
+
+# Prompt Configuration
+# -----------------------------------------------------------------------------
+autoload -Uz vcs_info
+precmd() { vcs_info }
+zstyle ':vcs_info:git:*' formats '%F{240}(%b)%f'
+setopt prompt_subst
+PROMPT='%F{blue}%~%f ${vcs_info_msg_0_} %F{green}➜%f '
+
+# Load Local Configuration
+# -----------------------------------------------------------------------------
+[[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
+EOF
+
+    # Set permissions
+    chown -R "$USERNAME:wheel" "$ZSH_CONFIG_DIR/.zsh"
+    chown "$USERNAME:wheel" "$ZSH_CONFIG_DIR/.zshrc"
+
+    # Set ZSH as default shell
+    log "Setting ZSH as default shell for $USERNAME..."
+    chsh -s /usr/pkg/bin/zsh "$USERNAME"
+
+    # Create plugins directory and symlinks
+    mkdir -p "$ZSH_CONFIG_DIR/.zsh/zsh-autosuggestions"
+    mkdir -p "$ZSH_CONFIG_DIR/.zsh/zsh-syntax-highlighting"
+    ln -sf /usr/pkg/share/zsh-autosuggestions/zsh-autosuggestions.zsh "$ZSH_CONFIG_DIR/.zsh/zsh-autosuggestions/"
+    ln -sf /usr/pkg/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh "$ZSH_CONFIG_DIR/.zsh/zsh-syntax-highlighting/"
+}
+
+# -----------------------------------------------------------------------------
+# Configure Neovim with modern features while maintaining simplicity
+# -----------------------------------------------------------------------------
+setup_neovim() {
+    log "Setting up Neovim configuration..."
+
+    # Create Neovim configuration directory structure
+    NVIM_CONFIG_DIR="/home/$USERNAME/.config/nvim"
+    mkdir -p "$NVIM_CONFIG_DIR"/{lua,plugin}
+
+    # Install packer.nvim (plugin manager)
+    PACKER_DIR="/home/$USERNAME/.local/share/nvim/site/pack/packer/start/packer.nvim"
+    if [ ! -d "$PACKER_DIR" ]; then
+        git clone --depth 1 https://github.com/wbthomason/packer.nvim "$PACKER_DIR"
+    fi
+
+    # Create main init.lua configuration
+    cat > "$NVIM_CONFIG_DIR/init.lua" << 'EOF'
+-- Basic Settings
+vim.opt.number = true
+vim.opt.relativenumber = true
+vim.opt.wrap = false
+vim.opt.encoding = 'utf-8'
+vim.opt.swapfile = false
+vim.opt.backup = false
+vim.opt.undodir = vim.fn.expand('~/.vim/undodir')
+vim.opt.undofile = true
+vim.opt.hlsearch = false
+vim.opt.incsearch = true
+vim.opt.termguicolors = true
+vim.opt.scrolloff = 8
+vim.opt.updatetime = 50
+vim.opt.colorcolumn = '80'
+
+-- Indentation
+vim.opt.tabstop = 4
+vim.opt.softtabstop = 4
+vim.opt.shiftwidth = 4
+vim.opt.expandtab = true
+vim.opt.smartindent = true
+
+-- Leader Key
+vim.g.mapleader = ' '
+
+-- Plugin Management with Packer
+require('packer').startup(function(use)
+    use 'wbthomason/packer.nvim'
+    use 'nvim-treesitter/nvim-treesitter'
+    use 'nvim-lua/plenary.nvim'
+    use 'nvim-telescope/telescope.nvim'
+    use 'neovim/nvim-lspconfig'
+    use 'hrsh7th/nvim-cmp'
+    use 'hrsh7th/cmp-nvim-lsp'
+    use 'L3MON4D3/LuaSnip'
+    use 'sainnhe/gruvbox-material'
+    use {
+        'nvim-lualine/lualine.nvim',
+        requires = { 'nvim-tree/nvim-web-devicons' }
+    }
+end)
+
+-- Color Scheme
+vim.cmd([[
+    set background=dark
+    let g:gruvbox_material_background = 'hard'
+    colorscheme gruvbox-material
+]])
+
+-- Treesitter Configuration
+require('nvim-treesitter.configs').setup({
+    ensure_installed = {
+        'c', 'lua', 'vim', 'python', 'javascript',
+        'typescript', 'bash', 'markdown'
+    },
+    highlight = { enable = true },
+    indent = { enable = true }
+})
+
+-- LSP Configuration
+local lspconfig = require('lspconfig')
+local capabilities = require('cmp_nvim_lsp').default_capabilities()
+
+-- Setup language servers
+lspconfig.pyright.setup({ capabilities = capabilities })
+lspconfig.clangd.setup({ capabilities = capabilities })
+lspconfig.tsserver.setup({ capabilities = capabilities })
+
+-- Completion Setup
+local cmp = require('cmp')
+cmp.setup({
+    snippet = {
+        expand = function(args)
+            require('luasnip').lsp_expand(args.body)
+        end,
+    },
+    mapping = cmp.mapping.preset.insert({
+        ['<C-b>'] = cmp.mapping.scroll_docs(-4),
+        ['<C-f>'] = cmp.mapping.scroll_docs(4),
+        ['<C-Space>'] = cmp.mapping.complete(),
+        ['<C-e>'] = cmp.mapping.abort(),
+        ['<CR>'] = cmp.mapping.confirm({ select = true })
+    }),
+    sources = cmp.config.sources({
+        { name = 'nvim_lsp' },
+        { name = 'luasnip' },
+    }, {
+        { name = 'buffer' },
+    })
+})
+
+-- Telescope Configuration
+local telescope = require('telescope.builtin')
+vim.keymap.set('n', '<leader>ff', telescope.find_files, {})
+vim.keymap.set('n', '<leader>fg', telescope.live_grep, {})
+vim.keymap.set('n', '<leader>fb', telescope.buffers, {})
+vim.keymap.set('n', '<leader>fh', telescope.help_tags, {})
+
+-- Status Line
+require('lualine').setup({
+    options = {
+        theme = 'gruvbox-material',
+        component_separators = '|',
+        section_separators = '',
+    }
+})
+
+-- Key Mappings
+vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float)
+vim.keymap.set('n', '[d', vim.diagnostic.goto_prev)
+vim.keymap.set('n', ']d', vim.diagnostic.goto_next)
+vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist)
+
+-- LSP key bindings
+vim.api.nvim_create_autocmd('LspAttach', {
+    group = vim.api.nvim_create_augroup('UserLspConfig', {}),
+    callback = function(ev)
+        local opts = { buffer = ev.buf }
+        vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
+        vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
+        vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
+        vim.keymap.set('n', 'gi', vim.lsp.buf.implementation, opts)
+        vim.keymap.set('n', '<C-k>', vim.lsp.buf.signature_help, opts)
+        vim.keymap.set('n', '<leader>wa', vim.lsp.buf.add_workspace_folder, opts)
+        vim.keymap.set('n', '<leader>wr', vim.lsp.buf.remove_workspace_folder, opts)
+        vim.keymap.set('n', '<leader>D', vim.lsp.buf.type_definition, opts)
+        vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, opts)
+        vim.keymap.set({ 'n', 'v' }, '<leader>ca', vim.lsp.buf.code_action, opts)
+        vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
+    end,
+})
+EOF
+
+    # Set permissions
+    chown -R "$USERNAME:wheel" "/home/$USERNAME/.config"
+    chown -R "$USERNAME:wheel" "/home/$USERNAME/.local"
+
+    # Create initial plugin installation script
+    cat > "/home/$USERNAME/install_nvim_plugins.sh" << 'EOF'
+#!/bin/sh
+nvim --headless -c 'autocmd User PackerComplete quitall' -c 'PackerSync'
+EOF
+
+    chmod +x "/home/$USERNAME/install_nvim_plugins.sh"
+    chown "$USERNAME:wheel" "/home/$USERNAME/install_nvim_plugins.sh"
+}
+
+# -----------------------------------------------------------------------------
+# Network Optimization
+# -----------------------------------------------------------------------------
+optimize_network() {
+    log_info "Optimizing network configuration..."
+
+    # Configure network tuning parameters
+    cat >> "$SYSCTL_CONF" << 'EOF'
+# Additional network optimizations
+net.inet.tcp.rfc1323=1
+net.inet.tcp.sack.enable=1
+net.inet.tcp.path_mtu_discovery=1
+net.inet.tcp.blackhole=2
+net.inet.udp.blackhole=1
+EOF
+
+    # Apply network optimizations
+    sysctl -p
+
+    log_info "Network optimization complete"
+}
+
+configure_nginx() {
+    log_info "Configuring NGINX web server..."
+
+    # Ensure the required directories exist
+    mkdir -p /var/log/nginx
+    mkdir -p /etc/nginx/conf.d
+    mkdir -p /etc/nginx/sites-available
+    mkdir -p /etc/nginx/sites-enabled
+
+    # Create the main NGINX configuration
+    cat > "/etc/nginx/nginx.conf" << 'EOF'
+user nginx;
+worker_processes auto;
+pid /var/run/nginx.pid;
+
+# Load dynamic modules
+include /etc/nginx/modules/*.conf;
+
+events {
+    worker_connections 1024;
+    multi_accept on;
+}
+
+http {
+    # Basic Settings
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    server_tokens off;
+
+    # MIME Types
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # SSL Settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers EECDH+AESGCM:EDH+AESGCM;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_session_tickets off;
+
+    # Logging Settings
+    access_log /var/log/nginx/access.log combined buffer=512k flush=1m;
+    error_log /var/log/nginx/error.log warn;
+
+    # Virtual Host Configs
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+EOF
+
+    # Create site configuration for dunamismax.com
+    cat > "/etc/nginx/sites-available/dunamismax.com" << 'EOF'
+# Redirect www to non-www
+server {
+    listen 80;
+    listen [::]:80;
+    server_name www.dunamismax.com;
+    return 301 https://dunamismax.com$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.dunamismax.com;
+
+    ssl_certificate /etc/letsencrypt/live/dunamismax.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dunamismax.com/privkey.pem;
+
+    return 301 https://dunamismax.com$request_uri;
+}
+
+# Main website
+server {
+    listen 80;
+    listen [::]:80;
+    server_name dunamismax.com;
+
+    # Redirect all HTTP traffic to HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+
+    # Allow ACME challenges for Let's Encrypt
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        try_files $uri =404;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name dunamismax.com;
+
+    ssl_certificate /etc/letsencrypt/live/dunamismax.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dunamismax.com/privkey.pem;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options SAMEORIGIN;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+
+    root /home/sawyer/github/hugo/dunamismax.com/public;
+    index index.html;
+
+    # Deny access to hidden files
+    location ~ /\. {
+        deny all;
+        # Except .well-known for Let's Encrypt
+        location ^~ /.well-known/ {
+            allow all;
+        }
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Logging
+    access_log /var/log/nginx/dunamismax_access.log combined;
+    error_log /var/log/nginx/dunamismax_error.log warn;
+}
+EOF
+
+    # Create configuration for cloud subdomain
+    cat > "/etc/nginx/sites-available/cloud.dunamismax.com" << 'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name cloud.dunamismax.com;
+
+    # Redirect all HTTP traffic to HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+
+    # Allow ACME challenges for Let's Encrypt
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        try_files $uri =404;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name cloud.dunamismax.com;
+
+    ssl_certificate /etc/letsencrypt/live/cloud.dunamismax.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cloud.dunamismax.com/privkey.pem;
+
+    # Security headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options SAMEORIGIN;
+    add_header X-Content-Type-Options nosniff;
+    add_header X-XSS-Protection "1; mode=block";
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Nextcloud specific headers
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Timeout settings
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}
+EOF
+
+    # Create symbolic links to enable sites
+    ln -sf /etc/nginx/sites-available/dunamismax.com /etc/nginx/sites-enabled/
+    ln -sf /etc/nginx/sites-available/cloud.dunamismax.com /etc/nginx/sites-enabled/
+
+    # Create directory for ACME challenges
+    mkdir -p /var/www/acme
+    chown -R nginx:nginx /var/www/acme
+
+    # Update PF rules to allow HTTPS and Let's Encrypt
+    if ! grep -q "# Allow HTTPS and Let's Encrypt" /etc/pf.conf; then
+        cat >> /etc/pf.conf << 'EOF'
+
+# Allow HTTPS and Let's Encrypt
+pass in on $ext_if proto tcp to any port { 80, 443 }
+EOF
+        pfctl -f /etc/pf.conf
+    fi
+
+    # Enable and start NGINX service
+    if [ -f /etc/rc.conf ]; then
+        if ! grep -q "nginx=YES" /etc/rc.conf; then
+            echo "nginx=YES" >> /etc/rc.conf
+        fi
+    else
+        echo "nginx=YES" > /etc/rc.conf
+    fi
+
+    # Start or restart NGINX
+    if /etc/rc.d/nginx status >/dev/null 2>&1; then
+        log_info "Restarting NGINX service..."
+        /etc/rc.d/nginx restart
+    else
+        log_info "Starting NGINX service..."
+        /etc/rc.d/nginx start
+    fi
+
+    log_info "NGINX configuration completed successfully"
+}
+
+configure_kernel_development() {
+    log_info "Setting up kernel development environment..."
+
+    # Create directory structure for kernel development
+    KERNEL_DEV_DIR="/home/${USERNAME}/kernel-dev"
+    SRC_DIR="/usr/src"
+    TOOLS_DIR="${KERNEL_DEV_DIR}/tools"
+    BUILD_DIR="${KERNEL_DEV_DIR}/builds"
+
+    mkdir -p "${KERNEL_DEV_DIR}"/{tools,builds,patches,docs,tests}
+
+    # Set up source code management
+    if [ ! -d "${SRC_DIR}" ]; then
+        log_info "Fetching NetBSD source tree..."
+        cd /usr
+        cvs -q -z2 -d anoncvs@anoncvs.NetBSD.org:/cvsroot checkout -P src
+    fi
+
+    # Create kernel configuration template
+    cat > "${KERNEL_DEV_DIR}/GENERIC.custom" << 'EOF'
+#	$NetBSD$
+#
+# This is a template for a custom kernel configuration
+# Derived from GENERIC with development options enabled
+
+include "arch/amd64/conf/std.amd64"
+maxusers 64
+
+# Development and debugging options
+makeoptions    DEBUG="-g"           # Build kernel with debugging symbols
+makeoptions    COPY_SYMTAB=1       # Enable symbol table
+options        DEBUG                # Enable kernel debugging
+options        DIAGNOSTIC           # Internal consistency checks
+options        KTRACE              # System call tracing support
+options        LOCKDEBUG           # Debug lock operations
+options        SYSCALL_DEBUG       # Debug system calls
+options        SYSCTL_DEBUG        # Debug sysctl operations
+
+# Core kernel debugging facilities
+options        DDB                 # In-kernel debugger
+options        DDB_ONPANIC=1       # Go into DDB on panic
+options        DDB_HISTORY_SIZE=512
+options        KGDB                # Remote kernel debugging
+options        TRAP_FANCY         # Display detailed trap information
+options        PRINTF_BUFSIZE=128  # Debugging buffer size
+
+# Memory debugging
+options        DIAGNOSTIC          # Memory consistency checks
+options        KMEMSTATS          # Collect kernel memory statistics
+options        POOL_DIAGNOSTIC     # Enable pool debugging
+
+# Include GENERIC configuration
+include "arch/amd64/conf/GENERIC"
+EOF
+
+    # Create build helpers and utilities
+    cat > "${TOOLS_DIR}/build-kernel" << 'EOF'
+#!/bin/sh
+# Helper script for building custom kernels
+
+set -e
+
+KERNEL_CONFIG="$1"
+BUILD_ID=$(date +%Y%m%d_%H%M%S)
+BUILD_DIR="/home/${USERNAME}/kernel-dev/builds/${BUILD_ID}"
+
+if [ -z "$KERNEL_CONFIG" ]; then
+    echo "Usage: $0 <kernel-config-file>"
+    exit 1
+fi
+
+# Create build directory
+mkdir -p "${BUILD_DIR}"
+
+# Build the kernel
+cd /usr/src
+./build.sh -U -u -j$(sysctl -n hw.ncpu) \
+    -O "${BUILD_DIR}" \
+    -D "${BUILD_DIR}/dest" \
+    -T "${BUILD_DIR}/tools" \
+    kernel="$KERNEL_CONFIG"
+
+echo "Kernel built successfully in ${BUILD_DIR}"
+echo "To install, run: cp ${BUILD_DIR}/dest/netbsd /netbsd"
+EOF
+
+    chmod +x "${TOOLS_DIR}/build-kernel"
+
+    # Create kernel debugging tools
+    cat > "${TOOLS_DIR}/crash-analyze" << 'EOF'
+#!/bin/sh
+# Helper script for analyzing kernel crash dumps
+
+DUMP="$1"
+KERNEL="$2"
+
+if [ -z "$DUMP" ] || [ -z "$KERNEL" ]; then
+    echo "Usage: $0 <crash-dump> <kernel-image>"
+    exit 1
+fi
+
+kgdb "$KERNEL" "$DUMP" << 'END'
+bt
+info registers
+ps
+END
+EOF
+
+    chmod +x "${TOOLS_DIR}/crash-analyze"
+
+    # Set up kernel development environment configurations
+    cat > "/home/${USERNAME}/.gdbinit" << 'EOF'
+# GDB initialization for kernel debugging
+set history filename ~/.gdb_history
+set history save on
+set history size 10000
+set history remove-duplicates unlimited
+
+# Kernel-specific macros
+define trace_thread
+    set $thread = ((struct lwp *)$arg0)->l_proc
+    printf "Process %d (%s)\n", $thread->p_pid, $thread->p_comm
+    bt
+end
+
+# Helper commands for NetBSD kernel debugging
+define btall
+    set $proc = allproc.lh_first
+    while $proc != 0
+        set $pid = $proc->p_pid
+        set $pname = $proc->p_comm
+        printf "\nProcess %d (%s):\n", $pid, $pname
+        set $lwp = $proc->p_lwps.lh_first
+        while $lwp != 0
+            printf "\nLWP %p:\n", $lwp
+            set $pmap = $proc->p_vmspace->vm_map.pmap
+            if $lwp->l_cpu != 0
+                thread $lwp->l_cpu
+                bt
+            end
+            set $lwp = $lwp->l_sibling.le_next
+        end
+        set $proc = $proc->p_list.le_next
+    end
+end
+EOF
+
+    # Create documentation for kernel development
+    cat > "${KERNEL_DEV_DIR}/docs/README.md" << 'EOF'
+# NetBSD Kernel Development Environment
+
+This environment is set up for kernel development and debugging on NetBSD.
+
+## Directory Structure
+
+- `tools/`: Development and debugging tools
+- `builds/`: Kernel build outputs
+- `patches/`: Custom kernel patches
+- `docs/`: Documentation
+- `tests/`: Kernel test suites
+
+## Common Tasks
+
+### Building a Custom Kernel
+
+1. Copy GENERIC.custom to /usr/src/sys/arch/amd64/conf/CUSTOM
+2. Modify the configuration as needed
+3. Run: ./tools/build-kernel CUSTOM
+
+### Analyzing Crash Dumps
+
+1. Save the crash dump (typically in /var/crash)
+2. Run: ./tools/crash-analyze /var/crash/netbsd.0.core /netbsd
+
+### Kernel Debugging
+
+1. Set up a serial console or remote debugging connection
+2. Use the provided .gdbinit configuration
+3. Connect with kgdb: gdb /netbsd
+EOF
+
+    # Set up testing framework
+    cat > "${KERNEL_DEV_DIR}/tests/run-tests" << 'EOF'
+#!/bin/sh
+# Basic kernel test framework
+
+# Run core kernel tests
+/usr/tests/kernel/all
+
+# Run file system tests
+/usr/tests/fs/all
+
+# Run network stack tests
+/usr/tests/net/all
+
+# Generate report
+echo "Test results saved in /var/tmp/ktests-$(date +%Y%m%d)"
+EOF
+
+    chmod +x "${KERNEL_DEV_DIR}/tests/run-tests"
+
+    # Set appropriate permissions
+    chown -R "${USERNAME}:wheel" "${KERNEL_DEV_DIR}"
+    chmod -R 750 "${KERNEL_DEV_DIR}"
+
+    # Add useful shell aliases for kernel development
+    cat >> "/home/${USERNAME}/.zshrc" << 'EOF'
+
+# Kernel Development Aliases
+alias kconfig='cd /usr/src/sys/arch/$(uname -m)/conf'
+alias ksrc='cd /usr/src/sys'
+alias kbuild='cd /usr/src && ./build.sh -U kernel=GENERIC'
+alias kdump='crashinfo /var/crash/netbsd.*.core'
+alias kcov='gcov -o /usr/src/sys/arch/$(uname -m)/compile/GENERIC'
+EOF
+
+    # Install additional development tools if not already present
+    pkg_add -U \
+        gdb \
+        ctags \
+        cscope \
+        ccache \
+        gcc \
+        lldb \
+        valgrind
+
+    log_info "Kernel development environment setup completed"
+    log_info "Documentation available in ${KERNEL_DEV_DIR}/docs/README.md"
+}
+
+monitor_system_health() {
+    log_info "Setting up system health monitoring and reporting framework..."
+
+    # Create directory structure for monitoring
+    HEALTH_DIR="/var/system-health"
+    REPORTS_DIR="${HEALTH_DIR}/reports"
+    METRICS_DIR="${HEALTH_DIR}/metrics"
+    ALERTS_DIR="${HEALTH_DIR}/alerts"
+
+    mkdir -p "${REPORTS_DIR}" "${METRICS_DIR}" "${ALERTS_DIR}"
+
+    # Create the main health check script
+    cat > "${HEALTH_DIR}/health_check.sh" << 'EOF'
+#!/bin/sh
+
+# This script performs comprehensive system health checks and generates detailed
+# reports. It monitors critical system components and maintains historical data
+# for trend analysis.
+
+set -e
+set -u
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+REPORT_FILE="/var/system-health/reports/health_${TIMESTAMP}.report"
+METRICS_FILE="/var/system-health/metrics/metrics_${TIMESTAMP}.dat"
+ALERT_FILE="/var/system-health/alerts/alerts_${TIMESTAMP}.log"
+
+# Function to calculate percentage with proper rounding
+calculate_percentage() {
+    echo "scale=2; $1 * 100 / $2" | bc
+}
+
+# Function to check if a metric exceeds its threshold
+check_threshold() {
+    local metric="$1"
+    local value="$2"
+    local threshold="$3"
+    local message="$4"
+
+    if [ "$(echo "${value} ${threshold}" | awk '{print ($1 >= $2)}')" = "1" ]; then
+        echo "[ALERT] ${message}" >> "${ALERT_FILE}"
+        return 1
+    fi
+    return 0
+}
+
+# Begin health check report
+{
+    echo "NetBSD System Health Report"
+    echo "Generated: $(date)"
+    echo "Hostname: $(hostname)"
+    echo "Kernel: $(uname -v)"
+    echo "Uptime: $(uptime)"
+    echo "----------------------------------------"
+
+    # CPU Load and Usage Analysis
+    echo "\nCPU Status:"
+    top -b -n 1 | head -n 5
+
+    # Record CPU metrics
+    CPU_IDLE=$(top -b -n 1 | grep "CPU:" | awk '{print $9}' | tr -d '%')
+    CPU_USAGE=$(echo "100 - ${CPU_IDLE}" | bc)
+    echo "${TIMESTAMP},cpu_usage,${CPU_USAGE}" >> "${METRICS_FILE}"
+    check_threshold "cpu" "${CPU_USAGE}" "90" "CPU usage is critically high: ${CPU_USAGE}%"
+
+    # Memory Analysis
+    echo "\nMemory Status:"
+    vm_stat=$(vmstat -s)
+    total_mem=$(echo "${vm_stat}" | grep "pages managed" | awk '{print $1}')
+    free_mem=$(echo "${vm_stat}" | grep "pages free" | awk '{print $1}')
+
+    # Calculate memory usage percentage
+    MEM_USAGE=$(calculate_percentage $((total_mem - free_mem)) ${total_mem})
+    echo "${TIMESTAMP},memory_usage,${MEM_USAGE}" >> "${METRICS_FILE}"
+    check_threshold "memory" "${MEM_USAGE}" "95" "Memory usage is critically high: ${MEM_USAGE}%"
+
+    # Disk Space Analysis
+    echo "\nDisk Space Status:"
+    df -h | grep -v '^Filesystem'
+
+    # Check each mounted filesystem
+    df -P | grep -v '^Filesystem' | while read -r line; do
+        usage=$(echo "${line}" | awk '{print $5}' | tr -d '%')
+        mount=$(echo "${line}" | awk '{print $6}')
+        echo "${TIMESTAMP},disk_usage,${usage},${mount}" >> "${METRICS_FILE}"
+        check_threshold "disk" "${usage}" "90" "Disk usage critical on ${mount}: ${usage}%"
+    done
+
+    # Network Interface Status
+    echo "\nNetwork Interface Status:"
+    netstat -i | grep -v '^Name'
+
+    # Record network metrics
+    netstat -i | grep -v '^Name' | while read -r line; do
+        interface=$(echo "${line}" | awk '{print $1}')
+        errors=$(echo "${line}" | awk '{print $5 + $7}')
+        echo "${TIMESTAMP},network_errors,${errors},${interface}" >> "${METRICS_FILE}"
+        check_threshold "network" "${errors}" "100" "High error count on ${interface}: ${errors}"
+    done
+
+    # Process Analysis
+    echo "\nProcess Status:"
+    ps -axwwo pid,pcpu,pmem,rss,command | head -n 10
+
+    # System Service Status
+    echo "\nService Status:"
+    services="sshd nginx postfix bind monit"
+    for service in ${services}; do
+        if /etc/rc.d/${service} status > /dev/null 2>&1; then
+            echo "${service}: Running"
+            echo "${TIMESTAMP},service_status,1,${service}" >> "${METRICS_FILE}"
+        else
+            echo "${service}: Stopped"
+            echo "${TIMESTAMP},service_status,0,${service}" >> "${METRICS_FILE}"
+            echo "[ALERT] Service ${service} is not running" >> "${ALERT_FILE}"
+        fi
+    done
+
+    # Security Checks
+    echo "\nSecurity Status:"
+    # Check failed login attempts
+    failed_logins=$(grep "Failed password" /var/log/authlog | wc -l)
+    echo "Failed login attempts: ${failed_logins}"
+    echo "${TIMESTAMP},failed_logins,${failed_logins}" >> "${METRICS_FILE}"
+    check_threshold "security" "${failed_logins}" "50" "High number of failed logins: ${failed_logins}"
+
+    # Check open ports
+    echo "\nOpen Ports:"
+    netstat -an | grep LISTEN
+
+    # System Updates Status
+    echo "\nSystem Updates Status:"
+    pkg_admin fetch-pkg-vulnerabilities > /dev/null 2>&1
+    pkg_admin audit
+
+    # Performance Metrics
+    echo "\nPerformance Metrics:"
+    vmstat 1 5
+
+    # Generate Recommendations
+    echo "\nRecommendations:"
+    if [ -s "${ALERT_FILE}" ]; then
+        echo "Critical issues found:"
+        cat "${ALERT_FILE}"
+        echo "\nSuggested actions:"
+        while read -r alert; do
+            case "${alert}" in
+                *"CPU usage"*)
+                    echo "- Review and optimize running processes"
+                    echo "- Consider upgrading CPU resources"
+                    ;;
+                *"Memory usage"*)
+                    echo "- Analyze memory-intensive processes"
+                    echo "- Consider increasing swap space"
+                    ;;
+                *"Disk usage"*)
+                    echo "- Clean up unnecessary files"
+                    echo "- Consider expanding storage"
+                    ;;
+                *"Service"*)
+                    echo "- Investigate and restart failed services"
+                    echo "- Review service logs for errors"
+                    ;;
+            esac
+        done < "${ALERT_FILE}"
+    else
+        echo "No critical issues found."
+    fi
+
+} | tee "${REPORT_FILE}"
+
+# Cleanup old reports (keep last 30 days)
+find "${REPORTS_DIR}" -type f -mtime +30 -delete
+find "${METRICS_DIR}" -type f -mtime +30 -delete
+find "${ALERTS_DIR}" -type f -mtime +30 -delete
+
+# Send alerts if any were generated
+if [ -s "${ALERT_FILE}" ]; then
+    mail -s "System Health Alerts - $(hostname)" root < "${ALERT_FILE}"
+fi
+EOF
+
+    chmod +x "${HEALTH_DIR}/health_check.sh"
+
+    # Create a trend analysis script
+    cat > "${HEALTH_DIR}/analyze_trends.sh" << 'EOF'
+#!/bin/sh
+
+# This script analyzes system health trends over time
+
+METRICS_DIR="/var/system-health/metrics"
+DAYS_TO_ANALYZE=30
+
+echo "System Health Trend Analysis"
+echo "Last ${DAYS_TO_ANALYZE} days"
+echo "----------------------------------------"
+
+# Analyze CPU usage trends
+echo "\nCPU Usage Trends:"
+grep "cpu_usage" "${METRICS_DIR}"/* | \
+    awk -F',' '{sum+=$3; count++} END {printf "Average: %.2f%%\n", sum/count}'
+
+# Analyze memory usage trends
+echo "\nMemory Usage Trends:"
+grep "memory_usage" "${METRICS_DIR}"/* | \
+    awk -F',' '{sum+=$3; count++} END {printf "Average: %.2f%%\n", sum/count}'
+
+# Analyze disk usage trends
+echo "\nDisk Usage Trends:"
+grep "disk_usage" "${METRICS_DIR}"/* | \
+    awk -F',' '{
+        usage[$4]+=$3;
+        count[$4]++
+    } END {
+        for (fs in usage)
+            printf "%s: %.2f%%\n", fs, usage[fs]/count[fs]
+    }'
+
+# Analyze service stability
+echo "\nService Stability:"
+grep "service_status" "${METRICS_DIR}"/* | \
+    awk -F',' '{
+        uptime[$4]+=($3=="1"?1:0);
+        total[$4]++
+    } END {
+        for (svc in uptime)
+            printf "%s: %.2f%%\n", svc, (uptime[svc]/total[svc])*100
+    }'
+EOF
+
+    chmod +x "${HEALTH_DIR}/analyze_trends.sh"
+
+    # Set up periodic execution via cron
+    cat > "/etc/cron.d/system-health" << EOF
+# Run health check every hour
+0 * * * * root ${HEALTH_DIR}/health_check.sh >/dev/null 2>&1
+
+# Run trend analysis daily
+0 0 * * * root ${HEALTH_DIR}/analyze_trends.sh > ${REPORTS_DIR}/daily_trends.report 2>&1
+EOF
+
+    # Create a simple web interface for viewing reports
+    mkdir -p /var/www/health-reports
+    cat > "/var/www/health-reports/index.php" << 'EOF'
+<?php
+header("Content-Type: text/html; charset=UTF-8");
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Health Reports</title>
+    <style>
+        body { font-family: monospace; margin: 2em; }
+        .report { margin: 1em 0; padding: 1em; border: 1px solid #ccc; }
+        .alert { color: red; }
+    </style>
+</head>
+<body>
+    <h1>System Health Reports</h1>
+    <?php
+    $reports_dir = '/var/system-health/reports/';
+    $files = array_diff(scandir($reports_dir, SCANDIR_SORT_DESCENDING), array('..', '.'));
+
+    foreach ($files as $file) {
+        echo "<div class='report'>";
+        echo "<h3>$file</h3>";
+        echo "<pre>";
+        echo htmlspecialchars(file_get_contents($reports_dir . $file));
+        echo "</pre>";
+        echo "</div>";
+    }
+    ?>
+</body>
+</html>
+EOF
+
+    # Set appropriate permissions
+    chown -R www:www /var/www/health-reports
+    chmod -R 750 "${HEALTH_DIR}"
+
+    # Add aliases for quick access to health monitoring
+    cat >> "/home/${USERNAME}/.zshrc" << 'EOF'
+
+# System Health Monitoring Aliases
+alias health='sudo /var/system-health/health_check.sh'
+alias health-trends='sudo /var/system-health/analyze_trends.sh'
+alias health-reports='less /var/system-health/reports/$(ls -t /var/system-health/reports | head -1)'
+EOF
+
+    log_info "System health monitoring framework has been set up successfully"
+    log_info "Health checks will run hourly and trend analysis daily"
+    log_info "Reports are available in ${REPORTS_DIR}"
+    log_info "Web interface available at http://localhost/health-reports/"
+}
+
+configure_container_environment() {
+    log_info "Setting up comprehensive container and virtualization development environment..."
+
+    # Create structured directory hierarchy for container development
+    CONTAINER_BASE="/usr/local/container-env"
+    CONTAINER_DIRS=(
+        "buildenv"     # Build environments and Dockerfiles
+        "images"       # Local image storage
+        "compose"      # Docker Compose projects
+        "scripts"      # Utility scripts
+        "registry"     # Local registry data
+        "volumes"      # Persistent volume data
+        "configs"      # Container configurations
+        "templates"    # Template files
+        "security"     # Security policies and configs
+    )
+
+    # Create directories with proper permissions
+    for dir in "${CONTAINER_DIRS[@]}"; do
+        mkdir -p "${CONTAINER_BASE}/${dir}"
+        chmod 750 "${CONTAINER_BASE}/${dir}"
+    done
+
+    # Configure container runtime environment
+    cat > "/etc/containers/containers.conf" << 'EOF'
+[containers]
+# Network configuration
+netns="bridge"
+network_interface_name="br0"
+network_cmd="/usr/sbin/bridge"
+
+# Security settings
+userns="host"
+ipcns="host"
+utsns="private"
+cgroupns="host"
+cgroups="enabled"
+
+# Logging configuration
+log_driver = "k8s-file"
+log_size_max = 52428800
+log_tag = "{{.Name}}_{{.ID}}"
+
+# Resource management
+pids_limit = 2048
+memory_limit = "4g"
+cpu_shares = 1024
+
+[engine]
+# Runtime settings
+cgroup_manager = "cgroupfs"
+events_logger = "journald"
+runtime = "crun"
+runtime_path = ["/usr/bin/crun", "/usr/local/bin/crun"]
+
+# Storage configuration
+volume_path = "/var/lib/containers/storage/volumes"
+image_default_transport = "docker://"
+image_volume = "bind"
+
+[network]
+# Network configuration details
+network_backend = "cni"
+cni_plugin_dirs = ["/usr/local/lib/cni"]
+default_subnet = "10.88.0.0/16"
+
+EOF
+
+    # Set up local container registry configuration
+    cat > "${CONTAINER_BASE}/configs/registry.yml" << 'EOF'
+version: 0.1
+log:
+  fields:
+    service: registry
+storage:
+  cache:
+    blobdescriptor: inmemory
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: :5000
+  headers:
+    X-Content-Type-Options: [nosniff]
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3
+EOF
+
+    # Create utility scripts for container management
+    cat > "${CONTAINER_BASE}/scripts/build-secure-container" << 'EOF'
+#!/bin/sh
+# Helper script for building containers with security best practices
+
+set -e
+set -u
+
+IMAGE_NAME="$1"
+VERSION="${2:-latest}"
+CONTEXT_DIR="${3:-.}"
+
+# Security scanning configuration
+TRIVY_SEVERITY="HIGH,CRITICAL"
+DOCKLE_IGNORE="CIS-DI-0001,CIS-DI-0005,CIS-DI-0006"
+
+# Build the container
+buildah build-using-dockerfile \
+    --format docker \
+    --security-opt seccomp=unconfined \
+    --security-opt label=disable \
+    --tag "${IMAGE_NAME}:${VERSION}" \
+    "${CONTEXT_DIR}"
+
+# Scan the image for vulnerabilities
+if command -v trivy >/dev/null 2>&1; then
+    echo "Scanning image for vulnerabilities..."
+    trivy image --severity "${TRIVY_SEVERITY}" "${IMAGE_NAME}:${VERSION}"
+fi
+
+# Check Dockerfile best practices
+if command -v dockle >/dev/null 2>&1; then
+    echo "Checking Dockerfile best practices..."
+    dockle --ignore "${DOCKLE_IGNORE}" "${IMAGE_NAME}:${VERSION}"
+fi
+EOF
+    chmod +x "${CONTAINER_BASE}/scripts/build-secure-container"
+
+    # Create container security policies
+    cat > "${CONTAINER_BASE}/security/seccomp.json" << 'EOF'
+{
+    "defaultAction": "SCMP_ACT_ERRNO",
+    "architectures": ["SCMP_ARCH_X86_64"],
+    "syscalls": [
+        {
+            "names": [
+                "accept4", "access", "arch_prctl", "bind", "brk",
+                "chdir", "chmod", "chown", "close", "connect",
+                "dup2", "execve", "exit_group", "faccessat",
+                "fchdir", "fchmod", "fchown", "fcntl", "fstat",
+                "futex", "getdents64", "getegid", "geteuid",
+                "getgid", "getpeername", "getpgrp", "getpid",
+                "getppid", "getpriority", "getrandom", "getresgid",
+                "getresuid", "getrlimit", "getsockname",
+                "getsockopt", "gettid", "gettimeofday", "getuid",
+                "io_setup", "ioctl", "kill", "lseek", "lstat",
+                "madvise", "mkdir", "mmap", "mprotect", "munmap",
+                "nanosleep", "newfstatat", "open", "openat",
+                "pipe2", "pread64", "prlimit64", "pselect6",
+                "read", "readlink", "readlinkat", "rename",
+                "rmdir", "rt_sigaction", "rt_sigprocmask",
+                "rt_sigqueueinfo", "rt_sigreturn", "select",
+                "sendto", "set_robust_list", "set_tid_address",
+                "setgid", "setgroups", "setitimer", "setpgid",
+                "setresgid", "setresuid", "setsid", "setsockopt",
+                "setuid", "shmat", "shmctl", "shmdt", "shmget",
+                "shutdown", "socket", "socketpair", "stat",
+                "statfs", "sysinfo", "umask", "uname", "unlink",
+                "wait4", "write"
+            ],
+            "action": "SCMP_ACT_ALLOW"
+        }
+    ]
+}
+EOF
+
+    # Set up container networking
+    cat > "/etc/rc.d/container-network" << 'EOF'
+#!/bin/sh
+#
+# Container networking service
+
+. /etc/rc.subr
+
+name="container_network"
+rcvar="${name}_enable"
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+
+container_network_start()
+{
+    # Create and configure bridge interface
+    /sbin/ifconfig bridge0 create
+    /sbin/ifconfig bridge0 inet 10.88.0.1/16
+    /sbin/ifconfig bridge0 up
+
+    # Enable IP forwarding
+    /sbin/sysctl -w net.inet.ip.forwarding=1
+}
+
+container_network_stop()
+{
+    /sbin/ifconfig bridge0 destroy
+}
+
+load_rc_config $name
+run_rc_command "$1"
+EOF
+    chmod +x "/etc/rc.d/container-network"
+
+    # Create helpful aliases for container management
+    cat >> "/home/${USERNAME}/.zshrc" << 'EOF'
+
+# Container Management Aliases
+alias cb='${CONTAINER_BASE}/scripts/build-secure-container'
+alias cps='podman ps --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"'
+alias clog='podman logs -f'
+alias cex='podman exec -it'
+alias ccp='podman cp'
+alias cst='podman stats'
+alias cin='podman inspect'
+alias cprune='podman system prune -a --volumes'
+EOF
+
+    # Enable container services in rc.conf
+    if [ -f /etc/rc.conf ]; then
+        for service in container_network container_registry; do
+            if ! grep -q "${service}_enable=\"YES\"" /etc/rc.conf; then
+                echo "${service}_enable=\"YES\"" >> /etc/rc.conf
+            fi
+        done
+    fi
+
+    log_info "Container environment setup completed successfully"
+    log_info "Container tools and scripts available in ${CONTAINER_BASE}"
+    log_info "Run 'source ~/.zshrc' to load new container aliases"
+}
+
+configure_testing_environment() {
+    log_info "Setting up comprehensive testing environment..."
+
+    # Create structured directory hierarchy for testing
+    TEST_BASE="/usr/local/test-env"
+    TEST_DIRS=(
+        "unit"           # Unit test frameworks and configurations
+        "integration"    # Integration testing tools
+        "performance"    # Performance testing tools and configs
+        "security"       # Security testing frameworks
+        "results"        # Test results storage
+        "scripts"        # Testing utility scripts
+        "templates"      # Test templates and examples
+        "fixtures"       # Test data and fixtures
+    )
+
+    # Create directories with appropriate permissions
+    for dir in "${TEST_DIRS[@]}"; do
+        mkdir -p "${TEST_BASE}/${dir}"
+        chmod 750 "${TEST_BASE}/${dir}"
+    done
+
+    # Create performance testing configuration file
+    cat > "${TEST_BASE}/performance/benchmark.conf" << 'EOF'
+# System Performance Test Configuration
+
+# CPU Testing Parameters
+cpu_test:
+    duration: 600        # Test duration in seconds
+    thread_counts:       # Number of threads to test with
+        - 1
+        - $(( $(sysctl -n hw.ncpu) ))
+        - $(( $(sysctl -n hw.ncpu) * 2 ))
+    test_types:
+        - cpu_fixed_point
+        - cpu_floating_point
+        - cpu_prime
+        - cpu_matrix
+        - cpu_encryption
+
+# Memory Testing Parameters
+memory_test:
+    total_size: 4G      # Total amount of memory to test
+    block_sizes:        # Different block sizes to test
+        - 4K
+        - 64K
+        - 1M
+        - 16M
+    operations:
+        - sequential_read
+        - sequential_write
+        - random_read
+        - random_write
+    threads: 4          # Number of threads for memory testing
+
+# Disk I/O Testing Parameters
+disk_test:
+    file_size: 8G       # Size of test file
+    block_sizes:
+        - 4K
+        - 64K
+        - 1M
+    io_patterns:
+        - sequential
+        - random
+    io_depths:          # Queue depths to test
+        - 1
+        - 16
+        - 32
+    filesystems:        # Filesystems to test
+        - ffs
+        - ext2fs
+        - tmpfs
+
+# Network Testing Parameters
+network_test:
+    protocols:
+        - tcp
+        - udp
+    packet_sizes:
+        - 64
+        - 1500
+        - 9000
+    duration: 60        # Test duration in seconds
+    parallel: 4         # Number of parallel streams
+EOF
+
+    # Create primary test execution script
+    cat > "${TEST_BASE}/scripts/run-system-tests" << 'EOF'
+#!/bin/sh
+# Comprehensive system testing script
+
+set -e
+set -u
+
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RESULTS_DIR="${TEST_BASE}/results/${TIMESTAMP}"
+mkdir -p "${RESULTS_DIR}"
+
+log_test() {
+    local level="$1"
+    shift
+    printf "[%s] [%s] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$*" | \
+        tee -a "${RESULTS_DIR}/test.log"
+}
+
+# CPU Performance Testing
+cpu_performance_test() {
+    log_test "INFO" "Starting CPU performance tests"
+
+    sysbench cpu \
+        --cpu-max-prime=20000 \
+        --threads=4 \
+        --time=300 \
+        run > "${RESULTS_DIR}/cpu_test.log" 2>&1
+
+    # Extract and format results
+    awk '/events per second/ {print "CPU Events/sec:", $4}' \
+        "${RESULTS_DIR}/cpu_test.log" >> "${RESULTS_DIR}/summary.txt"
+}
+
+# Memory Performance Testing
+memory_performance_test() {
+    log_test "INFO" "Starting memory performance tests"
+
+    sysbench memory \
+        --memory-block-size=1K \
+        --memory-total-size=100G \
+        --memory-access-mode=seq \
+        run > "${RESULTS_DIR}/memory_test.log" 2>&1
+
+    # Extract and format results
+    awk '/transferred/ {print "Memory Transfer Rate:", $4, $5}' \
+        "${RESULTS_DIR}/memory_test.log" >> "${RESULTS_DIR}/summary.txt"
+}
+
+# Disk I/O Performance Testing
+disk_performance_test() {
+    log_test "INFO" "Starting disk I/O performance tests"
+
+    # Create test file
+    TEST_FILE="/tmp/fio_test"
+
+    fio --filename="${TEST_FILE}" \
+        --direct=1 \
+        --rw=randrw \
+        --bs=4k \
+        --ioengine=posixaio \
+        --iodepth=16 \
+        --group_reporting \
+        --name=test \
+        --size=1G \
+        --runtime=60 \
+        --numjobs=4 \
+        --output="${RESULTS_DIR}/disk_test.log"
+
+    # Clean up test file
+    rm -f "${TEST_FILE}"
+
+    # Extract and format results
+    awk '/READ/ {print "Disk Read IOPS:", $3}' \
+        "${RESULTS_DIR}/disk_test.log" >> "${RESULTS_DIR}/summary.txt"
+    awk '/WRITE/ {print "Disk Write IOPS:", $3}' \
+        "${RESULTS_DIR}/disk_test.log" >> "${RESULTS_DIR}/summary.txt"
+}
+
+# Network Performance Testing
+network_performance_test() {
+    log_test "INFO" "Starting network performance tests"
+
+    # Start iperf3 server in background
+    iperf3 -s -D
+
+    # Run client test
+    iperf3 -c localhost \
+        -t 30 \
+        -P 4 \
+        -J > "${RESULTS_DIR}/network_test.json"
+
+    # Stop iperf3 server
+    pkill iperf3
+
+    # Extract and format results
+    jq -r '.end.sum_received.bits_per_second' "${RESULTS_DIR}/network_test.json" | \
+        awk '{print "Network Throughput:", $1/1000000, "Mbps"}' \
+        >> "${RESULTS_DIR}/summary.txt"
+}
+
+# Run all tests
+main() {
+    log_test "INFO" "Starting system performance tests"
+
+    # Create results directory
+    mkdir -p "${RESULTS_DIR}"
+
+    # Run individual tests
+    cpu_performance_test
+    memory_performance_test
+    disk_performance_test
+    network_performance_test
+
+    log_test "INFO" "All tests completed. Results available in ${RESULTS_DIR}"
+
+    # Generate summary report
+    {
+        echo "System Performance Test Summary"
+        echo "=============================="
+        echo "Date: $(date)"
+        echo "System: $(uname -a)"
+        echo "CPU: $(sysctl -n hw.model)"
+        echo "Memory: $(sysctl -n hw.physmem | awk '{print $1/1024/1024 "MB"}')"
+        echo "=============================="
+        cat "${RESULTS_DIR}/summary.txt"
+    } | tee "${RESULTS_DIR}/report.txt"
+}
+
+# Execute main function
+main "$@"
+EOF
+    chmod +x "${TEST_BASE}/scripts/run-system-tests"
+
+    # Create test data generator script
+    cat > "${TEST_BASE}/scripts/generate-test-data" << 'EOF'
+#!/bin/sh
+# Generate test data for various testing scenarios
+
+set -e
+set -u
+
+FIXTURES_DIR="${TEST_BASE}/fixtures"
+
+# Generate random text data
+dd if=/dev/urandom bs=1M count=10 | base64 > "${FIXTURES_DIR}/random.txt"
+
+# Generate sample JSON data
+cat > "${FIXTURES_DIR}/sample.json" << 'INNER_EOF'
+{
+    "test_cases": [
+        {"id": 1, "name": "basic_test", "expected": "pass"},
+        {"id": 2, "name": "edge_case", "expected": "pass"},
+        {"id": 3, "name": "error_case", "expected": "fail"}
+    ]
+}
+INNER_EOF
+
+# Generate sample CSV data
+cat > "${FIXTURES_DIR}/sample.csv" << 'INNER_EOF'
+id,name,value,timestamp
+1,test1,100,2024-01-19T10:00:00
+2,test2,200,2024-01-19T10:01:00
+3,test3,300,2024-01-19T10:02:00
+INNER_EOF
+EOF
+    chmod +x "${TEST_BASE}/scripts/generate-test-data"
+
+    # Add testing aliases to shell configuration
+    cat >> "/home/${USERNAME}/.zshrc" << EOF
+
+# Testing Environment Aliases
+alias run-tests='${TEST_BASE}/scripts/run-system-tests'
+alias gen-testdata='${TEST_BASE}/scripts/generate-test-data'
+alias test-report='less \$(ls -t ${TEST_BASE}/results/*/report.txt | head -1)'
+EOF
+
+    # Set appropriate permissions
+    chown -R "${USERNAME}:wheel" "${TEST_BASE}"
+
+    log_info "Testing environment setup completed successfully"
+    log_info "Test scripts available in ${TEST_BASE}/scripts"
+    log_info "Run 'source ~/.zshrc' to load new testing aliases"
+}
+
+install_packages() {
+    log_info "Starting package installation process..."
+
+    # Verify pkg_add is available
+    if ! command -v pkg_add >/dev/null 2>&1; then
+        log_error "pkg_add not found. Please install pkgsrc-tools first."
+        return 1
+    }
+
+    # Create temporary directory for package management
+    PKG_TEMP_DIR=$(mktemp -d /tmp/pkg_install.XXXXXX)
+    if [ ! -d "$PKG_TEMP_DIR" ]; then
+        log_error "Failed to create temporary directory"
+        return 1
+    }
+
+    # Cleanup function for temporary files
+    cleanup_pkg_temp() {
+        log_debug "Cleaning up temporary package files..."
+        rm -rf "$PKG_TEMP_DIR"
+    }
+    trap cleanup_pkg_temp EXIT
+
+    # Update PKG_PATH if defined
+    if [ -n "${PKG_PATH:-}" ]; then
+        export PKG_PATH
+        log_info "Using package repository: $PKG_PATH"
+    fi
+
+    # Update package database
+    log_info "Updating package database..."
+    if ! pkg_add -u >/dev/null 2>&1; then
+        log_warn "Package database update failed, continuing with installation"
+    fi
+
+    # Create a list of packages to install
+    echo "$PACKAGES" | grep -v '^#' | tr -s '[:space:]' '\n' > "$PKG_TEMP_DIR/pkg_list"
+
+    # Initialize counters
+    total_packages=$(wc -l < "$PKG_TEMP_DIR/pkg_list")
+    installed_count=0
+    failed_count=0
+    skipped_count=0
+
+    # Create lists for tracking
+    touch "$PKG_TEMP_DIR/failed_packages"
+    touch "$PKG_TEMP_DIR/installed_packages"
+    touch "$PKG_TEMP_DIR/skipped_packages"
+
+    log_info "Beginning installation of $total_packages packages..."
+
+    # Process each package
+    while read -r package; do
+        # Skip empty lines
+        [ -z "$package" ] && continue
+
+        # Skip comments
+        [[ "$package" =~ ^#.*$ ]] && continue
+
+        log_info "Processing package: $package"
+
+        # Check if package is already installed
+        if pkg_info -e "$package" >/dev/null 2>&1; then
+            log_info "Package $package is already installed, skipping"
+            echo "$package" >> "$PKG_TEMP_DIR/skipped_packages"
+            ((skipped_count++))
+            continue
+        fi
+
+        # Attempt to install the package
+        if pkg_add -U "$package" >/dev/null 2>&1; then
+            log_info "Successfully installed $package"
+            echo "$package" >> "$PKG_TEMP_DIR/installed_packages"
+            ((installed_count++))
+        else
+            log_error "Failed to install $package"
+            echo "$package" >> "$PKG_TEMP_DIR/failed_packages"
+            ((failed_count++))
+
+            # Check if this is a critical package
+            case "$package" in
+                "openssl"|"nginx"|"pkg-config"|"gcc"|"clang")
+                    log_error "Critical package $package failed to install. Aborting."
+                    return 1
+                    ;;
+            esac
+        fi
+
+        # Report progress
+        progress=$((100 * (installed_count + failed_count + skipped_count) / total_packages))
+        log_info "Installation progress: $progress% ($((installed_count + failed_count + skipped_count))/$total_packages)"
+
+    done < "$PKG_TEMP_DIR/pkg_list"
+
+    # Generate installation report
+    {
+        echo "Package Installation Report"
+        echo "=========================="
+        echo "Total packages processed: $total_packages"
+        echo "Successfully installed: $installed_count"
+        echo "Already installed (skipped): $skipped_count"
+        echo "Failed installations: $failed_count"
+
+        if [ $failed_count -gt 0 ]; then
+            echo -e "\nFailed packages:"
+            cat "$PKG_TEMP_DIR/failed_packages"
+        fi
+
+        if [ $installed_count -gt 0 ]; then
+            echo -e "\nNewly installed packages:"
+            cat "$PKG_TEMP_DIR/installed_packages"
+        fi
+    } > "$LOG_FILE.pkg_report"
+
+    log_info "Package installation completed. See $LOG_FILE.pkg_report for details"
+
+    # Determine if the installation was successful enough to continue
+    if [ $failed_count -eq 0 ]; then
+        log_info "All packages were installed successfully"
+        return 0
+    elif [ $installed_count -gt $((total_packages * 90 / 100)) ]; then
+        log_warn "Installation completed with some failures, but enough packages installed to continue"
+        return 0
+    else
+        log_error "Too many package installation failures. Please check $LOG_FILE.pkg_report"
+        return 1
+    fi
+}
+
+configure_ssh() {
+    log_info "Configuring SSH with enhanced security settings..."
+
+    # Define SSH configuration directory and files
+    SSH_CONFIG="/etc/ssh/sshd_config"
+    SSH_CONFIG_DIR="/etc/ssh"
+    MODULI_FILE="${SSH_CONFIG_DIR}/moduli"
+
+    # Backup original configuration
+    if [ -f "$SSH_CONFIG" ]; then
+        cp "$SSH_CONFIG" "${SSH_CONFIG}.backup.$(date +%Y%m%d)"
+        log_info "Created backup of original SSH configuration"
+    fi
+
+    # Generate new host keys if they don't exist or are outdated
+    for key_type in rsa ed25519; do
+        key_file="${SSH_CONFIG_DIR}/ssh_host_${key_type}_key"
+        if [ ! -f "$key_file" ] || [ "$(stat -f %m "$key_file")" -lt "$(date -v-365d +%s)" ]; then
+            log_info "Generating new $key_type host key..."
+            rm -f "$key_file" "${key_file}.pub"
+            ssh-keygen -t "$key_type" -f "$key_file" -N "" -q
+        fi
+    done
+
+    # Create or regenerate DH moduli if needed
+    if [ ! -f "$MODULI_FILE" ] || [ "$(stat -f %m "$MODULI_FILE")" -lt "$(date -v-30d +%s)" ]; then
+        log_info "Generating new DH moduli (this may take a while)..."
+        ssh-keygen -M generate -O bits=3072 -o "${MODULI_FILE}.tmp"
+        ssh-keygen -M screen -f "${MODULI_FILE}.tmp" -o "$MODULI_FILE"
+        rm -f "${MODULI_FILE}.tmp"
+    fi
+
+    # Create new sshd configuration
+    cat > "$SSH_CONFIG" << 'EOF'
+# Security and authentication settings
+Protocol 2
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+# Authentication methods
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitRootLogin no
+MaxAuthTries 3
+AuthenticationMethods publickey
+
+# Access control
+AllowUsers sawyer
+AllowGroups wheel
+
+# Network settings
+AddressFamily inet
+Port 22
+ListenAddress 0.0.0.0
+LoginGraceTime 30
+MaxStartups 10:30:100
+TCPKeepAlive yes
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+# Cryptographic settings
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
+
+# Logging and monitoring
+SyslogFacility AUTH
+LogLevel VERBOSE
+PrintLastLog yes
+PrintMotd no
+
+# Environment and session settings
+AcceptEnv LANG LC_*
+X11Forwarding no
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+GatewayPorts no
+PermitTunnel no
+Banner none
+PermitUserEnvironment no
+UseDNS no
+
+# SFTP configuration
+Subsystem sftp /usr/libexec/sftp-server -f AUTHPRIV -l INFO
+EOF
+
+    # Set secure permissions on SSH configuration files
+    chmod 600 "$SSH_CONFIG"
+    chmod 600 ${SSH_CONFIG_DIR}/ssh_host_*_key
+    chmod 644 ${SSH_CONFIG_DIR}/ssh_host_*_key.pub
+    chmod 644 "$MODULI_FILE"
+    chown -R root:wheel "$SSH_CONFIG_DIR"
+
+    # Create user SSH directory if it doesn't exist
+    USER_SSH_DIR="/home/${USERNAME}/.ssh"
+    if [ ! -d "$USER_SSH_DIR" ]; then
+        mkdir -p "$USER_SSH_DIR"
+        chmod 700 "$USER_SSH_DIR"
+        chown "${USERNAME}:wheel" "$USER_SSH_DIR"
+    fi
+
+    # Generate user SSH key if it doesn't exist
+    USER_KEY_FILE="${USER_SSH_DIR}/id_ed25519"
+    if [ ! -f "$USER_KEY_FILE" ]; then
+        log_info "Generating SSH key for user ${USERNAME}..."
+        su - "$USERNAME" -c "ssh-keygen -t ed25519 -f \"$USER_KEY_FILE\" -N \"\""
+    fi
+
+    # Set up SSH agent autostart in user's shell configuration
+    cat >> "/home/${USERNAME}/.zshrc" << 'EOF'
+
+# SSH Agent Configuration
+if [ -z "$SSH_AUTH_SOCK" ]; then
+    eval $(ssh-agent -s) > /dev/null
+    trap "ssh-agent -k" EXIT
+fi
+EOF
+
+    # Create ssh-audit script for periodic security checks
+    cat > "/usr/local/sbin/ssh-audit" << 'EOF'
+#!/bin/sh
+# Periodic SSH security audit script
+
+LOG_FILE="/var/log/ssh-audit.log"
+CONFIG="/etc/ssh/sshd_config"
+
+{
+    echo "SSH Security Audit - $(date)"
+    echo "=========================="
+
+    # Check SSH configuration permissions
+    echo "\nConfiguration file permissions:"
+    ls -l "$CONFIG"
+
+    # Check SSH host keys
+    echo "\nHost key permissions:"
+    ls -l /etc/ssh/ssh_host_*
+
+    # Check allowed ciphers and algorithms
+    echo "\nAllowed ciphers and algorithms:"
+    sshd -T | grep -E "^(ciphers|macs|kexalgorithms)"
+
+    # Check recent authentication failures
+    echo "\nRecent authentication failures:"
+    grep "Failed password" /var/log/authlog | tail -n 5
+
+    # Check for unauthorized access attempts
+    echo "\nUnauthorized access attempts:"
+    grep "Invalid user" /var/log/authlog | tail -n 5
+
+    echo "\nAudit completed at $(date)"
+} > "$LOG_FILE"
+
+# Send report to admin if there are any "Failed password" attempts
+if grep -q "Failed password" "$LOG_FILE"; then
+    mail -s "SSH Security Audit Report - $(hostname)" root < "$LOG_FILE"
+fi
+EOF
+
+    chmod 700 "/usr/local/sbin/ssh-audit"
+
+    # Add periodic SSH audit to daily security checks
+    echo "30 4 * * * root /usr/local/sbin/ssh-audit" > /etc/cron.d/ssh-audit
+
+    # Create SSH connection monitoring script
+    cat > "/usr/local/sbin/ssh-monitor" << 'EOF'
+#!/bin/sh
+# Monitor SSH connections and record statistics
+
+LOG_DIR="/var/log/ssh-monitor"
+mkdir -p "$LOG_DIR"
+
+# Record current connections
+netstat -an | grep ":22 " > "$LOG_DIR/connections.$(date +%Y%m%d)"
+
+# Monitor for potential brute force attempts
+grep "Failed password" /var/log/authlog | \
+    awk '{print $1,$2,$3,$11}' | \
+    sort | uniq -c | \
+    awk '$1 >= 5' > "$LOG_DIR/potential_attacks.$(date +%Y%m%d)"
+
+# Alert if there are too many failed attempts
+FAILED_COUNT=$(grep "Failed password" /var/log/authlog | wc -l)
+if [ "$FAILED_COUNT" -gt 100 ]; then
+    echo "Warning: High number of failed SSH attempts: $FAILED_COUNT" | \
+        mail -s "SSH Attack Warning - $(hostname)" root
+fi
+
+# Cleanup old logs (keep 30 days)
+find "$LOG_DIR" -type f -mtime +30 -delete
+EOF
+
+    chmod 700 "/usr/local/sbin/ssh-monitor"
+
+    # Add SSH monitoring to hourly cron
+    echo "0 * * * * root /usr/local/sbin/ssh-monitor" > /etc/cron.d/ssh-monitor
+
+    # Restart SSH service to apply changes
+    if /etc/rc.d/sshd restart >/dev/null 2>&1; then
+        log_info "SSH configuration completed and service restarted successfully"
+    else
+        log_error "Failed to restart SSH service"
+        return 1
+    fi
+
+    log_info "SSH configuration completed. Please test new connection before closing this session."
+}
+
+setup_development() {
+    log_info "Setting up comprehensive development environment..."
+
+    # Create development directory structure
+    DEV_BASE="/home/${USERNAME}/development"
+    DEV_DIRS=(
+        "projects"          # Main projects directory
+        "toolchains"        # Custom toolchains
+        "scripts"           # Development scripts
+        "docs"             # Documentation
+        "build"            # Build outputs
+        "samples"          # Code samples and templates
+        "libraries"        # Local libraries
+        "environments"     # Virtual environments
+    )
+
+    # Create the directory structure with appropriate permissions
+    for dir in "${DEV_DIRS[@]}"; do
+        mkdir -p "${DEV_BASE}/${dir}"
+        chmod 750 "${DEV_BASE}/${dir}"
+    done
+
+    # Set up compiler and toolchain configurations
+    cat > "${DEV_BASE}/toolchains/gcc.conf" << 'EOF'
+# GCC optimization settings
+CFLAGS="-O2 -pipe -march=native"
+CXXFLAGS="-O2 -pipe -march=native"
+LDFLAGS="-Wl,-O2"
+MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
+EOF
+
+    cat > "${DEV_BASE}/toolchains/clang.conf" << 'EOF'
+# Clang optimization settings
+CFLAGS="-O2 -pipe -march=native -flto=thin"
+CXXFLAGS="-O2 -pipe -march=native -flto=thin"
+LDFLAGS="-Wl,-O2 -flto=thin"
+MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
+EOF
+
+    # Create development environment loader script
+    cat > "${DEV_BASE}/scripts/dev-env.sh" << 'EOF'
+#!/bin/sh
+# Development environment configuration loader
+
+# Source the appropriate toolchain configuration
+load_toolchain() {
+    local compiler="$1"
+    local config_file="${DEV_BASE}/toolchains/${compiler}.conf"
+
+    if [ -f "$config_file" ]; then
+        . "$config_file"
+        export CFLAGS CXXFLAGS LDFLAGS MAKEFLAGS
+        echo "Loaded ${compiler} toolchain configuration"
+    else
+        echo "Error: Toolchain configuration not found: ${compiler}"
+        return 1
+    fi
+}
+
+# Set up Python development environment
+setup_python_env() {
+    local venv_dir="${DEV_BASE}/environments/python"
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "Python 3 not found. Please install python3 package."
+        return 1
+    fi
+
+    python3 -m venv "$venv_dir"
+    . "${venv_dir}/bin/activate"
+
+    # Install essential Python development tools
+    pip install --upgrade pip
+    pip install pylint black mypy pytest coverage
+}
+
+# Set up Ruby development environment
+setup_ruby_env() {
+    if ! command -v gem >/dev/null 2>&1; then
+        echo "Ruby not found. Please install ruby package."
+        return 1
+    fi
+
+    # Install essential Ruby development tools
+    gem install bundler rubocop rspec
+}
+
+# Configure Git
+setup_git() {
+    git config --global core.editor "nvim"
+    git config --global color.ui auto
+    git config --global pull.rebase true
+    git config --global init.defaultBranch main
+}
+
+# Development utilities
+create_project() {
+    local name="$1"
+    local type="$2"
+    local dir="${DEV_BASE}/projects/${name}"
+
+    mkdir -p "$dir"
+    cd "$dir" || exit 1
+
+    case "$type" in
+        cpp)
+            cp "${DEV_BASE}/samples/cpp/CMakeLists.txt" .
+            mkdir -p src include test
+            ;;
+        python)
+            cp "${DEV_BASE}/samples/python/setup.py" .
+            mkdir -p src tests docs
+            setup_python_env
+            ;;
+        *)
+            echo "Unknown project type: ${type}"
+            return 1
+            ;;
+    esac
+
+    git init
+    echo "Created ${type} project: ${name}"
+}
+
+# Execute the specified command
+case "$1" in
+    gcc|clang)
+        load_toolchain "$1"
+        ;;
+    python)
+        setup_python_env
+        ;;
+    ruby)
+        setup_ruby_env
+        ;;
+    git)
+        setup_git
+        ;;
+    project)
+        create_project "$2" "$3"
+        ;;
+    *)
+        echo "Usage: $0 {gcc|clang|python|ruby|git|project}"
+        exit 1
+        ;;
+esac
+EOF
+    chmod 755 "${DEV_BASE}/scripts/dev-env.sh"
+
+    # Create project templates
+    mkdir -p "${DEV_BASE}/samples/cpp"
+    cat > "${DEV_BASE}/samples/cpp/CMakeLists.txt" << 'EOF'
+cmake_minimum_required(VERSION 3.10)
+project(project_name VERSION 1.0)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Enable testing
+enable_testing()
+
+# Find packages
+find_package(GTest REQUIRED)
+
+# Add subdirectories
+add_subdirectory(src)
+add_subdirectory(test)
+
+# Installation rules
+install(TARGETS ${PROJECT_NAME}
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib/static)
+EOF
+
+    mkdir -p "${DEV_BASE}/samples/python"
+    cat > "${DEV_BASE}/samples/python/setup.py" << 'EOF'
+from setuptools import setup, find_packages
+
+setup(
+    name="project_name",
+    version="0.1.0",
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
+    install_requires=[],
+    extras_require={
+        "dev": [
+            "pytest",
+            "pytest-cov",
+            "black",
+            "mypy",
+            "pylint",
+        ],
+    },
+    python_requires=">=3.7",
+)
+EOF
+
+    # Configure ccache
+    mkdir -p "/home/${USERNAME}/.ccache"
+    cat > "/home/${USERNAME}/.ccache/ccache.conf" << 'EOF'
+max_size = 10G
+compression = true
+compression_level = 6
+hash_dir = false
+EOF
+
+    # Add development environment settings to shell configuration
+    cat >> "/home/${USERNAME}/.zshrc" << EOF
+# Development Environment Configuration
+export DEV_BASE="${DEV_BASE}"
+export PATH="\${DEV_BASE}/scripts:\${PATH}"
+export CCACHE_DIR="/home/${USERNAME}/.ccache"
+export CCACHE_COMPRESS=1
+
+# Development Aliases
+alias dev='${DEV_BASE}/scripts/dev-env.sh'
+alias gcc-env='dev gcc'
+alias clang-env='dev clang'
+alias py-env='dev python'
+alias create-project='dev project'
+
+# Build System Aliases
+alias cmake='cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
+alias make='make -j\$(sysctl -n hw.ncpu)'
+alias ninja='ninja -j\$(sysctl -n hw.ncpu)'
+
+# Code Navigation
+alias tags='ctags -R .'
+alias cscope-gen='find . -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.hpp" > cscope.files && cscope -b'
+EOF
+
+    # Set up ctags configuration
+    cat > "/home/${USERNAME}/.ctags" << 'EOF'
+--recurse=yes
+--exclude=.git
+--exclude=vendor/*
+--exclude=node_modules/*
+--exclude=db/*
+--exclude=log/*
+--exclude=\*.min.\*
+--exclude=\*.swp
+--exclude=\*.bak
+--exclude=\*.pyc
+--exclude=\*.class
+--exclude=\*.cache
+EOF
+
+    # Set up cscope configuration
+    cat > "/home/${USERNAME}/.cscoperc" << 'EOF'
+-R
+-b
+-q
+-k
+EOF
+
+    # Configure editor backup and swap directories
+    mkdir -p "/home/${USERNAME}/.backup"/{undo,swap,backup}
+    chmod 700 "/home/${USERNAME}/.backup"/{undo,swap,backup}
+
+    # Set up Git global configuration
+    if command -v git >/dev/null 2>&1; then
+        git config --global core.editor "nvim"
+        git config --global core.excludesfile "/home/${USERNAME}/.gitignore"
+        git config --global init.defaultBranch "main"
+        git config --global pull.rebase true
+        git config --global color.ui auto
+        git config --global help.autocorrect 1
+    fi
+
+    # Create global gitignore
+    cat > "/home/${USERNAME}/.gitignore" << 'EOF'
+# Editor files
+*.swp
+*.swo
+*~
+.*.un~
+.vscode/
+.idea/
+
+# Build directories
+build/
+dist/
+*.o
+*.so
+*.dylib
+*.a
+*.exe
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+.env/
+.venv/
+env/
+venv/
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Tags and databases
+tags
+TAGS
+.tags
+.TAGS
+cscope.out
+cscope.in.out
+cscope.po.out
+EOF
+
+    # Set appropriate permissions
+    chown -R "${USERNAME}:wheel" "${DEV_BASE}"
+    chown -R "${USERNAME}:wheel" "/home/${USERNAME}/.backup"
+    chown "${USERNAME}:wheel" "/home/${USERNAME}/.gitignore"
+    chown "${USERNAME}:wheel" "/home/${USERNAME}/.ctags"
+    chown "${USERNAME}:wheel" "/home/${USERNAME}/.cscoperc"
+    chown -R "${USERNAME}:wheel" "/home/${USERNAME}/.ccache"
+
+    log_info "Development environment setup completed"
+    log_info "Run 'source ~/.zshrc' to load new development environment settings"
+    log_info "Use 'dev help' to see available development commands"
+}
+
+# -----------------------------------------------------------------------------
+# Main Execution
+# -----------------------------------------------------------------------------
+main() {
+    log_info "Starting enhanced NetBSD system configuration..."
+
+    if [ "$(id -u)" -ne 0 ]; then
+        log_error "This script must be run as root"
+        exit 1
+    }
+
+    # Create log file with secure permissions
+    install -m 600 /dev/null "$LOG_FILE"
+
+    # Execute configuration functions
+    install_packages
+    configure_ssh
+    setup_development
+    configure_security
+    setup_neovim
+    configure_nginx
+    configure_system_performance
+    setup_backup_system
+    optimize_network
+    configure_kernel_development
+    monitor_system_health
+    configure_comprehensive_security
+    configure_container_environment
+    configure_testing_environment
+    setup_zsh
+
+    log_info "Enhanced system configuration complete."
+    log_info "Please review logs at $LOG_FILE for any warnings or errors."
+    log_info "Remember to run 'sync' before rebooting"
+}
+
+# Execute main function
+main "$@"

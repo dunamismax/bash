@@ -417,7 +417,7 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
-# Main execution block - updated to include ZSH setup
+# Main execution block - updaFneovted to include ZSH setup
 # -----------------------------------------------------------------------------
 main() {
     log "Starting NetBSD system configuration..."
