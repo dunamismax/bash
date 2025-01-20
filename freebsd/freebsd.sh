@@ -121,15 +121,25 @@ install_pkgs() {
     
     log INFO "Starting package installation process..."
     
-    # Update package repository and upgrade existing packages
+    # Configure pkg for faster downloads
+    local pkg_conf="/usr/local/etc/pkg.conf"
+    if [[ -w "$pkg_conf" ]]; then
+        log INFO "Optimizing pkg configuration..."
+        sed -i '' -e 's/^#FETCH_RETRY = .*/FETCH_RETRY = 5/' \
+                 -e 's/^#FETCH_TIMEOUT = .*/FETCH_TIMEOUT = 30/' \
+                 -e 's/^#ASSUME_ALWAYS_YES = .*/ASSUME_ALWAYS_YES = true/' \
+                 "$pkg_conf"
+    fi
+    
+    # Update repository and upgrade existing packages
     log INFO "Updating package repository and upgrading existing packages..."
-    if ! pkg update && pkg upgrade -y; then
+    if ! { pkg update -f && pkg upgrade -y; }; then
         log ERROR "Failed to update/upgrade packages"
         return 1
     fi
     
-    # Define package groups - using local to keep variables scoped to function
-    local -A PACKAGE_GROUPS
+    # Define package groups
+    declare -A PACKAGE_GROUPS
     PACKAGE_GROUPS=(
         ["Development tools"]="gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext gmake valgrind doxygen ccache diffutils"
         ["Scripting and utilities"]="bash zsh fish nano screen tmate mosh htop iftop tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep"
@@ -143,20 +153,44 @@ install_pkgs() {
         ["System tools"]="lsof bsdstats"
     )
     
+    # Pre-fetch all packages in parallel
+    log INFO "Pre-fetching packages..."
+    local all_packages=""
+    for group in "${!PACKAGE_GROUPS[@]}"; do
+        all_packages+=" ${PACKAGE_GROUPS[$group]}"
+    done
+    pkg fetch -y ${all_packages} &>/dev/null &
+    local fetch_pid=$!
+    
     # Install packages by group
     local group package install_output
     for group in "${!PACKAGE_GROUPS[@]}"; do
         log INFO "Installing ${group}..."
-        for package in ${PACKAGE_GROUPS[$group]}; do
-            log INFO "Installing package: ${package}"
-            if ! pkg install -y "${package}" >/dev/null 2>&1; then
-                pkg_rc=$?
-                failed_packages+=("$package")
-                log WARN "Failed to install package: ${package} (exit code: ${pkg_rc})"
-                continue
-            fi
-        done
+        
+        # Wait for pre-fetch to complete if it's still running
+        if kill -0 $fetch_pid 2>/dev/null; then
+            wait $fetch_pid
+        fi
+        
+        # Install entire group at once
+        if ! pkg install -y ${PACKAGE_GROUPS[$group]} >/dev/null 2>&1; then
+            pkg_rc=$?
+            log WARN "Group installation failed, falling back to individual installs for ${group}"
+            
+            # Fall back to individual installs for failed group
+            for package in ${PACKAGE_GROUPS[$group]}; do
+                log INFO "Installing package: ${package}"
+                if ! pkg install -y "${package}" >/dev/null 2>&1; then
+                    pkg_rc=$?
+                    failed_packages+=("$package")
+                    log WARN "Failed to install package: ${package} (exit code: ${pkg_rc})"
+                fi
+            done
+        fi
     done
+    
+    # Clean up downloaded packages to free space
+    pkg clean -y &>/dev/null
     
     # Report results
     if [ ${#failed_packages[@]} -eq 0 ]; then
