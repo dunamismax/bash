@@ -34,49 +34,54 @@ trap 'log ERROR "Script failed at line $LINENO"' ERR
 
 install_pkgs() {
     log INFO "Installing packages..."
+    
+    # Update and upgrade existing packages
     if ! pkg update && pkg upgrade -y; then
         log ERROR "Failed to update/upgrade packages"
         return 1
-    }
-    
-    PACKAGES="\
-        # Development tools
-        gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext \
-        gmake valgrind doxygen ccache diffutils \
-        \
-        # Scripting and utilities
-        bash zsh fish nano screen tmate mosh htop iftop \
-        tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx \
-        smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep \
-        \
-        # Libraries for Python & C/C++ build
-        libffi readline sqlite3 ncurses gdbm nss lzma libxml2 \
-        \
-        # Networking, system admin, and hacking utilities
-        nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon whois bind-tools \
-        \
-        # Languages and runtimes
-        python39 go ruby perl5 rust \
-        \
-        # Containers and virtualization
-        docker vagrant qemu \
-        \
-        # Web hosting tools
-        nginx postgresql15-server postgresql15-client \
-        \
-        # File and backup management
-        rclone \
-        \
-        # System monitoring and logging
-        syslog-ng grafana prometheus netdata \
-        \
-        # Miscellaneous tools
-        lsof bsdstats"
+    fi
 
-    if ! pkg install -y ${PACKAGES}; then
+    # Define package list
+    local PACKAGES=(
+        # Development tools
+        gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext
+        gmake valgrind doxygen ccache diffutils
+
+        # Scripting and utilities
+        bash zsh fish nano screen tmate mosh htop iftop
+        tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx
+        smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep
+
+        # Libraries for Python & C/C++ build
+        libffi readline sqlite3 ncurses gdbm nss lzma libxml2
+
+        # Networking and admin utilities
+        nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon whois bind-tools
+
+        # Languages and runtimes
+        python39 go ruby perl5 rust
+
+        # Containers and virtualization
+        docker vagrant qemu
+
+        # Web hosting tools
+        nginx postgresql15-server postgresql15-client
+
+        # File and backup management
+        rclone
+
+        # System monitoring and logging
+        syslog-ng grafana prometheus netdata
+
+        # Miscellaneous tools
+        lsof bsdstats
+    )
+
+    # Install packages
+    if ! pkg install -y "${PACKAGES[@]}"; then
         log ERROR "Package installation failed"
         return 1
-    }
+    fi
 
     log INFO "Package installation completed successfully"
     return 0
