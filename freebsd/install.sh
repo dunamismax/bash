@@ -38,12 +38,6 @@ LOG_FILE="/var/log/freebsd_setup.log"
 VERBOSE=2
 USERNAME="sawyer"
 
-PACKAGES=(
-  bash zsh fish vim nano mc screen tmux node npm ninja meson
-  pkgconf gettext cmake htop rsync curl wget git ufw
-  fail2ban chrony neofetch sudo
-)
-
 # ------------------------------------------------------------------------------
 # MAIN SCRIPT START
 # You can add FreeBSD-specific functions below (e.g., pkg updates, config overwrites) and then
@@ -179,38 +173,38 @@ install_pkgs() {
     fi
 
     PACKAGES=(
-        # Development tools
-        gcc clang cmake git pkgconf openssl llvm autoconf automake libtool
+    # Development tools
+    gcc clang cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext
 
-        # Scripting and utilities
-        bash zsh fish vim nano emacs tmux screen htop iftop tree wget curl rsync \
-        unzip zip ca_root_nss sudo less man
+    # Scripting and utilities
+    bash zsh fish vim nano emacs tmux screen htop iftop tree wget curl rsync \
+    unzip zip ca_root_nss sudo less man neovim mc
 
-        # Libraries for Python & C/C++ build
-        libbz2 libffi zlib readline sqlite3 tk ncurses gdbm nss lzma libxml2 libxmlsec1
+    # Libraries for Python & C/C++ build
+    libbz2 libffi zlib readline sqlite3 tk ncurses gdbm nss lzma libxml2 libxmlsec1
 
-        # Networking, system admin, and hacking utilities
-        openssh nmap netcat socat tcpdump wireshark tshark aircrack-ng john \
-        hydra metasploit-framework netcat-openbsd
+    # Networking, system admin, and hacking utilities
+    openssh nmap netcat socat tcpdump wireshark tshark aircrack-ng john \
+    hydra metasploit-framework netcat-openbsd ufw fail2ban chrony
 
-        # Languages and runtimes
-        python39 python39-pip go node npm
+    # Languages and runtimes
+    python39 python39-pip go node npm
 
-        # Additional helpful tools
-        jq pigz p7zip xz fzf lynx smartmontools ntfs-3g neovim
+    # Additional helpful tools
+    jq pigz p7zip xz fzf lynx smartmontools ntfs-3g neofetch
 
-        # Documentation and man pages
-        man-pages
+    # Documentation and man pages
+    man-pages
 
-        # System monitoring and logging
-        syslog-ng
+    # System monitoring and logging
+    syslog-ng
 
-        # Version control and related tools
-        mercurial subversion
+    # Version control and related tools
+    mercurial subversion
 
-        # Others as needed
-        libpng libjpeg
-    )
+    # Others as needed
+    libpng libjpeg
+)
 
     log INFO "Installing pkg-based build dependencies and popular packages..."
     if ! pkg install -y "${PACKAGES[@]}"; then
@@ -678,15 +672,11 @@ dotfiles_load() {
   log INFO "Copying dotfiles to /home/sawyer..."
   cp /home/sawyer/github/bash/dotfiles/.bash_profile        /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.bashrc              /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/.fehbg               /home/sawyer/
   cp /home/sawyer/github/bash/dotfiles/.profile             /home/sawyer/
-  cp /home/sawyer/github/bash/dotfiles/chrony.conf          /usr/local/etc/chrony.conf   # Adjust path if needed
   cp /home/sawyer/github/bash/dotfiles/Caddyfile            /usr/local/etc/Caddyfile     # Adjust path if needed
 
   log INFO "Copying config directories to /home/sawyer/..."
   cp -r /home/sawyer/github/bash/dotfiles/bin        /home/sawyer/.local/
-  cp -r /home/sawyer/github/bash/dotfiles/i3         /home/sawyer/.config/
-  cp -r /home/sawyer/github/bash/dotfiles/rofi       /home/sawyer/.config/
   cp -r /home/sawyer/github/bash/dotfiles/alacritty  /home/sawyer/.config/
 
   # Ensure correct ownership if running as root
@@ -704,14 +694,6 @@ finalize_configuration() {
 
   cd /home/sawyer
 
-  # Add Flatpak remote flathub repository if not already added
-  log INFO "Adding Flatpak flathub repository..."
-  if flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo; then
-    log INFO "Flathub repository added or already exists."
-  else
-    log ERROR "Failed to add Flathub repository."
-  fi
-
   # Upgrade installed packages using pkg
   log INFO "Upgrading installed packages..."
   if pkg upgrade -y; then
@@ -719,29 +701,6 @@ finalize_configuration() {
   else
     log ERROR "Package upgrade failed."
   fi
-
-  # Configure Flatpak (redundant if already added above)
-  flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-
-  # Update Flatpak applications
-  log INFO "Updating Flatpak applications..."
-  if flatpak update -y; then
-    log INFO "Flatpak applications updated."
-  else
-    log ERROR "Failed to update Flatpak applications."
-  fi
-
-  # Snap is not standard on FreeBSD; skip snap refresh
-  log INFO "Snap is not supported on FreeBSD; skipping Snap refresh."
-
-  # Clean up local package cache
-  log INFO "Cleaning package cache..."
-  if pkg clean -ay; then
-    log INFO "Package cache cleaned."
-  else
-    log ERROR "Failed to clean package cache."
-  fi
-
   ##############################################################################
   # Additional System Logging Information
   ##############################################################################
@@ -785,8 +744,6 @@ main() {
   install_pkgs
   configure_ssh_settings
   configure_pf
-  configure_ntp
-  fail2ban
   install_and_enable_plex
   install_zig
   install_caddy
