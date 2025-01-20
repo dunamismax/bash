@@ -363,20 +363,44 @@ install_caddy() {
 
 ################################################################################
 # Function: install_and_enable_plex
+# Purpose: Install Plex Media Server on FreeBSD, enable it in rc.conf, and start it.
+# Globals: None
+# Arguments: None
+# Returns:
+#   0 - Success
+#   1 - Failure
 ################################################################################
 install_and_enable_plex() {
-  set -e
-
   log INFO "Checking if Plex Media Server is already installed..."
-  # FreeBSD may not have plexmediaserver in pkg repositories; handle accordingly.
+
+  # Check if plexmediaserver is installed
   if pkg info plexmediaserver >/dev/null 2>&1; then
     log INFO "Plex Media Server is already installed. Skipping installation."
-    return
+  else
+    log INFO "Plex Media Server not found. Installing via pkg..."
+    if ! pkg install -y plexmediaserver; then
+      log ERROR "Failed to install Plex Media Server."
+      return 1
+    fi
+    log INFO "Plex Media Server installation successful."
   fi
 
-  log INFO "Plex Media Server not found in pkg repositories. Manual installation required."
-  # Manual installation steps would go here if available.
-  log ERROR "Automatic Plex installation not implemented for FreeBSD."
+  # Enable Plex Media Server in rc.conf
+  log INFO "Enabling Plex Media Server in rc.conf..."
+  if ! sysrc plexmediaserver_enable="YES" >/dev/null 2>&1; then
+    log ERROR "Failed to enable Plex Media Server in rc.conf."
+    return 1
+  fi
+
+  # Start the Plex Media Server service
+  log INFO "Starting Plex Media Server service..."
+  if ! service plexmediaserver start >/dev/null 2>&1; then
+    log ERROR "Failed to start Plex Media Server service."
+    return 1
+  fi
+
+  log INFO "Plex Media Server has been installed, enabled, and started successfully."
+  return 0
 }
 
 ################################################################################
