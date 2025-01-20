@@ -213,15 +213,6 @@ install_pkgs() {
     fi
     log INFO "All pkg-based build dependencies and recommended packages installed successfully."
 
-    # Install Rust toolchain
-    log INFO "Installing Rust toolchain via rustup..."
-    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
-        log ERROR "Failed to install Rust toolchain. Exiting."
-        return 1
-    fi
-    export PATH="$HOME/.cargo/bin:$PATH"
-    log INFO "Rust toolchain installed and added to PATH."
-
     # Ensure Go is installed
     if ! pkg info go >/dev/null 2>&1; then
         log INFO "Installing Go..."
