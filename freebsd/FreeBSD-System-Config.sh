@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/local/bin/zsh
 # =============================================================================
 # FreeBSD Advanced System Configuration and Development Environment Setup
 # =============================================================================
@@ -243,7 +243,6 @@ init_error_handling() {
             exit 1
         fi
         chmod 750 "$_dir"  # Secure permissions
-    fi
 
     # Initialize error log with correct permissions
     if ! touch "$ERROR_LOG" 2>/dev/null; then
