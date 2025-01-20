@@ -293,61 +293,90 @@ EOF
 
 configure_pf() {
     local pf_conf="/etc/pf.conf"
-    local tables_dir="/etc/pf.tables"
     
-    # Get external interface or exit
-    local ext_if=$(netstat -rn | awk '$1 == "default" {print $7; exit}') || {
-        log ERROR "Failed to detect external interface"
+    # Get external interface
+    local ext_if=$(netstat -rn | grep '^default' | awk '{print $4}' | head -1)
+    if [[ -z "$ext_if" ]]; then
+        log ERROR "Could not detect external interface"
         return 1
     }
-    
-    # Setup tables directory and files
-    mkdir -p "$tables_dir" && chmod 750 "$tables_dir"
-    for table in bruteforce flood scanners malware; do
-        touch "$tables_dir/$table" && chmod 600 "$tables_dir/$table"
-    done
+    log INFO "Detected external interface: $ext_if"
 
     # Backup existing config if present
-    [[ -f "$pf_conf" ]] && cp "$pf_conf" "${pf_conf}.bak.$(date +%Y%m%d)"
+    if [[ -f "$pf_conf" ]]; then
+        cp "$pf_conf" "${pf_conf}.bak.$(date +%Y%m%d)"
+        log INFO "Created backup of existing PF configuration"
+    fi
 
-    # Generate PF configuration
+    # Generate simplified PF configuration
     cat > "$pf_conf" << EOF
-# PF Configuration
+# Interface
 ext_if = "$ext_if"
-table <bruteforce> persist file "$tables_dir/bruteforce"
-table <flood> persist file "$tables_dir/flood"
-table <scanners> persist file "$tables_dir/scanners"
-table <malware> persist file "$tables_dir/malware"
 
-set limit { states 100000, frags 50000 }
-set optimization aggressive
+# Options
+set skip on lo0
 set block-policy drop
-set state-policy if-bound
+set fingerprints "/etc/pf.os"
 
-# Base rules
-scrub in on \$ext_if all fragment reassemble
+# Tables for blocking
+table <bruteforce> persist
+table <blacklist> persist
+
+# Normalization
+scrub in all fragment reassemble
+
+# Default blocking
 block in all
 block out all
+
+# Anti-spoofing
 antispoof quick for \$ext_if inet
 
-# Block malicious sources
-block quick from { <bruteforce>, <flood>, <scanners>, <malware> }
+# Block known bad actors
+block quick from <bruteforce>
+block quick from <blacklist>
 
-# Allow outbound and essential inbound
-pass out quick on \$ext_if all modulate state
-pass in on \$ext_if inet proto tcp to any port { ssh, http, https, smtp, imaps } \\
-    flags S/SA keep state (max-src-conn 100, max-src-conn-rate 15/5, \\
-    overload <flood> flush global)
-pass in on \$ext_if inet proto udp to any port { domain, ntp } keep state \\
-    (max-src-states 100, max-src-conn-rate 10/5, overload <flood> flush global)
-pass in inet proto icmp all icmp-type { echoreq, unreach } keep state \\
-    (max-src-conn-rate 10/10, overload <flood> flush global)
+# Allow all outbound traffic
+pass out quick on \$ext_if all keep state
+
+# Allow inbound SSH with rate limiting
+pass in on \$ext_if proto tcp to any port ssh \
+    keep state (max-src-conn 10, max-src-conn-rate 3/5, \
+    overload <bruteforce> flush global)
+
+# Allow inbound HTTP/HTTPS
+pass in on \$ext_if proto tcp to any port { http https } \
+    keep state (max-src-conn 100, max-src-conn-rate 15/5)
+
+# Allow essential UDP services
+pass in on \$ext_if proto udp to any port { domain ntp } keep state
+
+# Allow ICMP for network diagnostics
+pass in inet proto icmp icmp-type { echoreq unreach } keep state
 EOF
 
-    # Test, enable and apply
-    pfctl -nf "$pf_conf" || return 1
-    sysrc pf_enable=YES
-    pfctl -ef "$pf_conf" || return 1
+    # Test configuration
+    if ! pfctl -nf "$pf_conf"; then
+        log ERROR "PF configuration test failed"
+        return 1
+    fi
+    log INFO "PF configuration test passed"
+
+    # Enable PF in rc.conf
+    if ! sysrc pf_enable=YES; then
+        log ERROR "Failed to enable PF in rc.conf"
+        return 1
+    }
+    log INFO "Enabled PF in rc.conf"
+
+    # Load and activate the configuration
+    if ! pfctl -ef "$pf_conf"; then
+        log ERROR "Failed to load PF configuration"
+        return 1
+    }
+    log INFO "Successfully loaded and activated PF configuration"
+
+    return 0
 }
 
 download_repos() {
