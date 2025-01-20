@@ -299,7 +299,7 @@ configure_pf() {
     if [[ -z "$ext_if" ]]; then
         log ERROR "Could not detect external interface"
         return 1
-    }
+    fi  # Fixed the extra curly brace here
     log INFO "Detected external interface: $ext_if"
 
     # Backup existing config if present
@@ -340,12 +340,12 @@ block quick from <blacklist>
 pass out quick on \$ext_if all keep state
 
 # Allow inbound SSH with rate limiting
-pass in on \$ext_if proto tcp to any port ssh \
-    keep state (max-src-conn 10, max-src-conn-rate 3/5, \
+pass in on \$ext_if proto tcp to any port ssh \\
+    keep state (max-src-conn 10, max-src-conn-rate 3/5, \\
     overload <bruteforce> flush global)
 
 # Allow inbound HTTP/HTTPS
-pass in on \$ext_if proto tcp to any port { http https } \
+pass in on \$ext_if proto tcp to any port { http https } \\
     keep state (max-src-conn 100, max-src-conn-rate 15/5)
 
 # Allow essential UDP services
@@ -366,14 +366,15 @@ EOF
     if ! sysrc pf_enable=YES; then
         log ERROR "Failed to enable PF in rc.conf"
         return 1
-    }
+    fi  # Also fixed similar issue here
+
     log INFO "Enabled PF in rc.conf"
 
     # Load and activate the configuration
     if ! pfctl -ef "$pf_conf"; then
         log ERROR "Failed to load PF configuration"
         return 1
-    }
+    fi
     log INFO "Successfully loaded and activated PF configuration"
 
     return 0
