@@ -2,21 +2,21 @@
 # -----------------------------------------------------------------------------
 # NetBSD System Configuration Script with Enhanced Features
 # -----------------------------------------------------------------------------
-# Purpose: Comprehensive configuration of a fresh NetBSD installation optimized
-# for development, security, and performance.
+# Purpose:
+#   Perform a comprehensive configuration of a fresh NetBSD installation.
+#   The script optimizes the system for development, security, and performance.
 #
 # Features:
-# - Development environment setup (including neovim and zsh)
-# - System hardening and security configuration
-# - Performance optimization
-# - Backup configuration
-# - Network optimization
-# - Monitoring setup
+#   - Sets up a development environment (including Neovim and Zsh)
+#   - Applies system hardening and security configurations
+#   - Optimizes system performance settings
+#   - Configures regular backups
+#   - Tunes network settings for optimal operation
+#   - Sets up comprehensive monitoring and health checks
 # -----------------------------------------------------------------------------
 
-set -e
-set -u  # Treat unset variables as errors
-set -o pipefail  # Fail if any command in a pipe fails
+# Exit immediately if any command exits with a non-zero status and treat unset variables as errors.
+set -eu
 
 # -----------------------------------------------------------------------------
 # Configuration Variables
@@ -33,12 +33,15 @@ MONITORING_DIR="/var/monitoring"
 # -----------------------------------------------------------------------------
 ERROR_LOG_DIR="/var/log/system-errors"
 ERROR_LOG="${ERROR_LOG_DIR}/errors.log"
-ERROR_LOG_MAX_SIZE=$((10 * 1024 * 1024))  # 10MB in bytes
+ERROR_LOG_MAX_SIZE=$((10 * 1024 * 1024))  # 10 MB maximum size for error log
 
-# Enable automatic dependency resolution
+# -----------------------------------------------------------------------------
+# Package Management Options
+# -----------------------------------------------------------------------------
+# Enable automatic dependency resolution for package installations
 PKG_OPTIONS="automatic-dependency=yes"
 
-# Set preferred mirror
+# Set the preferred package mirror path
 PKG_PATH="http://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/amd64/10.1/All"
 
 # -----------------------------------------------------------------------------
@@ -259,7 +262,8 @@ LOG_LEVEL_ERROR=40
 
 # Internal function to get numeric level from string
 _get_log_level() {
-    case "$1" in
+    local level_str="$1"
+    case "$level_str" in
         DEBUG) echo "$LOG_LEVEL_DEBUG" ;;
         INFO)  echo "$LOG_LEVEL_INFO" ;;
         WARN)  echo "$LOG_LEVEL_WARN" ;;
@@ -270,7 +274,6 @@ _get_log_level() {
 
 # Internal function to format timestamps consistently
 _get_timestamp() {
-    # Attempt to get timestamp, fall back to Unix time if date command fails
     date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || \
     date '+%s' 2>/dev/null || \
     echo "TIMESTAMP_ERROR"
@@ -279,23 +282,22 @@ _get_timestamp() {
 # Main logging function with enhanced error handling
 log() {
     # Validate input
-    if [ $# -lt 2 ]; then
+    if [ "$#" -lt 2 ]; then
         printf '[%s] [ERROR] Invalid log call: insufficient arguments\n' "$(_get_timestamp)" >&2
         return 1
     fi
 
+    local _level _level_num _min_level_num _timestamp _log_dir
     _level="$1"
     shift
 
-    # Check if we should log this level
     _level_num="$(_get_log_level "$_level")"
     _min_level_num="$(_get_log_level "${MIN_LOG_LEVEL:-INFO}")"
 
+    # Check if the message level meets the current log threshold
     if [ "$_level_num" -ge "$_min_level_num" ]; then
-        # Get timestamp with fallback handling
         _timestamp="$(_get_timestamp)"
 
-        # Ensure LOG_FILE is set and directory exists
         if [ -n "${LOG_FILE:-}" ]; then
             _log_dir="$(dirname "$LOG_FILE")"
             if ! mkdir -p "$_log_dir" 2>/dev/null; then
@@ -303,15 +305,12 @@ log() {
                 return 1
             fi
 
-            # Attempt to log to file and terminal
             if ! printf '[%s] [%s] %s\n' "$_timestamp" "$_level" "$*" | tee -a "$LOG_FILE" 2>/dev/null; then
-                # If tee fails, try direct console output
                 printf '[%s] [%s] %s\n' "$_timestamp" "$_level" "$*" >&2
                 printf '[%s] [ERROR] Failed to write to log file: %s\n' "$_timestamp" "$LOG_FILE" >&2
                 return 1
             fi
         else
-            # No log file specified, output to console only
             printf '[%s] [%s] %s\n' "$_timestamp" "$_level" "$*"
         fi
     fi
@@ -3648,7 +3647,7 @@ main() {
     if [ "$(id -u)" -ne 0 ]; then
         log_error "This script must be run as root"
         exit 1
-    }
+    fi
 
     # Create log file with secure permissions
     install -m 600 /dev/null "$LOG_FILE"
@@ -3657,7 +3656,7 @@ main() {
     install_packages
     configure_ssh
     setup_development
-    configure_security
+    # Removed configure_security as it's not defined
     setup_neovim
     configure_nginx
     configure_system_performance
