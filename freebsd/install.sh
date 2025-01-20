@@ -916,6 +916,7 @@ main() {
   # Bash script execution order:
   backup_system
   install_pkgs
+  setup_postgresql
   configure_ssh_settings
   configure_pf
   install_and_enable_plex
