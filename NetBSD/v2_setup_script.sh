@@ -3678,6 +3678,62 @@ EOF
     log_info "Use 'dev help' to see available development commands"
 }
 
+setup_oh_my_zsh() {
+    # Define variables
+    OMZ_DIR="${HOME}/.oh-my-zsh"
+    ZSHRC_FILE="${HOME}/.zshrc"
+    ZSHRC_BACKUP="${HOME}/.zshrc.pre-oh-my-zsh.$(date +%s)"
+    
+    # Check if Oh My Zsh is already installed
+    if [ -d "${OMZ_DIR}" ]; then
+        printf "Oh My Zsh is already installed at %s\n" "${OMZ_DIR}"
+    else
+        # Clone the Oh My Zsh repository
+        printf "Cloning Oh My Zsh into %s...\n" "${OMZ_DIR}"
+        if command -v git >/dev/null 2>&1; then
+            git clone https://github.com/ohmyzsh/ohmyzsh.git "${OMZ_DIR}" || {
+                printf "ERROR: Failed to clone Oh My Zsh repository.\n" >&2
+                return 1
+            }
+        else
+            printf "ERROR: git is not installed.\n" >&2
+            return 1
+        fi
+    fi
+
+    # Backup existing .zshrc if it exists and is not linked to oh-my-zsh
+    if [ -f "${ZSHRC_FILE}" ] && ! grep -q "oh-my-zsh" "${ZSHRC_FILE}"; then
+        printf "Backing up existing .zshrc to %s\n" "${ZSHRC_BACKUP}"
+        mv "${ZSHRC_FILE}" "${ZSHRC_BACKUP}" || {
+            printf "ERROR: Failed to backup existing .zshrc\n" >&2
+            return 1
+        }
+    fi
+
+    # Copy the Oh My Zsh template configuration if no .zshrc exists
+    if [ ! -f "${ZSHRC_FILE}" ]; then
+        printf "Setting up default .zshrc from Oh My Zsh template...\n"
+        cp "${OMZ_DIR}/templates/zshrc.zsh-template" "${ZSHRC_FILE}" || {
+            printf "ERROR: Failed to copy Oh My Zsh template .zshrc\n" >&2
+            return 1
+        }
+        # Set ZSH environment variable in .zshrc
+        sed -i '' "s|^export ZSH=.*|export ZSH=\"${OMZ_DIR}\"|" "${ZSHRC_FILE}"
+    else
+        printf ".zshrc already exists. Please merge changes manually if needed.\n"
+    fi
+
+    # Optionally, set Zsh as the default shell for the current user
+    if [ "$(getent passwd "$(id -un)" | cut -d: -f7)" != "$(command -v zsh)" ]; then
+        printf "Changing default shell to Zsh for user %s...\n" "$(id -un)"
+        chsh -s "$(command -v zsh)" || {
+            printf "WARNING: Failed to change default shell. You may need to do this manually.\n"
+        }
+    fi
+
+    printf "Oh My Zsh setup is complete! Start a new terminal session or run 'zsh' to begin using it.\n"
+}
+
 # -----------------------------------------------------------------------------
 # Main Execution
 # -----------------------------------------------------------------------------
@@ -3709,6 +3765,7 @@ main() {
     configure_testing_environment
     create_all_directories
     setup_zsh
+    setup_oh_my_zsh
 
     log_info "Enhanced system configuration complete."
     log_info "Please review logs at $LOG_FILE for any warnings or errors."
