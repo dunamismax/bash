@@ -549,7 +549,7 @@ download_repositories() {
   chmod -R 755 "${github_dir}/hugo/dunamismax.com/public"
 
   log INFO "Setting ownership and permissions for Hugo directory"
-  chown -R caddy:caddy "${github_dir}/hugo"
+  chown -R sawyer:sawyer "${github_dir}/hugo"
   chmod o+rx "/home/${USERNAME}/" "$github_dir" "${github_dir}/hugo" "${github_dir}/hugo/dunamismax.com/"
 
   for repo in bash c c python religion windows; do
@@ -611,7 +611,7 @@ set_directory_permissions() {
 
   # 4. Set ownership and permissions for Hugo directory and related paths
   log INFO "Setting ownership and permissions for Hugo directory"
-  chown -R caddy:caddy "$HUGO_DIR"
+  chown -R sawyer:sawyer "$HUGO_DIR"
   chmod o+rx "$SAWYER_HOME" "$GITHUB_DIR" "$HUGO_DIR" "/home/sawyer/github/hugo/dunamismax.com"
   chown -R www:www "$HUGO_PUBLIC_DIR"
 
