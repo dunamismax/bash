@@ -1146,23 +1146,49 @@ EOF
 setup_zsh() {
     log "Setting up ZSH configuration..."
 
-    # Create ZSH configuration directory structure
+    # Define user home directory for ZSH configuration
     ZSH_CONFIG_DIR="/home/$USERNAME"
+
+    # Create directory structure for ZSH configurations
     mkdir -p "$ZSH_CONFIG_DIR"/.zsh
 
     # Install zimfw (ZSH framework)
     curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh
 
-    # Create main .zshrc configuration
+    # Create main .zshrc configuration from a placeholder
     cat > "$ZSH_CONFIG_DIR/.zshrc" << 'EOF'
 # -----------------------------------------------------------------------------
-# ZSH Configuration
-# Inspired by modern shell practices while maintaining simplicity
+# ZSH Configuration with Nord Theme
+# Inspired by modern shell practices with Nord aesthetics
+# Maintains simplicity and ensures compatibility with NetBSD
 # -----------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------
+# Nord Color Palette
+# -----------------------------------------------------------------------------
+# Define Nord colors using hexadecimal for true color terminals.
+# Adjust these if necessary based on your terminal's color support.
+typeset -A nord
+nord[polar_night_0]="#2E3440"
+nord[polar_night_1]="#3B4252"
+nord[polar_night_2]="#434C5E"
+nord[polar_night_3]="#4C566A"
+nord[polar_night_4]="#D8DEE9"
+nord[arctic_5]="#E5E9F0"
+nord[arctic_6]="#ECEFF4"
+nord[blue_8]="#81A1C1"
+nord[blue_9]="#88C0D0"
+nord[blue_10]="#8FBCBB"
+nord[green]="#A3BE8C"
+nord[red]="#BF616A"
+nord[orange]="#D08770"
+nord[yellow]="#EBCB8B"
+nord[magenta]="#B48EAD"
+
+# -----------------------------------------------------------------------------
 # Core ZSH Settings
 # -----------------------------------------------------------------------------
-setopt AUTO_CD              # Change directory without cd
+setopt AUTO_CD              # Change directory without 'cd'
 setopt EXTENDED_GLOB        # Extended globbing
 setopt NOTIFY              # Report status of background jobs immediately
 setopt APPEND_HISTORY      # Append to history instead of overwriting
@@ -1173,12 +1199,14 @@ setopt HIST_IGNORE_DUPS
 setopt HIST_FIND_NO_DUPS
 setopt HIST_REDUCE_BLANKS
 
+# -----------------------------------------------------------------------------
 # History Configuration
 # -----------------------------------------------------------------------------
 HISTFILE=~/.zsh_history
 HISTSIZE=50000
 SAVEHIST=10000
 
+# -----------------------------------------------------------------------------
 # Environment Variables
 # -----------------------------------------------------------------------------
 export EDITOR='nvim'
@@ -1188,6 +1216,7 @@ export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 export TERM=xterm-256color
 
+# -----------------------------------------------------------------------------
 # Path Configuration
 # -----------------------------------------------------------------------------
 typeset -U path
@@ -1198,6 +1227,7 @@ path=(
     $path
 )
 
+# -----------------------------------------------------------------------------
 # Aliases
 # -----------------------------------------------------------------------------
 alias ls='ls -F --color=auto'
@@ -1220,6 +1250,7 @@ alias gc='git commit'
 alias gp='git push'
 alias gst='git status'
 
+# -----------------------------------------------------------------------------
 # Key Bindings
 # -----------------------------------------------------------------------------
 bindkey -e  # Use emacs key bindings
@@ -1231,6 +1262,7 @@ bindkey '^[[3~' delete-char
 bindkey '^[[1;5C' forward-word
 bindkey '^[[1;5D' backward-word
 
+# -----------------------------------------------------------------------------
 # Auto Completion
 # -----------------------------------------------------------------------------
 autoload -Uz compinit
@@ -1240,32 +1272,37 @@ zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
 zstyle ':completion:*' verbose yes
 zstyle ':completion:*' group-name ''
-zstyle ':completion:*:descriptions' format '%F{green}-- %d --%f'
+zstyle ':completion:*:descriptions' format "%F{${nord[green]}}-- %d --%f"
 
+# -----------------------------------------------------------------------------
 # Plugin Configuration
 # -----------------------------------------------------------------------------
 # Source external plugins
 source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
 source ~/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
+# -----------------------------------------------------------------------------
 # FZF Integration
 # -----------------------------------------------------------------------------
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
+# -----------------------------------------------------------------------------
 # Custom Functions
 # -----------------------------------------------------------------------------
-# Quick directory navigation
-function mkcd() { mkdir -p "$@" && cd "$@"; }
-
-# Enhanced git log
-function glog() {
-    git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
+# Create a directory and cd into it
+function mkcd() {
+    mkdir -p "$@" && cd "$@"
 }
 
-# Quick find
+# Enhanced git log with Nord-themed colors
+function glog() {
+    git log --graph --pretty=format:"%F{${nord[red]}}%h%f - %F{${nord[yellow]} }%d%f %s %F{${nord[green]}}(%cr)%f %F{${nord[blue_8]}}<%an>%f"
+}
+
+# Quick find files by pattern
 function ff() { find . -name "*$1*" }
 
-# System update shortcut
+# System update shortcut for NetBSD and npm/pip packages
 function update() {
     echo "Updating system packages..."
     sudo pkg_add -u
@@ -1275,28 +1312,31 @@ function update() {
     pip3 list --outdated --format=freeze | grep -v '^\-e' | cut -d = -f 1 | xargs -n1 pip3 install -U
 }
 
+# -----------------------------------------------------------------------------
 # Prompt Configuration
 # -----------------------------------------------------------------------------
 autoload -Uz vcs_info
 precmd() { vcs_info }
-zstyle ':vcs_info:git:*' formats '%F{240}(%b)%f'
-setopt prompt_subst
-PROMPT='%F{blue}%~%f ${vcs_info_msg_0_} %F{green}➜%f '
+zstyle ':vcs_info:git:*' formats "%F{${nord[polar_night_4]}}(%b)%f"
 
+setopt prompt_subst
+PROMPT='%F{${nord[blue_8]}}%~%f ${vcs_info_msg_0_} %F{${nord[green]}}➜%f '
+
+# -----------------------------------------------------------------------------
 # Load Local Configuration
 # -----------------------------------------------------------------------------
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 EOF
 
-    # Set permissions
+    # Set appropriate permissions for configuration directories and files
     chown -R "$USERNAME:wheel" "$ZSH_CONFIG_DIR/.zsh"
     chown "$USERNAME:wheel" "$ZSH_CONFIG_DIR/.zshrc"
 
-    # Set ZSH as default shell
+    # Set ZSH as the default shell for the user
     log "Setting ZSH as default shell for $USERNAME..."
     chsh -s /usr/pkg/bin/zsh "$USERNAME"
 
-    # Create plugins directory and symlinks
+    # Create plugins directories and create symlinks to required plugin files
     mkdir -p "$ZSH_CONFIG_DIR/.zsh/zsh-autosuggestions"
     mkdir -p "$ZSH_CONFIG_DIR/.zsh/zsh-syntax-highlighting"
     ln -sf /usr/pkg/share/zsh-autosuggestions/zsh-autosuggestions.zsh "$ZSH_CONFIG_DIR/.zsh/zsh-autosuggestions/"
