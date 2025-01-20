@@ -195,7 +195,7 @@ install_pkgs() {
     docker vagrant qemu
 
     # Web hosting tools
-    nginx
+    nginx postgresql15-server postgresql15-client
 
     # File and backup management
     rclone
@@ -214,6 +214,11 @@ install_pkgs() {
     fi
     log INFO "All pkg-based build dependencies and recommended packages installed successfully."
 
+    # Enable Postgres
+    sysrc postgresql_enable="YES"
+    /usr/local/etc/rc.d/postgresql initdb
+    service postgresql start
+    
     # Install Rust toolchain
     log INFO "Installing Rust toolchain via rustup..."
     if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; then
