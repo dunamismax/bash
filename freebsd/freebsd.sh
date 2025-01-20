@@ -37,8 +37,6 @@ install_pkgs() {
     if ! pkg update && pkg upgrade -y; then
         log ERROR "Failed to update/upgrade packages"
         return 1
-    }
-}
     
     PACKAGES="\
         # Development tools
