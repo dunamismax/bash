@@ -352,36 +352,92 @@ install_caddy() {
 #   1 - Failure
 ################################################################################
 install_and_enable_plex() {
-  log INFO "Checking if Plex Media Server is already installed..."
+    local plex_service="plexmediaserver"
+    local pkg_name="plexmediaserver"
+    local rc_enabled
+    local service_status
 
-  # Check if plexmediaserver is installed
-  if pkg info plexmediaserver >/dev/null 2>&1; then
-    log INFO "Plex Media Server is already installed. Skipping installation."
-  else
-    log INFO "Plex Media Server not found. Installing via pkg..."
-    if ! pkg install -y plexmediaserver; then
-      log ERROR "Failed to install Plex Media Server."
-      return 1
+    log INFO "Starting Plex Media Server setup process..."
+
+    # Check if Plex is already installed and running
+    if pkg info "${pkg_name}" >/dev/null 2>&1; then
+        log INFO "Plex Media Server is already installed."
+        
+        # Check if service is already enabled in rc.conf
+        rc_enabled=$(sysrc -n ${plex_service}_enable 2>/dev/null)
+        if [ "${rc_enabled}" = "YES" ]; then
+            log INFO "Plex Media Server is already enabled in rc.conf."
+            
+            # Check if service is running
+            service_status=$(service ${plex_service} status 2>/dev/null)
+            if [ $? -eq 0 ]; then
+                log INFO "Plex Media Server is already running."
+                return 0
+            fi
+        fi
+    else
+        # Update package repository
+        log INFO "Updating package repository..."
+        if ! pkg update >/dev/null 2>&1; then
+            log ERROR "Failed to update package repository."
+            return 1
+        fi
+
+        # Install Plex
+        log INFO "Installing Plex Media Server..."
+        if ! pkg install -y "${pkg_name}"; then
+            log ERROR "Failed to install Plex Media Server."
+            return 1
+        fi
+        log INFO "Plex Media Server installation successful."
     fi
-    log INFO "Plex Media Server installation successful."
-  fi
 
-  # Enable Plex Media Server in rc.conf
-  log INFO "Enabling Plex Media Server in rc.conf..."
-  if ! sysrc plexmediaserver_enable="YES" >/dev/null 2>&1; then
-    log ERROR "Failed to enable Plex Media Server in rc.conf."
-    return 1
-  fi
+    # Enable in rc.conf if not already enabled
+    if [ "${rc_enabled}" != "YES" ]; then
+        log INFO "Enabling Plex Media Server in rc.conf..."
+        if ! sysrc ${plex_service}_enable="YES" >/dev/null 2>&1; then
+            log ERROR "Failed to enable Plex Media Server in rc.conf."
+            return 1
+        fi
+        log INFO "Successfully enabled Plex Media Server in rc.conf."
+    fi
 
-  # Start the Plex Media Server service
-  log INFO "Starting Plex Media Server service..."
-  if ! service plexmediaserver start >/dev/null 2>&1; then
-    log ERROR "Failed to start Plex Media Server service."
-    return 1
-  fi
+    # Create required directories and set permissions if not exist
+    local plex_user="plex"
+    local media_dir="/var/db/plexdata"
+    if [ ! -d "${media_dir}" ]; then
+        log INFO "Creating Plex media directory..."
+        if ! mkdir -p "${media_dir}"; then
+            log ERROR "Failed to create Plex media directory."
+            return 1
+        fi
+        chown -R ${plex_user}:${plex_user} "${media_dir}"
+        chmod -R 755 "${media_dir}"
+    fi
 
-  log INFO "Plex Media Server has been installed, enabled, and started successfully."
-  return 0
+    # Start or restart the service
+    if [ -n "${service_status}" ] && [ $? -eq 0 ]; then
+        log INFO "Restarting Plex Media Server service..."
+        if ! service ${plex_service} restart >/dev/null 2>&1; then
+            log ERROR "Failed to restart Plex Media Server service."
+            return 1
+        fi
+    else
+        log INFO "Starting Plex Media Server service..."
+        if ! service ${plex_service} start >/dev/null 2>&1; then
+            log ERROR "Failed to start Plex Media Server service."
+            return 1
+        fi
+    fi
+
+    # Verify service is running
+    if ! service ${plex_service} status >/dev/null 2>&1; then
+        log ERROR "Plex Media Server service failed to start properly."
+        return 1
+    fi
+
+    log INFO "Plex Media Server setup completed successfully."
+    return 0
 }
 
 ################################################################################
