@@ -358,18 +358,44 @@ install_caddy() {
         log INFO "Caddy installation successful."
     fi
 
-    # Create required directories if they don't exist
-    for dir in "${caddy_config_dir}" "${caddy_data_dir}"; do
-        if [ ! -d "${dir}" ]; then
-            log INFO "Creating directory: ${dir}"
-            if ! mkdir -p "${dir}"; then
-                log ERROR "Failed to create directory: ${dir}"
-                return 1
-            fi
-            chown ${caddy_user}:${caddy_group} "${dir}"
-            chmod 755 "${dir}"
+    I'll modify the directory creation section to handle each directory individually and add better error handling:
+
+```bash
+    # Create and set up Caddy config directory
+    if [ ! -d "${caddy_config_dir}" ]; then
+        log INFO "Creating Caddy config directory..."
+        if ! mkdir -p "${caddy_config_dir}"; then
+            log ERROR "Failed to create Caddy config directory: ${caddy_config_dir}"
+            return 1
         fi
-    done
+        if ! chown "${caddy_user}:${caddy_group}" "${caddy_config_dir}"; then
+            log ERROR "Failed to set ownership on config directory"
+            return 1
+        fi
+        if ! chmod 755 "${caddy_config_dir}"; then
+            log ERROR "Failed to set permissions on config directory"
+            return 1
+        fi
+        log INFO "Caddy config directory created successfully"
+    fi
+
+    # Create and set up Caddy data directory
+    if [ ! -d "${caddy_data_dir}" ]; then
+        log INFO "Creating Caddy data directory..."
+        if ! mkdir -p "${caddy_data_dir}"; then
+            log ERROR "Failed to create Caddy data directory: ${caddy_data_dir}"
+            return 1
+        fi
+        if ! chown "${caddy_user}:${caddy_group}" "${caddy_data_dir}"; then
+            log ERROR "Failed to set ownership on data directory"
+            return 1
+        fi
+        if ! chmod 755 "${caddy_data_dir}"; then
+            log ERROR "Failed to set permissions on data directory"
+            return 1
+        fi
+        log INFO "Caddy data directory created successfully"
+    fi
 
     # Create default Caddyfile if it doesn't exist
     if [ ! -f "${caddy_config_file}" ]; then
