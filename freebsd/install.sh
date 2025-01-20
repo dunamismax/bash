@@ -181,29 +181,20 @@ install_pkgs() {
     unzip zip ca_root_nss sudo less man neovim mc
 
     # Libraries for Python & C/C++ build
-    libbz2 libffi zlib readline sqlite3 tk ncurses gdbm nss lzma libxml2 libxmlsec1
+    libbz2 libffi zlib readline sqlite3 tk ncurses gdbm nss lzma libxml2
 
     # Networking, system admin, and hacking utilities
-    openssh nmap netcat socat tcpdump wireshark tshark aircrack-ng john \
-    hydra metasploit-framework netcat-openbsd ufw fail2ban chrony
+    ssh nmap netcat socat tcpdump wireshark aircrack-ng john \
+    hydra
 
     # Languages and runtimes
-    python39 python39-pip go node npm
+    python39 go
 
     # Additional helpful tools
-    jq pigz p7zip xz fzf lynx smartmontools ntfs-3g neofetch
-
-    # Documentation and man pages
-    man-pages
+    jq pigz p7zip xz fzf lynx smartmontools neofetch
 
     # System monitoring and logging
     syslog-ng
-
-    # Version control and related tools
-    mercurial subversion
-
-    # Others as needed
-    libpng libjpeg
 )
 
     log INFO "Installing pkg-based build dependencies and popular packages..."
