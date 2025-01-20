@@ -656,14 +656,11 @@ set_directory_permissions() {
   log INFO "Permission setting completed."
 }
 
-################################################################################
-# Function: configure_pf
-# Purpose: Enable and configure PF firewall with common security rules
-################################################################################
+# ------------------------------------------------------------------------------
+# Function: Comfigure PF Firewall
+# ------------------------------------------------------------------------------
 configure_pf() {
   log INFO "Configuring PF firewall..."
-  kldload pf
-  echo 'pf_enable="YES"' >> /etc/rc.conf
 
   PF_CONF="/etc/pf.conf"
   BACKUP_CONF="/etc/pf.conf.bak.$(date +%Y%m%d%H%M%S)"
@@ -706,7 +703,15 @@ pass in quick on \$ext_if proto udp to (\$ext_if) port { 1900, 5353, 32410, 3241
 pass out all keep state
 EOF
 
-  # Enable PF in rc.conf if not already enabled
+  # Ensure PF kernel module is loaded
+  if ! kldstat | grep -q pf; then
+    log INFO "Loading PF kernel module..."
+    kldload pf || { log ERROR "Failed to load PF kernel module."; return 1; }
+    echo 'pf_load="YES"' >> /boot/loader.conf
+    log INFO "PF kernel module will load on boot."
+  fi
+
+  # Enable PF in rc.conf
   if ! grep -q '^pf_enable="YES"' /etc/rc.conf; then
     echo 'pf_enable="YES"' >> /etc/rc.conf
     log INFO "Enabled PF in /etc/rc.conf."
@@ -714,16 +719,22 @@ EOF
     log INFO "PF is already enabled in /etc/rc.conf."
   fi
 
-  # Load new PF configuration
-  if pfctl -f "$PF_CONF"; then
-    log INFO "PF configuration loaded successfully."
-  else
-    log ERROR "Failed to load PF configuration."
+  # Check for /dev/pf
+  if [ ! -c /dev/pf ]; then
+    log ERROR "/dev/pf missing. Ensure PF kernel module is loaded."
     return 1
   fi
 
-  # Enable PF if not already running
-  service pf start
+  # Load PF configuration
+  if pfctl -nf "$PF_CONF"; then
+    pfctl -f "$PF_CONF"
+    log INFO "PF configuration loaded successfully."
+  else
+    log ERROR "Failed to validate or load PF configuration."
+    return 1
+  fi
+
+  # Enable PF if not already active
   if pfctl -s info | grep -q "Status: Enabled"; then
     log INFO "PF is already active."
   else
