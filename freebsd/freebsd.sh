@@ -542,7 +542,11 @@ setup_dotfiles() {
             log WARN "Source file not found: $src"
         fi
     done
-
+    
+    # Set Bash as default shell
+    echo "/usr/local/bin/bash" | tee -a /etc/shells
+    chsh -s /usr/local/bin/bash ${USERNAME}
+    
     # Copy directories
     for item in "${dirs[@]}"; do
         local src="${item%:*}"
