@@ -254,106 +254,61 @@ EOF
 configure_pf() {
     local pf_conf="/etc/pf.conf"
     local tables_dir="/etc/pf.tables"
-    local ext_if
     
-    log INFO "Configuring PF firewall..."
-    
-    # Get external interface
-    ext_if=$(netstat -rn | awk '$1 == "default" {print $7; exit}') || {
+    # Get external interface or exit
+    local ext_if=$(netstat -rn | awk '$1 == "default" {print $7; exit}') || {
         log ERROR "Failed to detect external interface"
         return 1
     }
     
-    # Create and secure tables directory
+    # Setup tables directory and files
     mkdir -p "$tables_dir" && chmod 750 "$tables_dir"
-    
-    # Initialize table files
     for table in bruteforce flood scanners malware; do
-        touch "$tables_dir/$table"
-        chmod 600 "$tables_dir/$table"
+        touch "$tables_dir/$table" && chmod 600 "$tables_dir/$table"
     done
 
-    # Backup existing config
-    [[ -f "$pf_conf" ]] && cp "$pf_conf" "${pf_conf}.bak.$(date +%Y%m%d%H%M%S)"
+    # Backup existing config if present
+    [[ -f "$pf_conf" ]] && cp "$pf_conf" "${pf_conf}.bak.$(date +%Y%m%d)"
 
     # Generate PF configuration
     cat > "$pf_conf" << EOF
-# PF Firewall Configuration - Generated $(date)
-# Interface and Tables
+# PF Configuration
 ext_if = "$ext_if"
 table <bruteforce> persist file "$tables_dir/bruteforce"
 table <flood> persist file "$tables_dir/flood"
 table <scanners> persist file "$tables_dir/scanners"
 table <malware> persist file "$tables_dir/malware"
 
-# Services
-tcp_services = "{ ssh, http, https, smtp, imaps }"
-udp_services = "{ domain, ntp }"
-icmp_types = "{ echoreq, unreach }"
-
-# Protected Networks
-internal_net = "{ 10/8, 172.16/12, 192.168/16 }"
-
-# Optimization
 set limit { states 100000, frags 50000 }
 set optimization aggressive
 set block-policy drop
-set fingerprints "/etc/pf.os"
 set state-policy if-bound
 
-# Security
-scrub in on \$ext_if all fragment reassemble min-ttl 15 max-mss 1440
+# Base rules
+scrub in on \$ext_if all fragment reassemble
 block in all
 block out all
-block quick from <bruteforce>
-block quick from <flood>
-block quick from <scanners>
-block quick from <malware>
-
-# Anti-spoofing
 antispoof quick for \$ext_if inet
 
-# Traffic Rules
+# Block malicious sources
+block quick from { <bruteforce>, <flood>, <scanners>, <malware> }
+
+# Allow outbound and essential inbound
 pass out quick on \$ext_if all modulate state
-pass in on \$ext_if inet proto tcp to any port ssh \
-    flags S/SA keep state \
-    (max-src-conn 5, max-src-conn-rate 3/60, overload <bruteforce> flush global)
-
-pass in on \$ext_if inet proto tcp to any port \$tcp_services \
-    flags S/SA keep state \
-    (max-src-conn 100, max-src-conn-rate 15/5, overload <flood> flush global)
-
-pass in on \$ext_if inet proto udp to any port \$udp_services keep state \
+pass in on \$ext_if inet proto tcp to any port { ssh, http, https, smtp, imaps } \
+    flags S/SA keep state (max-src-conn 100, max-src-conn-rate 15/5, \
+    overload <flood> flush global)
+pass in on \$ext_if inet proto udp to any port { domain, ntp } keep state \
     (max-src-states 100, max-src-conn-rate 10/5, overload <flood> flush global)
-
-pass in inet proto icmp all icmp-type \$icmp_types keep state \
+pass in inet proto icmp all icmp-type { echoreq, unreach } keep state \
     (max-src-conn-rate 10/10, overload <flood> flush global)
 EOF
 
-    # Test and apply configuration
-    if ! pfctl -nf "$pf_conf"; then
-        log ERROR "PF configuration validation failed"
-        return 1
-    fi
-
-    # Enable PF in rc.conf if not already enabled
+    # Test, enable and apply
+    pfctl -nf "$pf_conf" || return 1
     sysrc pf_enable=YES
-
-    # Enable and load PF
-    pfctl -e && pfctl -f "$pf_conf" || {
-        log ERROR "Failed to enable/load PF"
-        return 1
-    }
-
-    # Verify PF is running
-    if ! pfctl -si | grep -q "Status: Enabled"; then
-        log ERROR "PF failed to start"
-        return 1
-    fi
-
-    log INFO "PF firewall configured successfully"
-    return 0
-}
+    pfctl -ef "$pf_conf" || return 1
+}​​​​​​​​​​​​​​​​
 
 download_repos() {
     log INFO "Downloading repositories..."
