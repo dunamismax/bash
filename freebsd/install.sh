@@ -161,32 +161,10 @@ backup_system() {
 
 ################################################################################
 # Function: install_pkgs
-# Purpose: Installs a comprehensive set of packages for development, system 
+# Purpose: Installs a comprehensive set of packages for development, system
 # administration, networking, and security.
 ################################################################################
 install_pkgs() {
-    # --- Part 1: Install Packages and Tools ---
-
-    # Detect package requiring spellcheck
-    detect_spellcheck_dependency() {
-        local culprit=""
-        for pkg in "${PACKAGES[@]}"; do
-            if pkg info -d "$pkg" 2>/dev/null | grep -q "spellcheck"; then
-                culprit="$pkg"
-                break
-            fi
-        done
-
-        if [[ -n "$culprit" ]]; then
-            log ERROR "Package '$culprit' requires spellcheck dependency"
-        else
-            log INFO "No package found requiring spellcheck dependency"
-        fi
-    }
-
-    # Call the function after package installation
-    detect_spellcheck_dependency
-    
     log INFO "Updating pkg repositories and upgrading packages..."
     if ! pkg upgrade -y; then
         log ERROR "System upgrade failed. Exiting."
@@ -196,11 +174,11 @@ install_pkgs() {
     PACKAGES=(
     # Development tools
     gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext
-    gmake valgrind doxygen ccache shellcheck diffutils
+    gmake valgrind doxygen ccache diffutils
 
     # Scripting and utilities
     bash zsh fish nano screen tmate mosh htop iftop
-    tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx 
+    tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx
     smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep
 
     # Libraries for Python & C/C++ build
