@@ -16,131 +16,114 @@ case $- in
       *) return;;
 esac
 
+# 1. Environment variables
 # ------------------------------------------------------------------------------
-# 2. Environment variables
-# ------------------------------------------------------------------------------
-# Add your local bin directory to PATH.
-export PATH="$PATH:$HOME/.local/bin"
+# FreeBSD specific PATH additions
+export PATH="/usr/local/bin:/usr/local/sbin:$PATH:$HOME/.local/bin"
+export MANPATH="/usr/local/man:$MANPATH"
 
 # ------------------------------------------------------------------------------
-# 3. pyenv initialization
+# 2. pyenv initialization
 # ------------------------------------------------------------------------------
-# Adjust these lines according to your Python environment needs.
 export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 
 if command -v pyenv 1>/dev/null 2>&1; then
-    # Initialize pyenv so that it can manage your Python versions and virtualenvs.
     eval "$(pyenv init --path)"
     eval "$(pyenv init -)"
 fi
 
 # ------------------------------------------------------------------------------
-# 4. History preferences
+# 3. History preferences
 # ------------------------------------------------------------------------------
-# Do not store duplicate lines or lines that start with a space in the history.
 HISTCONTROL=ignoreboth
-
-# Set history limits (number of lines in memory / on disk).
 HISTSIZE=100000
 HISTFILESIZE=200000
-
-# Add timestamps to each command in history (for auditing).
 HISTTIMEFORMAT="%F %T "
 
 # ------------------------------------------------------------------------------
-# 5. Less (pager) setup
+# 4. Less (pager) setup
 # ------------------------------------------------------------------------------
-# Make 'less' more friendly for non-text input files, see lesspipe(1).
-[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+# FreeBSD specific lesspipe location
+if [ -x /usr/local/bin/lesspipe.sh ]; then
+    export LESSOPEN="|/usr/local/bin/lesspipe.sh %s"
+fi
 
 # ------------------------------------------------------------------------------
-# 6. Bash prompt (PS1) with Nord color theme
+# 5. Bash prompt (PS1) with Nord color theme
 # ------------------------------------------------------------------------------
-
-# If terminal supports color, enable a colored prompt.
 case "$TERM" in
     xterm-color|*-256color) color_prompt=yes;;
 esac
 
-# Uncomment the line below if you always want a color prompt (if supported).
 force_color_prompt=yes
 
 if [ -n "$force_color_prompt" ]; then
-    if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
-        # We have color support; assume it's compliant with Ecma-48 (ISO/IEC-6429).
+    if [ -x /usr/local/bin/tput ] && tput setaf 1 >&/dev/null; then
         color_prompt=yes
     else
         color_prompt=
     fi
 fi
 
-# Choose a colored or plain prompt using Nord colors.
 if [ "$color_prompt" = yes ]; then
-    PS1='${ubuntu_chroot:+($ubuntu_chroot)}'\
-'\[\033[38;2;136;192;208m\]\u@\h\[\033[00m\]:'\
-'\[\033[38;2;94;129;172m\]\w\[\033[00m\]\$ '
+    PS1='\[\033[38;2;136;192;208m\]\u@\h\[\033[00m\]:\[\033[38;2;94;129;172m\]\w\[\033[00m\]\$ '
 else
-    PS1='${ubuntu_chroot:+($ubuntu_chroot)}\u@\h:\w\$ '
+    PS1='\u@\h:\w\$ '
 fi
 unset color_prompt force_color_prompt
 
-# If this is an xterm or rxvt terminal, set the window title to user@host:dir.
 case "$TERM" in
     xterm*|rxvt*)
-        PS1="\[\e]0;${ubuntu_chroot:+($ubuntu_chroot)}\u@\h: \w\a\]$PS1"
+        PS1="\[\e]0;\u@\h: \w\a\]$PS1"
         ;;
     *)
         ;;
 esac
 
 # ------------------------------------------------------------------------------
-# 7. Color support for common commands
+# 6. Color support for FreeBSD ls and other commands
 # ------------------------------------------------------------------------------
-if [ -x /usr/bin/dircolors ]; then
-    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
-    alias ls='ls --color=auto'
-    # alias dir='dir --color=auto'
-    # alias vdir='vdir --color=auto'
+# FreeBSD ls colors
+export CLICOLOR=1
+export LSCOLORS="ExGxFxdxCxDxDxhbadExEx"
 
-    alias grep='grep --color=auto'
-    alias fgrep='fgrep --color=auto'
-    alias egrep='egrep --color=auto'
-fi
+# Colorized grep (FreeBSD style)
+alias grep='grep --color=auto'
+alias egrep='egrep --color=auto'
+alias fgrep='fgrep --color=auto'
 
 # ------------------------------------------------------------------------------
-# 8. Handy aliases
+# 7. FreeBSD-specific aliases
 # ------------------------------------------------------------------------------
-# Basic ls aliases
-alias ll='ls -alF'
+# Basic ls aliases (FreeBSD style)
+alias ll='ls -hlAF'
 alias la='ls -A'
 alias l='ls -CF'
 
-# Launch ranger file manager
-alias r='ranger'
+# System management
+alias ports-update='sudo portsnap fetch update'
+alias pkg-update='sudo pkg update && sudo pkg upgrade'
 
-# Alert alias for long running commands (use: sleep 10; alert)
-alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" \
-"$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+# Launch ranger file manager (if installed)
+if command -v ranger >/dev/null 2>&1; then
+    alias r='ranger'
+fi
 
 # ------------------------------------------------------------------------------
-# 9. Python virtual environment functions and aliases
+# 8. Python virtual environment functions
 # ------------------------------------------------------------------------------
-# Alias to quickly set up a new Python virtual environment
 alias venv='setup_venv'
-# Alias to quickly re-enable an existing Python virtual environment
 alias v='enable_venv'
 
-# Function to set up a new Python virtual environment in the current directory
 setup_venv() {
-    # If there's already a venv active, deactivate it first
     if type deactivate &>/dev/null; then
         echo "Deactivating current virtual environment..."
         deactivate
     fi
 
     echo "Creating a new virtual environment in $(pwd)/.venv..."
-    python -m venv .venv
+    python3 -m venv .venv
 
     echo "Activating the virtual environment..."
     source .venv/bin/activate
@@ -155,12 +138,15 @@ setup_venv() {
     echo "Virtual environment setup complete."
 }
 
-# Function to re-enable an existing Python virtual environment in the current directory
 enable_venv() {
-    # If there's already a venv active, deactivate it first
     if type deactivate &>/dev/null; then
         echo "Deactivating current virtual environment..."
         deactivate
+    fi
+
+    if [ ! -d ".venv" ]; then
+        echo "No virtual environment found in current directory."
+        return 1
     fi
 
     echo "Activating the virtual environment..."
@@ -177,23 +163,31 @@ enable_venv() {
 }
 
 # ------------------------------------------------------------------------------
-# 10. Load user-defined aliases from ~/.bash_aliases (if it exists)
+# 9. Load user-defined aliases
 # ------------------------------------------------------------------------------
 if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
 fi
 
 # ------------------------------------------------------------------------------
-# 11. Bash completion
+# 10. Bash completion (FreeBSD specific)
 # ------------------------------------------------------------------------------
-# Enable programmable completion features if not in POSIX mode.
-# (Examples: git completion, docker completion, etc.)
-if ! shopt -oq posix; then
-    if [ -f /usr/share/bash-completion/bash_completion ]; then
-        . /usr/share/bash-completion/bash_completion
-    elif [ -f /etc/bash_completion ]; then
-        . /etc/bash_completion
-    fi
+if [ -f /usr/local/share/bash-completion/bash_completion.sh ]; then
+    . /usr/local/share/bash-completion/bash_completion.sh
+fi
+
+# ------------------------------------------------------------------------------
+# 11. Editor configuration
+# ------------------------------------------------------------------------------
+export EDITOR=/usr/local/bin/vim
+export VISUAL=/usr/local/bin/vim
+
+# ------------------------------------------------------------------------------
+# 12. Local customizations
+# ------------------------------------------------------------------------------
+# Source local customizations if they exist
+if [ -f ~/.bashrc.local ]; then
+    . ~/.bashrc.local
 fi
 
 # ------------------------------------------------------------------------------
