@@ -662,6 +662,8 @@ set_directory_permissions() {
 ################################################################################
 configure_pf() {
   log INFO "Configuring PF firewall..."
+  kldload pf
+  echo 'pf_enable="YES"' >> /etc/rc.conf
 
   PF_CONF="/etc/pf.conf"
   BACKUP_CONF="/etc/pf.conf.bak.$(date +%Y%m%d%H%M%S)"
@@ -721,6 +723,7 @@ EOF
   fi
 
   # Enable PF if not already running
+  service pf start
   if pfctl -s info | grep -q "Status: Enabled"; then
     log INFO "PF is already active."
   else
