@@ -263,28 +263,31 @@ configure_ssh_settings() {
 
   # Start/restart the sshd service
   service sshd restart
-  if [ $? -eq 0 ]; then
-    log INFO "sshd service restarted successfully."
-  else
+  if [ $? -ne 0 ]; then
     log ERROR "Failed to restart sshd service."
     return 1
   fi
+  log INFO "sshd service restarted successfully."
 
   # Define the sshd_config path
   local sshd_config="/usr/local/etc/ssh/sshd_config"
 
   # Backup the existing sshd_config
   local backup_file="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$sshd_config" "$backup_file" && log INFO "Backup of sshd_config created at $backup_file."
+  cp "$sshd_config" "$backup_file"
+  if [ $? -ne 0 ]; then
+    log ERROR "Failed to create backup of sshd_config. Exiting."
+    return 1
+  fi
+  log INFO "Backup of sshd_config created at $backup_file."
 
   # Apply security best practices to sshd_config
-  # Define desired SSH settings for hardening
   declare -A sshd_settings=(
-    ["Port"]="22"                  # Consider changing to non-standard port
+    ["Port"]="22"
     ["Protocol"]="2"
     ["MaxAuthTries"]="3"
     ["PermitRootLogin"]="no"
-    ["PasswordAuthentication"]="no"  # Encourage key-based auth
+    ["PasswordAuthentication"]="no"
     ["ChallengeResponseAuthentication"]="no"
     ["UsePAM"]="no"
     ["X11Forwarding"]="no"
@@ -296,22 +299,18 @@ configure_ssh_settings() {
   )
 
   log INFO "Applying hardening settings to $sshd_config..."
-for setting in "${!sshd_settings[@]}"; do
-    # If setting exists, replace it; if not, append it
+  for setting in "${!sshd_settings[@]}"; do
     if grep -q "^\s*${setting}\s" "$sshd_config"; then
-        sed -i '' "s|^\s*${setting}[[:space:]]\+.*|${setting} ${sshd_settings[$setting]}|" "$sshd_config"
+      sed -i '' "s|^\s*${setting}[[:space:]]\+.*|${setting} ${sshd_settings[$setting]}|" "$sshd_config"
     else
-        echo "${setting} ${sshd_settings[$setting]}" >> "$sshd_config"
+      echo "${setting} ${sshd_settings[$setting]}" >> "$sshd_config"
     fi
-done
+  done
 
   log INFO "SSH configuration updated. Restarting sshd service..."
 
-  # Restart sshd to apply changes
   service sshd restart
-  if [ $? -eq 0 ]; then
-    log INFO "sshd restarted successfully with new settings."
-  else
+  if [ $? -ne 0 ]; then
     log ERROR "Failed to restart sshd after configuration change."
     return 1
   fi
