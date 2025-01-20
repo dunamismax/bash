@@ -178,7 +178,7 @@ install_pkgs() {
     gmake valgrind doxygen ccache shellcheck diffutils
 
     # Scripting and utilities
-    bash zsh fish vim nano emacs tmux screen tmate mosh htop iftop
+    bash zsh fish nano screen tmate mosh htop iftop
     tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx 
     smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep
 
@@ -748,95 +748,6 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
-# PostgreSQL Setup Function for FreeBSD
-# ------------------------------------------------------------------------------
-setup_postgresql() {
-    # Ensure script is run with root privileges
-    if [[ $EUID -ne 0 ]]; then
-       log ERROR "This script must be run as root" 
-       exit 1
-    fi
-
-    # Prompt for postgres user password
-    read -sp "Enter password for postgres user: " postgres_password
-    echo ""
-
-    # Prompt for admin user password
-    read -sp "Enter password for sawyer (admin) user: " admin_password
-    echo ""
-
-    # Enable PostgreSQL service
-    log INFO "Enabling PostgreSQL service..."
-    sysrc postgresql_enable="YES"
-
-    # Initialize PostgreSQL database
-    log INFO "Initializing PostgreSQL database..."
-    /usr/local/etc/rc.d/postgresql initdb
-
-    # Start PostgreSQL service
-    log INFO "Starting PostgreSQL service..."
-    service postgresql start
-
-    # Verify PostgreSQL is listening on ports
-    log INFO "Checking PostgreSQL ports..."
-    sockstat_output=$(sockstat -46 | grep 5432)
-    if [ -z "$sockstat_output" ]; then
-        log ERROR "PostgreSQL does not appear to be listening on ports 5432"
-        exit 1
-    fi
-
-    # Set password for postgres user
-    log INFO "Setting postgres user password..."
-    echo "$postgres_password" | passwd postgres
-
-    # Switch to postgres user and perform database setup
-    su - postgres << EOF
-    # Create sawyer (admin) user
-    createuser sawyer
-
-    # Create foo_db database with sawyer as owner
-    createdb foo_db -O sawyer
-
-    # Set up database access and password
-    psql << INNER
-    \c foo_db
-    ALTER ROLE sawyer WITH ENCRYPTED PASSWORD '$admin_password';
-    GRANT ALL PRIVILEGES ON DATABASE foo_db TO sawyer;
-INNER
-EOF
-
-    # Modify postgresql.conf to listen on all addresses
-    postgresql_conf="/var/db/postgres/data15/postgresql.conf"
-    log INFO "Modifying postgresql.conf to listen on all addresses..."
-    sed -i '' 's/^#listen_addresses/listen_addresses/' "$postgresql_conf"
-    sed -i '' "s/^listen_addresses = .*/listen_addresses = '*'/" "$postgresql_conf"
-
-    # Modify pg_hba.conf for security settings
-    pg_hba_conf="/var/db/postgres/data15/pg_hba.conf"
-    log INFO "Updating pg_hba.conf security settings..."
-    
-    # Modify local connections to use md5
-    sed -i '' 's/local\s\+all\s\+all\s\+\S\+/local   all             all                                     md5/g' "$pg_hba_conf"
-    sed -i '' 's/host\s\+all\s\+all\s\+127\.0\.0\.1\/32\s\+\S\+/host    all             all             127.0.0.1\/32            md5/g' "$pg_hba_conf"
-    sed -i '' 's/host\s\+all\s\+all\s\+::1\/128\s\+\S\+/host    all             all             ::1\/128                 md5/g' "$pg_hba_conf"
-    
-    # Modify replication connections to use md5
-    sed -i '' 's/local\s\+replication\s\+all\s\+\S\+/local   replication     all                                     md5/g' "$pg_hba_conf"
-    sed -i '' 's/host\s\+replication\s\+all\s\+127\.0\.0\.1\/32\s\+\S\+/host    replication     all             127.0.0.1\/32            md5/g' "$pg_hba_conf"
-    sed -i '' 's/host\s\+replication\s\+all\s\+::1\/128\s\+\S\+/host    replication     all             ::1\/128                 md5/g' "$pg_hba_conf"
-
-    # Add remote connection rules for foo_db
-    echo "host    foo_db          sawyer          0.0.0.0/0               md5" >> "$pg_hba_conf"
-    echo "host    foo_db          sawyer          ::/0                    md5" >> "$pg_hba_conf"
-
-    # Restart PostgreSQL to apply changes
-    log INFO "Restarting PostgreSQL service..."
-    service postgresql restart
-
-    log INFO "PostgreSQL setup completed successfully!"
-}
-
-# ------------------------------------------------------------------------------
 # Function: dotfiles_load
 # ------------------------------------------------------------------------------
 dotfiles_load() {
@@ -916,7 +827,6 @@ main() {
   # Bash script execution order:
   backup_system
   install_pkgs
-  setup_postgresql
   configure_ssh_settings
   configure_pf
   install_and_enable_plex
