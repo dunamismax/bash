@@ -97,8 +97,14 @@ log() {
     local message="$*"
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
     
-    # Colors
-    local colors=([INFO]='\033[0;32m' [WARN]='\033[0;33m' [ERROR]='\033[0;31m' [DEBUG]='\033[0;34m')
+    # Colors - using declare -A for associative array
+    declare -A colors
+    colors=(
+        [INFO]='\033[0;32m'
+        [WARN]='\033[0;33m'
+        [ERROR]='\033[0;31m'
+        [DEBUG]='\033[0;34m'
+    )
     local NC='\033[0m'
     
     [[ ! -e "$LOG_FILE" ]] && { mkdir -p "$(dirname "$LOG_FILE")"; touch "$LOG_FILE"; chmod 644 "$LOG_FILE"; }
