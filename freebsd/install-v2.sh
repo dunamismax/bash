@@ -229,75 +229,157 @@ install_pkgs() {
 ################################################################################
 # Function: configure_ssh_settings
 # Purpose: Install and configure OpenSSH server on FreeBSD with security best practices
+# Returns:
+#   0 - Success
+#   1 - Failure
 ################################################################################
 configure_ssh_settings() {
-  log INFO "Installing OpenSSH Server..."
+    local sshd_config="/usr/local/etc/ssh/sshd_config"
+    local sshd_service="sshd"
+    local pkg_name="openssh-portable"
+    local TIMEOUT=30
+    local retry_count=0
+    local max_retries=3
 
-  # Install OpenSSH server if not already installed
-  if ! pkg info openssh-portable >/dev/null 2>&1; then
-    if ! pkg install -y openssh-portable; then
-      log ERROR "Failed to install OpenSSH Server."
-      return 1
+    # Ensure clean environment
+    export LC_ALL=C
+    
+    log INFO "Starting SSH server configuration..."
+
+    # Install OpenSSH server with retry logic
+    if ! pkg info "${pkg_name}" >/dev/null 2>&1; then
+        while [ ${retry_count} -lt ${max_retries} ]; do
+            log INFO "Installing OpenSSH Server (attempt $((retry_count + 1))/${max_retries})..."
+            if pkg install -y "${pkg_name}"; then
+                break
+            fi
+            retry_count=$((retry_count + 1))
+            [ ${retry_count} -lt ${max_retries} ] && sleep 5
+        done
+
+        if [ ${retry_count} -eq ${max_retries} ]; then
+            log ERROR "Failed to install OpenSSH Server after ${max_retries} attempts."
+            return 1
+        fi
+    else
+        log INFO "OpenSSH Server is already installed."
     fi
-    log INFO "OpenSSH Server installed."
-  else
-    log INFO "OpenSSH Server is already installed."
-  fi
 
-  # Enable sshd service in rc.conf if not already enabled
-  if ! grep -q '^sshd_enable="YES"' /etc/rc.conf; then
-    echo 'sshd_enable="YES"' >> /etc/rc.conf
-    log INFO "Enabled sshd in /etc/rc.conf."
-  else
-    log INFO "sshd is already enabled in /etc/rc.conf."
-  fi
+    # Create SSH directory if it doesn't exist
+    if [ ! -d "/usr/local/etc/ssh" ]; then
+        if ! mkdir -p "/usr/local/etc/ssh"; then
+            log ERROR "Failed to create SSH configuration directory."
+            return 1
+        fi
+        chmod 755 "/usr/local/etc/ssh"
+    fi
 
-  # Start/restart the sshd service
-  service sshd restart
-  if [ $? -ne 0 ]; then
-    log ERROR "Failed to restart sshd service."
-    return 1
-  fi
-  log INFO "sshd service restarted successfully."
+    # Backup existing configuration if it exists
+    if [ -f "${sshd_config}" ]; then
+        local backup_file="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
+        if ! cp "${sshd_config}" "${backup_file}"; then
+            log ERROR "Failed to create backup of sshd_config."
+            return 1
+        fi
+        log INFO "Created backup of sshd_config at ${backup_file}"
+    fi
 
-  # Define the sshd_config path
-  local sshd_config="/usr/local/etc/ssh/sshd_config"
+    # Generate new sshd_config using printf instead of heredoc
+    log INFO "Generating new SSH configuration..."
+    {
+        printf "# SSH Server Configuration - Generated on %s\n\n" "$(date)"
+        printf "# Network settings\n"
+        printf "Port 22\n"
+        printf "Protocol 2\n"
+        printf "AddressFamily any\n"
+        printf "ListenAddress 0.0.0.0\n\n"
+        
+        printf "# Authentication settings\n"
+        printf "MaxAuthTries 3\n"
+        printf "PermitRootLogin no\n"
+        printf "PasswordAuthentication no\n"
+        printf "ChallengeResponseAuthentication no\n"
+        printf "UsePAM no\n"
+        printf "PubkeyAuthentication yes\n"
+        printf "AuthenticationMethods publickey\n\n"
+        
+        printf "# Security settings\n"
+        printf "X11Forwarding no\n"
+        printf "AllowTcpForwarding no\n"
+        printf "PermitEmptyPasswords no\n"
+        printf "MaxSessions 2\n"
+        printf "LoginGraceTime 30\n\n"
+        
+        printf "# Connection settings\n"
+        printf "ClientAliveInterval 300\n"
+        printf "ClientAliveCountMax 2\n"
+        printf "TCPKeepAlive yes\n\n"
+        
+        printf "# Logging settings\n"
+        printf "LogLevel VERBOSE\n"
+        printf "SyslogFacility AUTH\n"
+    } > "${sshd_config}.tmp"
 
-  # Backup the existing sshd_config
-  local backup_file="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
-  cp "$sshd_config" "$backup_file"
-  if [ $? -ne 0 ]; then
-    log ERROR "Failed to create backup of sshd_config. Exiting."
-    return 1
-  fi
-  log INFO "Backup of sshd_config created at $backup_file."
+    # Verify the temporary config file was created
+    if [ ! -f "${sshd_config}.tmp" ]; then
+        log ERROR "Failed to create new SSH configuration."
+        return 1
+    fi
 
-  # Apply security best practices to sshd_config
-  cat > "$sshd_config" <<EOF
-Port 22
-Protocol 2
-MaxAuthTries 3
-PermitRootLogin no
-PasswordAuthentication no
-ChallengeResponseAuthentication no
-UsePAM no
-X11Forwarding no
-AllowTcpForwarding no
-PermitEmptyPasswords no
-ClientAliveInterval 300
-ClientAliveCountMax 2
-LogLevel VERBOSE
-EOF
+    # Set proper permissions on the config file
+    if ! chmod 600 "${sshd_config}.tmp"; then
+        log ERROR "Failed to set permissions on new SSH configuration."
+        return 1
+    fi
 
-  log INFO "SSH configuration updated. Restarting sshd service..."
+    # Move temporary config to final location
+    if ! mv "${sshd_config}.tmp" "${sshd_config}"; then
+        log ERROR "Failed to move new SSH configuration to final location."
+        return 1
+    fi
 
-  service sshd restart
-  if [ $? -ne 0 ]; then
-    log ERROR "Failed to restart sshd after configuration change."
-    return 1
-  fi
+    # Enable sshd in rc.conf using sysrc
+    log INFO "Enabling SSH service..."
+    if ! sysrc "${sshd_service}_enable=YES" >/dev/null 2>&1; then
+        log ERROR "Failed to enable SSH service in rc.conf."
+        return 1
+    fi
 
-  log INFO "OpenSSH Server configuration and hardening completed."
+    # Test configuration before applying
+    log INFO "Testing SSH configuration..."
+    if ! /usr/sbin/sshd -t -f "${sshd_config}"; then
+        log ERROR "SSH configuration test failed."
+        return 1
+    fi
+
+    # Restart sshd service
+    log INFO "Restarting SSH service..."
+    if ! service "${sshd_service}" restart >/dev/null 2>&1; then
+        log ERROR "Failed to restart SSH service."
+        return 1
+    fi
+
+    # Verify service is running
+    retry_count=0
+    while [ ${retry_count} -lt ${TIMEOUT} ]; do
+        if service "${sshd_service}" status >/dev/null 2>&1; then
+            # Verify SSH is listening
+            if sockstat -4l | grep -q ":22"; then
+                log INFO "SSH server is running and listening on port 22."
+                break
+            fi
+        fi
+        retry_count=$((retry_count + 1))
+        sleep 1
+    done
+
+    if [ ${retry_count} -eq ${TIMEOUT} ]; then
+        log ERROR "SSH service failed to start properly within ${TIMEOUT} seconds."
+        return 1
+    fi
+
+    log INFO "SSH server configuration completed successfully."
+    return 0
 }
 ​​​​​​​​​​​​​​
 ################################################################################
