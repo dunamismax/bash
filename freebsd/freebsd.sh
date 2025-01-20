@@ -110,53 +110,58 @@ log() {
 trap 'log ERROR "Script failed at line $LINENO"' ERR
 
 install_pkgs() {
-    log INFO "Installing packages..."
+    local failed_packages=()
+    local pkg_rc=0
+    
+    log INFO "Starting package installation process..."
+    
+    # Update package repository and upgrade existing packages
+    log INFO "Updating package repository and upgrading existing packages..."
     if ! pkg update && pkg upgrade -y; then
         log ERROR "Failed to update/upgrade packages"
         return 1
-    }
+    fi
     
-    PACKAGES="\
-        # Development tools
-        gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext \
-        gmake valgrind doxygen ccache diffutils \
-        \
-        # Scripting and utilities
-        bash zsh fish nano screen tmate mosh htop iftop \
-        tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx \
-        smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep \
-        \
-        # Libraries for Python & C/C++ build
-        libffi readline sqlite3 ncurses gdbm nss lzma libxml2 \
-        \
-        # Networking, system admin, and hacking utilities
-        nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon whois bind-tools \
-        \
-        # Languages and runtimes
-        python39 go ruby perl5 rust \
-        \
-        # Containers and virtualization
-        docker vagrant qemu \
-        \
-        # Web hosting tools
-        nginx postgresql15-server postgresql15-client \
-        \
-        # File and backup management
-        rclone \
-        \
-        # System monitoring and logging
-        syslog-ng grafana prometheus netdata \
-        \
-        # Miscellaneous tools
-        lsof bsdstats"
-
-    if ! pkg install -y ${PACKAGES}; then
-        log ERROR "Package installation failed"
+    # Define package groups - using local to keep variables scoped to function
+    local -A PACKAGE_GROUPS
+    PACKAGE_GROUPS=(
+        ["Development tools"]="gcc cmake git pkgconf openssl llvm autoconf automake libtool ninja meson gettext gmake valgrind doxygen ccache diffutils"
+        ["Scripting and utilities"]="bash zsh fish nano screen tmate mosh htop iftop tree wget curl rsync unzip zip ca_root_nss sudo less neovim mc jq pigz fzf lynx smartmontools neofetch screenfetch ncdu dos2unix figlet toilet ripgrep"
+        ["Libraries"]="libffi readline sqlite3 ncurses gdbm nss lzma libxml2"
+        ["Networking tools"]="nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon whois bind-tools"
+        ["Languages"]="python39 go ruby perl5 rust"
+        ["Containers"]="docker vagrant qemu"
+        ["Web tools"]="nginx postgresql15-server postgresql15-client"
+        ["Backup tools"]="rclone"
+        ["Monitoring"]="syslog-ng grafana prometheus netdata"
+        ["System tools"]="lsof bsdstats"
+    )
+    
+    # Install packages by group
+    local group package install_output
+    for group in "${!PACKAGE_GROUPS[@]}"; do
+        log INFO "Installing ${group}..."
+        for package in ${PACKAGE_GROUPS[$group]}; do
+            log INFO "Installing package: ${package}"
+            if ! pkg install -y "${package}" >/dev/null 2>&1; then
+                pkg_rc=$?
+                failed_packages+=("$package")
+                log WARN "Failed to install package: ${package} (exit code: ${pkg_rc})"
+                continue
+            fi
+        done
+    done
+    
+    # Report results
+    if [ ${#failed_packages[@]} -eq 0 ]; then
+        log INFO "All packages installed successfully"
+        return 0
+    else
+        log ERROR "Failed to install the following packages:"
+        printf '%s\n' "${failed_packages[@]}" | sed 's/^/  - /'
+        log INFO "You can try installing these packages manually using: pkg install <package-name>"
         return 1
-    }
-
-    log INFO "Package installation completed successfully"
-    return 0
+    fi
 }
 
 configure_ssh() {
