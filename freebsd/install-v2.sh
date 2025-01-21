@@ -344,9 +344,6 @@ install_pkgs() {
     log INFO "--------------------------------------"
 }
 
-# ------------------------------------------------------------------------------
-# Function: Configures SSH and best practices security hardening
-# ------------------------------------------------------------------------------
 configure_ssh_settings() {
     local sshd_config="/usr/local/etc/ssh/sshd_config"
     local sshd_service="sshd"
@@ -398,6 +395,11 @@ configure_ssh_settings() {
 
     # Generate new sshd_config with security best practices
     log INFO "Generating new SSH configuration..."
+
+    # Create a temporary file using mktemp
+    local temp_file
+    temp_file=$(mktemp) || handle_error "Failed to create temporary file for SSH configuration."
+
     {
         printf "# SSH Server Configuration - Generated on %s\n\n" "$(date)"
         printf "# Network settings\n"
@@ -433,20 +435,20 @@ configure_ssh_settings() {
         printf "# Logging settings\n"
         printf "LogLevel VERBOSE\n"
         printf "SyslogFacility AUTH\n"
-    } > "${sshd_config}.tmp"
+    } > "${temp_file}"
 
     # Verify the temporary config file was created
-    if [ ! -f "${sshd_config}.tmp" ]; then
+    if [ ! -f "${temp_file}" ]; then
         handle_error "Failed to create new SSH configuration."
     fi
 
-    # Set proper permissions on the config file
-    if ! chmod 600 "${sshd_config}.tmp"; then
+    # Set proper permissions on the temporary config file
+    if ! chmod 600 "${temp_file}"; then
         handle_error "Failed to set permissions on new SSH configuration."
     fi
 
     # Move temporary config to final location
-    if ! mv "${sshd_config}.tmp" "${sshd_config}"; then
+    if ! mv "${temp_file}" "${sshd_config}"; then
         handle_error "Failed to move new SSH configuration to final location."
     fi
 
