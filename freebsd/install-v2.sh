@@ -1,14 +1,21 @@
 #!/usr/local/bin/bash
 # ------------------------------------------------------------------------------
-# FreeBSD Automated Setup Script
+# FreeBSD Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # Description:
-#   Automates the configuration of a fresh FreeBSD system, including:
-#     • Updating repositories and installing/upgrading essential software.
-#     • Backing up and customizing key configuration files for security and performance.
-#     • Setting up a user with sudo privileges and a configured Bash environment.
-#     • Enabling and configuring services such as SSH and NTP (chrony).
-#     • Installing optional tools like Caddy, Plex, Python, Go, Rust, Zig, etc.
+#   Automates the setup and configuration of a fresh FreeBSD system, including:
+#     • System updates and package upgrades.
+#     • Full system backups with retention policies.
+#     • User creation, sudo access, and Bash environment configuration.
+#     • Installation of essential development tools, languages, and utilities.
+#     • Configuration of SSH with security best practices.
+#     • Setup and hardening of the PF firewall.
+#     • Download and setup of GitHub repositories.
+#     • Installation of Visual Studio Code CLI and FiraCode Nerd Font.
+#     • Configuration of dotfiles for a personalized environment.
+#     • Directory permission management and cleanup.
+#     • Final system checks and logging of system information.
+#     • Optional reboot prompt to apply changes.
 #
 # Usage:
 #   • Run as root or via sudo.
@@ -18,6 +25,7 @@
 # Error Handling:
 #   • Uses 'set -Eeuo pipefail' for strict error handling.
 #   • Implements an ERR trap to log errors and provide context.
+#   • Custom error handling with detailed messages and exit codes.
 #
 # Compatibility:
 #   • Tested on FreeBSD 14+. Verify compatibility on other versions.
@@ -33,7 +41,7 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/freebsd_setup.log"  # Path to the log file
 VERBOSE=2                              # Verbosity level (0: silent, 1: errors only, 2: info, 3: debug)
-USERNAME="sawyer"                      # Default username to configure
+USERNAME="sawyer"                      # Default username to configure (change as needed)
 
 # ------------------------------------------------------------------------------
 # Initial Checks
@@ -41,17 +49,21 @@ USERNAME="sawyer"                      # Default username to configure
 
 # Ensure the script is run as root
 if [[ $(id -u) -ne 0 ]]; then
-  echo "ERROR: This script must be run as root (e.g., sudo $0). Exiting."
-  exit 1
+  handle_error "This script must be run as root (e.g., sudo $0)."
 fi
 
 # Ensure the log directory exists and is writable
 LOG_DIR=$(dirname "$LOG_FILE")
 if [[ ! -d "$LOG_DIR" ]]; then
-  mkdir -p "$LOG_DIR" || { echo "ERROR: Failed to create log directory: $LOG_DIR"; exit 1; }
+  mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
 fi
-touch "$LOG_FILE" || { echo "ERROR: Failed to create log file: $LOG_FILE"; exit 1; }
+touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
 chmod 600 "$LOG_FILE"  # Restrict log file access to root only
+
+# Validate network connectivity
+if ! ping -c 1 google.com &>/dev/null; then
+    handle_error "No network connectivity. Please check your network settings."
+fi
 
 # ------------------------------------------------------------------------------
 # Function: Logging
@@ -98,6 +110,11 @@ log() {
     echo "$log_entry" >> "$LOG_FILE"
 
     # Output to console based on verbosity level
+    # Verbosity levels:
+    # 0: Silent (no output)
+    # 1: Errors only
+    # 2: Info and errors
+    # 3: Debug, info, and errors
     if [[ "$VERBOSE" -ge 2 ]]; then
         printf "${color}%s${NC}\n" "$log_entry" >&2
     elif [[ "$VERBOSE" -ge 1 && "$level" == "ERROR" ]]; then
@@ -110,12 +127,24 @@ log() {
 # ------------------------------------------------------------------------------
 handle_error() {
     local error_message="${1:-An error occurred. Check the log for details.}"
-    log ERROR "$error_message"
-    exit 1
+    local exit_code="${2:-1}"  # Default exit code is 1
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # Log the error with additional context
+    log ERROR "$error_message (Exit Code: $exit_code)"
+    log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]}."
+
+    # Optionally, print the error to stderr for immediate visibility
+    echo "ERROR: $error_message (Exit Code: $exit_code)" >&2
+    echo "Script failed at line $LINENO in function ${FUNCNAME[1]}." >&2
+
+    # Exit with the specified exit code
+    exit "$exit_code"
 }
 
 # Trap errors and log them with context
-trap 'log ERROR "Script failed at line $LINENO. See above for details."' ERR
+trap 'log ERROR "Script failed in function ${FUNCNAME[0]} at line $LINENO. See above for details."' ERR
 
 # ------------------------------------------------------------------------------
 # Function: Perform initial system update and upgrade
@@ -127,7 +156,7 @@ initial_system_update() {
     # Update package repositories
     log INFO "Updating package repositories..."
     if ! pkg update; then
-        handle_error "Failed to update package repositories. Check network connectivity or repository configuration."
+        handle_error "Failed to update package repositories. Check repository configuration."
     fi
     log INFO "Package repositories updated successfully."
 
@@ -213,9 +242,40 @@ backup_system() {
 }
 
 # ------------------------------------------------------------------------------
-# Function: install_pkgs
-# Purpose: Installs a comprehensive set of packages for development, system
-# administration, networking, and security.
+# Function: Configure User for Sudo Access
+# ------------------------------------------------------------------------------
+configure_sudo_access() {
+    log INFO "--------------------------------------"
+    log INFO "Configuring sudo access for user: $USERNAME"
+
+    # Check if the user exists
+    if ! id "$USERNAME" &>/dev/null; then
+        handle_error "User $USERNAME does not exist."
+    fi
+
+    # Add the user to the 'wheel' group
+    log INFO "Adding user $USERNAME to the 'wheel' group..."
+    if ! pw usermod "$USERNAME" -G wheel; then
+        handle_error "Failed to add user $USERNAME to the 'wheel' group."
+    fi
+
+    # Ensure the sudoers file includes the 'wheel' group
+    log INFO "Configuring sudoers file for 'wheel' group..."
+    if ! grep -q '^%wheel ALL=(ALL) ALL' /usr/local/etc/sudoers; then
+        echo "%wheel ALL=(ALL) ALL" >> /usr/local/etc/sudoers || {
+            handle_error "Failed to update sudoers file."
+        }
+        log INFO "Added 'wheel' group to sudoers file."
+    else
+        log INFO "'wheel' group already configured in sudoers file."
+    fi
+
+    log INFO "Sudo access configured successfully for user: $USERNAME"
+    log INFO "--------------------------------------"
+}
+
+# ------------------------------------------------------------------------------
+# Function: Install all packages
 # ------------------------------------------------------------------------------
 install_pkgs() {
     log INFO "--------------------------------------"
@@ -349,7 +409,7 @@ configure_ssh_settings() {
         printf "# Authentication settings\n"
         printf "MaxAuthTries 3\n"
         printf "PermitRootLogin no\n"
-        printf "PasswordAuthentication no\n"
+        printf "PasswordAuthentication yes\n"
         printf "ChallengeResponseAuthentication no\n"
         printf "UsePAM no\n"
         printf "PubkeyAuthentication yes\n"
@@ -773,7 +833,7 @@ set_directory_permissions() {
     local GITHUB_DIR="/home/${USERNAME}/github"
     local HUGO_PUBLIC_DIR="${GITHUB_DIR}/hugo/dunamismax.com/public"
     local HUGO_DIR="${GITHUB_DIR}/hugo"
-    local SAWYER_HOME="/home/${USERNAME}"
+    local HOME="/home/${USERNAME}"
     local BASE_DIR="$GITHUB_DIR"
 
     # Permissions
@@ -790,8 +850,8 @@ set_directory_permissions() {
     fi
 
     # 2. Set ownership for directories
-    log INFO "Setting ownership for $GITHUB_DIR and $SAWYER_HOME"
-    if ! chown -R "${USERNAME}:${USERNAME}" "$GITHUB_DIR" "$SAWYER_HOME"; then
+    log INFO "Setting ownership for $GITHUB_DIR and $HOME"
+    if ! chown -R "${USERNAME}:${USERNAME}" "$GITHUB_DIR" "$HOME"; then
         handle_error "Failed to set ownership for directories."
     fi
 
@@ -814,7 +874,7 @@ set_directory_permissions() {
         if ! chown -R "${USERNAME}:${USERNAME}" "$HUGO_DIR"; then
             handle_error "Failed to set ownership for Hugo directory."
         fi
-        if ! chmod o+rx "$SAWYER_HOME" "$GITHUB_DIR" "$HUGO_DIR" "${HUGO_DIR}/dunamismax.com"; then
+        if ! chmod o+rx "$HOME" "$GITHUB_DIR" "$HUGO_DIR" "${HUGO_DIR}/dunamismax.com"; then
             handle_error "Failed to set permissions for Hugo directory."
         fi
     else
@@ -1010,6 +1070,7 @@ main() {
     # Bash script execution order
     local functions=(
         backup_system
+        configure_sudo_access
         install_pkgs
         configure_ssh_settings
         configure_pf
@@ -1034,7 +1095,27 @@ main() {
     log INFO "--------------------------------------"
 }
 
+# ------------------------------------------------------------------------------
+# Reboot Prompt
+# ------------------------------------------------------------------------------
+prompt_reboot() {
+    log INFO "Setup complete. A reboot is recommended to apply all changes."
+    read -p "Reboot now? (y/n): " REBOOT
+    if [[ "$REBOOT" == "y" || "$REBOOT" == "Y" ]]; then
+        log INFO "Rebooting the system..."
+        reboot
+    else
+        log INFO "Reboot skipped. Please reboot manually when convenient."
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # Entrypoint
+# ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    # Run the main function
     main "$@"
+
+    # Prompt for reboot after successful completion
+    prompt_reboot
 fi
