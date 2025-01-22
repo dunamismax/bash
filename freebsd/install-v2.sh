@@ -41,6 +41,7 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/freebsd_setup.log"  # Path to the log file
 USERNAME="sawyer"                      # Default username to configure (change as needed)
+chsh -s /usr/local/bin/bash            # Sets Bash as the default shell
 
 # ------------------------------------------------------------------------------
 # Function: Logging
