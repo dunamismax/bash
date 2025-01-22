@@ -1,4 +1,3 @@
-#!/usr/local/bin/bash
 # ------------------------------------------------------------------------------
 #        ______                  ______
 #        ___  /_ ______ ____________  /_ _______________
@@ -9,7 +8,7 @@
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-# 1. Early return if not running interactively
+# 0. Early return if not running interactively
 # ------------------------------------------------------------------------------
 case $- in
     *i*) ;;
@@ -18,6 +17,47 @@ esac
 
 # 1. Environment variables
 # ------------------------------------------------------------------------------
+
+# Nord color scheme
+export NORD0="#2E3440"   # Polar Night (darkest)
+export NORD1="#3B4252"   # Polar Night
+export NORD2="#434C5E"   # Polar Night
+export NORD3="#4C566A"   # Polar Night (lightest)
+export NORD4="#D8DEE9"   # Snow Storm (darkest)
+export NORD5="#E5E9F0"   # Snow Storm
+export NORD6="#ECEFF4"   # Snow Storm (lightest)
+export NORD7="#8FBCBB"   # Frost (turquoise)
+export NORD8="#88C0D0"   # Frost (light blue)
+export NORD9="#81A1C1"   # Frost (blue)
+export NORD10="#5E81AC"  # Frost (dark blue)
+export NORD11="#BF616A"  # Aurora (red)
+export NORD12="#D08770"  # Aurora (orange)
+export NORD13="#EBCB8B"  # Aurora (yellow)
+export NORD14="#A3BE8C"  # Aurora (green)
+export NORD15="#B48EAD"  # Aurora (purple)
+
+# Reset color code
+RESET='\[\e[0m\]'
+
+# Set terminal colors to Nord theme
+if [ "$TERM" = "xterm-256color" ] || [ "$TERM" = "screen-256color" ]; then
+    printf '\e]4;0;%s\e\\' "$NORD0"   # Color 0 (black)
+    printf '\e]4;1;%s\e\\' "$NORD11"  # Color 1 (red)
+    printf '\e]4;2;%s\e\\' "$NORD14"  # Color 2 (green)
+    printf '\e]4;3;%s\e\\' "$NORD13"  # Color 3 (yellow)
+    printf '\e]4;4;%s\e\\' "$NORD10"  # Color 4 (blue)
+    printf '\e]4;5;%s\e\\' "$NORD15"  # Color 5 (purple)
+    printf '\e]4;6;%s\e\\' "$NORD7"   # Color 6 (cyan)
+    printf '\e]4;7;%s\e\\' "$NORD6"   # Color 7 (white)
+    printf '\e]4;8;%s\e\\' "$NORD4"   # Color 8 (bright black)
+    printf '\e]4;9;%s\e\\' "$NORD11"  # Color 9 (bright red)
+    printf '\e]4;10;%s\e\\' "$NORD14" # Color 10 (bright green)
+    printf '\e]4;11;%s\e\\' "$NORD13" # Color 11 (bright yellow)
+    printf '\e]4;12;%s\e\\' "$NORD9"  # Color 12 (bright blue)
+    printf '\e]4;13;%s\e\\' "$NORD15" # Color 13 (bright purple)
+    printf '\e]4;14;%s\e\\' "$NORD7"  # Color 14 (bright cyan)
+    printf '\e]4;15;%s\e\\' "$NORD6"  # Color 15 (bright white)
+fi
 
 # Function to add directories to PATH without duplicates
 add_to_path() {
@@ -62,7 +102,7 @@ export HISTTIMEFORMAT="%F %T "
 export LESS="-R -X -F"
 
 # ------------------------------------------------------------------------------
-# 1. Greeting
+# 2. Greeting
 # ------------------------------------------------------------------------------
 neofetch
 echo "-----------------------------------"
@@ -74,7 +114,7 @@ echo "OS: $(uname -sr)"
 echo "-----------------------------------"
 
 # ------------------------------------------------------------------------------
-# 2. pyenv initialization
+# 3. pyenv initialization
 # ------------------------------------------------------------------------------
 export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
@@ -93,48 +133,44 @@ if [ -x /usr/local/bin/lesspipe.sh ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 5. Bash prompt (PS1) with Nord color theme
+# 5. Set PS1 with Nord colors (no Git integration)
 # ------------------------------------------------------------------------------
-case "$TERM" in
-    xterm-color|*-256color) color_prompt=yes;;
-esac
-
-force_color_prompt=yes
-
-if [ -n "$force_color_prompt" ]; then
-    if [ -x /usr/local/bin/tput ] && tput setaf 1 >&/dev/null; then
-        color_prompt=yes
-    else
-        color_prompt=
-    fi
-fi
-
 if [ "$color_prompt" = yes ]; then
-    PS1='\[\033[38;2;136;192;208m\]\u@\h\[\033[00m\]:\[\033[38;2;94;129;172m\]\w\[\033[00m\]\$ '
+    PS1="\[${NORD7}\]\u\[${RESET}\]@\[${NORD8}\]\h\[${RESET}\]:\[${NORD9}\]\w\[${RESET}\]"
+    PS1+="\n\[${NORD13}\][\t]\[${RESET}\] "
+    PS1+="\$(if [[ \$? -eq 0 ]]; then echo '\[${NORD12}\]'; else echo '\[${NORD11}\]'; fi)\$\[${RESET}\] "
 else
     PS1='\u@\h:\w\$ '
 fi
 unset color_prompt force_color_prompt
 
-case "$TERM" in
-    xterm*|rxvt*)
-        PS1="\[\e]0;\u@\h: \w\a\]$PS1"
-        ;;
-    *)
-        ;;
-esac
-
 # ------------------------------------------------------------------------------
 # 6. Color support for FreeBSD ls and other commands
 # ------------------------------------------------------------------------------
-# FreeBSD ls colors
+# FreeBSD ls colors with Nord theme
 export CLICOLOR=1
-export LSCOLORS="ExGxFxdxCxDxDxhbadExEx"
+export LS_COLORS="rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.Z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36"
 
-# Colorized grep (FreeBSD style)
-alias grep='grep --color=auto'
-alias egrep='egrep --color=auto'
-alias fgrep='fgrep --color=auto'
+# Colorized grep with Nord theme
+export GREP_COLORS="\
+ms=01;31:\           # Matched text (NORD11, Aurora red)
+mc=01;31:\           # Context-matched text (NORD11, Aurora red)
+sl=:\                # Unmatched lines (default)
+cx=:\                # Context lines (default)
+fn=35:\              # Filename (NORD15, Aurora purple)
+ln=32:\              # Line numbers (NORD14, Aurora green)
+bn=32:\              # Byte offsets (NORD14, Aurora green)
+se=36"               # Separators (NORD7, Frost turquoise)
+
+# Man Pages with Nord Colors
+export MANPAGER="less -s -M +Gg"
+export LESS_TERMCAP_mb=$'\e[1;31m'     # begin blink (NORD11, Aurora red)
+export LESS_TERMCAP_md=$'\e[1;36m'     # begin bold (NORD7, Frost turquoise)
+export LESS_TERMCAP_me=$'\e[0m'        # reset bold/blink
+export LESS_TERMCAP_so=$'\e[01;44;33m' # begin standout-mode - info box (NORD13, Aurora yellow on NORD0, Polar Night)
+export LESS_TERMCAP_se=$'\e[0m'        # reset standout-mode
+export LESS_TERMCAP_us=$'\e[1;32m'     # begin underline (NORD14, Aurora green)
+export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
 
 # ------------------------------------------------------------------------------
 # 7. FreeBSD-specific aliases
@@ -201,35 +237,14 @@ enable_venv() {
 }
 
 # ------------------------------------------------------------------------------
-# 10. Bash completion (FreeBSD specific)
+# 9. Bash completion (FreeBSD specific)
 # ------------------------------------------------------------------------------
 if [ -f /usr/local/share/bash-completion/bash_completion.sh ]; then
     . /usr/local/share/bash-completion/bash_completion.sh
 fi
 
 # ------------------------------------------------------------------------------
-# 12. Git prompt integration
-# ------------------------------------------------------------------------------
-if [ -f /usr/local/share/git-core/contrib/completion/git-prompt.sh ]; then
-    . /usr/local/share/git-core/contrib/completion/git-prompt.sh
-    export GIT_PS1_SHOWDIRTYSTATE=1
-    export GIT_PS1_SHOWUNTRACKEDFILES=1
-    export GIT_PS1_SHOWUPSTREAM="auto"
-    PS1='\[\033[38;2;136;192;208m\]\u@\h\[\033[00m\]:\[\033[38;2;94;129;172m\]\w\[\033[38;2;143;188;187m\]$(__git_ps1 " (%s)")\[\033[00m\]\$ '
-fi
-
-# Git aliases
-alias gs='git status'
-alias ga='git add'
-alias gc='git commit'
-alias gd='git diff'
-alias gl='git log --oneline --graph --decorate'
-alias gco='git checkout'
-alias gpu='git pull'
-alias gp='git push'
-
-# ------------------------------------------------------------------------------
-# 13. Extractor function
+# 10. Extractor function
 # ------------------------------------------------------------------------------
 extract() {
     if [ -f "$1" ]; then
