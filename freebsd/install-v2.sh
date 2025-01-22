@@ -27,9 +27,9 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/freebsd_setup.log"  # Path to the log file
-USERNAME="sawyer"                      # Default username to configure (change as needed)
-chsh -s /usr/local/bin/bash            # Sets Bash as the default shell
+LOG_FILE="/var/log/freebsd_setup.log"          # Path to the log file
+USERNAME="sawyer"                              # Default username to configure (change as needed)
+pw usermod $USERNAME -s /usr/local/bin/bash    # Sets Bash as the default shell
 
 # ------------------------------------------------------------------------------
 # Function: Logging
@@ -340,7 +340,7 @@ install_pkgs() {
 
         # GUI Install (i3)
         xorg xinit xauth xrandr xset xsetroot i3 i3status i3lock dmenu feh
-        picom alacritty pulseaudio pavucontrol flameshot
+        picom alacritty pulseaudio pavucontrol flameshot clipmenu dunst
     )
 
     # Install packages
@@ -984,6 +984,8 @@ setup_dotfiles() {
     local dirs=(
         "${dotfiles_dir}/alacritty:${config_dir}"
         "${dotfiles_dir}/i3:${config_dir}"
+        "${dotfiles_dir}/picom:${config_dir}"
+        "${dotfiles_dir}/i3status:${config_dir}"
     )
 
     # Copy files

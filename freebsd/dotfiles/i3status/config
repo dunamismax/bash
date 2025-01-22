@@ -1,0 +1,77 @@
+# ~/.config/i3status/config
+
+general {
+    colors = true
+    interval = 5
+    separator = "  "
+    color_good = "#81A1C1"  # Nord Frost 1
+    color_degraded = "#EBCB8B"  # Nord Yellow
+    color_bad = "#BF616A"  # Nord Red
+}
+
+order += "ipv4"
+order += "net"
+order += "disk /"
+order += "memory"
+order += "load"
+order += "cpu_usage"
+order += "volume master"
+order += "diskio"
+order += "uptime"
+order += "tztime local"
+
+ipv4 {
+    format_up = " IPv4: %ip"
+    format_down = " IPv4: down"
+    color_down = "#BF616A"  # Nord Red
+}
+
+net {
+    format_up = " Net: ↓%down ↑%up"
+    format_down = " Net: down"
+    color_down = "#BF616A"  # Nord Red
+}
+
+disk "/" {
+    format = " Disk: %avail"
+    color_degraded = "#EBCB8B"  # Nord Yellow
+}
+
+memory {
+    format = " Mem: %used / %total"
+    threshold_degraded = "1G"
+    format_degraded = " Mem: %free"
+    color_degraded = "#EBCB8B"  # Nord Yellow
+}
+
+load {
+    format = " Load: %1min, %5min, %15min"
+    color_degraded = "#EBCB8B"  # Nord Yellow
+}
+
+cpu_usage {
+    format = " CPU: %usage"
+    color_degraded = "#EBCB8B"  # Nord Yellow
+}
+
+volume master {
+    format = " Vol: %volume"
+    format_muted = " Vol: muted"
+    device = "default"
+    mixer = "Master"
+    mixer_idx = 0
+    color_muted = "#BF616A"  # Nord Red
+}
+
+diskio {
+    format = " Disk I/O: %read %write"
+    color_degraded = "#EBCB8B"  # Nord Yellow
+}
+
+uptime {
+    format = " Up: %daysd %hh %mm"
+}
+
+tztime local {
+    format = " %Y-%m-%d  %H:%M:%S"
+}

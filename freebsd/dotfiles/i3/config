@@ -51,8 +51,10 @@ exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
 # Set desktop background using feh (adjust path to your wallpaper)
 exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/freebsd/wallpapers/Linux/kali-linux-minimal-amoled-4k.png
 
-# Launch dmenu (application launcher)
-bindsym $mod+d exec dmenu_run -fn "FiraCode Nerd Font:size=12" -nb $nord0 -nf $nord4 -sb $nord10 -sf $nord6
+# Start pulseaudio
+exec_always --no-startup-id pulseaudio --start
+
+exec_always --no-startup-id dunst
 
 # ------------------------------------------------------------------------------
 # Keybindings: Launchers and Utilities
@@ -60,8 +62,11 @@ bindsym $mod+d exec dmenu_run -fn "FiraCode Nerd Font:size=12" -nb $nord0 -nf $n
 # Launch terminal (Alacritty) with Mod+Enter
 bindsym $mod+Return exec alacritty
 
+# Launch dmenu (application launcher)
+bindsym $mod+d exec dmenu_run -fn "FiraCode Nerd Font:size=12" -nb $nord0 -nf $nord4 -sb $nord10 -sf $nord6
+
 # Lock screen using i3lock with Mod+Shift+l
-bindsym $mod+Shift+l exec --no-startup-id i3lock -i /path/to/lockscreen/image.png
+bindsym $mod+Shift+l exec --no-startup-id i3lock -i /home/sawyer/github/bash/freebsd/wallpapers/Linux/kali-linux-minimal-amoled-4k.png
 
 # Volume control using pavucontrol with Mod+Shift+p
 bindsym $mod+Shift+p exec --no-startup-id pavucontrol
@@ -74,6 +79,9 @@ bindsym $mod+f fullscreen toggle
 
 # Take a screenshot of the entire screen using flameshot
 bindsym Print exec flameshot gui
+
+# Launch clipmenu clipboard manager
+bindsym $mod+Shift+c exec --no-startup-id clipmenu
 
 # ------------------------------------------------------------------------------
 # Window Management Keybindings
