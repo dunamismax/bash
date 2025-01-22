@@ -766,9 +766,15 @@ install_font() {
         fi
     fi
 
+    # Set correct permissions on the font directory
+    log INFO "Setting permissions for the font directory..."
+    if ! chmod 755 "$font_dir"; then
+        handle_error "Failed to set permissions for the font directory."
+    fi
+
     # Download the font
     log INFO "Downloading font from $font_url..."
-    if ! fetch -o "$font_dir/$font_file" "$font_url"; then
+    if ! curl -L -o "$font_dir/$font_file" "$font_url"; then
         handle_error "Failed to download font from $font_url."
     fi
     log INFO "Font downloaded successfully."
@@ -784,6 +790,12 @@ install_font() {
         handle_error "Failed to set permissions for the font file."
     fi
 
+    # Set ownership to root:wheel
+    log INFO "Setting ownership for the font file..."
+    if ! chown root:wheel "$font_dir/$font_file"; then
+        handle_error "Failed to set ownership for the font file."
+    fi
+
     # Refresh the font cache
     log INFO "Refreshing font cache..."
     if ! fc-cache -fv >/dev/null 2>&1; then
@@ -794,6 +806,13 @@ install_font() {
     # Verify the font is available in the system
     log INFO "Verifying font installation..."
     if ! fc-list | grep -qi "FiraCode"; then
+        log ERROR "Font verification failed. FiraCode Nerd Font is not available in the system."
+        log INFO "Font directory contents:"
+        ls -l "$font_dir"
+        log INFO "Font cache refresh output:"
+        fc-cache -fv
+        log INFO "Font list output:"
+        fc-list | grep -i "FiraCode"
         handle_error "Font verification failed. FiraCode Nerd Font is not available in the system."
     fi
 
