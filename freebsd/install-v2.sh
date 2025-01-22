@@ -212,27 +212,27 @@ backup_system() {
     local BACKUP_FOLDER="$DESTINATION/backup-$TIMESTAMP"
     local RETENTION_DAYS=7
     local EXCLUDES=(
-        "/dev/*"         # Device files
-        "/proc/*"        # Process information (Linux compatibility, not used on FreeBSD)
-        "/tmp/*"         # Temporary files
-        "/var/tmp/*"     # Temporary files in /var
-        "/var/run/*"     # Runtime data (e.g., PID files)
-        "/var/log/*"     # Log files
-        "/var/cache/*"   # Cached data
-        "/var/db/pkg/*"  # Package database (can be regenerated)
-        "/var/db/ports/*" # Ports tree metadata (can be regenerated)
-        "/var/db/portsnap/*" # Portsnap data (can be regenerated)
-        "/var/db/freebsd-update/*" # FreeBSD update data (can be regenerated)
-        "/var/db/entropy/*" # Entropy pool data (not needed for backup)
-        "/var/db/ldconfig/*" # ldconfig cache (can be regenerated)
-        "/var/db/ntp/*"  # NTP data (can be regenerated)
-        "/mnt/*"         # Mount points (exclude mounted filesystems)
-        "/media/*"       # Media mounts (exclude mounted filesystems)
-        "/swapfile"      # Swap file (not needed for backup)
-        "/lost+found"    # Recovered files from filesystem checks
-        "/root/.cache/*" # Root user cache
-        "/home/*/.cache/*" # User cache directories
-        "$DESTINATION"   # Exclude the backup destination itself
+        "/dev/*"                     # Device files
+        "/proc/*"                    # Process information (Linux compatibility, not used on FreeBSD)
+        "/tmp/*"                     # Temporary files
+        "/var/tmp/*"                 # Temporary files in /var
+        "/var/run/*"                 # Runtime data (e.g., PID files)
+        "/var/log/*"                 # Log files
+        "/var/cache/*"               # Cached data
+        "/var/db/pkg/*"              # Package database (can be regenerated)
+        "/var/db/ports/*"            # Ports tree metadata (can be regenerated)
+        "/var/db/portsnap/*"         # Portsnap data (can be regenerated)
+        "/var/db/freebsd-update/*"   # FreeBSD update data (can be regenerated)
+        "/var/db/entropy/*"          # Entropy pool data (not needed for backup)
+        "/var/db/ldconfig/*"         # ldconfig cache (can be regenerated)
+        "/var/db/ntp/*"              # NTP data (can be regenerated)
+        "/mnt/*"                     # Mount points (exclude mounted filesystems)
+        "/media/*"                   # Media mounts (exclude mounted filesystems)
+        "/swapfile"                  # Swap file (not needed for backup)
+        "/lost+found"                # Recovered files from filesystem checks
+        "/root/.cache/*"             # Root user cache
+        "/home/*/.cache/*"           # User cache directories
+        "$DESTINATION"               # Exclude the backup destination itself
     )
 
     # Convert EXCLUDES array into rsync-compatible arguments
