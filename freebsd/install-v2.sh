@@ -336,7 +336,7 @@ install_pkgs() {
         syslog-ng grafana prometheus netdata
 
         # Miscellaneous tools
-        lsof bsdstats curl lzip zstd
+        lsof bsdstats curl lzip zstd fusefs-ntfs
 
         # GUI Install (i3)
         xorg xinit xauth xrandr xset xsetroot i3 i3status i3lock dmenu feh
