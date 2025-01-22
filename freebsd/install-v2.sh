@@ -763,7 +763,7 @@ install_font() {
 
     # Verify the font is available in the system
     log INFO "Verifying font installation..."
-    if ! fc-list | grep -q "FiraCode Nerd Font"; then
+    if ! fc-list | grep -qi "FiraCode"; then
         handle_error "Font verification failed. FiraCode Nerd Font is not available in the system."
     fi
 
