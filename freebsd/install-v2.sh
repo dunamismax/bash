@@ -40,7 +40,6 @@ set -Eeuo pipefail
 # Configuration
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/freebsd_setup.log"  # Path to the log file
-VERBOSE=2                              # Verbosity level (0: silent, 1: errors only, 2: info, 3: debug)
 USERNAME="sawyer"                      # Default username to configure (change as needed)
 
 # ------------------------------------------------------------------------------
@@ -109,17 +108,8 @@ log() {
     # Append to log file
     echo "$log_entry" >> "$LOG_FILE"
 
-    # Output to console based on verbosity level
-    # Verbosity levels:
-    # 0: Silent (no output)
-    # 1: Errors only
-    # 2: Info and errors
-    # 3: Debug, info, and errors
-    if [[ "$VERBOSE" -ge 2 ]]; then
-        printf "${color}%s${NC}\n" "$log_entry" >&2
-    elif [[ "$VERBOSE" -ge 1 && "$level" == "ERROR" ]]; then
-        printf "${color}%s${NC}\n" "$log_entry" >&2
-    fi
+    # Output to console
+    printf "${color}%s${NC}\n" "$log_entry" >&2
 }
 
 # ------------------------------------------------------------------------------
@@ -344,6 +334,9 @@ install_pkgs() {
     log INFO "--------------------------------------"
 }
 
+# ------------------------------------------------------------------------------
+# Function: Configure and harden SSH
+# ------------------------------------------------------------------------------
 configure_ssh_settings() {
     local sshd_config="/usr/local/etc/ssh/sshd_config"
     local sshd_service="sshd"
@@ -781,48 +774,6 @@ download_repositories() {
     done
 
     log INFO "GitHub repositories download completed."
-
-    # Set permissions and ownership for Hugo directories
-    log INFO "Setting ownership and permissions for Hugo public directory..."
-    local hugo_public_dir="${github_dir}/hugo/dunamismax.com/public"
-    if [[ -d "$hugo_public_dir" ]]; then
-        if ! chown -R www:www "$hugo_public_dir"; then
-            handle_error "Failed to set ownership for Hugo public directory."
-        fi
-        if ! chmod -R 755 "$hugo_public_dir"; then
-            handle_error "Failed to set permissions for Hugo public directory."
-        fi
-    else
-        log WARN "Hugo public directory not found: $hugo_public_dir"
-    fi
-
-    log INFO "Setting ownership and permissions for Hugo directory..."
-    local hugo_dir="${github_dir}/hugo"
-    if [[ -d "$hugo_dir" ]]; then
-        if ! chown -R "${USERNAME}:${USERNAME}" "$hugo_dir"; then
-            handle_error "Failed to set ownership for Hugo directory."
-        fi
-        if ! chmod o+rx "/home/${USERNAME}/" "$github_dir" "$hugo_dir" "${hugo_dir}/dunamismax.com"; then
-            handle_error "Failed to set permissions for Hugo directory."
-        fi
-    else
-        log WARN "Hugo directory not found: $hugo_dir"
-    fi
-
-    # Set ownership for other repositories
-    for repo in bash c python religion windows; do
-        local repo_dir="${github_dir}/${repo}"
-        if [[ -d "$repo_dir" ]]; then
-            log INFO "Setting ownership for repository: $repo"
-            if ! chown -R "${USERNAME}:${USERNAME}" "$repo_dir"; then
-                handle_error "Failed to set ownership for repository: $repo"
-            fi
-        else
-            log WARN "Repository directory not found: $repo_dir"
-        fi
-    done
-
-    log INFO "Repository download and permissions update completed."
     log INFO "--------------------------------------"
     cd ~ || handle_error "Failed to return to home directory."
 }
@@ -883,12 +834,25 @@ set_directory_permissions() {
         log WARN "Hugo directory not found: $HUGO_DIR"
     fi
 
-    # 5. Ensure BASE_DIR exists
+    # 5. Set ownership for other repositories
+    for repo in bash c python religion windows; do
+        local repo_dir="${GITHUB_DIR}/${repo}"
+        if [[ -d "$repo_dir" ]]; then
+            log INFO "Setting ownership for repository: $repo"
+            if ! chown -R "${USERNAME}:${USERNAME}" "$repo_dir"; then
+                handle_error "Failed to set ownership for repository: $repo"
+            fi
+        else
+            log WARN "Repository directory not found: $repo_dir"
+        fi
+    done
+
+    # 6. Ensure BASE_DIR exists
     if [[ ! -d "$BASE_DIR" ]]; then
         handle_error "Base directory does not exist: $BASE_DIR"
     fi
 
-    # 6. Find and fix .git directory permissions
+    # 7. Find and fix .git directory permissions
     log INFO "Fixing .git directory permissions in $BASE_DIR..."
     while IFS= read -r -d '' git_dir; do
         if [[ -d "$git_dir" ]]; then
@@ -1063,7 +1027,7 @@ finalize_configuration() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN
+# Main function
 # ------------------------------------------------------------------------------
 main() {
     log INFO "--------------------------------------"
