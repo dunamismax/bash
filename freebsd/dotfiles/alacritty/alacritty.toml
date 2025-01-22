@@ -123,7 +123,7 @@ magenta = "#b48ead"  # Aurora Purple (Nord15)
 cyan    = "#8fbcbb"  # Frost (Nord7)
 white   = "#eceff4"  # Snow Storm (Nord6)
 
-[shell]
+[terminal.shell]
 # Set FreeBSD's Bash as the default shell
 program = "/usr/local/bin/bash"  # Adjust the path if necessary
 args = ["--login"]  # Optional: Start Bash as a login shell
