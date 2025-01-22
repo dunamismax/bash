@@ -24,7 +24,7 @@ LOG_FILE="/var/log/example_script.log"  # Path to the log file
 # LOGGING FUNCTION
 # ------------------------------------------------------------------------------
 log() {
-    local level="$1"
+    local level="${1:-INFO}"
     shift
     local message="$*"
     local timestamp
@@ -129,11 +129,12 @@ main() {
             -h|--help)
                 usage
                 ;;
-            *) 
+            *)
                 log WARN "Unknown option: $1"
                 usage
                 ;;
         esac
+        shift
     done
 
     # Ensure the script is run as root
