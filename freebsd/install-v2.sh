@@ -3,34 +3,45 @@
 # FreeBSD Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # Description:
-#   Automates the setup and configuration of a fresh FreeBSD system, including:
-#     • System updates and package upgrades.
-#     • Full system backups with retention policies.
-#     • User creation, sudo access, and Bash environment configuration.
-#     • Installation of essential development tools, languages, and utilities.
-#     • Configuration of SSH with security best practices.
-#     • Setup and hardening of the PF firewall.
-#     • Download and setup of GitHub repositories.
-#     • Installation of Visual Studio Code CLI and FiraCode Nerd Font.
-#     • Configuration of dotfiles for a personalized environment.
-#     • Directory permission management and cleanup.
-#     • Final system checks and logging of system information.
-#     • Optional reboot prompt to apply changes.
+#   This script automates the setup and configuration of a fresh FreeBSD system,
+#   ensuring a secure, optimized, and personalized environment. Key features include:
+#     • System updates and package upgrades for the latest software.
+#     • Full system backups with configurable retention policies.
+#     • User creation, sudo access, and Bash shell configuration.
+#     • Installation of essential development tools, programming languages, and utilities.
+#     • Secure SSH configuration with industry best practices.
+#     • Setup and hardening of the PF firewall for enhanced security.
+#     • Download and setup of GitHub repositories for development workflows.
+#     • Installation of Visual Studio Code CLI and FiraCode Nerd Font for coding.
+#     • Configuration of dotfiles for a personalized and productive environment.
+#     • Directory permission management and cleanup for security and organization.
+#     • Final system checks and logging of system information for diagnostics.
+#     • Optional reboot prompt to apply changes and ensure system stability.
 #
 # Usage:
-#   • Run as root or via sudo.
-#   • Adjust configuration variables (e.g., USERNAME, PACKAGES) as needed.
-#   • Logs actions and errors to /var/log/freebsd_setup.log with timestamps.
+#   • Run as root or with sudo privileges.
+#   • Adjust configuration variables (e.g., USERNAME, PACKAGES) in the script as needed.
+#   • Logs all actions and errors to /var/log/freebsd_setup.log with timestamps.
 #
 # Error Handling:
-#   • Uses 'set -Eeuo pipefail' for strict error handling.
-#   • Implements an ERR trap to log errors and provide context.
-#   • Custom error handling with detailed messages and exit codes.
+#   • Uses 'set -Eeuo pipefail' for strict error handling and script robustness.
+#   • Implements an ERR trap to log errors with context and line numbers.
+#   • Custom error handling with detailed messages and exit codes for troubleshooting.
 #
 # Compatibility:
-#   • Tested on FreeBSD 14+. Verify compatibility on other versions.
+#   • Tested on FreeBSD 14+. May require adjustments for other versions.
 #
-# Author: dunamismax | License: MIT
+# Dependencies:
+#   • Requires internet connectivity for package installation and updates.
+#   • Assumes a fresh FreeBSD installation with minimal pre-configuration.
+#
+# Notes:
+#   • Ensure you have a backup of critical data before running this script.
+#   • Review and customize the script to suit your specific needs.
+#
+# Author: dunamismax
+# License: MIT
+# Repository: https://github.com/dunamismax/bash
 # ------------------------------------------------------------------------------
 
 # Enable strict error handling
