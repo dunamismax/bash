@@ -9,22 +9,14 @@ general {
     color_bad = "#BF616A"  # Nord Red
 }
 
-order += "ipv4"
 order += "net"
 order += "disk /"
 order += "memory"
 order += "load"
 order += "cpu_usage"
-order += "volume master"
 order += "diskio"
 order += "uptime"
 order += "tztime local"
-
-ipv4 {
-    format_up = " IPv4: %ip"
-    format_down = " IPv4: down"
-    color_down = "#BF616A"  # Nord Red
-}
 
 net {
     format_up = " Net: ↓%down ↑%up"
@@ -39,7 +31,7 @@ disk "/" {
 
 memory {
     format = " Mem: %used / %total"
-    threshold_degraded = "1G"
+    threshold_degraded = "1073741824"
     format_degraded = " Mem: %free"
     color_degraded = "#EBCB8B"  # Nord Yellow
 }
@@ -52,15 +44,6 @@ load {
 cpu_usage {
     format = " CPU: %usage"
     color_degraded = "#EBCB8B"  # Nord Yellow
-}
-
-volume master {
-    format = " Vol: %volume"
-    format_muted = " Vol: muted"
-    device = "default"
-    mixer = "Master"
-    mixer_idx = 0
-    color_muted = "#BF616A"  # Nord Red
 }
 
 diskio {

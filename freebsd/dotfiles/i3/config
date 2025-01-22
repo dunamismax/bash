@@ -102,8 +102,7 @@ bindsym $mod+p move right
 bindsym $mod+h split h
 bindsym $mod+v split v
 
-# Reload and restart i3 configuration
-bindsym $mod+Shift+c reload
+# Restart i3 configuration
 bindsym $mod+Shift+r restart
 
 # Kill focused window
@@ -175,7 +174,6 @@ for_window [class="^pinentry$"] floating enable
 
 # You can also add generic floating for transient/modal/dialog windows:
 for_window [window_type="dialog"] floating enable
-for_window [window_type="modal"] floating enable
 
 # ------------------------------------------------------------------------------
 # Miscellaneous Settings

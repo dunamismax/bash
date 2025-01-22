@@ -48,9 +48,6 @@ save_to_clipboard = true
 # Cursor style (options: Block, Underline, Beam)
 style = "Block"
 
-# Blinking cursor (options: Never, Always, WhenVisible)
-blinking = "WhenVisible"
-
 # Key bindings (add your own as needed)
 [[keyboard.bindings]]
 key = "C"
