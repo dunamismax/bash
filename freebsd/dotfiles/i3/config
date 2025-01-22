@@ -49,7 +49,7 @@ client.urgent           $nord11 $nord11 $nord6  $nord11 $nord11
 exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
 
 # Set desktop background using feh (adjust path to your wallpaper)
-exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Kali-Black-4K.jpg
+exec_always --no-startup-id feh --bg-scale /home/sawyer/github/bash/freebsd/wallpapers/Linux/kali-linux-minimal-amoled-4k.png
 
 # Launch dmenu (application launcher)
 bindsym $mod+d exec dmenu_run -fn "FiraCode Nerd Font:size=12" -nb $nord0 -nf $nord4 -sb $nord10 -sf $nord6
