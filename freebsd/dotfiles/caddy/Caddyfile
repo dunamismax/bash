@@ -1,0 +1,47 @@
+######################################################################
+#                __________________         _____________ ______
+# _____________ _______  /______  /_____  _____  __/___(_)___  /_____
+# _  ___/_  __ `/_  __  / _  __  / __  / / /__  /_  __  / __  / _  _ \
+# / /__  / /_/ / / /_/ /  / /_/ /  _  /_/ / _  __/  _  /  _  /  /  __/
+# \___/  \__,_/  \__,_/   \__,_/   _\__, /  /_/     /_/   /_/   \___/
+#                                  /____/
+######################################################################
+
+{
+    # Use this email for Let's Encrypt notifications
+    email dunamismax@tutamail.com
+
+    # Global logging: captures all events (including errors during startup)
+    log {
+        output file /var/log/caddy/caddy.log
+    }
+}
+
+# Redirect www to non-www
+www.dunamismax.com {
+    redir https://dunamismax.com{uri}
+}
+
+# Main website
+dunamismax.com {
+    # Serve the static files from your Hugo output folder
+    root * /home/sawyer/github/hugo/dunamismax.com/public
+    file_server
+
+    # Deny hidden files (dotfiles like .git, .htaccess, etc.), except .well-known
+    @hiddenFiles {
+        path /.*
+        not path /.well-known/*
+    }
+    respond @hiddenFiles 404
+
+    # Per-site logging: captures site-specific access and error logs
+    log {
+        output file /var/log/caddy/dunamismax_access.log
+    }
+}
+
+# Nextcloud
+cloud.dunamismax.com {
+    reverse_proxy 127.0.0.1:8080
+}
