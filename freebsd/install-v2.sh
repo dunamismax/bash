@@ -43,45 +43,6 @@ LOG_FILE="/var/log/freebsd_setup.log"  # Path to the log file
 USERNAME="sawyer"                      # Default username to configure (change as needed)
 
 # ------------------------------------------------------------------------------
-# XDG Base Directory Specification
-# ------------------------------------------------------------------------------
-# Set XDG directories for better standards compliance
-export XDG_CONFIG_HOME="$HOME/.config"
-export XDG_DATA_HOME="$HOME/.local/share"
-export XDG_CACHE_HOME="$HOME/.cache"
-
-# Create XDG directories if they don't exist
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" || {
-    handle_error "Failed to create XDG directories."
-}
-log INFO "XDG directories configured:"
-log INFO "  - XDG_CONFIG_HOME: $XDG_CONFIG_HOME"
-log INFO "  - XDG_DATA_HOME: $XDG_DATA_HOME"
-log INFO "  - XDG_CACHE_HOME: $XDG_CACHE_HOME"
-
-# ------------------------------------------------------------------------------
-# Initial Checks
-# ------------------------------------------------------------------------------
-
-# Ensure the script is run as root
-if [[ $(id -u) -ne 0 ]]; then
-  handle_error "This script must be run as root (e.g., sudo $0)."
-fi
-
-# Ensure the log directory exists and is writable
-LOG_DIR=$(dirname "$LOG_FILE")
-if [[ ! -d "$LOG_DIR" ]]; then
-  mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
-fi
-touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
-chmod 600 "$LOG_FILE"  # Restrict log file access to root only
-
-# Validate network connectivity
-if ! ping -c 1 google.com &>/dev/null; then
-    handle_error "No network connectivity. Please check your network settings."
-fi
-
-# ------------------------------------------------------------------------------
 # Function: Logging
 # ------------------------------------------------------------------------------
 log() {
@@ -152,6 +113,45 @@ handle_error() {
 
 # Trap errors and log them with context
 trap 'log ERROR "Script failed in function ${FUNCNAME[0]} at line $LINENO. See above for details."' ERR
+
+# ------------------------------------------------------------------------------
+# XDG Base Directory Specification
+# ------------------------------------------------------------------------------
+# Set XDG directories for better standards compliance
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
+
+# Create XDG directories if they don't exist
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" || {
+    handle_error "Failed to create XDG directories."
+}
+log INFO "XDG directories configured:"
+log INFO "  - XDG_CONFIG_HOME: $XDG_CONFIG_HOME"
+log INFO "  - XDG_DATA_HOME: $XDG_DATA_HOME"
+log INFO "  - XDG_CACHE_HOME: $XDG_CACHE_HOME"
+
+# ------------------------------------------------------------------------------
+# Initial Checks
+# ------------------------------------------------------------------------------
+
+# Ensure the script is run as root
+if [[ $(id -u) -ne 0 ]]; then
+  handle_error "This script must be run as root (e.g., sudo $0)."
+fi
+
+# Ensure the log directory exists and is writable
+LOG_DIR=$(dirname "$LOG_FILE")
+if [[ ! -d "$LOG_DIR" ]]; then
+  mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
+fi
+touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
+chmod 600 "$LOG_FILE"  # Restrict log file access to root only
+
+# Validate network connectivity
+if ! ping -c 1 google.com &>/dev/null; then
+    handle_error "No network connectivity. Please check your network settings."
+fi
 
 # ------------------------------------------------------------------------------
 # Function: Perform initial system update and upgrade
