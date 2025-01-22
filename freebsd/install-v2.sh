@@ -657,6 +657,54 @@ EOF
     log INFO "--------------------------------------"
 }
 
+install_plex_media_server() {
+    log INFO "--------------------------------------"
+    log INFO "Starting Plex Media Server installation..."
+
+    # Step 1: Install the plexmediaserver-plexpass package
+    log INFO "Installing plexmediaserver-plexpass package..."
+    if ! pkg install -y plexmediaserver-plexpass; then
+        handle_error "Failed to install plexmediaserver-plexpass package."
+    fi
+    log INFO "plexmediaserver-plexpass installed successfully."
+
+    # Step 2: Enable Plex Media Server to start on boot
+    log INFO "Enabling Plex Media Server to start on boot..."
+    if ! sysrc plexmediaserver_plexpass_enable="YES"; then
+        handle_error "Failed to enable Plex Media Server on boot."
+    fi
+    log INFO "Plex Media Server enabled to start on boot."
+
+    # Step 3: Start Plex Media Server manually
+    log INFO "Starting Plex Media Server service..."
+    if ! service plexmediaserver_plexpass start; then
+        handle_error "Failed to start Plex Media Server service."
+    fi
+    log INFO "Plex Media Server service started successfully."
+
+    # Step 4: Verify the service is running
+    log INFO "Verifying Plex Media Server service status..."
+    if ! service plexmediaserver_plexpass status; then
+        handle_error "Plex Media Server service is not running."
+    fi
+    log INFO "Plex Media Server service is running."
+
+    # Step 5: Provide instructions for accessing the Plex Web Interface
+    log INFO "--------------------------------------"
+    log INFO "Plex Media Server installation and setup completed successfully."
+    log INFO "To access the Plex Web Interface, open a browser and navigate to:"
+    log INFO "  http://localhost:32400/web"
+    log INFO "Follow the on-screen instructions to complete the initial setup."
+    log INFO "--------------------------------------"
+
+    # Additional Notes
+    log INFO "Additional Notes:"
+    log INFO "  - Configuration files are stored in: /usr/local/plexdata/Plex Media Server/"
+    log INFO "  - To stop the service, use: service plexmediaserver_plexpass stop"
+    log INFO "  - To restart the service, use: service plexmediaserver_plexpass restart"
+    log INFO "--------------------------------------"
+}
+
 # ------------------------------------------------------------------------------
 # Function: Install VSCode CLI
 # ------------------------------------------------------------------------------
@@ -1116,6 +1164,7 @@ main() {
         configure_pf
         download_repositories
         set_directory_permissions
+        install_plex_media_server
         install_vscode_cli
         install_font
         setup_dotfiles
