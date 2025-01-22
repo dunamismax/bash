@@ -1058,7 +1058,6 @@ setup_dotfiles() {
     local files=(
         "${dotfiles_dir}/.bashrc:${user_home}/"
         "${dotfiles_dir}/.profile:${user_home}/"
-        "${dotfiles_dir}/.xinitrc:${user_home}/"
     )
 
     # Copy files
