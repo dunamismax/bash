@@ -311,7 +311,7 @@ install_pkgs() {
         syslog-ng grafana prometheus netdata
 
         # Miscellaneous tools
-        lsof bsdstats
+        lsof bsdstats curl
     )
 
     # Install packages
