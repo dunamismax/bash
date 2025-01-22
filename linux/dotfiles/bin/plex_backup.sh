@@ -8,7 +8,7 @@ set -euo pipefail
 
 # Variables
 SOURCE="/var/lib/plexmediaserver/"
-DESTINATION="/mnt/WD_BLACK/BACKUP/plex-backups"
+DESTINATION="/media/WD_BLACK/BACKUP/plex-backups"
 LOG_FILE="/var/log/plex-backup.log"
 RETENTION_DAYS=7
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")

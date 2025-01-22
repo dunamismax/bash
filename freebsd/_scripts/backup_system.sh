@@ -19,7 +19,7 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 SOURCE="/"
-DESTINATION="/mnt/WD_BLACK/BACKUP/freebsd-backups"
+DESTINATION="/media/WD_BLACK/BACKUP/freebsd-backups"
 LOG_FILE="/var/log/freebsd-backup.log"
 RETENTION_DAYS=7
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")

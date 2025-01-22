@@ -8,7 +8,7 @@ set -euo pipefail
 
 # Variables
 SOURCE="/"
-DESTINATION="/mnt/WD_BLACK/BACKUP/ubuntu-backups"
+DESTINATION="/media/WD_BLACK/BACKUP/ubuntu-backups"
 LOG_FILE="/var/log/ubuntu-backup.log"
 RETENTION_DAYS=7
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
