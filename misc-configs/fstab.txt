@@ -1,1 +1,0 @@
-UUID=B86CFB3C6CFAF3CA  /mnt/WD_BLACK  ntfs-3g  defaults,uid=1000,gid=1000,umask=022  0  0

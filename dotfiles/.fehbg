@@ -1,2 +1,0 @@
-#!/bin/sh
-feh --no-fehbg --bg-scale '/home/sawyer/github/bash/misc-configs/i3/wallpapers/Linux/Kali-Black-4K.jpg' 

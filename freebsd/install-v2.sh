@@ -43,6 +43,23 @@ LOG_FILE="/var/log/freebsd_setup.log"  # Path to the log file
 USERNAME="sawyer"                      # Default username to configure (change as needed)
 
 # ------------------------------------------------------------------------------
+# XDG Base Directory Specification
+# ------------------------------------------------------------------------------
+# Set XDG directories for better standards compliance
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
+
+# Create XDG directories if they don't exist
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" || {
+    handle_error "Failed to create XDG directories."
+}
+log INFO "XDG directories configured:"
+log INFO "  - XDG_CONFIG_HOME: $XDG_CONFIG_HOME"
+log INFO "  - XDG_DATA_HOME: $XDG_DATA_HOME"
+log INFO "  - XDG_CACHE_HOME: $XDG_CACHE_HOME"
+
+# ------------------------------------------------------------------------------
 # Initial Checks
 # ------------------------------------------------------------------------------
 
@@ -293,7 +310,8 @@ install_pkgs() {
         libffi readline sqlite3 ncurses gdbm nss lzma libxml2
 
         # Networking, system admin, and hacking utilities
-        nmap netcat socat tcpdump wireshark aircrack-ng john hydra openvpn ipmitool bmon whois bind-tools
+        nmap netcat socat tcpdump wireshark aircrack-ng john
+        hydra openvpn ipmitool bmon whois bind-tools
 
         # Languages and runtimes
         python39 go ruby perl5 rust
@@ -311,7 +329,11 @@ install_pkgs() {
         syslog-ng grafana prometheus netdata
 
         # Miscellaneous tools
-        lsof bsdstats curl
+        lsof bsdstats curl unxz unlzma lzip zstd
+
+        # GUI Install (i3)
+        xorg xinit xauth xrandr xset xsetroot i3 i3status i3lock dmenu feh
+        picom alacritty pulseaudio pavucontrol flameshot
     )
 
     # Install packages
@@ -884,32 +906,36 @@ setup_dotfiles() {
 
     # Base paths
     local user_home="/home/${USERNAME}"
-    local dotfiles_dir="${user_home}/github/bash/dotfiles"
+    local scripts_dir="${user_home}/github/bash/freebsd/_scripts"
+    local dotfiles_dir="${user_home}/github/bash/freebsd/dotfiles"
     local config_dir="${user_home}/.config"
-    local local_dir="${user_home}/.local"
-    
-    # Verify source directory exists
+    local local_bin_dir="${user_home}/.local/bin"
+
+    # Verify source directories exist
     if [[ ! -d "$dotfiles_dir" ]]; then
         handle_error "Dotfiles directory not found: $dotfiles_dir"
+    fi
+    if [[ ! -d "$scripts_dir" ]]; then
+        handle_error "Scripts directory not found: $scripts_dir"
     fi
 
     # Create necessary directories
     log INFO "Creating required directories..."
-    if ! mkdir -p "$config_dir" "$local_dir/bin"; then
-        handle_error "Failed to create config directories."
+    if ! mkdir -p "$config_dir" "$local_bin_dir"; then
+        handle_error "Failed to create config or .local/bin directories."
     fi
 
     # Define files to copy (source:destination)
     local files=(
-        "${dotfiles_dir}/.bash_profile:${user_home}/"
         "${dotfiles_dir}/.bashrc:${user_home}/"
         "${dotfiles_dir}/.profile:${user_home}/"
+        "${dotfiles_dir}/.xinitrc:${user_home}/"
     )
 
     # Define directories to copy (source:destination)
     local dirs=(
-        "${dotfiles_dir}/bin:${local_dir}"
         "${dotfiles_dir}/alacritty:${config_dir}"
+        "${dotfiles_dir}/i3:${config_dir}"
     )
 
     # Copy files
@@ -942,10 +968,28 @@ setup_dotfiles() {
         fi
     done
 
+    # Copy all files from scripts directory to .local/bin
+    log INFO "Copying script files to .local/bin..."
+    if [[ -d "$scripts_dir" ]]; then
+        for script in "$scripts_dir"/*; do
+            if [[ -f "$script" ]]; then
+                if ! cp "$script" "$local_bin_dir"; then
+                    handle_error "Failed to copy script: $script"
+                fi
+                log INFO "Copied script: $script -> $local_bin_dir"
+            fi
+        done
+    else
+        log WARN "Scripts directory not found: $scripts_dir"
+    fi
+
     # Set ownership and permissions
     log INFO "Setting ownership and permissions..."
     if ! chown -R "${USERNAME}:${USERNAME}" "$user_home"; then
         handle_error "Failed to set ownership for $user_home."
+    fi
+    if ! chmod -R u=rwX,g=rX,o=rX "$local_bin_dir"; then
+        handle_error "Failed to set permissions for $local_bin_dir."
     fi
     if ! chown "${USERNAME}:${USERNAME}" "/usr/local/etc/Caddyfile" 2>/dev/null; then
         log WARN "Failed to set ownership for /usr/local/etc/Caddyfile."

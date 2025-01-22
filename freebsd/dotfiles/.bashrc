@@ -18,9 +18,60 @@ esac
 
 # 1. Environment variables
 # ------------------------------------------------------------------------------
-# FreeBSD specific PATH additions
-export PATH="/usr/local/bin:/usr/local/sbin:$PATH:$HOME/.local/bin"
-export MANPATH="/usr/local/man:$MANPATH"
+
+# Function to add directories to PATH without duplicates
+add_to_path() {
+    if [[ ":$PATH:" != *":$1:"* ]]; then
+        export PATH="$1:$PATH"
+    fi
+}
+
+# Add directories to PATH using the function
+add_to_path "/usr/local/bin"
+add_to_path "/usr/local/sbin"
+add_to_path "$HOME/.local/bin"
+
+# Set XDG directories for better standards compliance
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
+
+# Set editor and pager
+export EDITOR="/usr/local/bin/nvim"
+export VISUAL="/usr/local/bin/nvim"
+export PAGER="less"
+
+# Set locale
+export LANG="en_US.UTF-8"
+export LC_ALL="en_US.UTF-8"
+
+# Set timezone
+export TZ="America/New_York"
+
+# Set terminal type
+export TERM="xterm-256color"
+
+# Set history settings
+export HISTSIZE=100000
+export HISTFILESIZE=200000
+export HISTFILE="$HOME/.bash_history"
+export HISTCONTROL=ignoreboth
+export HISTTIMEFORMAT="%F %T "
+
+# Set LESS options
+export LESS="-R -X -F"
+
+# ------------------------------------------------------------------------------
+# 1. Greeting
+# ------------------------------------------------------------------------------
+neofetch
+echo "-----------------------------------"
+echo "Welcome, $USER!"
+echo "Today is $(date)"
+echo "Hostname: $(hostname)"
+echo "Uptime: $(uptime)"
+echo "OS: $(uname -sr)"
+echo "-----------------------------------"
 
 # ------------------------------------------------------------------------------
 # 2. pyenv initialization
@@ -32,14 +83,6 @@ if command -v pyenv 1>/dev/null 2>&1; then
     eval "$(pyenv init --path)"
     eval "$(pyenv init -)"
 fi
-
-# ------------------------------------------------------------------------------
-# 3. History preferences
-# ------------------------------------------------------------------------------
-HISTCONTROL=ignoreboth
-HISTSIZE=100000
-HISTFILESIZE=200000
-HISTTIMEFORMAT="%F %T "
 
 # ------------------------------------------------------------------------------
 # 4. Less (pager) setup
@@ -105,11 +148,6 @@ alias l='ls -CF'
 alias ports-update='sudo portsnap fetch update'
 alias pkg-update='sudo pkg update && sudo pkg upgrade'
 
-# Launch ranger file manager (if installed)
-if command -v ranger >/dev/null 2>&1; then
-    alias r='ranger'
-fi
-
 # ------------------------------------------------------------------------------
 # 8. Python virtual environment functions
 # ------------------------------------------------------------------------------
@@ -163,13 +201,6 @@ enable_venv() {
 }
 
 # ------------------------------------------------------------------------------
-# 9. Load user-defined aliases
-# ------------------------------------------------------------------------------
-if [ -f ~/.bash_aliases ]; then
-    . ~/.bash_aliases
-fi
-
-# ------------------------------------------------------------------------------
 # 10. Bash completion (FreeBSD specific)
 # ------------------------------------------------------------------------------
 if [ -f /usr/local/share/bash-completion/bash_completion.sh ]; then
@@ -177,18 +208,58 @@ if [ -f /usr/local/share/bash-completion/bash_completion.sh ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 11. Editor configuration
+# 12. Git prompt integration
 # ------------------------------------------------------------------------------
-export EDITOR=/usr/local/bin/vim
-export VISUAL=/usr/local/bin/vim
+if [ -f /usr/local/share/git-core/contrib/completion/git-prompt.sh ]; then
+    . /usr/local/share/git-core/contrib/completion/git-prompt.sh
+    export GIT_PS1_SHOWDIRTYSTATE=1
+    export GIT_PS1_SHOWUNTRACKEDFILES=1
+    export GIT_PS1_SHOWUPSTREAM="auto"
+    PS1='\[\033[38;2;136;192;208m\]\u@\h\[\033[00m\]:\[\033[38;2;94;129;172m\]\w\[\033[38;2;143;188;187m\]$(__git_ps1 " (%s)")\[\033[00m\]\$ '
+fi
+
+# Git aliases
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate'
+alias gco='git checkout'
+alias gpu='git pull'
+alias gp='git push'
 
 # ------------------------------------------------------------------------------
-# 12. Local customizations
+# 13. Extractor function
 # ------------------------------------------------------------------------------
-# Source local customizations if they exist
-if [ -f ~/.bashrc.local ]; then
-    . ~/.bashrc.local
-fi
+extract() {
+    if [ -f "$1" ]; then
+        case "$1" in
+            *.tar.bz2)   tar xvjf "$1"    ;;
+            *.tar.gz)    tar xvzf "$1"    ;;
+            *.bz2)       bunzip2 "$1"     ;;
+            *.rar)       unrar x "$1"     ;;
+            *.gz)        gunzip "$1"      ;;
+            *.tar)       tar xvf "$1"     ;;
+            *.tbz2)      tar xvjf "$1"    ;;
+            *.tgz)       tar xvzf "$1"    ;;
+            *.zip)       unzip "$1"       ;;
+            *.Z)         uncompress "$1"  ;;
+            *.7z)        7z x "$1"        ;;
+            *.xz)        unxz "$1"        ;;
+            *.lzma)      unlzma "$1"      ;;
+            *.tar.xz)    tar xvf "$1"     ;;
+            *.tar.lzma)  tar xvf "$1"     ;;
+            *.tar.Z)     tar xvf "$1"     ;;
+            *.tar.lz)    tar xvf "$1"     ;;
+            *.lz)        lzip -d "$1"     ;;
+            *.zst)       zstd -d "$1"     ;;
+            *.tar.zst)   tar --zstd -xvf "$1" ;;
+            *)           echo "Unable to extract '$1'" ;;
+        esac
+    else
+        echo "'$1' is not a valid file"
+    fi
+}
 
 # ------------------------------------------------------------------------------
 # End of ~/.bashrc

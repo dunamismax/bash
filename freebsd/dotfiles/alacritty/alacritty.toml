@@ -1,0 +1,106 @@
+# Alacritty TOML Configuration
+# Nord theme with darkest background (#2e3440).
+
+[window]
+# Window title
+title = "Alacritty"
+
+# Window dimensions in character columns/lines
+dimensions = { columns = 120, lines = 34 }
+
+# Window padding around the text area
+padding = { x = 8, y = 8 }
+
+# Dynamically change the title based on the running process
+dynamic_title = true
+
+[scrolling]
+# Scroll speed multiplier
+multiplier = 3
+
+# Maximum number of lines in the scrollback buffer
+history = 10000
+
+[font]
+# Default font size (in points)
+size = 12
+
+[font.normal]
+family = "JetBrains Mono"
+style = "Regular"
+
+[font.bold]
+family = "JetBrains Mono"
+style = "Bold"
+
+[font.italic]
+family = "JetBrains Mono"
+style = "Italic"
+
+[selection]
+# Copy to system clipboard upon selection
+save_to_clipboard = true
+
+# Key bindings (add your own as needed)
+[[keyboard.bindings]]
+key = "C"
+mods = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key = "V"
+mods = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key = "="
+mods = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key = "-"
+mods = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key = "0"
+mods = "Control"
+action = "ResetFontSize"
+
+[colors.primary]
+# Darkest Nord color: Polar Night (#2e3440)
+background = "#2e3440"
+foreground = "#d8dee9"  # Nord4 (Snow Storm)
+
+[colors.cursor]
+# Cursor color and the text color under cursor
+text = "#2e3440"
+cursor = "#d8dee9"
+
+[colors.selection]
+# Highlight selected text with another Polar Night color
+background = "#4c566a"
+
+[colors.normal]
+black   = "#3b4252"  # Nord1
+red     = "#bf616a"  # Aurora Red (Nord11)
+green   = "#a3be8c"  # Aurora Green (Nord14)
+yellow  = "#ebcb8b"  # Aurora Yellow (Nord13)
+blue    = "#81a1c1"  # Frost (Nord9)
+magenta = "#b48ead"  # Aurora Purple (Nord15)
+cyan    = "#88c0d0"  # Frost (Nord8)
+white   = "#e5e9f0"  # Snow Storm (Nord5)
+
+[colors.bright]
+black   = "#434c5e"  # Nord2
+red     = "#bf616a"  # Aurora Red (Nord11)
+green   = "#a3be8c"  # Aurora Green (Nord14)
+yellow  = "#ebcb8b"  # Aurora Yellow (Nord13)
+blue    = "#81a1c1"  # Frost (Nord9)
+magenta = "#b48ead"  # Aurora Purple (Nord15)
+cyan    = "#8fbcbb"  # Frost (Nord7)
+white   = "#eceff4"  # Snow Storm (Nord6)
+
+# [shell]
+# program = "/bin/zsh"
+# args = [ "--login" ]
