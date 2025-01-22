@@ -1097,7 +1097,7 @@ main() {
 
     # Bash script execution order
     local functions=(
-        backup_system
+        # backup_system
         configure_sudo_access
         install_pkgs
         configure_ssh_settings
