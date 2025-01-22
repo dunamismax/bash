@@ -337,6 +337,10 @@ install_pkgs() {
 
         # Miscellaneous tools
         lsof bsdstats curl lzip zstd fusefs-ntfs
+
+        # GUI Install (i3)
+        xorg xinit xauth xrandr xset xsetroot i3 i3status i3lock dmenu feh
+        picom alacritty pulseaudio pavucontrol flameshot clipmenu dunst
     )
 
     # Install packages
@@ -1061,6 +1065,14 @@ setup_dotfiles() {
         "${dotfiles_dir}/.xinitrc:${user_home}/"
     )
 
+    # Define directories to copy (source:destination)
+    local dirs=(
+        "${dotfiles_dir}/alacritty:${config_dir}"
+        "${dotfiles_dir}/i3:${config_dir}"
+        "${dotfiles_dir}/picom:${config_dir}"
+        "${dotfiles_dir}/i3status:${config_dir}"
+    )
+
     # Copy files
     log INFO "Copying files..."
     for item in "${files[@]}"; do
@@ -1073,6 +1085,21 @@ setup_dotfiles() {
             log INFO "Copied file: $src -> $dst"
         else
             log WARN "Source file not found: $src"
+        fi
+    done
+
+    # Copy directories
+    log INFO "Copying directories..."
+    for item in "${dirs[@]}"; do
+        local src="${item%:*}"
+        local dst="${item#*:}"
+        if [[ -d "$src" ]]; then
+            if ! cp -r "$src" "$dst"; then
+                handle_error "Failed to copy directory: $src"
+            fi
+            log INFO "Copied directory: $src -> $dst"
+        else
+            log WARN "Source directory not found: $src"
         fi
     done
 
@@ -1194,7 +1221,6 @@ main() {
         install_plex_media_server
         install_vscode_cli
         install_font
-        install_and_configure_caddy
         setup_dotfiles
         finalize_configuration
     )
