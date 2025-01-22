@@ -3,44 +3,21 @@
 # FreeBSD Automated System Configuration Script
 # ------------------------------------------------------------------------------
 # Description:
-#   This script automates the setup and configuration of a fresh FreeBSD system,
-#   ensuring a secure, optimized, and personalized environment. Key features include:
-#     • System updates and package upgrades for the latest software.
-#     • Full system backups with configurable retention policies.
-#     • User creation, sudo access, and Bash shell configuration.
-#     • Installation of essential development tools, programming languages, and utilities.
-#     • Secure SSH configuration with industry best practices.
-#     • Setup and hardening of the PF firewall for enhanced security.
-#     • Download and setup of GitHub repositories for development workflows.
-#     • Installation of Visual Studio Code CLI and FiraCode Nerd Font for coding.
-#     • Configuration of dotfiles for a personalized and productive environment.
-#     • Directory permission management and cleanup for security and organization.
-#     • Final system checks and logging of system information for diagnostics.
-#     • Optional reboot prompt to apply changes and ensure system stability.
+#   Automates setup of a fresh FreeBSD system for a secure, optimized, and
+#   personalized environment. Features include:
+#     • System updates, backups, and user configuration.
+#     • Development tools, languages, and utilities.
+#     • Secure SSH and PF firewall setup.
+#     • GitHub repo setup, VS Code CLI, and FiraCode font installation.
+#     • Dotfiles configuration and directory permission management.
+#     • System checks, logging, and optional reboot.
 #
 # Usage:
-#   • Run as root or with sudo privileges.
-#   • Adjust configuration variables (e.g., USERNAME, PACKAGES) in the script as needed.
-#   • Logs all actions and errors to /var/log/freebsd_setup.log with timestamps.
+#   • Run as root or with sudo.
+#   • Adjust variables (e.g., USERNAME, PACKAGES) as needed.
+#   • Logs actions to /var/log/freebsd_setup.log.
 #
-# Error Handling:
-#   • Uses 'set -Eeuo pipefail' for strict error handling and script robustness.
-#   • Implements an ERR trap to log errors with context and line numbers.
-#   • Custom error handling with detailed messages and exit codes for troubleshooting.
-#
-# Compatibility:
-#   • Tested on FreeBSD 14+. May require adjustments for other versions.
-#
-# Dependencies:
-#   • Requires internet connectivity for package installation and updates.
-#   • Assumes a fresh FreeBSD installation with minimal pre-configuration.
-#
-# Notes:
-#   • Ensure you have a backup of critical data before running this script.
-#   • Review and customize the script to suit your specific needs.
-#
-# Author: dunamismax
-# License: MIT
+# Author: dunamismax | License: MIT
 # Repository: https://github.com/dunamismax/bash
 # ------------------------------------------------------------------------------
 
@@ -682,14 +659,7 @@ install_plex_media_server() {
     fi
     log INFO "Plex Media Server service started successfully."
 
-    # Step 4: Verify the service is running
-    log INFO "Verifying Plex Media Server service status..."
-    if ! service plexmediaserver_plexpass status; then
-        handle_error "Plex Media Server service is not running."
-    fi
-    log INFO "Plex Media Server service is running."
-
-    # Step 5: Provide instructions for accessing the Plex Web Interface
+    # Step 4: Provide instructions for accessing the Plex Web Interface
     log INFO "--------------------------------------"
     log INFO "Plex Media Server installation and setup completed successfully."
     log INFO "To access the Plex Web Interface, open a browser and navigate to:"
