@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Script Name: example_script.sh
-# Description: [Brief description of what the script does]
+# Script Name: rsync_backup.sh
+# Description: Backup files and folders recursively using rsync with progress and error handling.
 # Author: Your Name | License: MIT
 # Version: 1.0.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
-#   sudo ./example_script.sh
+#   sudo ./rsync_backup.sh
 #
 # ------------------------------------------------------------------------------
 
@@ -18,7 +18,9 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/example_script.log"  # Path to the log file
+LOG_FILE="/var/log/rsync_backup.log"  # Path to the log file
+SOURCE_DIR="/media/WD_BLACK/Entertainment"  # Source directory
+DEST_DIR="/media/WD_Elements/Stephen-WD_BLACK-Backup"  # Destination directory
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
@@ -99,23 +101,28 @@ check_root() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN FUNCTIONS
+# RSYNC BACKUP FUNCTION
 # ------------------------------------------------------------------------------
-function_one() {
+perform_backup() {
     log INFO "--------------------------------------"
-    log INFO "Starting function_one..."
+    log INFO "Starting backup process..."
 
-    # TODO: Add function_one logic here
-    log INFO "Completed function_one."
-    log INFO "--------------------------------------"
-}
+    # Check if source directory exists
+    if [[ ! -d "$SOURCE_DIR" ]]; then
+        handle_error "Source directory does not exist: $SOURCE_DIR"
+    fi
 
-function_two() {
-    log INFO "--------------------------------------"
-    log INFO "Starting function_two..."
+    # Check if destination directory exists, create if not
+    if [[ ! -d "$DEST_DIR" ]]; then
+        log INFO "Destination directory does not exist. Creating: $DEST_DIR"
+        mkdir -p "$DEST_DIR" || handle_error "Failed to create destination directory: $DEST_DIR"
+    fi
 
-    # TODO: Add function_two logic here
-    log INFO "Completed function_two."
+    # Perform rsync with progress and error handling
+    log INFO "Starting rsync from $SOURCE_DIR to $DEST_DIR..."
+    rsync -av --progress --stats "$SOURCE_DIR/" "$DEST_DIR/" || handle_error "rsync failed."
+
+    log INFO "Backup completed successfully."
     log INFO "--------------------------------------"
 }
 
@@ -150,9 +157,8 @@ main() {
 
     log INFO "Script execution started."
 
-    # Call your main functions in order
-    function_one
-    function_two
+    # Perform the backup
+    perform_backup
 
     log INFO "Script execution finished."
 }
