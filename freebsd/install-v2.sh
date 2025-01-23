@@ -336,7 +336,7 @@ install_pkgs() {
         syslog-ng grafana prometheus netdata
 
         # Miscellaneous tools
-        lsof bsdstats curl lzip zstd fusefs-ntfs
+        lsof bsdstats curl lzip zstd fusefs-ntfs drm-kmod
     )
 
     # Install packages

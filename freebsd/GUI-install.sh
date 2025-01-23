@@ -108,7 +108,7 @@ install_gui() {
 
     # Install required packages
     log INFO "Installing GUI packages..."
-    pkg install -y xorg xinit xauth xrandr xset xsetroot i3 i3status i3lock dmenu feh picom alacritty pulseaudio pavucontrol flameshot clipmenu vlc dunst thunar firefox || handle_error "Failed to install GUI packages."
+    pkg install -y xorg xinit xauth xrandr xset xsetroot i3 i3status i3lock drm-kmod dmenu feh picom alacritty pulseaudio pavucontrol flameshot clipmenu vlc dunst thunar firefox || handle_error "Failed to install GUI packages."
 
     log INFO "GUI installation completed successfully."
     log INFO "--------------------------------------"

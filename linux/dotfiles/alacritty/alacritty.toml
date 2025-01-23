@@ -14,32 +14,39 @@ padding = { x = 8, y = 8 }
 # Dynamically change the title based on the running process
 dynamic_title = true
 
+# Enable live config reloading (no need to restart Alacritty)
+live_config_reload = true
+
 [scrolling]
 # Scroll speed multiplier
 multiplier = 3
 
 # Maximum number of lines in the scrollback buffer
-history = 10000
+history = 100000
 
 [font]
 # Default font size (in points)
 size = 12
 
 [font.normal]
-family = "JetBrains Mono"
+family = "FiraCode Nerd Font"
 style = "Regular"
 
 [font.bold]
-family = "JetBrains Mono"
+family = "FiraCode Nerd Font"
 style = "Bold"
 
 [font.italic]
-family = "JetBrains Mono"
+family = "FiraCode Nerd Font"
 style = "Italic"
 
 [selection]
 # Copy to system clipboard upon selection
 save_to_clipboard = true
+
+[cursor]
+# Cursor style (options: Block, Underline, Beam)
+style = "Block"
 
 # Key bindings (add your own as needed)
 [[keyboard.bindings]]
@@ -66,6 +73,21 @@ action = "DecreaseFontSize"
 key = "0"
 mods = "Control"
 action = "ResetFontSize"
+
+[[keyboard.bindings]]
+key = "L"
+mods = "Control"
+action = "ClearLogNotice"
+
+[[keyboard.bindings]]
+key = "PageUp"
+mods = "Shift"
+action = "ScrollPageUp"
+
+[[keyboard.bindings]]
+key = "PageDown"
+mods = "Shift"
+action = "ScrollPageDown"
 
 [colors.primary]
 # Darkest Nord color: Polar Night (#2e3440)
@@ -101,6 +123,7 @@ magenta = "#b48ead"  # Aurora Purple (Nord15)
 cyan    = "#8fbcbb"  # Frost (Nord7)
 white   = "#eceff4"  # Snow Storm (Nord6)
 
-# [shell]
-# program = "/bin/zsh"
-# args = [ "--login" ]
+[terminal.shell]
+# Set FreeBSD's Bash as the default shell
+program = "/usr/local/bin/bash"  # Adjust the path if necessary
+args = ["--login"]  # Optional: Start Bash as a login shell

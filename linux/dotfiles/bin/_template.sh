@@ -7,23 +7,18 @@
 # ------------------------------------------------------------------------------
 #
 # Usage:
-#   sudo ./example_script.sh [options]
-#   Options:
-#     -h, --help    Display this help message and exit
+#   sudo ./example_script.sh
 #
 # ------------------------------------------------------------------------------
 
 # Enable strict mode: exit on error, undefined variables, or command pipeline failures
 set -Eeuo pipefail
-trap 'log ERROR "Script failed at line $LINENO with exit code $?."' ERR
+trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/example_script.log"
-VERBOSE=2
-# Define other global variables and arrays here
-# Example: PACKAGES=(git curl wget)
+LOG_FILE="/var/log/example_script.log"  # Path to the log file
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
@@ -63,28 +58,35 @@ log() {
             ;;
     esac
 
-    # Ensure the log file exists and is writable
-    if [[ -z "${LOG_FILE:-}" ]]; then
-        LOG_FILE="/var/log/example_script.log"
-    fi
-    if [[ ! -e "$LOG_FILE" ]]; then
-        mkdir -p "$(dirname "$LOG_FILE")"
-        touch "$LOG_FILE"
-        chmod 644 "$LOG_FILE"
-    fi
-
     # Format the log entry
     local log_entry="[$timestamp] [$level] $message"
 
     # Append to log file
     echo "$log_entry" >> "$LOG_FILE"
 
-    # Output to console based on verbosity
-    if [[ "$VERBOSE" -ge 2 ]]; then
-        printf "${color}%s${NC}\n" "$log_entry" >&2
-    elif [[ "$VERBOSE" -ge 1 && "$level" == "ERROR" ]]; then
-        printf "${color}%s${NC}\n" "$log_entry" >&2
-    fi
+    # Output to console
+    printf "${color}%s${NC}\n" "$log_entry" >&2
+}
+
+# ------------------------------------------------------------------------------
+# ERROR HANDLING FUNCTION
+# ------------------------------------------------------------------------------
+handle_error() {
+    local error_message="${1:-An error occurred. Check the log for details.}"
+    local exit_code="${2:-1}"  # Default exit code is 1
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # Log the error with additional context
+    log ERROR "$error_message (Exit Code: $exit_code)"
+    log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]}."
+
+    # Optionally, print the error to stderr for immediate visibility
+    echo "ERROR: $error_message (Exit Code: $exit_code)" >&2
+    echo "Script failed at line $LINENO in function ${FUNCNAME[1]}." >&2
+
+    # Exit with the specified exit code
+    exit "$exit_code"
 }
 
 # ------------------------------------------------------------------------------
@@ -92,29 +94,29 @@ log() {
 # ------------------------------------------------------------------------------
 check_root() {
     if [[ "$EUID" -ne 0 ]]; then
-        log ERROR "This script must be run as root."
-        exit 1
+        handle_error "This script must be run as root."
     fi
-}
-
-usage() {
-    grep '^#' "$0" | sed 's/^#//'
-    exit 0
 }
 
 # ------------------------------------------------------------------------------
 # MAIN FUNCTIONS
 # ------------------------------------------------------------------------------
 function_one() {
+    log INFO "--------------------------------------"
     log INFO "Starting function_one..."
+
     # TODO: Add function_one logic here
     log INFO "Completed function_one."
+    log INFO "--------------------------------------"
 }
 
 function_two() {
+    log INFO "--------------------------------------"
     log INFO "Starting function_two..."
+
     # TODO: Add function_two logic here
     log INFO "Completed function_two."
+    log INFO "--------------------------------------"
 }
 
 # ------------------------------------------------------------------------------
@@ -134,7 +136,17 @@ main() {
         esac
     done
 
+    # Ensure the script is run as root
     check_root
+
+    # Ensure the log directory exists and is writable
+    LOG_DIR=$(dirname "$LOG_FILE")
+    if [[ ! -d "$LOG_DIR" ]]; then
+        mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
+    fi
+    touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
+    chmod 600 "$LOG_FILE"  # Restrict log file access to root only
+
     log INFO "Script execution started."
 
     # Call your main functions in order
