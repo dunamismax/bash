@@ -1,29 +1,130 @@
 #!/usr/bin/env bash
+# ------------------------------------------------------------------------------
+# Script Name: ubuntu_setup.sh
+# Description: Prepares an Ubuntu system with essential tools, pyenv, Python, and pipx-managed CLI tools.
+# Author: Your Name | License: MIT
+# Version: 1.0.0
+# ------------------------------------------------------------------------------
+#
+# Usage:
+#   sudo ./ubuntu_setup.sh
+#
+# ------------------------------------------------------------------------------
+
+# Enable strict mode: exit on error, undefined variables, or command pipeline failures
 set -Eeuo pipefail
+trap 'handle_error "Script failed at line $LINENO. See above for details."' ERR
 
-################################################################################
-# Trap: If something fails unexpectedly, we'll output a friendly message.
-################################################################################
-trap 'echo "[ERROR] Script failed at line $LINENO. See above for details." >&2' ERR
+# ------------------------------------------------------------------------------
+# CONFIGURATION
+# ------------------------------------------------------------------------------
+PYENV_ROOT="${HOME}/.pyenv"
+PIPX_TOOLS=(
+    ansible-core
+    black
+    cookiecutter
+    coverage
+    flake8
+    isort
+    ipython
+    mypy
+    pip-tools
+    pylint
+    pyupgrade
+    pytest
+    rich-cli
+    tldr
+    tox
+    twine
+    yt-dlp
+    poetry
+    pre-commit
+)
 
-################################################################################
-# Helper: Check if a command exists
-################################################################################
+# ------------------------------------------------------------------------------
+# LOGGING FUNCTION
+# ------------------------------------------------------------------------------
+log() {
+    local level="${1:-INFO}"
+    shift
+    local message="$*"
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # Define color codes
+    local RED='\033[0;31m'
+    local YELLOW='\033[0;33m'
+    local GREEN='\033[0;32m'
+    local BLUE='\033[0;34m'
+    local NC='\033[0m'  # No Color
+
+    # Validate log level and set color
+    case "${level^^}" in
+        INFO)
+            local color="${GREEN}"
+            ;;
+        WARN|WARNING)
+            local color="${YELLOW}"
+            level="WARN"
+            ;;
+        ERROR)
+            local color="${RED}"
+            ;;
+        DEBUG)
+            local color="${BLUE}"
+            ;;
+        *)
+            local color="${NC}"
+            level="INFO"
+            ;;
+    esac
+
+    # Format the log entry
+    local log_entry="[$timestamp] [$level] $message"
+
+    # Output to console
+    printf "${color}%s${NC}\n" "$log_entry" >&2
+}
+
+# ------------------------------------------------------------------------------
+# ERROR HANDLING FUNCTION
+# ------------------------------------------------------------------------------
+handle_error() {
+    local error_message="${1:-An error occurred. Check the log for details.}"
+    local exit_code="${2:-1}"  # Default exit code is 1
+
+    # Log the error with additional context
+    log ERROR "$error_message"
+    log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]}."
+
+    # Exit with the specified exit code
+    exit "$exit_code"
+}
+
+# ------------------------------------------------------------------------------
+# HELPER FUNCTIONS
+# ------------------------------------------------------------------------------
+check_root() {
+    if [[ "$EUID" -ne 0 ]]; then
+        handle_error "This script must be run as root."
+    fi
+}
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-################################################################################
-# 0. Basic System Update & Core Packages
-################################################################################
+# ------------------------------------------------------------------------------
+# MAIN FUNCTIONS
+# ------------------------------------------------------------------------------
 install_apt_dependencies() {
-    echo "[INFO] Updating apt caches..."
+    log INFO "Updating apt caches..."
     sudo apt update -y
 
-    # Optional: If you want to also upgrade existing packages:
+    log INFO "Upgrading existing packages..."
     sudo apt upgrade -y
 
-    echo "[INFO] Installing apt-based dependencies..."
+    log INFO "Installing apt-based dependencies..."
     sudo apt install -y --no-install-recommends \
         build-essential \
         make \
@@ -56,23 +157,19 @@ install_apt_dependencies() {
         lsb-release \
         jq
 
-    # Optionally remove automatically installed packages no longer needed
+    log INFO "Cleaning up unused packages..."
     sudo apt autoremove -y
     sudo apt clean
 }
 
-################################################################################
-# 1. Install or Update pyenv
-################################################################################
 install_or_update_pyenv() {
-    if [[ ! -d "${HOME}/.pyenv" ]]; then
-        echo "[INFO] Installing pyenv..."
-        git clone https://github.com/pyenv/pyenv.git "${HOME}/.pyenv"
-        # Optionally clone pyenv-virtualenv if you want that plugin
-        # git clone https://github.com/pyenv/pyenv-virtualenv.git "${HOME}/.pyenv/plugins/pyenv-virtualenv"
+    if [[ ! -d "${PYENV_ROOT}" ]]; then
+        log INFO "Installing pyenv..."
+        git clone https://github.com/pyenv/pyenv.git "${PYENV_ROOT}"
 
-        # Update your shell config to load pyenv automatically (for bash)
+        # Update shell config to load pyenv automatically
         if ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
+            log INFO "Adding pyenv initialization to ~/.bashrc..."
             cat <<'EOF' >> "${HOME}/.bashrc"
 
 # >>> pyenv initialization >>>
@@ -85,8 +182,8 @@ fi
 EOF
         fi
     else
-        echo "[INFO] Updating pyenv..."
-        pushd "${HOME}/.pyenv" >/dev/null
+        log INFO "Updating pyenv..."
+        pushd "${PYENV_ROOT}" >/dev/null
         git pull --ff-only
         popd >/dev/null
     fi
@@ -97,34 +194,30 @@ EOF
     eval "$(pyenv init -)"
 }
 
-################################################################################
-# 2. Ensure We Have the Latest Python 3.x Version
-################################################################################
 install_latest_python() {
-    echo "[INFO] Finding the latest stable Python 3.x version via pyenv..."
+    log INFO "Finding the latest stable Python 3.x version via pyenv..."
     LATEST_PY3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')"
 
     if [[ -z "$LATEST_PY3" ]]; then
-        echo "[ERROR] Could not determine the latest Python 3.x version from pyenv." >&2
-        exit 1
+        handle_error "Could not determine the latest Python 3.x version from pyenv."
     fi
 
     CURRENT_PY3="$(pyenv global || true)"   # might be empty if not set
 
-    echo "[INFO] Latest Python 3.x version is $LATEST_PY3"
-    echo "[INFO] Currently active pyenv Python is $CURRENT_PY3"
+    log INFO "Latest Python 3.x version is $LATEST_PY3"
+    log INFO "Currently active pyenv Python is $CURRENT_PY3"
 
     INSTALL_NEW_PYTHON=false
     if [[ "$CURRENT_PY3" != "$LATEST_PY3" ]]; then
         if ! pyenv versions --bare | grep -q "^${LATEST_PY3}\$"; then
-            echo "[INFO] Installing Python $LATEST_PY3 via pyenv..."
+            log INFO "Installing Python $LATEST_PY3 via pyenv..."
             pyenv install "$LATEST_PY3"
         fi
-        echo "[INFO] Setting Python $LATEST_PY3 as global..."
+        log INFO "Setting Python $LATEST_PY3 as global..."
         pyenv global "$LATEST_PY3"
         INSTALL_NEW_PYTHON=true
     else
-        echo "[INFO] Python $LATEST_PY3 is already installed and set as global."
+        log INFO "Python $LATEST_PY3 is already installed and set as global."
     fi
 
     # Refresh shell environment with the new global
@@ -138,61 +231,38 @@ install_latest_python() {
     fi
 }
 
-################################################################################
-# 3. pipx & Python Tooling
-################################################################################
 install_or_upgrade_pipx_and_tools() {
+    local new_python_installed="${1:-false}"
+
     # If pipx is not installed, install it with the current Python version
     if ! command_exists pipx; then
-        echo "[INFO] Installing pipx with current Python version."
+        log INFO "Installing pipx with current Python version..."
         python -m pip install --upgrade pip  # ensure pip is up to date
         python -m pip install --user pipx
     fi
 
     # Ensure pipx is on PATH
     if ! grep -q 'export PATH=.*\.local/bin' "${HOME}/.bashrc"; then
+        log INFO "Adding ~/.local/bin to PATH in ~/.bashrc..."
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
     fi
     export PATH="$HOME/.local/bin:$PATH"
 
-    # Now that pipx is installed, ensure it’s upgraded
+    # Upgrade pipx
+    log INFO "Upgrading pipx..."
     pipx upgrade pipx || true
 
-    # A list of pipx-managed tools
-    PIPX_TOOLS=(
-        ansible-core
-        black
-        cookiecutter
-        coverage
-        flake8
-        isort
-        ipython
-        mypy
-        pip-tools
-        pylint
-        pyupgrade
-        pytest
-        rich-cli
-        tldr
-        tox
-        twine
-        yt-dlp
-        poetry
-        pre-commit
-    )
-
-    # Detect if a new Python version was installed by checking install_latest_python()’s return code
-    if [[ "${1:-false}" == "true" ]]; then
-        echo "[INFO] Python version changed; performing pipx reinstall-all to avoid breakage..."
+    # Reinstall all pipx tools if Python version changed
+    if [[ "$new_python_installed" == "true" ]]; then
+        log INFO "Python version changed; performing pipx reinstall-all to avoid breakage..."
         pipx reinstall-all
     else
-        echo "[INFO] Upgrading all pipx packages to ensure they’re current..."
+        log INFO "Upgrading all pipx packages to ensure they’re current..."
         pipx upgrade-all || true
     fi
 
-    # Make sure each specific tool is installed (or upgraded if present)
-    echo
-    echo "[INFO] Ensuring each tool in PIPX_TOOLS is installed/upgraded..."
+    # Install or upgrade each tool in PIPX_TOOLS
+    log INFO "Ensuring each tool in PIPX_TOOLS is installed/upgraded..."
     for tool in "${PIPX_TOOLS[@]}"; do
         if pipx list | grep -q "$tool"; then
             pipx upgrade "$tool" || true
@@ -202,10 +272,12 @@ install_or_upgrade_pipx_and_tools() {
     done
 }
 
-################################################################################
-# Main
-################################################################################
+# ------------------------------------------------------------------------------
+# MAIN
+# ------------------------------------------------------------------------------
 main() {
+    log INFO "Starting Ubuntu setup script..."
+
     install_apt_dependencies
     install_or_update_pyenv
 
@@ -216,16 +288,13 @@ main() {
         install_or_upgrade_pipx_and_tools "false"
     fi
 
-    echo
-    echo "================================================="
-    echo " SUCCESS! Your system is now prepared with:"
-    echo "   - The latest stable Python (managed via pyenv)"
-    echo "   - pipx (re)installed and updated"
-    echo "   - A curated set of pipx CLI tools"
-    echo "================================================="
-    echo
-    echo "Happy coding!"
-    echo
+    log INFO "================================================="
+    log INFO " SUCCESS! Your system is now prepared with:"
+    log INFO "   - The latest stable Python (managed via pyenv)"
+    log INFO "   - pipx (re)installed and updated"
+    log INFO "   - A curated set of pipx CLI tools"
+    log INFO "================================================="
+    log INFO "Happy coding!"
 }
 
 # Execute main if this script is run directly (not sourced)
