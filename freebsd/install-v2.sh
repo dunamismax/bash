@@ -324,7 +324,7 @@ install_pkgs() {
         python39 go ruby perl5 rust
 
         # Containers and virtualization
-        docker vagrant qemu
+        docker vagrant qemu bhyve-firmware vm-bhyve
 
         # Web hosting tools
         nginx postgresql15-server postgresql15-client
