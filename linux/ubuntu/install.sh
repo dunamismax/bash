@@ -810,7 +810,6 @@ dotfiles_load() {
     # Copy dotfiles to the user's home directory
     log INFO "Copying dotfiles to $user_home..."
     local dotfiles=(
-        ".bash_profile"
         ".bashrc"
         ".fehbg"
         ".profile"
