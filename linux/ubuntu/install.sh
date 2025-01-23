@@ -792,7 +792,7 @@ dotfiles_load() {
 
     # Base paths
     local user_home="/home/${USERNAME}"
-    local dotfiles_dir="${user_home}/github/bash/dotfiles"
+    local dotfiles_dir="${user_home}/github/bash/linux/dotfiles"
     local config_dir="${user_home}/.config"
     local local_bin_dir="${user_home}/.local/bin"
 
