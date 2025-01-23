@@ -15,7 +15,7 @@ set $mod Mod4
 # Appearance
 # ------------------------------------------------------------------------------
 # Increase default font size for high DPI displays using JetBrains Mono
-font pango:"FiraCode Nerd Font 12"
+font pango:"Fira Code 12"
 
 # Nord color theme
 set $nord0 #2E3440
@@ -63,7 +63,7 @@ exec_always --no-startup-id dunst
 bindsym $mod+Return exec alacritty
 
 # Launch dmenu (application launcher)
-bindsym $mod+d exec dmenu_run -fn "FiraCode Nerd Font:size=12" -nb $nord0 -nf $nord4 -sb $nord10 -sf $nord6
+bindsym $mod+d exec dmenu_run -fn "Fira Code:size=12" -nb $nord0 -nf $nord4 -sb $nord10 -sf $nord6
 
 # Lock screen using i3lock with Mod+Shift+l
 bindsym $mod+Shift+l exec --no-startup-id i3lock -i /home/sawyer/github/bash/linux/wallpapers/Linux/kali-linux-minimal-amoled-4k.png

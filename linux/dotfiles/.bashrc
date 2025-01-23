@@ -107,10 +107,6 @@ export LESS="-R -X -F"
 neofetch
 echo "-----------------------------------"
 echo "Welcome, $USER!"
-echo "Today is $(date)"
-echo "Hostname: $(hostname)"
-echo "Uptime: $(uptime)"
-echo "OS: $(uname -sr)"
 echo "-----------------------------------"
 
 # ------------------------------------------------------------------------------
