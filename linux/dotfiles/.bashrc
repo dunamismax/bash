@@ -181,10 +181,8 @@ alias ports-update='sudo portsnap fetch update'
 alias pkg-update='sudo pkg update && sudo pkg upgrade'
 
 # ------------------------------------------------------------------------------
-# 8. Python virtual environment functions
+# 8. Functions
 # ------------------------------------------------------------------------------
-alias venv='setup_venv'
-alias v='enable_venv'
 
 setup_venv() {
     if type deactivate &>/dev/null; then
@@ -207,6 +205,9 @@ setup_venv() {
 
     echo "Virtual environment setup complete."
 }
+
+# function alias
+alias venv='setup_venv'
 
 enable_venv() {
     if type deactivate &>/dev/null; then
@@ -231,6 +232,36 @@ enable_venv() {
 
     echo "Virtual environment setup complete."
 }
+
+# function alias
+alias v='enable_venv'
+
+compile_and_run_c() {
+    # Find the .c file in the current directory
+    local c_file=$(find . -maxdepth 1 -type f -name "*.c" | head -n 1)
+
+    # Check if a .c file was found
+    if [[ -z "$c_file" ]]; then
+        echo "No .c file found in the current directory."
+        return 1
+    fi
+
+    # Extract the base name (without extension) for the executable
+    local base_name=$(basename "$c_file" .c)
+
+    # Compile the .c file
+    echo "Compiling $c_file..."
+    if gcc "$c_file" -o "$base_name"; then
+        echo "Compilation successful. Running $base_name..."
+        ./"$base_name"
+    else
+        echo "Compilation failed."
+        return 1
+    fi
+}
+
+# function alias
+alias crc="compile_and_run_c"
 
 # ------------------------------------------------------------------------------
 # 9. Bash completion (FreeBSD specific)
