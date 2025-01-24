@@ -19,8 +19,8 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 SOURCE_DIR="/home/sawyer/github/bash/linux/_scripts"  # Source directory containing scripts
-TARGET_DIR="/home/sawyer/.local/bin"                 # Target directory for copied scripts
-LOG_FILE="/var/log/copy_and_make_executable.log"     # Path to the log file
+TARGET_DIR="/home/sawyer/bin"                         # Target directory for copied scripts
+LOG_FILE="/var/log/copy_and_make_executable.log"      # Path to the log file
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
