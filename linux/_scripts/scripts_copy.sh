@@ -1,16 +1,13 @@
-Below is a bash script template / guide for you to follow for the rest of the bash scripts that you write.
-Please review it in full, and then acknowledge that you understand and ask me what you can help me with. 
-
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Script Name: example_script.sh
-# Description: [Brief description of what the script does]
+# Script Name: copy_and_make_executable.sh
+# Description: Makes scripts executable and copies them to a target directory.
 # Author: Your Name | License: MIT
 # Version: 1.0.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
-#   sudo ./example_script.sh
+#   sudo ./copy_and_make_executable.sh
 #
 # ------------------------------------------------------------------------------
 
@@ -21,7 +18,9 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/example_script.log"  # Path to the log file
+SOURCE_DIR="/home/sawyer/github/bash/linux/_scripts"  # Source directory containing scripts
+TARGET_DIR="/home/sawyer/.local/bin"                 # Target directory for copied scripts
+LOG_FILE="/var/log/copy_and_make_executable.log"     # Path to the log file
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
@@ -104,21 +103,28 @@ check_root() {
 # ------------------------------------------------------------------------------
 # MAIN FUNCTIONS
 # ------------------------------------------------------------------------------
-function_one() {
+make_scripts_executable() {
     log INFO "--------------------------------------"
-    log INFO "Starting function_one..."
+    log INFO "Making scripts executable in $SOURCE_DIR..."
 
-    # TODO: Add function_one logic here
-    log INFO "Completed function_one."
+    # Find all files in the source directory and make them executable
+    find "$SOURCE_DIR" -type f -exec chmod +x {} \; || handle_error "Failed to make scripts executable."
+
+    log INFO "All scripts in $SOURCE_DIR are now executable."
     log INFO "--------------------------------------"
 }
 
-function_two() {
+copy_scripts_to_target() {
     log INFO "--------------------------------------"
-    log INFO "Starting function_two..."
+    log INFO "Copying scripts from $SOURCE_DIR to $TARGET_DIR..."
 
-    # TODO: Add function_two logic here
-    log INFO "Completed function_two."
+    # Ensure the target directory exists
+    mkdir -p "$TARGET_DIR" || handle_error "Failed to create target directory: $TARGET_DIR"
+
+    # Copy all files from source to target, preserving executability and overwriting existing files
+    cp -f "$SOURCE_DIR"/* "$TARGET_DIR/" || handle_error "Failed to copy scripts to $TARGET_DIR."
+
+    log INFO "Scripts copied successfully to $TARGET_DIR."
     log INFO "--------------------------------------"
 }
 
@@ -153,9 +159,9 @@ main() {
 
     log INFO "Script execution started."
 
-    # Call your main functions in order
-    function_one
-    function_two
+    # Call main functions
+    make_scripts_executable
+    copy_scripts_to_target
 
     log INFO "Script execution finished."
 }
