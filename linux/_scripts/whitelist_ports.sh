@@ -109,11 +109,16 @@ whitelist_ports() {
 
     for (( port=PORT_START; port<=PORT_END; port++ )); do
         log INFO "Whitelisting port $port..."
-        if nordvpn whitelist add port "$port"; then
+        output=$(nordvpn whitelist add port "$port" 2>&1)
+        exit_code=$?
+
+        if [[ $exit_code -eq 0 ]]; then
             log INFO "Successfully whitelisted port $port."
+        elif [[ "$output" == *"is already allowlisted"* ]]; then
+            log WARN "Port $port is already allowlisted. Skipping."
         else
-            log ERROR "Failed to whitelist port $port."
-            handle_error "Failed to whitelist port $port."
+            log ERROR "Failed to whitelist port $port. Output: $output"
+            handle_error "Failed to whitelist port $port. Output: $output" "$exit_code"
         fi
     done
 
