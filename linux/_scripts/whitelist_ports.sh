@@ -12,7 +12,6 @@
 # ------------------------------------------------------------------------------
 
 # Enable strict mode: exit on error, undefined variables, or command pipeline failures
-set -Eeuo pipefail
 trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
 # ------------------------------------------------------------------------------

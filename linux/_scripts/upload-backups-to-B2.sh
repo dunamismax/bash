@@ -140,6 +140,46 @@ cleanup_backups() {
 }
 
 # ------------------------------------------------------------------------------
+# BACKBLAZE B2 UPLOAD FUNCTION
+# ------------------------------------------------------------------------------
+upload_to_backblaze() {
+    local BACKUP_SOURCE="/mnt/media/WD_BLACK/BACKUP/"
+    local BACKUP_DEST="Backblaze:sawyer-backups"
+    local RCLONE_CONFIG="/home/sawyer/.config/rclone/rclone.conf"
+    local RETENTION_DAYS=30
+
+    log INFO "Starting Backblaze B2 upload process..."
+
+    # Validate source directory
+    if [ ! -d "$BACKUP_SOURCE" ]; then
+        handle_error "Backup source directory '$BACKUP_SOURCE' does not exist."
+    fi
+
+    # Validate rclone config file
+    if [ ! -f "$RCLONE_CONFIG" ]; then
+        handle_error "rclone config file '$RCLONE_CONFIG' not found."
+    fi
+
+    # Upload backup to Backblaze B2
+    log INFO "Uploading $BACKUP_SOURCE to Backblaze B2: $BACKUP_DEST"
+    if rclone --config "$RCLONE_CONFIG" copy "$BACKUP_SOURCE" "$BACKUP_DEST" -vv; then
+        log INFO "Backup uploaded successfully to Backblaze B2."
+    else
+        handle_error "Failed to upload backup to Backblaze B2."
+    fi
+
+    # Clean up old backups on Backblaze B2
+    log INFO "Removing backups older than $RETENTION_DAYS days from Backblaze B2: $BACKUP_DEST"
+    if rclone --config "$RCLONE_CONFIG" delete "$BACKUP_DEST" --min-age "${RETENTION_DAYS}d" -vv; then
+        log INFO "Old backups removed successfully from Backblaze B2."
+    else
+        log WARN "Failed to remove some old backups from Backblaze B2."
+    fi
+
+    log INFO "Backblaze B2 upload and cleanup process completed."
+}
+
+# ------------------------------------------------------------------------------
 # MAIN
 # ------------------------------------------------------------------------------
 main() {
@@ -166,6 +206,9 @@ main() {
     # Perform the backup and cleanup
     upload_backup
     cleanup_backups
+
+    # Upload backups to B2 Cloud
+    upload_to_backblaze
 
     log INFO "Backup and cleanup completed successfully on $(date)."
     log INFO "--------------------------------------"
