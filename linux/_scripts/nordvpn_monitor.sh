@@ -1,81 +1,107 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: nordvpn-monitor.sh
-# Description: Real-time monitor for NordVPN data transfer (received GiB/TiB)
+# Description: Real-time monitor for NordVPN data transfer (received GiB/TiB).
 # Author: Your Name | License: MIT
-# Version: 1.1.0
+# Version: 1.1.1
 # ------------------------------------------------------------------------------
+#
 # Usage:
 #   ./nordvpn-monitor.sh
+#
+# Notes:
+#   - Displays the total data received via NordVPN in real-time.
+#   - Requires NordVPN CLI to be installed and actively connected.
+#
+# Requirements:
+#   - NordVPN CLI
+#   - Bash 4+
+#
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# ENABLE STRICT MODE
+# For more information, see:
+#   https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html
+# ------------------------------------------------------------------------------
 set -Eeuo pipefail
-trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
 # ------------------------------------------------------------------------------
-# CONFIGURATION
-# ------------------------------------------------------------------------------
-REFRESH_INTERVAL=1  # Update interval in seconds
-
-# ------------------------------------------------------------------------------
-# ERROR HANDLING
+# ERROR HANDLING & CLEANUP
 # ------------------------------------------------------------------------------
 handle_error() {
-    printf "\nERROR: %s\n" "$1" >&2
-    exit 1
+    local error_message="${1:-"Unknown error occurred"}"
+    local exit_code="${2:-1}"
+
+    printf "\nERROR: %s\n" "$error_message" >&2
+    exit "$exit_code"
 }
 
+# Trap any uncaught errors
+trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
+
+# Trap SIGINT (Ctrl+C) for a cleaner exit
+trap 'printf "\n"; exit 0' SIGINT
+
 # ------------------------------------------------------------------------------
-# DATA EXTRACTION FUNCTION
+# GLOBAL CONFIGURATION
+# ------------------------------------------------------------------------------
+REFRESH_INTERVAL=1  # Update interval (in seconds)
+
+# ------------------------------------------------------------------------------
+# HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 get_received_data() {
+    # Extract the line containing 'Transfer: X received' from `nordvpn status`
     local transfer_line
-    transfer_line=$(nordvpn status | grep -oP 'Transfer: \K.*(?= received)')
-    
+    transfer_line="$(nordvpn status | grep -oP 'Transfer:\s+\K.*(?=\s+received)')"
+
     if [[ "$transfer_line" =~ TiB ]]; then
-        # Extract TiB value and convert to GiB
-        tib_value=$(echo "$transfer_line" | grep -oP '[\d.]+(?= TiB)')
-        echo "$tib_value TiB"
+        # If the line indicates TiB, extract numeric value and display in TiB
+        local tib_value
+        tib_value="$(echo "$transfer_line" | grep -oP '[\d.]+(?=\s*TiB)')"
+        echo "${tib_value} TiB"
     elif [[ "$transfer_line" =~ GiB ]]; then
-        # Extract GiB value
-        gib_value=$(echo "$transfer_line" | grep -oP '[\d.]+(?= GiB)')
-        echo "$gib_value GiB"
+        # If the line indicates GiB, extract numeric value and display in GiB
+        local gib_value
+        gib_value="$(echo "$transfer_line" | grep -oP '[\d.]+(?=\s*GiB)')"
+        echo "${gib_value} GiB"
     else
+        # Default to 0 GiB if neither TiB nor GiB is detected
         echo "0 GiB"
     fi
 }
 
 # ------------------------------------------------------------------------------
-# MAIN SCRIPT
+# MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Check if nordvpn is installed
-    if ! command -v nordvpn &> /dev/null; then
+    # 1. Check if the NordVPN CLI is installed
+    if ! command -v nordvpn &>/dev/null; then
         handle_error "NordVPN CLI is not installed"
     fi
 
-    # Check VPN connection status
+    # 2. Ensure NordVPN is connected
     if ! nordvpn status | grep -q "Status: Connected"; then
         handle_error "Not connected to NordVPN"
     fi
 
     printf "Monitoring NordVPN data transfer... (Press Ctrl+C to exit)\n"
 
-    # Continuous monitoring loop
+    # 3. Continuous monitoring loop
     while true; do
-        # Get and format received data
-        received_data=$(get_received_data)
-        
-        # Print with carriage return to overwrite previous line
+        local received_data
+        received_data="$(get_received_data)"
+        # Use carriage return (\r) to overwrite the same line
         printf "\rData Received: %-12s" "$received_data"
-        
-        # Wait for specified interval
         sleep "$REFRESH_INTERVAL"
     done
 }
 
-# Cleanup on exit
-trap 'printf "\n"; exit 0' SIGINT
-
-# Execute main function
-main "$@"
+# ------------------------------------------------------------------------------
+# SCRIPT INVOCATION CHECK
+# ------------------------------------------------------------------------------
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+    exit 0
+fi
