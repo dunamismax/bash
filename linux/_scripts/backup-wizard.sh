@@ -87,12 +87,52 @@ declare -A CONFIG=(
 )
 
 declare -A SYSTEM_EXCLUDES=(
-    ["proc"]=1 ["sys"]=1 ["dev"]=1 ["run"]=1 ["tmp"]=1
-    ["mnt"]=1 ["media"]=1 ["swapfile"]=1 ["lost+found"]=1
-    ["var/tmp"]=1 ["var/cache"]=1 ["var/log"]=1
-    ["var/lib/lxcfs"]=1 ["var/lib/docker"]=1 ["root/.cache"]=1
-    ["home/*/.cache"]=1 ["var/lib/plexmediaserver"]=1
-    ["*.iso"]=1 ["*.tmp"]=1 ["*.swap.img"]=1
+  [proc]=1
+  [sys]=1
+  [dev]=1
+  [run]=1
+  [tmp]=1
+  [mnt]=1
+  [media]=1
+  [swapfile]=1
+  [lost+found]=1
+  [var/tmp]=1
+  [var/cache]=1
+  [var/log]=1
+  [var/lib/lxcfs]=1
+  [var/lib/docker]=1
+  [root/.cache]=1
+  [home/*/.cache]=1
+  [home/*/.local/share/Trash]=1
+  [*.iso]=1
+  [*.tmp]=1
+  [*.swap.img]=1
+
+  # Snap
+  [snap]=1
+  [var/lib/snapd]=1
+
+  # Apt lists
+  [var/lib/apt/lists]=1
+
+  # Additional ephemeral
+  [var/spool]=1
+  [var/lib/systemd/coredump]=1
+  [var/lib/update-notifier]=1
+  [var/lib/NetworkManager]=1
+
+  # If you don’t need kernel modules or firmware:
+  [lib/modules]=1
+  [lib/firmware]=1
+
+  # If you want to skip VMs
+  [var/lib/libvirt/images]=1
+
+  # If you use VirtualBox and want to exclude VMs
+  [home/*/VirtualBox VMs]=1
+
+  # If you want to exclude Plex’s own data (already in your script as /var/lib/plexmediaserver):
+  [var/lib/plexmediaserver]=1
 )
 
 # ------------------------------------------------------------------------------
