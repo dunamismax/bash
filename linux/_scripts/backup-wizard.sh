@@ -256,13 +256,14 @@ run_full_system_backup() {
     local exclude_file
     exclude_file="$(mktemp)" || handle_error "Failed to create temporary exclusion file"
 
-    cleanup() {
+    # Define local cleanup function
+    local cleanup_exclusions() {
         if [[ -f "$exclude_file" ]]; then
             rm -f "$exclude_file"
             log DEBUG "Cleaned up temporary exclusion file: $exclude_file"
         fi
     }
-    trap cleanup EXIT
+    trap cleanup_exclusions EXIT
 
     # Populate the exclusion file
     printf "%s\n" "${!SYSTEM_EXCLUDES[@]}" > "$exclude_file"
@@ -272,6 +273,12 @@ run_full_system_backup() {
     rsync -aAXv --exclude-from="$exclude_file" --delete \
         "${CONFIG[FULL_SYSTEM_SOURCE]}" "${CONFIG[FULL_SYSTEM_DEST]}" \
         || handle_error "Full system backup failed"
+
+    # Clear the trap before exiting function
+    trap - EXIT
+    
+    # Clean up the exclusion file
+    cleanup_exclusions
 
     log INFO "Full System Backup completed successfully."
     print_divider
