@@ -58,14 +58,14 @@ declare -A CONFIG=(
     # Backup Locations
     # ----------------------------------------------------------------------------
     [FULL_SYSTEM_SOURCE]="/"
-    [FULL_SYSTEM_DEST]="/media/WD_BLACK/BACKUP/ubuntu-backups"
+    [FULL_SYSTEM_DEST]="/media/WD_BLACK/backup/ubuntu-backups"
     [FULL_SYSTEM_RETENTION]=7
 
     [PLEX_SOURCE]="/var/lib/plexmediaserver/"
-    [PLEX_DEST]="/media/WD_BLACK/BACKUP/plex-backups"
+    [PLEX_DEST]="/media/WD_BLACK/backup/plex-backups"
     [PLEX_RETENTION]=7
 
-    [BACKUP_SOURCE]="/media/WD_BLACK/BACKUP/"
+    [BACKUP_SOURCE]="/media/WD_BLACK/backup/"
     [BACKBLAZE_DEST]="Backblaze:sawyer-backups"
     [RCLONE_CONFIG]="/home/sawyer/.config/rclone/rclone.conf"
     [BACKBLAZE_RETENTION]=30
