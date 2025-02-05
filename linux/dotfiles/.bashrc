@@ -35,23 +35,24 @@ shopt -s nocaseglob       # Case-insensitive pathname expansion
 shopt -s extglob          # Extended pattern matching
 shopt -s histverify       # Allow editing of history substitution results
 
-# Nord color scheme - Enhanced with direct ANSI codes for better compatibility
-export NORD0="#2E3440"   # Polar Night (darkest)
-export NORD1="#3B4252"   # Polar Night
-export NORD2="#434C5E"   # Polar Night
-export NORD3="#4C566A"   # Polar Night (lightest)
-export NORD4="#D8DEE9"   # Snow Storm (darkest)
-export NORD5="#E5E9F0"   # Snow Storm
-export NORD6="#ECEFF4"   # Snow Storm (lightest)
-export NORD7="#8FBCBB"   # Frost (turquoise)
-export NORD8="#88C0D0"   # Frost (light blue)
-export NORD9="#81A1C1"   # Frost (blue)
-export NORD10="#5E81AC"  # Frost (dark blue)
-export NORD11="#BF616A"  # Aurora (red)
-export NORD12="#D08770"  # Aurora (orange)
-export NORD13="#EBCB8B"  # Aurora (yellow)
-export NORD14="#A3BE8C"  # Aurora (green)
-export NORD15="#B48EAD"  # Aurora (purple)
+# Nord color scheme as ANSI escape sequences
+NORD0="\[\033[38;2;46;52;64m\]"      # Polar Night (darkest)
+NORD1="\[\033[38;2;59;66;82m\]"      # Polar Night
+NORD2="\[\033[38;2;67;76;94m\]"      # Polar Night
+NORD3="\[\033[38;2;76;86;106m\]"     # Polar Night (lightest)
+NORD4="\[\033[38;2;216;222;233m\]"   # Snow Storm (darkest)
+NORD5="\[\033[38;2;229;233;240m\]"   # Snow Storm
+NORD6="\[\033[38;2;236;239;244m\]"   # Snow Storm (lightest)
+NORD7="\[\033[38;2;143;188;187m\]"   # Frost (turquoise)
+NORD8="\[\033[38;2;136;192;208m\]"   # Frost (light blue)
+NORD9="\[\033[38;2;129;161;193m\]"   # Frost (blue)
+NORD10="\[\033[38;2;94;129;172m\]"   # Frost (dark blue)
+NORD11="\[\033[38;2;191;97;106m\]"   # Aurora (red)
+NORD12="\[\033[38;2;208;135;112m\]"  # Aurora (orange)
+NORD13="\[\033[38;2;235;203;139m\]"  # Aurora (yellow)
+NORD14="\[\033[38;2;163;190;140m\]"  # Aurora (green)
+NORD15="\[\033[38;2;180;142;173m\]"  # Aurora (purple)
+RESET="\[\e[0m\]"                    # Reset color
 
 # Reset color code
 RESET='\[\e[0m\]'
@@ -129,39 +130,18 @@ fi
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
 # ------------------------------------------------------------------------------
-# 5. Enhanced PS1 with Git integration and thoughtful Nord colors
+# 5. Simple PS1 with clean Nord colors
 # ------------------------------------------------------------------------------
-if [ -f /usr/lib/git-core/git-sh-prompt ]; then
-   source /usr/lib/git-core/git-sh-prompt
-   GIT_PS1_SHOWDIRTYSTATE=1
-   GIT_PS1_SHOWSTASHSTATE=1
-   GIT_PS1_SHOWUNTRACKEDFILES=1
-   GIT_PS1_SHOWUPSTREAM="auto"
-   GIT_PS1_SHOWCOLORHINTS=1
+# Convert hex colors to ANSI escape sequences
+USERNAME="\[\033[38;2;143;188;187m\]"   # NORD7  - Frost (turquoise)
+HOSTNAME="\[\033[38;2;143;188;187m\]"   # NORD7  - Frost (turquoise)
+DIR_COLOR="\[\033[38;2;129;161;193m\]"  # NORD9  - Frost (blue)
+DELIM="\[\033[38;2;216;222;233m\]"      # NORD4  - Snow Storm (darkest)
+ERROR="\[\033[38;2;191;97;106m\]"       # NORD11 - Aurora (red)
+RESET="\[\e[0m\]"
 
-   # Convert hex colors to ANSI escape sequences
-   # Carefully chosen colors for optimal readability and information hierarchy
-   USERNAME="\[\033[38;2;143;188;187m\]"   # NORD7  - Frost turquoise (standout but professional)
-   HOSTNAME="\[\033[38;2;136;192;208m\]"   # NORD8  - Frost light blue (subtle distinction)
-   DIR_COLOR="\[\033[38;2;129;161;193m\]"  # NORD9  - Frost blue (easy to read, important)
-   GIT="\[\033[38;2;163;190;140m\]"        # NORD14 - Aurora green (clear git status)
-   ERROR="\[\033[38;2;191;97;106m\]"       # NORD11 - Aurora red (clear error state)
-   TIME="\[\033[38;2;180;142;173m\]"       # NORD15 - Aurora purple (subtle timestamp)
-   DELIM="\[\033[38;2;216;222;233m\]"      # NORD4  - Snow Storm (subtle separators)
-
-   # Function to format time in 12-hour format without seconds
-   format_time() {
-       date "+%I:%M %p" | tr '[:upper:]' '[:lower:]'
-   }
-
-   # Enhanced multi-line prompt
-   PS1="${USERNAME}\u${DELIM}@${HOSTNAME}\h${DELIM}:${DIR_COLOR}\w${RESET}"
-   PS1+="\$(__git_ps1 ' ${GIT}(%s)${RESET}')"
-   PS1+="\n${TIME}[$(format_time)]${DELIM} "
-   PS1+="\$(if [[ \$? -eq 0 ]]; then echo '${DIR_COLOR}'; else echo '${ERROR}'; fi)❯${RESET} "
-else
-   PS1="${USERNAME}\u${DELIM}@${HOSTNAME}\h${DELIM}:${DIR_COLOR}\w${DELIM} \$ "
-fi
+# Simple single-line prompt
+PS1="${USERNAME}\u${DELIM}@${HOSTNAME}\h${DELIM}:${DIR_COLOR}\w${DELIM} ❯${RESET} "
 
 # ------------------------------------------------------------------------------
 # 6. Color support for Linux commands
