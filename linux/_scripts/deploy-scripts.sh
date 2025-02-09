@@ -3,168 +3,280 @@
 # Script Name: deploy-scripts.sh
 # Description: Deploys user scripts from a source directory to a target directory.
 #              Ensures proper ownership, performs a dry-run, and sets executable
-#              permissions.
-#
-# Usage:
-#   sudo ./deploy-scripts.sh
-#
-# Requirements:
-#   - Root privileges
-#   - rsync, find, and core utilities
-#
-# Logs:
-#   /var/log/deploy-scripts.log
-#
+#              permissions. This version uses the Nord‑themed enhanced template
+#              for robust error handling, logging, and progress feedback.
 # Author: Your Name | License: MIT
-# Version: 1.0.1
+# Version: 2.0
+# ------------------------------------------------------------------------------
+#
+# Usage Examples:
+#   sudo ./deploy-scripts.sh [-d|--debug] [-q|--quiet]
+#   sudo ./deploy-scripts.sh -h|--help
+#
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
 # ENABLE STRICT MODE
-# For more information, see:
-#   https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
 
 # ------------------------------------------------------------------------------
-# ERROR HANDLING & CLEANUP
+# GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-handle_error() {
-    local error_message="${1:-"Unknown error occurred"}"
-    local exit_code="${2:-1}"
+LOG_FILE="/var/log/deploy-scripts.log"         # Log file path
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_LEVEL="${LOG_LEVEL:-INFO}"                   # Options: INFO, DEBUG, WARN, ERROR
+QUIET_MODE=false                                 # When true, suppress console output
+DISABLE_COLORS="${DISABLE_COLORS:-false}"        # Set to true to disable colored output
 
-    log ERROR "$error_message"
-    log DEBUG "Stack trace (most recent call last):"
-    # Print a brief stack trace for debugging
-    local i
-    for (( i=${#FUNCNAME[@]}-1 ; i>1 ; i-- )); do
-        log DEBUG "  [${BASH_SOURCE[$i]}:${BASH_LINENO[$((i-1))]}] in ${FUNCNAME[$i]}"
-    done
-
-    exit "$exit_code"
-}
-
-trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
+# Deployment-specific configuration
+SCRIPT_SOURCE="/home/sawyer/github/bash/linux/_scripts"  # Source directory for scripts
+SCRIPT_TARGET="/home/sawyer/bin"                           # Target deployment directory
+EXPECTED_OWNER="sawyer"                                    # Expected owner of source directory
 
 # ------------------------------------------------------------------------------
-# GLOBAL VARIABLES (CONFIGURATION)
+# NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-declare -A CONFIG=(
-    # Paths
-    [SCRIPT_SOURCE]="/home/sawyer/github/bash/linux/_scripts" # Source directory
-    [SCRIPT_TARGET]="/home/sawyer/bin"                        # Deployment directory
-
-    # Logging
-    [LOG_FILE]="/var/log/deploy-scripts.log"
-)
-
-# ------------------------------------------------------------------------------
-# COLOR CONSTANTS (OPTIONAL FOR LOGGING)
-# ------------------------------------------------------------------------------
-RED='\033[0;31m'
-YELLOW='\033[0;33m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-NC='\033[0m'  # No Color
+NORD0='\033[38;2;46;52;64m'      # #2E3440
+NORD1='\033[38;2;59;66;82m'      # #3B4252
+NORD2='\033[38;2;67;76;94m'      # #434C5E
+NORD3='\033[38;2;76;86;106m'     # #4C566A
+NORD4='\033[38;2;216;222;233m'   # #D8DEE9
+NORD5='\033[38;2;229;233;240m'   # #E5E9F0
+NORD6='\033[38;2;236;239;244m'   # #ECEFF4
+NORD7='\033[38;2;143;188;187m'   # #8FBCBB
+NORD8='\033[38;2;136;192;208m'   # #88C0D0
+NORD9='\033[38;2;129;161;193m'   # #81A1C1
+NORD10='\033[38;2;94;129;172m'   # #5E81AC
+NORD11='\033[38;2;191;97;106m'   # #BF616A
+NORD12='\033[38;2;208;135;112m'  # #D08770
+NORD13='\033[38;2;235;203;139m'  # #EBCB8B
+NORD14='\033[38;2;163;190;140m'  # #A3BE8C
+NORD15='\033[38;2;180;142;173m'  # #B48EAD
+NC='\033[0m'                    # No Color
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
 # ------------------------------------------------------------------------------
 log() {
-    # Usage:
-    #   log [LEVEL] "Message text"
-    #
-    # Example:
-    #   log INFO "Beginning deployment..."
-    # ----------------------------------------------------------------------------
-
+    # Usage: log [LEVEL] message
     local level="${1:-INFO}"
     shift
     local message="$*"
-
-    # Convert level to uppercase
     local upper_level="${level^^}"
 
-    # Get timestamp
+    # Only log DEBUG messages when LOG_LEVEL is DEBUG
+    if [[ "$upper_level" == "DEBUG" && "${LOG_LEVEL^^}" != "DEBUG" ]]; then
+        return 0
+    fi
+
+    local color="$NC"
+    if [[ "$DISABLE_COLORS" != true ]]; then
+        case "$upper_level" in
+            INFO)  color="${NORD14}" ;;  # Greenish
+            WARN)  color="${NORD13}" ;;  # Yellowish
+            ERROR) color="${NORD11}" ;;  # Reddish
+            DEBUG) color="${NORD9}"  ;;  # Bluish
+            *)     color="$NC"     ;;
+        esac
+    fi
+
     local timestamp
     timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
-
-    # Determine color based on level
-    local color_code="$NC"
-    case "$upper_level" in
-        INFO)
-            color_code="$GREEN"
-            ;;
-        WARN|WARNING)
-            upper_level="WARN"
-            color_code="$YELLOW"
-            ;;
-        ERROR)
-            color_code="$RED"
-            ;;
-        DEBUG)
-            color_code="$BLUE"
-            ;;
-    esac
-
-    # Construct log entry
     local log_entry="[$timestamp] [$upper_level] $message"
-
-    # Always write uncolored log entry to file
-    echo "$log_entry" >> "${CONFIG[LOG_FILE]}"
-
-    # Write to console (stderr) with color if terminal is interactive
-    if [[ -t 2 ]]; then
-        printf "%b%s%b\n" "$color_code" "$log_entry" "$NC" >&2
-    else
-        echo "$log_entry" >&2
+    echo "$log_entry" >> "$LOG_FILE"
+    if [[ "$QUIET_MODE" != true ]]; then
+        printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
     fi
 }
 
 # ------------------------------------------------------------------------------
-# DEPLOYMENT FUNCTIONS
+# ERROR HANDLING & CLEANUP FUNCTIONS
+# ------------------------------------------------------------------------------
+handle_error() {
+    local error_message="${1:-"Unknown error occurred"}"
+    local exit_code="${2:-1}"
+    log ERROR "$error_message (Exit Code: $exit_code)"
+    log ERROR "Script encountered an error at line $LINENO in function ${FUNCNAME[1]:-main}."
+    echo -e "${NORD11}ERROR: $error_message (Exit Code: $exit_code)${NC}" >&2
+    exit "$exit_code"
+}
+
+cleanup() {
+    log INFO "Performing cleanup tasks before exit."
+    # Insert any necessary cleanup tasks here (e.g., deleting temporary files)
+}
+
+trap cleanup EXIT
+trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
+
+# ------------------------------------------------------------------------------
+# HELPER & UTILITY FUNCTIONS
+# ------------------------------------------------------------------------------
+check_root() {
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        handle_error "This script must be run as root."
+    fi
+}
+
+enable_debug() {
+    LOG_LEVEL="DEBUG"
+    log DEBUG "Debug mode enabled: Verbose logging activated."
+}
+
+enable_quiet_mode() {
+    QUIET_MODE=true
+    log INFO "Quiet mode enabled: Console output suppressed."
+}
+
+show_help() {
+    cat << EOF
+Usage: $SCRIPT_NAME [OPTIONS]
+
+Description:
+  Deploys user scripts from a source directory to a target directory.
+  Ensures proper ownership, performs a dry-run, and sets executable permissions.
+  Uses a Nord‑themed enhanced template for robust error handling and logging.
+
+Options:
+  -d, --debug   Enable debug (verbose) logging.
+  -q, --quiet   Suppress console output (logs still written to file).
+  -h, --help    Show this help message and exit.
+
+Examples:
+  sudo $SCRIPT_NAME --debug
+  sudo $SCRIPT_NAME --quiet
+  sudo $SCRIPT_NAME -h
+EOF
+}
+
+# Print a styled section header using Nord accent colors
+print_section() {
+    local title="$1"
+    local border
+    border=$(printf '─%.0s' {1..60})
+    log INFO "${NORD10}${border}${NC}"
+    log INFO "${NORD10}  $title${NC}"
+    log INFO "${NORD10}${border}${NC}"
+}
+
+# ------------------------------------------------------------------------------
+# PROGRESS BAR FUNCTION
+# ------------------------------------------------------------------------------
+progress_bar() {
+    # Usage: progress_bar "Message" [duration_in_seconds]
+    local message="${1:-Processing...}"
+    local duration="${2:-5}"
+    local steps=50
+    local sleep_time
+    sleep_time=$(echo "$duration / $steps" | bc -l)
+    local progress=0
+    local filled=""
+    local unfilled=""
+
+    # Display the task message in Nord accent color
+    if [[ "$DISABLE_COLORS" != true ]]; then
+        printf "\n${NORD8}%s${NC}\n" "$message"
+    else
+        printf "\n%s\n" "$message"
+    fi
+
+    for (( i = 1; i <= steps; i++ )); do
+        progress=$(( i * 100 / steps ))
+        filled=$(printf "%-${i}s" | tr ' ' '█')
+        unfilled=$(printf "%-$(( steps - i ))s" | tr ' ' '░')
+        printf "\r${NORD8}[%s%s] %3d%%%s" "$filled" "$unfilled" "$progress" "$NC"
+        sleep "$sleep_time"
+    done
+    printf "\n"
+}
+
+# ------------------------------------------------------------------------------
+# DEPLOYMENT FUNCTION
 # ------------------------------------------------------------------------------
 deploy_user_scripts() {
-    log INFO "Deploying system scripts..."
+    print_section "Deploying User Scripts"
+    log INFO "Starting deployment of user scripts..."
 
     # 1. Check ownership of source directory
     local source_owner
-    source_owner="$(stat -c %U "${CONFIG[SCRIPT_SOURCE]}")" || handle_error "Failed to stat source directory"
-    if [[ "$source_owner" != "sawyer" ]]; then
-        handle_error "Invalid script source ownership: ${CONFIG[SCRIPT_SOURCE]} (Owner: $source_owner)"
+    source_owner="$(stat -c %U "$SCRIPT_SOURCE")" || handle_error "Failed to stat source directory: $SCRIPT_SOURCE"
+    if [[ "$source_owner" != "$EXPECTED_OWNER" ]]; then
+        handle_error "Invalid script source ownership for '$SCRIPT_SOURCE' (Owner: $source_owner). Expected: $EXPECTED_OWNER"
     fi
 
     # 2. Dry-run deployment
-    log INFO "Running dry-run for script deployment..."
-    if ! rsync --dry-run -ah --delete "${CONFIG[SCRIPT_SOURCE]}/" "${CONFIG[SCRIPT_TARGET]}"; then
-        handle_error "Dry-run failed for script deployment"
+    log INFO "Performing dry‑run for script deployment..."
+    if ! rsync --dry-run -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}"; then
+        handle_error "Dry‑run failed for script deployment"
     fi
 
-    # 3. Actual deployment
-    log INFO "Deploying scripts from '${CONFIG[SCRIPT_SOURCE]}' to '${CONFIG[SCRIPT_TARGET]}'..."
-    if ! rsync -ah --delete "${CONFIG[SCRIPT_SOURCE]}/" "${CONFIG[SCRIPT_TARGET]}"; then
+    # 3. Show progress bar during actual deployment
+    progress_bar "Deploying scripts..." 4
+
+    # 4. Actual deployment
+    log INFO "Deploying scripts from '$SCRIPT_SOURCE' to '$SCRIPT_TARGET'..."
+    if ! rsync -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}"; then
         handle_error "Script deployment failed"
     fi
 
-    # 4. Set executable permissions
+    # 5. Set executable permissions on deployed scripts
     log INFO "Setting executable permissions on deployed scripts..."
-    if ! find "${CONFIG[SCRIPT_TARGET]}" -type f -exec chmod 755 {} \;; then
-        handle_error "Failed to update script permissions"
+    if ! find "${SCRIPT_TARGET}" -type f -exec chmod 755 {} \;; then
+        handle_error "Failed to update script permissions in '$SCRIPT_TARGET'"
     fi
 
     log INFO "Script deployment completed successfully."
 }
 
 # ------------------------------------------------------------------------------
+# ARGUMENT PARSING
+# ------------------------------------------------------------------------------
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -d|--debug)
+                enable_debug
+                ;;
+            -q|--quiet)
+                enable_quiet_mode
+                ;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            *)
+                log WARN "Unknown option: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
+# ------------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Set secure permissions on log file
-    umask 077
-    touch "${CONFIG[LOG_FILE]}" || handle_error "Failed to create log file: ${CONFIG[LOG_FILE]}"
-    chmod 640 "${CONFIG[LOG_FILE]}"
+    # Ensure the script is run with Bash
+    if [[ -z "${BASH_VERSION:-}" ]]; then
+        echo -e "${NORD11}ERROR: Please run this script with bash.${NC}" >&2
+        exit 1
+    fi
+
+    check_root
+
+    # Ensure the log directory exists and secure the log file
+    local LOG_DIR
+    LOG_DIR="$(dirname "$LOG_FILE")"
+    if [[ ! -d "$LOG_DIR" ]]; then
+        mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
+    fi
+    touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
+    chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
     log INFO "Starting script deployment process..."
+    parse_args "$@"
     deploy_user_scripts
     log INFO "Script deployment process completed."
 }
@@ -174,5 +286,4 @@ main() {
 # ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
-    exit 0
 fi
