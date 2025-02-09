@@ -1,29 +1,53 @@
-# Alacritty TOML Configuration
-# Nord theme with darkest background (#2e3440).
+###############################################################################
+# Alacritty Configuration File
+#
+# A refined Alacritty config featuring the Nord color palette, improved
+# comments, and organized sections for window, scrolling, fonts, keybindings,
+# and colors.
+#
+# Nord Theme:
+#   - Background: Polar Night (#2e3440)
+#   - Foreground: Snow Storm (#d8dee9)
+###############################################################################
+
+#########################
+# WINDOW CONFIGURATION  #
+#########################
 
 [window]
-# Window title
+# Window title as seen in the title bar (if applicable)
 title = "Alacritty"
 
-# Window dimensions in character columns/lines
+# Dimensions expressed in number of character columns and lines
 dimensions = { columns = 120, lines = 34 }
 
-# Window padding around the text area
+# Padding (in pixels) around the text area
 padding = { x = 8, y = 8 }
 
-# Dynamically change the title based on the running process
+# Automatically update the window title based on the running process
 dynamic_title = true
 
+#########################
+# SCROLLING SETTINGS    #
+#########################
+
 [scrolling]
-# Scroll speed multiplier
+# Multiplier for scrolling speed (higher value = faster scrolling)
 multiplier = 3
 
-# Maximum number of lines in the scrollback buffer
+# Maximum number of lines to retain in the scrollback buffer
 history = 100000
 
+#########################
+# FONT SETTINGS         #
+#########################
+
 [font]
-# Default font size (in points)
+# Base font size in points
 size = 12
+
+# (Optional) Use bright colors when drawing bold text.
+# draw_bold_text_with_bright_colors = true
 
 [font.normal]
 family = "Fira Code"
@@ -37,15 +61,28 @@ style = "Bold"
 family = "Fira Code"
 style = "Italic"
 
+#########################
+# SELECTION BEHAVIOR    #
+#########################
+
 [selection]
-# Copy to system clipboard upon selection
+# Automatically copy selected text to the system clipboard
 save_to_clipboard = true
 
+#########################
+# CURSOR SETTINGS       #
+#########################
+
 [cursor]
-# Cursor style (options: Block, Underline, Beam)
+# Available styles: Block, Underline, Beam
 style = "Block"
 
-# Key bindings (add your own as needed)
+#########################
+# KEYBINDINGS           #
+#########################
+
+# Custom keyboard shortcuts to enhance productivity.
+# Note: The order of definitions does not affect behavior.
 [[keyboard.bindings]]
 key = "C"
 mods = "Control|Shift"
@@ -86,36 +123,44 @@ key = "PageDown"
 mods = "Shift"
 action = "ScrollPageDown"
 
-[colors.primary]
-# Darkest Nord color: Polar Night (#2e3440)
-background = "#2e3440"
-foreground = "#d8dee9"  # Nord4 (Snow Storm)
+#########################
+# COLOR SCHEME          #
+#########################
 
-[colors.cursor]
-# Cursor color and the text color under cursor
-text = "#2e3440"
-cursor = "#d8dee9"
+[colors]
 
-[colors.selection]
-# Highlight selected text with another Polar Night color
-background = "#4c566a"
+  # Primary colors used for the terminal background and foreground.
+  [colors.primary]
+  background = "#2e3440"   # Polar Night (Nord0)
+  foreground = "#d8dee9"   # Snow Storm (Nord4)
 
-[colors.normal]
-black   = "#3b4252"  # Nord1
-red     = "#bf616a"  # Aurora Red (Nord11)
-green   = "#a3be8c"  # Aurora Green (Nord14)
-yellow  = "#ebcb8b"  # Aurora Yellow (Nord13)
-blue    = "#81a1c1"  # Frost (Nord9)
-magenta = "#b48ead"  # Aurora Purple (Nord15)
-cyan    = "#88c0d0"  # Frost (Nord8)
-white   = "#e5e9f0"  # Snow Storm (Nord5)
+  # Cursor colors: both the text color under the cursor and the cursor itself.
+  [colors.cursor]
+  text   = "#2e3440"
+  cursor = "#d8dee9"
 
-[colors.bright]
-black   = "#434c5e"  # Nord2
-red     = "#bf616a"  # Aurora Red (Nord11)
-green   = "#a3be8c"  # Aurora Green (Nord14)
-yellow  = "#ebcb8b"  # Aurora Yellow (Nord13)
-blue    = "#81a1c1"  # Frost (Nord9)
-magenta = "#b48ead"  # Aurora Purple (Nord15)
-cyan    = "#8fbcbb"  # Frost (Nord7)
-white   = "#eceff4"  # Snow Storm (Nord6)
+  # Color used for text selection highlighting.
+  [colors.selection]
+  background = "#4c566a"   # A slightly lighter Polar Night
+
+  # Standard ANSI 8 colors (normal intensity)
+  [colors.normal]
+  black   = "#3b4252"   # Nord1
+  red     = "#bf616a"   # Aurora Red (Nord11)
+  green   = "#a3be8c"   # Aurora Green (Nord14)
+  yellow  = "#ebcb8b"   # Aurora Yellow (Nord13)
+  blue    = "#81a1c1"   # Frost (Nord9)
+  magenta = "#b48ead"   # Aurora Purple (Nord15)
+  cyan    = "#88c0d0"   # Frost (Nord8)
+  white   = "#e5e9f0"   # Snow Storm (Nord5)
+
+  # Bright variants of the ANSI colors.
+  [colors.bright]
+  black   = "#434c5e"   # Nord2
+  red     = "#bf616a"   # Aurora Red (Nord11)
+  green   = "#a3be8c"   # Aurora Green (Nord14)
+  yellow  = "#ebcb8b"   # Aurora Yellow (Nord13)
+  blue    = "#81a1c1"   # Frost (Nord9)
+  magenta = "#b48ead"   # Aurora Purple (Nord15)
+  cyan    = "#8fbcbb"   # Frost (Nord7)
+  white   = "#eceff4"   # Snow Storm (Nord6)
