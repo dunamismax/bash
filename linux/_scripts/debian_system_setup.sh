@@ -44,11 +44,11 @@ USERNAME="sawyer"                     # Default username to configure (change as
 # Define packages to install (adjusted for Debian; removed Ubuntu-specific packages)
 PACKAGES=(
   bash vim nano mc screen tmux nodejs npm ninja-build meson fonts-font-awesome intltool gettext
-  build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill
-  bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw fonts-hack
-  xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev flatpak
-  xfce4-dev-tools git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq
-  fonts-dejavu-core fonts-firacode nmap tree fzf lynx which patch smartmontools ntfs-3g cups neovim
+  build-essential cmake hugo pigz exim4 openssh-server libtool pkg-config libssl-dev rfkill linux-headers-amd64
+  bzip2 libbz2-dev libffi-dev zlib1g-dev libreadline-dev libsqlite3-dev tk-dev iw fonts-hack stable-backports
+  xz-utils libncurses5-dev python3 python3-dev python3-pip python3-venv libfreetype6-dev flatpak zfsutils-linux
+  xfce4-dev-tools git ufw perl curl wget tcpdump rsync htop passwd bash-completion neofetch tig jq gdisk vnstat
+  fonts-dejavu-core fonts-firacode nmap tree fzf lynx which patch smartmontools ntfs-3g cups neovim debootstrap
   libglib2.0-dev qemu-kvm libvirt-daemon-system libvirt-clients virtinst bridge-utils acpid policykit-1
   papirus-icon-theme chrony fail2ban ffmpeg restic fonts-dejavu flameshot libxfce4ui-2-dev libxfce4util-dev
   libgtk-3-dev libpolkit-gobject-1-dev gnome-keyring seahorse thunar dmenu i3 i3status feh alacritty picom
