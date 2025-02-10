@@ -157,7 +157,6 @@ PACKAGES=(
   ncdu
   unzip
   zip
-  p7zip
   parted
   lvm2
   btrfs-progs
