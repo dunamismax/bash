@@ -1,31 +1,20 @@
 #!/usr/bin/env bash
-#
 # ------------------------------------------------------------------------------
-#
-#
 # Script Name: python_dev_setup.sh
-# Description: Prepares an Ubuntu system with essential tools, pyenv, Python,
-#              and pipx-managed CLI tools using a robust Nord‑themed enhanced
-#              template with detailed logging and error handling.
+# Description: Prepares an OpenSUSE system with essential development tools,
+#              installs/updates pyenv, the latest stable Python, and pipx‑managed
+#              CLI tools using a robust Nord‑themed enhanced template.
 # Author: Your Name | License: MIT
 # Version: 2.0
-#
 # ------------------------------------------------------------------------------
-#
 #
 # Usage Examples:
 #   sudo ./python_dev_setup.sh [-d|--debug] [-q|--quiet]
 #   sudo ./python_dev_setup.sh -h|--help
 #
 # ------------------------------------------------------------------------------
-
-#
-# ------------------------------------------------------------------------------
-# ENABLE STRICT MODE
-# ------------------------------------------------------------------------------
 set -Eeuo pipefail
 
-#
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
@@ -33,7 +22,7 @@ LOG_FILE="/var/log/python_dev_setup.log"      # Log file path
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"                  # Options: INFO, DEBUG, WARN, ERROR
-QUIET_MODE=false                               # When true, suppress console output
+QUIET_MODE=false                                # When true, suppress console output
 DISABLE_COLORS="${DISABLE_COLORS:-false}"       # Set to true to disable colored output
 
 # pyenv configuration
@@ -101,11 +90,11 @@ log() {
     local color="$NC"
     if [[ "$DISABLE_COLORS" != true ]]; then
         case "$upper_level" in
-            INFO)  color="${NORD14}" ;;  # Greenish
-            WARN)  color="${NORD13}" ;;  # Yellowish
-            ERROR) color="${NORD11}" ;;  # Reddish
-            DEBUG) color="${NORD9}"  ;;  # Bluish
-            *)     color="$NC"     ;;
+            INFO)   color="${NORD14}" ;;  # Greenish
+            WARN)   color="${NORD13}" ;;  # Yellowish
+            ERROR)  color="${NORD11}" ;;  # Reddish
+            DEBUG)  color="${NORD9}"  ;;  # Bluish
+            *)      color="$NC"     ;;
         esac
     fi
 
@@ -166,12 +155,13 @@ show_help() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 Description:
-  Prepares an Ubuntu system with essential tools, pyenv, Python, and pipx-managed
-  CLI tools using a Nord‑themed enhanced template for robust error handling and logging.
+  Prepares an OpenSUSE system with essential development tools,
+  installs/updates pyenv, the latest stable Python, and pipx-managed CLI tools.
+  Uses a Nord‑themed enhanced template for robust error handling and logging.
 
 Options:
   -d, --debug   Enable debug (verbose) logging.
-  -q, --quiet   Suppress console output (logs still written to file).
+  -q, --quiet   Suppress console output.
   -h, --help    Show this help message and exit.
 
 Examples:
@@ -202,61 +192,47 @@ parse_args() {
     done
 }
 
-# ------------------------------------------------------------------------------
-# MAIN LOGIC FUNCTIONS
-# ------------------------------------------------------------------------------
-install_apt_dependencies() {
-    print_section "APT Dependencies Installation"
-    log INFO "Updating apt caches..."
-    apt update -y
-
-    log INFO "Upgrading existing packages..."
-    apt upgrade -y
-
-    log INFO "Installing required apt-based dependencies..."
-    apt install -y --no-install-recommends \
-        build-essential \
-        make \
-        git \
-        curl \
-        wget \
-        vim \
-        tmux \
-        unzip \
-        zip \
-        ca-certificates \
-        libssl-dev \
-        libffi-dev \
-        zlib1g-dev \
-        libbz2-dev \
-        libreadline-dev \
-        libsqlite3-dev \
-        libncursesw5-dev \
-        libgdbm-dev \
-        libnss3-dev \
-        liblzma-dev \
-        xz-utils \
-        libxml2-dev \
-        libxmlsec1-dev \
-        tk-dev \
-        llvm \
-        software-properties-common \
-        apt-transport-https \
-        gnupg \
-        lsb-release \
-        jq
-
-    log INFO "Cleaning up unused packages..."
-    apt autoremove -y
-    apt clean
+# Print a styled section header using Nord accent colors
+print_section() {
+    local title="$1"
+    local border
+    border=$(printf '─%.0s' {1..60})
+    log INFO "${NORD10}${border}${NC}"
+    log INFO "${NORD10}  $title${NC}"
+    log INFO "${NORD10}${border}${NC}"
 }
 
+# ------------------------------------------------------------------------------
+# FUNCTION: Install Zypper-based Dependencies
+# ------------------------------------------------------------------------------
+install_zypper_dependencies() {
+    print_section "Zypper Dependencies Installation"
+    log INFO "Refreshing package repositories..."
+    zypper --non-interactive refresh || handle_error "Failed to refresh repositories."
+
+    log INFO "Upgrading existing packages..."
+    zypper --non-interactive update || handle_error "Failed to update packages."
+
+    log INFO "Installing required dependencies..."
+    zypper --non-interactive install \
+        gcc gcc-c++ make git curl wget vim tmux unzip zip ca-certificates \
+        libopenssl-devel libffi-devel zlib-devel bzip2-devel readline-devel \
+        sqlite3-devel ncurses-devel gdbm-devel nss-devel xz-devel xz \
+        libxml2-devel libxmlsec1-devel tk-devel llvm gnupg lsb-release jq || \
+        handle_error "Failed to install required dependencies."
+
+    log INFO "Cleaning up package caches..."
+    zypper clean --all || log WARN "Failed to clean package caches."
+}
+
+# ------------------------------------------------------------------------------
+# FUNCTION: Install or Update pyenv
+# ------------------------------------------------------------------------------
 install_or_update_pyenv() {
     print_section "pyenv Installation/Update"
     if [[ ! -d "${PYENV_ROOT}" ]]; then
         log INFO "pyenv not found. Installing pyenv..."
-        git clone https://github.com/pyenv/pyenv.git "${PYENV_ROOT}"
-
+        git clone https://github.com/pyenv/pyenv.git "${PYENV_ROOT}" || handle_error "Failed to clone pyenv."
         # Append pyenv initialization to ~/.bashrc if not present
         if ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
             log INFO "Adding pyenv initialization to ~/.bashrc..."
@@ -273,8 +249,8 @@ EOF
         fi
     else
         log INFO "pyenv is already installed. Updating pyenv..."
-        pushd "${PYENV_ROOT}" >/dev/null
-        git pull --ff-only
+        pushd "${PYENV_ROOT}" >/dev/null || handle_error "Failed to enter pyenv directory."
+        git pull --ff-only || handle_error "Failed to update pyenv."
         popd >/dev/null
     fi
 
@@ -284,11 +260,15 @@ EOF
     eval "$(pyenv init -)"
 }
 
+# ------------------------------------------------------------------------------
+# FUNCTION: Install the Latest Stable Python via pyenv
+# ------------------------------------------------------------------------------
 install_latest_python() {
     print_section "Python Installation via pyenv"
     log INFO "Searching for the latest stable Python 3.x version via pyenv..."
     local latest_py3
-    latest_py3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')"
+    latest_py3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')" || \
+        handle_error "Failed to determine the latest Python version."
 
     if [[ -z "$latest_py3" ]]; then
         handle_error "Could not determine the latest Python 3.x version from pyenv."
@@ -304,10 +284,10 @@ install_latest_python() {
     if [[ "$current_py3" != "$latest_py3" ]]; then
         if ! pyenv versions --bare | grep -q "^${latest_py3}\$"; then
             log INFO "Installing Python $latest_py3 via pyenv..."
-            pyenv install "$latest_py3"
+            pyenv install "$latest_py3" || handle_error "Failed to install Python $latest_py3."
         fi
         log INFO "Setting Python $latest_py3 as the global version..."
-        pyenv global "$latest_py3"
+        pyenv global "$latest_py3" || handle_error "Failed to set Python $latest_py3 as global."
         install_new_python=true
     else
         log INFO "Python $latest_py3 is already installed and set as global."
@@ -324,6 +304,9 @@ install_latest_python() {
     fi
 }
 
+# ------------------------------------------------------------------------------
+# FUNCTION: Install or Upgrade pipx and Its Managed Tools
+# ------------------------------------------------------------------------------
 install_or_upgrade_pipx_and_tools() {
     print_section "pipx Installation and Tools Update"
     local new_python_installed="${1:-false}"
@@ -331,8 +314,8 @@ install_or_upgrade_pipx_and_tools() {
     # Install pipx if it does not exist
     if ! command_exists pipx; then
         log INFO "pipx not found. Installing pipx..."
-        python -m pip install --upgrade pip  # ensure pip is up-to-date
-        python -m pip install --user pipx
+        python -m pip install --upgrade pip || handle_error "Failed to upgrade pip."
+        python -m pip install --user pipx || handle_error "Failed to install pipx."
     fi
 
     # Ensure ~/.local/bin is in PATH; update ~/.bashrc if necessary
@@ -347,7 +330,7 @@ install_or_upgrade_pipx_and_tools() {
 
     if [[ "$new_python_installed" == true ]]; then
         log INFO "New Python version detected; running pipx reinstall-all..."
-        pipx reinstall-all
+        pipx reinstall-all || true
     else
         log INFO "Upgrading all pipx packages..."
         pipx upgrade-all || true
@@ -387,15 +370,15 @@ main() {
     parse_args "$@"
     check_root
 
-    log INFO "Starting Ubuntu development setup script..."
+    log INFO "Starting OpenSUSE development setup script..."
 
-    # 1. Install apt-based dependencies
-    install_apt_dependencies
+    # 1. Install Zypper-based dependencies
+    install_zypper_dependencies
 
     # 2. Install or update pyenv
     install_or_update_pyenv
 
-    # 3. Install the latest Python version via pyenv (if needed)
+    # 3. Install the latest Python version via pyenv (if needed) and update pipx tools
     if install_latest_python; then
         install_or_upgrade_pipx_and_tools "true"
     else
@@ -406,7 +389,7 @@ main() {
     log INFO " SUCCESS! Your system is now prepared with:"
     log INFO "   - The latest stable Python (via pyenv)"
     log INFO "   - pipx (re)installed and updated"
-    log INFO "   - A curated set of pipx CLI tools"
+    log INFO "   - A curated set of pipx-managed CLI tools"
     log INFO "================================================="
     log INFO "Happy coding!"
 }
