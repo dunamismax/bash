@@ -692,12 +692,7 @@ EOF
     systemctl enable dunamismax-messenger.service
     systemctl enable dunamismax-notes.service
     systemctl enable dunamismax.service
-    systemctl start dunamismax-ai-agents.service
-    systemctl start dunamismax-files.service
-    systemctl start dunamismax-messenger.service
-    systemctl start dunamismax-notes.service
-    systemctl start dunamismax.service
-    log INFO "DunamisMax services enabled and started."
+    log INFO "DunamisMax services enabled."
 }
 
 # ==============================================================================
