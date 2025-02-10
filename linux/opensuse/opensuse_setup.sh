@@ -172,7 +172,6 @@ PACKAGES=(
   # Code Navigation & Developer Productivity
   fd
   bat
-  exa
   ripgrep
   hyperfine
   cheat
