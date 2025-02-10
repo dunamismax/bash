@@ -523,7 +523,7 @@ setup_repos_and_dotfiles() {
     mkdir -p "$GITHUB_DIR" || handle_error "Failed to create GitHub directory: $GITHUB_DIR"
     cd "$GITHUB_DIR" || handle_error "Failed to change directory to $GITHUB_DIR"
 
-    # Define only the six repositories to clone
+    # Define the six repositories to clone
     local repos=("bash" "windows" "web" "python" "go" "misc")
     for repo in "${repos[@]}"; do
         local repo_dir="${GITHUB_DIR}/${repo}"
@@ -533,20 +533,20 @@ setup_repos_and_dotfiles() {
         log INFO "Cloned repository: $repo"
     done
 
-    # Set ownership for each repository
+    # Set ownership for each repository; warn (not exit) if this fails.
     for repo in "bash" "windows" "web" "python" "go" "misc"; do
         local repo_dir="${GITHUB_DIR}/${repo}"
         if [[ -d "$repo_dir" ]]; then
-            chown -R "${USERNAME}:${USERNAME}" "$repo_dir" || handle_error "Failed to set ownership for repository: $repo"
+            chown -R "${USERNAME}:${USERNAME}" "$repo_dir" || warn "Failed to set ownership for repository: $repo"
         else
             warn "Repository directory not found: $repo_dir"
         fi
     done
 
-    # Make all .sh files executable
+    # Make all .sh files executable.
     find "$GITHUB_DIR" -type f -name "*.sh" -exec chmod +x {} + || handle_error "Failed to set executable permissions for .sh files."
 
-    # Secure .git directories
+    # Secure .git directories.
     local DIR_PERMISSIONS="700"
     local FILE_PERMISSIONS="600"
     while IFS= read -r -d '' git_dir; do
@@ -555,7 +555,7 @@ setup_repos_and_dotfiles() {
         find "$git_dir" -type f -exec chmod "$FILE_PERMISSIONS" {} + || handle_error "Failed to set file permissions for $git_dir"
     done < <(find "$GITHUB_DIR" -type d -name ".git" -print0)
 
-    # Load dotfiles from the bash repository
+    # Load dotfiles from the bash repository.
     local dotfiles_dir="${USER_HOME}/github/bash/linux/dotfiles"
     if [[ ! -d "$dotfiles_dir" ]]; then
         handle_error "Dotfiles directory not found: $dotfiles_dir"
@@ -569,7 +569,7 @@ setup_repos_and_dotfiles() {
         cp "${dotfiles_dir}/${file}" "${USER_HOME}/${file}" || warn "Failed to copy ${file}."
     done
 
-    # Copy Caddyfile if it exists in the dotfiles
+    # Copy Caddyfile if it exists in the dotfiles.
     if [[ -f "${dotfiles_dir}/Caddyfile" ]]; then
         cp "${dotfiles_dir}/Caddyfile" /etc/caddy/Caddyfile || handle_error "Failed to copy Caddyfile."
         chown caddy:caddy /etc/caddy/Caddyfile || handle_error "Failed to set ownership for Caddyfile."
@@ -577,7 +577,7 @@ setup_repos_and_dotfiles() {
         warn "Caddyfile not found in ${dotfiles_dir}"
     fi
 
-    # Copy additional configuration directories if available
+    # Copy additional configuration directories if available.
     for dir in i3 i3status alacritty picom; do
         if [[ -d "${dotfiles_dir}/${dir}" ]]; then
             cp -r "${dotfiles_dir}/${dir}" "$config_dir/" || warn "Failed to copy configuration directory: $dir"
@@ -588,7 +588,9 @@ setup_repos_and_dotfiles() {
 
     cp -r "${dotfiles_dir}/bin" "$local_bin_dir" || warn "Failed to copy bin directory."
 
-    chown -R "${USERNAME}:${USERNAME}" "$USER_HOME" || handle_error "Failed to set ownership for $USER_HOME."
+    # Attempt to set ownership for the entire home directory;
+    # warn if it fails instead of exiting.
+    chown -R "${USERNAME}:${USERNAME}" "$USER_HOME" || warn "Failed to set ownership for $USER_HOME."
     chmod -R u=rwX,g=rX,o=rX "$local_bin_dir" || handle_error "Failed to set permissions for $local_bin_dir."
 
     log INFO "Repositories and dotfiles setup completed successfully."
