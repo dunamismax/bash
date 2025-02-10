@@ -524,6 +524,65 @@ install_plex() {
     rm -f "$plex_rpm" || warn "Failed to remove Plex RPM package file."
 }
 
+install_and_mount_zfs() {
+    local pool_name="WD_BLACK"
+    local mount_point="/media/WD_BLACK"
+
+    log INFO "Starting ZFS installation and mount procedure for pool ${pool_name}."
+
+    # Install ZFS packages if not already installed.
+    if ! rpm -q zfs &>/dev/null; then
+        log INFO "ZFS packages not found. Installing..."
+        zypper --non-interactive install zfs || handle_error "Failed to install ZFS packages."
+    else
+        log INFO "ZFS packages are already installed."
+    fi
+
+    # Load the ZFS kernel module if it's not loaded.
+    if ! lsmod | grep -q "^zfs"; then
+        log INFO "Loading ZFS kernel module..."
+        modprobe zfs || handle_error "Failed to load ZFS kernel module."
+    else
+        log INFO "ZFS kernel module already loaded."
+    fi
+
+    # Enable ZFS-related services if they are available.
+    if systemctl list-unit-files | grep -q "zfs-import-cache.service"; then
+        systemctl enable --now zfs-import-cache || warn "Failed to enable/start zfs-import-cache service."
+    fi
+    if systemctl list-unit-files | grep -q "zfs-mount.service"; then
+        systemctl enable --now zfs-mount || warn "Failed to enable/start zfs-mount service."
+    fi
+
+    # Import the ZFS pool if it is not already imported.
+    if ! zpool list | grep -q "^${pool_name}"; then
+        log INFO "Importing ZFS pool ${pool_name}..."
+        zpool import "${pool_name}" || handle_error "Failed to import ZFS pool ${pool_name}."
+    else
+        log INFO "ZFS pool ${pool_name} is already imported."
+    fi
+
+    # Set the correct mountpoint for the pool.
+    local current_mount
+    current_mount=$(zfs get -H -o value mountpoint "${pool_name}")
+    if [[ "$current_mount" != "$mount_point" ]]; then
+        log INFO "Setting mountpoint for ${pool_name} to ${mount_point}..."
+        zfs set mountpoint="${mount_point}" "${pool_name}" || handle_error "Failed to set mountpoint for ${pool_name}."
+    else
+        log INFO "Mountpoint for ${pool_name} is already set to ${mount_point}."
+    fi
+
+    # Mount the ZFS pool if it is not mounted.
+    if ! zfs mount | grep -q "^${pool_name}"; then
+        log INFO "Mounting ZFS pool ${pool_name}..."
+        zfs mount "${pool_name}" || handle_error "Failed to mount ZFS pool ${pool_name}."
+    else
+        log INFO "ZFS pool ${pool_name} is already mounted."
+    fi
+
+    log INFO "ZFS pool ${pool_name} is now mounted at ${mount_point}."
+}
+
 setup_repos_and_dotfiles() {
     log INFO "Setting up GitHub repositories and dotfiles..."
     local GITHUB_DIR="/home/${USERNAME}/github"
@@ -873,6 +932,7 @@ main() {
     install_build_dependencies
     install_caddy
     install_plex
+    install_and_mount_zfs
     setup_repos_and_dotfiles
     enable_dunamismax_services
     configure_automatic_updates
