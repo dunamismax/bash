@@ -8,7 +8,7 @@
 #   development and production deployments. Its comprehensive functions include:
 #
 #     • System Preparation:
-#         - Verifies network connectivity and sets the system timezone.
+#         - Verifies network connectivity
 #         - Performs centralized package repository updates and upgrades.
 #
 #     • Package Installation:
@@ -356,14 +356,6 @@ check_network() {
     else
         log INFO "Network connectivity verified."
     fi
-}
-
-# Set timezone
-configure_timezone() {
-    local timezone="UTC"  # Change to your desired timezone, e.g., "America/New_York"
-    log INFO "Setting system timezone to ${timezone}..."
-    timedatectl set-timezone "$timezone" || handle_error "Failed to set timezone."
-    log INFO "Timezone set to: $(timedatectl | grep 'Time zone')"
 }
 
 # Centralized system update and upgrade.
@@ -942,7 +934,6 @@ main() {
     fi
 
     check_network
-    configure_timezone
     update_system
     ensure_user
     configure_ssh
