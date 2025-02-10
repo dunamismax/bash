@@ -70,22 +70,15 @@ USERNAME="sawyer"
 PACKAGES=(
   # Shells, Terminal Multiplexers & Editors
   bash
-  zsh
-  fish
   vim
   nano
   emacs
   mc
   neovim
-  micro
   screen
   tmux
-  zoxide
 
   # Development & Build Tools
-  nodejs
-  npm
-  ninja-build
   meson
   gcc
   gcc-c++
@@ -96,22 +89,8 @@ PACKAGES=(
   pigz
   libtool
   pkg-config
-  libopenssl-devel
-  kernel-devel
   bzip2
-  libbz2-devel
-  libffi-devel
-  zlib-devel
-  readline-devel
-  sqlite3-devel
   xz
-  ncurses-devel
-  python3
-  python3-devel
-  python3-pip
-  python3-venv
-  freetype2-devel
-  glib2-devel
   git
   hugo
 
@@ -121,7 +100,6 @@ PACKAGES=(
   chrony
   fail2ban
   sudo
-  passwd
   bash-completion
   logrotate
   net-tools
@@ -141,7 +119,6 @@ PACKAGES=(
   nmap
   lynx
   bind-utils
-  iperf3
   iftop
   mtr
   iw
@@ -184,24 +161,20 @@ PACKAGES=(
   perl
   patch
   bc
-  parallel
   gawk
   expect
 
   # Code Navigation & Developer Productivity
-  exuberant-ctags
   fd
   bat
   exa
   ripgrep
-  delta
   hyperfine
   cheat
 
   # Multimedia & Other Applications
   ffmpeg
   restic
-  imagemagick
   mpv
 )
 
