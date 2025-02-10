@@ -577,23 +577,26 @@ setup_repos_and_dotfiles() {
         warn "Caddyfile not found in ${dotfiles_dir}"
     fi
 
-    # Copy additional configuration directories if available.
-    for dir in i3 i3status alacritty picom; do
-        if [[ -d "${dotfiles_dir}/${dir}" ]]; then
-            cp -r "${dotfiles_dir}/${dir}" "$config_dir/" || warn "Failed to copy configuration directory: $dir"
-        else
-            warn "Configuration directory ${dir} not found in dotfiles."
-        fi
-    done
-
-    cp -r "${dotfiles_dir}/bin" "$local_bin_dir" || warn "Failed to copy bin directory."
-
     # Attempt to set ownership for the entire home directory;
     # warn if it fails instead of exiting.
     chown -R "${USERNAME}:${USERNAME}" "$USER_HOME" || warn "Failed to set ownership for $USER_HOME."
     chmod -R u=rwX,g=rX,o=rX "$local_bin_dir" || handle_error "Failed to set permissions for $local_bin_dir."
 
     log INFO "Repositories and dotfiles setup completed successfully."
+
+    # --- Additional Functionality: Copy _scripts .sh files to /home/sawyer/bin ---
+    local scripts_src="/home/${USERNAME}/github/linux/_scripts"
+    local scripts_dest="/home/${USERNAME}/bin"
+    if [[ -d "$scripts_src" ]]; then
+        mkdir -p "$scripts_dest" || warn "Failed to create destination directory: $scripts_dest"
+        cp "$scripts_src"/*.sh "$scripts_dest"/ || warn "Failed to copy .sh files from $scripts_src to $scripts_dest"
+        chmod +x "$scripts_dest"/*.sh || warn "Failed to set executable permissions on .sh files in $scripts_dest"
+        log INFO "Copied and set executable permissions for .sh scripts from $scripts_src to $scripts_dest"
+    else
+        warn "Scripts source directory not found: $scripts_src"
+    fi
+    # --- End of additional functionality ---
+
     cd ~ || handle_error "Failed to return to home directory."
 }
 

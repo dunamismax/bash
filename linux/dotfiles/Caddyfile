@@ -10,43 +10,78 @@
 {
     # Use this email for Let's Encrypt notifications
     email dunamismax@tutamail.com
-
     # Global logging: captures all events (including errors during startup)
     log {
         output file /var/log/caddy/caddy.log
+        format json
     }
 }
 
 # Redirect www to non-www
 www.dunamismax.com {
-    redir https://dunamismax.com{uri}
+    redir https://dunamismax.com{uri} permanent
 }
 
-# Main website
+# Main website configuration for FastAPI
 dunamismax.com {
-    # Serve the static files from your Hugo output folder
-    root * /home/sawyer/github/hugo/dunamismax.com/public
-    file_server
-
     # Deny hidden files (dotfiles like .git, .htaccess, etc.), except .well-known
     @hiddenFiles {
         path /.*
         not path /.well-known/*
     }
     respond @hiddenFiles 404
-
-    # Per-site logging: captures site-specific access and error logs
+    # Reverse proxy all other requests to the FastAPI application
+    reverse_proxy localhost:8000
+    # Per-site logging: captures site-specific access logs
     log {
         output file /var/log/caddy/dunamismax_access.log
+        format json
     }
 }
 
-# Reverse proxy for Bun website
-messages.dunamismax.com {
-    reverse_proxy localhost:3420
-
-    # Per-site logging: captures site-specific access and error logs
+# Messenger app
+messenger.dunamismax.com {
+    reverse_proxy localhost:8100
     log {
-        output file /var/log/caddy/messages_access.log
+        output file /var/log/caddy/messenger_access.log
+        format json
+    }
+}
+
+# AI Agents app
+agents.dunamismax.com {
+    reverse_proxy localhost:8200
+    log {
+        output file /var/log/caddy/ai_agents_access.log
+        format json
+    }
+}
+
+# File server
+files.dunamismax.com {
+    request_body {
+        max_size 2GB
+    }
+
+    reverse_proxy localhost:8300 {
+        transport http {
+            read_timeout 3600s
+            write_timeout 3600s
+        }
+    }
+
+    log {
+        output file /var/log/caddy/file_converter_access.log
+    }
+}
+
+# Dashboard app (port 8400 to-do)
+
+# Notes app
+notes.dunamismax.com {
+    reverse_proxy localhost:8500
+    log {
+        output file /var/log/caddy/notes_access.log
+        format json
     }
 }
