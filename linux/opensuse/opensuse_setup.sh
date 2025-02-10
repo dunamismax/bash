@@ -64,12 +64,13 @@ LOG_FILE="/var/log/opensuse_setup.log"
 USERNAME="sawyer"
 
 # -------------------------------------------------------------------------------
-# Essential package list (CLI-only environment)
-# (Packages have been adjusted for OpenSUSE naming or removed if unavailable)
+# Essential Package List (CLI-only environment, OpenSUSE)
 # -------------------------------------------------------------------------------
 PACKAGES=(
-  # Shells, Terminal Multiplexers & Editors
+  # Shells & Terminal Multiplexers
   bash
+  zsh
+  fish
   vim
   nano
   emacs
@@ -79,11 +80,11 @@ PACKAGES=(
   tmux
 
   # Development & Build Tools
-  meson
   gcc
   gcc-c++
   make
   cmake
+  meson
   intltool
   gettext
   pigz
@@ -103,13 +104,15 @@ PACKAGES=(
   bash-completion
   logrotate
   net-tools
+  firewalld
 
-  # Virtualization & Storage
+  # Virtualization, Storage & Containers
   qemu-kvm
   libvirt
   virt-install
   bridge-utils
   docker
+  docker-compose
 
   # Networking & Hardware Tools
   curl
@@ -148,14 +151,16 @@ PACKAGES=(
   ltrace
   atop
 
-  # Filesystem & Disk Utilities
+  # Filesystem, Disk & Compression Utilities
   gdisk
   ntfs-3g
   ncdu
   unzip
+  zip
   p7zip
   parted
   lvm2
+  btrfs-progs
 
   # Scripting & Productivity Tools
   perl
@@ -172,16 +177,11 @@ PACKAGES=(
   hyperfine
   cheat
 
-  # Multimedia & Other Applications
+  # Multimedia & Backup Applications
   ffmpeg
   restic
   mpv
-)
 
-# -------------------------------------------------------------------------------
-# Extra utilities and best-practice tools
-# -------------------------------------------------------------------------------
-EXTRA_PACKAGES=(
   # Terminal Enhancements & File Management
   byobu
   ranger
@@ -200,21 +200,12 @@ EXTRA_PACKAGES=(
   taskwarrior
   calcurse
 
-  # System Monitoring & Performance
-  glances
-  bpytop
-
   # Code & Text Processing Enhancements
-  silversearcher-ag
   asciinema
-  tldr
 
   # Fun & Miscellaneous
   cowsay
-  fortune-mod
-  lolcat
   figlet
-  cmatrix
 )
 
 # -------------------------------------------------------------------------------
@@ -345,24 +336,6 @@ install_packages() {
         zypper --non-interactive install "${to_install[@]}" || handle_error "Failed to install essential packages."
     else
         log INFO "All essential packages are already installed."
-    fi
-}
-
-install_extra_packages() {
-    log INFO "Installing extra packages..."
-    local to_install=()
-    for pkg in "${EXTRA_PACKAGES[@]}"; do
-        if ! rpm -q "$pkg" &>/dev/null; then
-            to_install+=("$pkg")
-        else
-            log INFO "Package $pkg is already installed."
-        fi
-    done
-    if [ "${#to_install[@]}" -gt 0 ]; then
-        log INFO "Installing extra packages: ${to_install[*]}"
-        zypper --non-interactive install "${to_install[@]}" || handle_error "Failed to install extra packages."
-    else
-        log INFO "All extra packages are already installed."
     fi
 }
 
@@ -847,7 +820,6 @@ main() {
     ensure_user
     configure_ssh
     install_packages
-    install_extra_packages
     configure_firewalld
     configure_journald
     release_ports
