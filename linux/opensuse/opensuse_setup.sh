@@ -432,20 +432,6 @@ install_caddy() {
     log INFO "Caddy web server installed successfully."
 }
 
-install_vscode_cli() {
-    log INFO "Installing Visual Studio Code CLI..."
-    if [ -e "/usr/local/node" ]; then
-        rm -f "/usr/local/node" || handle_error "Failed to remove existing /usr/local/node."
-    fi
-    ln -s "$(which node)" /usr/local/node || handle_error "Failed to create symbolic link for Node.js."
-    log INFO "Downloading VSCode CLI..."
-    curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' --output vscode_cli.tar.gz \
-        || handle_error "Failed to download VSCode CLI."
-    tar -xf vscode_cli.tar.gz || handle_error "Failed to extract VSCode CLI."
-    rm -f vscode_cli.tar.gz || warn "Failed to remove VSCode CLI tarball."
-    log INFO "Visual Studio Code CLI installed successfully. Run './code tunnel --name opensuse-server' to start the tunnel."
-}
-
 install_plex() {
     log INFO "Installing Plex Media Server..."
     if rpm -q plexmediaserver &>/dev/null; then
@@ -823,7 +809,6 @@ main() {
     release_ports
     configure_fail2ban
     install_build_dependencies
-    install_vscode_cli
     install_caddy
     install_plex
     setup_repos_and_dotfiles
