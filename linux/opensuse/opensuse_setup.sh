@@ -435,36 +435,38 @@ install_caddy() {
 install_plex() {
     log INFO "Installing Plex Media Server..."
 
+    # Check if Plex is already installed.
     if rpm -q plexmediaserver &>/dev/null; then
         log INFO "Plex Media Server is already installed."
         return
     fi
 
-    # Ensure curl is installed (required to download the RPM)
+    # Ensure curl is installed (required to download the RPM).
     if ! command -v curl &>/dev/null; then
         zypper --non-interactive install curl || handle_error "Failed to install curl required for Plex."
     fi
 
-    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/fedora/plexmediaserver-1.41.3.9314-a0bfb8370.x86_64.rpm"
+    # Hard-coded URL for the Plex RPM (RedHat version).
+    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/redhat/plexmediaserver-1.41.3.9314-a0bfb8370.x86_64.rpm"
     local plex_rpm="plexmediaserver-1.41.3.9314-a0bfb8370.x86_64.rpm"
 
     log INFO "Downloading Plex package from $plex_url..."
     curl -LO "$plex_url" || handle_error "Failed to download Plex package."
 
     log INFO "Installing Plex Media Server RPM..."
-    # Attempt normal installation; if it fails, try forcing resolution.
     if ! zypper --non-interactive install "$plex_rpm"; then
+        # If normal installation fails, attempt to force resolution.
         zypper --non-interactive install --force-resolution "$plex_rpm" || handle_error "Failed to install Plex Media Server."
     fi
 
-    # After installation, the RPM installs a repository configuration file.
-    # Enable the Plex repository by editing the repo file.
-    if [ -f /etc/yum.repos.d/plex.repo ]; then
-        log INFO "Enabling Plex repository in /etc/yum.repos.d/plex.repo..."
-        sed -i 's/enabled=0/enabled=1/' /etc/yum.repos.d/plex.repo
-    elif [ -f /etc/zypp/repos.d/plex.repo ]; then
+    # After installation, the RPM installs a repository file.
+    # Enable the Plex repository by modifying the repo file.
+    if [ -f /etc/zypp/repos.d/plex.repo ]; then
         log INFO "Enabling Plex repository in /etc/zypp/repos.d/plex.repo..."
         sed -i 's/enabled=0/enabled=1/' /etc/zypp/repos.d/plex.repo
+    elif [ -f /etc/yum.repos.d/plex.repo ]; then
+        log INFO "Enabling Plex repository in /etc/yum.repos.d/plex.repo..."
+        sed -i 's/enabled=0/enabled=1/' /etc/yum.repos.d/plex.repo
     else
         warn "Plex repository file not found. Please enable PlexRepo manually in your Software Repositories."
     fi
@@ -484,7 +486,7 @@ install_plex() {
         useradd -r -g plex -d /var/lib/plexmediaserver -s /sbin/nologin plex || handle_error "Failed to create plex user."
     fi
 
-    # Adjust permissions on Plex's library directory.
+    # Adjust ownership and permissions on the Plex library directory.
     if [ -d /var/lib/plexmediaserver ]; then
         log INFO "Setting group ownership and write permissions on /var/lib/plexmediaserver..."
         chown :plex /var/lib/plexmediaserver || warn "Failed to change group ownership for /var/lib/plexmediaserver."
@@ -493,7 +495,7 @@ install_plex() {
         warn "/var/lib/plexmediaserver directory not found."
     fi
 
-    # Workaround: Plex service may not start reliably on boot.
+    # Workaround: Add a cron job to start Plex a minute after reboot.
     log INFO "Adding cron job to start Plex Media Server after boot..."
     if ! crontab -l 2>/dev/null | grep -q "systemctl start plexmediaserver.service"; then
         (crontab -l 2>/dev/null; echo "@reboot sleep 60; systemctl start plexmediaserver.service") | crontab - \
@@ -506,6 +508,7 @@ install_plex() {
 
     log INFO "Plex Media Server installed and configured successfully."
 
+    # Clean up the downloaded RPM file.
     rm -f "$plex_rpm" || warn "Failed to remove Plex RPM package file."
 }
 
