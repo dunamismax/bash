@@ -256,12 +256,21 @@ handle_error() {
 # 3. SYSTEM PREPARATION FUNCTIONS
 # ==============================================================================
 ensure_user() {
+    # Check if the user already exists
     if id "$USERNAME" &>/dev/null; then
         log INFO "User '$USERNAME' already exists."
     else
-        log INFO "User '$USERNAME' does not exist. Creating user..."
-        useradd -m -s /bin/bash "$USERNAME" || handle_error "Failed to create user $USERNAME."
-        log INFO "User '$USERNAME' created successfully."
+        log INFO "User '$USERNAME' does not exist. Creating user and group..."
+
+        # Check if the group exists, and create it if it doesn't
+        if ! getent group "$USERNAME" &>/dev/null; then
+            groupadd "$USERNAME" || handle_error "Failed to create group $USERNAME."
+            log INFO "Group '$USERNAME' created successfully."
+        fi
+
+        # Create the user and add them to the group
+        useradd -m -s /bin/bash -g "$USERNAME" "$USERNAME" || handle_error "Failed to create user $USERNAME."
+        log INFO "User '$USERNAME' created successfully and added to group '$USERNAME'."
     fi
 }
 
