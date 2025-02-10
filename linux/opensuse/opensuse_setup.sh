@@ -406,8 +406,7 @@ install_build_dependencies() {
         gcc gcc-c++ make cmake git curl wget vim tmux unzip zip
         ca-certificates lsb-release gnupg jq pkg-config
         libopenssl-devel libbz2-devel libffi-devel zlib-devel readline-devel
-        sqlite3-devel tk-devel ncurses-devel gdbm-devel nss-devel xz-devel
-        libxml2-devel libxmlsec1-devel gdb llvm
+        sqlite3-devel tk-devel ncurses-devel gdbm-devel xz-devel gdb llvm
     )
     zypper --non-interactive install "${deps[@]}" || handle_error "Failed to install build dependencies."
     log INFO "Installing Rust toolchain..."
