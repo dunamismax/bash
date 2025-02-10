@@ -2,21 +2,24 @@
 # ------------------------------------------------------------------------------
 # Script Name: universal_downloader.sh
 # Description: Advanced auto download tool that lets the user choose between
-#              downloading with wget or yt-dlp. For yt-dlp, the script will ask
-#              for a YouTube (video/playlist) link, a target download folder (creating
-#              it if needed), and then download the media in highest quality, merging
-#              audio and video into an mp4 via ffmpeg. For wget, it downloads the file
-#              into the specified directory. Both options display a beautiful Nord‑
+#              downloading with wget or yt-dlp on OpenSUSE. For yt-dlp, the script
+#              prompts for a YouTube (video/playlist) link and a target download folder
+#              (creating it if needed) and downloads the media in highest quality,
+#              merging audio and video into an mp4 via ffmpeg. For wget, it downloads the
+#              file into the specified directory. Both options display a beautiful Nord‑
 #              themed progress bar.
+#
 # Author: Your Name | License: MIT
 # Version: 2.0
 # ------------------------------------------------------------------------------
 #
 # Usage Examples:
-#   ./media_downloader.sh
+#   ./universal_downloader.sh
 #
-# ------------------------------------------------------------------------------
-
+# Note:
+#   On OpenSUSE, ensure that wget, yt-dlp, ffmpeg, and other dependencies are installed.
+#   For example: sudo zypper install wget yt-dlp ffmpeg
+#
 # ------------------------------------------------------------------------------
 # ENABLE STRICT MODE
 # ------------------------------------------------------------------------------
@@ -30,7 +33,7 @@ LOG_FILE="/var/log/media_downloader.log"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 QUIET_MODE=false
 DISABLE_COLORS="${DISABLE_COLORS:-false}"
-REFRESH_INTERVAL=0.1   # Progress bar refresh interval
+REFRESH_INTERVAL=0.1   # Progress bar refresh interval in seconds
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24‑bit ANSI escapes)
@@ -70,7 +73,7 @@ log() {
             INFO)  color="${NORD14}" ;;  # Info: green
             WARN|WARNING)
                 upper_level="WARN"
-                color="${NORD13}" ;;      # Warn: yellow
+                color="${NORD13}" ;;      # Warning: yellow
             ERROR) color="${NORD11}" ;;     # Error: red
             DEBUG) color="${NORD9}"  ;;     # Debug: blue
             *)     color="$NC"     ;;
@@ -97,24 +100,25 @@ handle_error() {
 # ------------------------------------------------------------------------------
 # PROGRESS BAR FUNCTION
 # ------------------------------------------------------------------------------
-# run_with_progress runs a given command in the background and displays a Nord‑
-# themed progress bar until the command completes.
+# run_with_progress runs a given command in the background and displays a Nord‑themed
+# progress bar until the command completes.
 run_with_progress() {
     local cmd="$1"
     local message="$2"
     
-    # Start the command in background.
+    # Start the command in the background.
     eval "$cmd" &
     local pid=$!
     
     local steps=50
     local progress=0
-    # Display initial message.
+    
+    # Display initial message and empty progress bar.
     printf "\n${NORD8}%s [%s] 0%%%s" "$message" "$(printf '%0.s░' $(seq 1 $steps))" "${NC}"
     
-    # Loop until the process ends.
+    # Loop until the background process completes.
     while kill -0 "$pid" 2>/dev/null; do
-        progress=$(( (progress + 1) % (steps+1) ))
+        progress=$(( (progress + 1) % (steps + 1) ))
         local filled=$(printf '%0.s█' $(seq 1 $progress))
         local unfilled=$(printf '%0.s░' $(seq 1 $((steps - progress))))
         local percent=$(( progress * 100 / steps ))
@@ -130,28 +134,28 @@ run_with_progress() {
 # DOWNLOAD FUNCTIONS
 # ------------------------------------------------------------------------------
 download_with_yt_dlp() {
-    # Prompt for YouTube link.
+    # Prompt for a YouTube link (video or playlist).
     read -rp $'\n'"Enter YouTube link (video or playlist): " yt_link
     if [[ -z "$yt_link" ]]; then
         handle_error "YouTube link cannot be empty."
     fi
 
-    # Prompt for download directory.
+    # Prompt for a download directory.
     read -rp "Enter download directory: " download_dir
     if [[ -z "$download_dir" ]]; then
         handle_error "Download directory cannot be empty."
     fi
 
-    # Create directory if it doesn't exist.
+    # Create the directory if it doesn't exist.
     if [[ ! -d "$download_dir" ]]; then
         mkdir -p "$download_dir" || handle_error "Failed to create directory: $download_dir"
         log INFO "Created directory: $download_dir"
     fi
 
-    # Build yt-dlp command:
-    # -f bestvideo+bestaudio selects best quality video and audio.
-    # --merge-output-format mp4 combines them into a single mp4.
-    # -o specifies output directory and filename pattern.
+    # Build the yt-dlp command:
+    # -f bestvideo+bestaudio selects the best quality video and audio.
+    # --merge-output-format mp4 merges them into a single MP4.
+    # -o sets the output directory and filename pattern.
     local cmd="yt-dlp -f bestvideo+bestaudio --merge-output-format mp4 -o '${download_dir}/%(title)s.%(ext)s' '${yt_link}'"
     log INFO "Starting download via yt-dlp..."
     run_with_progress "$cmd" "Downloading with yt-dlp"
@@ -159,27 +163,25 @@ download_with_yt_dlp() {
 }
 
 download_with_wget() {
-    # Prompt for URL.
+    # Prompt for a URL.
     read -rp $'\n'"Enter URL to download: " url
     if [[ -z "$url" ]]; then
         handle_error "URL cannot be empty."
     fi
 
-    # Prompt for output directory.
+    # Prompt for the output directory.
     read -rp "Enter output directory: " download_dir
     if [[ -z "$download_dir" ]]; then
         handle_error "Download directory cannot be empty."
     fi
 
-    # Create directory if it doesn't exist.
+    # Create the directory if it doesn't exist.
     if [[ ! -d "$download_dir" ]]; then
         mkdir -p "$download_dir" || handle_error "Failed to create directory: $download_dir"
         log INFO "Created directory: $download_dir"
     fi
 
-    # Build wget command.
-    # -q disables default output; we rely on our progress bar.
-    # --show-progress is disabled to let our custom progress bar be shown.
+    # Build the wget command.
     local cmd="wget -q -P '${download_dir}' '${url}'"
     log INFO "Starting download via wget..."
     run_with_progress "$cmd" "Downloading with wget"
@@ -190,7 +192,7 @@ download_with_wget() {
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Display welcome banner.
+    # Display a welcome banner.
     printf "\n%s%s%s\n" "${NORD8}" "=== Media Downloader ===" "${NC}"
     echo "Select Download Method:"
     echo "  1) wget"

@@ -3,9 +3,9 @@
 # Script Name: vm_manager.sh
 # Description: An advanced interactive virtual machine manager that allows you
 #              to list, create, start, stop, delete, and monitor KVM/QEMU virtual
-#              machines on Ubuntu. The script uses virt‑install and virsh, and
-#              walks you through VM creation (including options for RAM, vCPUs,
-#              disk size, and ISO download via wget) in a fully interactive, 
+#              machines on OpenSUSE. The script uses virt‑install and virsh, and
+#              guides you through VM creation (including options for RAM, vCPUs,
+#              disk size, and ISO download via wget) in a fully interactive,
 #              Nord‑themed interface.
 #
 # Author: Your Name | License: MIT
@@ -13,7 +13,7 @@
 # ------------------------------------------------------------------------------
 #
 # Usage:
-#   sudo ./advanced_vm_manager.sh
+#   sudo ./vm_manager.sh
 #
 # ------------------------------------------------------------------------------
 # ENABLE STRICT MODE
@@ -169,7 +169,7 @@ monitor_vm() {
 
 download_iso() {
     read -rp "Enter the URL for the installation ISO: " iso_url
-    read -rp "Enter the desired filename (e.g., ubuntu.iso): " iso_filename
+    read -rp "Enter the desired filename (e.g., opensuse.iso): " iso_filename
     local iso_path="${ISO_DIR}/${iso_filename}"
     echo -e "${NORD14}Downloading ISO to ${iso_path}...${NC}"
     progress_bar "Downloading ISO" 10
@@ -234,7 +234,7 @@ create_vm() {
         --disk path="$disk_image",size="$disk_size",format=qcow2 \
         --cdrom "$iso_path" \
         --os-type linux \
-        --os-variant ubuntu20.04 \
+        --os-variant opensuse15 \
         --graphics none \
         --console pty,target_type=serial \
         --noautoconsole
