@@ -445,6 +445,10 @@ install_plex() {
         zypper --non-interactive install curl || handle_error "Failed to install curl required for Plex."
     fi
 
+    # Import Plex GPG key so that signature verification passes.
+    log INFO "Importing Plex GPG key..."
+    rpm --import https://downloads.plex.tv/plex-keys/PlexSign.key || handle_error "Failed to import Plex GPG key."
+
     # Hard-coded URL for the Plex RPM (RedHat version).
     local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/redhat/plexmediaserver-1.41.3.9314-a0bfb8370.x86_64.rpm"
     local plex_rpm="plexmediaserver-1.41.3.9314-a0bfb8370.x86_64.rpm"
@@ -454,11 +458,11 @@ install_plex() {
 
     log INFO "Installing Plex Media Server RPM..."
     if ! zypper --non-interactive install "$plex_rpm"; then
-        # If normal installation fails, attempt to force resolution.
+        # If normal installation fails, attempt forcing resolution.
         zypper --non-interactive install --force-resolution "$plex_rpm" || handle_error "Failed to install Plex Media Server."
     fi
 
-    # After installation, the RPM installs a repository file.
+    # After installation, the RPM installs a repository configuration file.
     # Enable the Plex repository by modifying the repo file.
     if [ -f /etc/zypp/repos.d/plex.repo ]; then
         log INFO "Enabling Plex repository in /etc/zypp/repos.d/plex.repo..."
