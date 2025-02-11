@@ -549,6 +549,60 @@ EOF
     log_info "DunamisMax services enabled."
 }
 
+# docker_config
+# Installs and enables Docker and Docker Compose
+docker_config() {
+    print_section "Docker Configuration"
+    log_info "Starting Docker installation and configuration..."
+
+    # -------------------------------
+    # Install Docker (using apt-get)
+    # -------------------------------
+    if command -v docker &>/dev/null; then
+        log_info "Docker is already installed."
+    else
+        log_info "Docker is not installed. Installing Docker..."
+        apt-get update || handle_error "Failed to update package lists."
+        apt-get install -y docker.io || handle_error "Failed to install Docker."
+        log_info "Docker installed successfully."
+    fi
+
+    # Add the user to the docker group
+    usermod -aG docker "$USERNAME" || log_warn "Failed to add $USERNAME to the docker group."
+
+    # Create or update Docker daemon configuration
+    mkdir -p /etc/docker || handle_error "Failed to create /etc/docker directory."
+    cat <<EOF >/etc/docker/daemon.json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "exec-opts": ["native.cgroupdriver=systemd"]
+}
+EOF
+
+    # Enable and restart the Docker service
+    systemctl enable docker || log_warn "Could not enable Docker service."
+    systemctl restart docker || handle_error "Failed to restart Docker."
+    log_info "Docker configuration completed."
+
+    # -------------------------------
+    # Install Docker Compose
+    # -------------------------------
+    log_info "Starting Docker Compose installation..."
+    if ! command -v docker-compose &>/dev/null; then
+        local version="2.20.2"
+        curl -L "https://github.com/docker/compose/releases/download/v${version}/docker-compose-$(uname -s)-$(uname -m)" \
+            -o /usr/local/bin/docker-compose || handle_error "Failed to download Docker Compose."
+        chmod +x /usr/local/bin/docker-compose || handle_error "Failed to set executable permission on Docker Compose."
+        log_info "Docker Compose installed successfully."
+    else
+        log_info "Docker Compose is already installed."
+    fi
+}
+
 # copy_shell_configs
 # Copies .bashrc and .profile into place from Git repo
 copy_shell_configs() {
