@@ -962,6 +962,23 @@ install_ly() {
         handle_error "Installation of Ly systemd service failed."
     fi
 
+    # Step 4a: Disable existing display managers to avoid conflicts
+    log INFO "Disabling any existing display managers (gdm, sddm, lightdm, etc.)..."
+    local DM_LIST=(gdm sddm lightdm lxdm)
+    for dm in "${DM_LIST[@]}"; do
+        if systemctl is-enabled "${dm}.service" &>/dev/null; then
+            log INFO "Disabling ${dm}.service..."
+            sudo systemctl disable "${dm}.service" || handle_error "Failed to disable ${dm}.service."
+            sudo systemctl stop "${dm}.service"    || log WARN "Failed to stop ${dm}.service."
+        fi
+    done
+
+    # If there's a leftover display-manager.service symlink, remove it
+    if [ -L /etc/systemd/system/display-manager.service ]; then
+        log INFO "Removing leftover /etc/systemd/system/display-manager.service symlink..."
+        sudo rm /etc/systemd/system/display-manager.service || log WARN "Failed to remove display-manager.service symlink."
+    fi
+
     # Step 5: Enable the Ly service
     log INFO "Enabling ly.service..."
     if ! sudo systemctl enable ly.service; then
