@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: python_dev_setup.sh
-# Description: Prepares an OpenSUSE system with essential development tools,
+# Description: Prepares a Debian system with essential development tools,
 #              installs/updates pyenv, the latest stable Python, and pipx‑managed
 #              CLI tools using a robust Nord‑themed enhanced template.
 # Author: Your Name | License: MIT
@@ -13,6 +13,7 @@
 #   sudo ./python_dev_setup.sh -h|--help
 #
 # ------------------------------------------------------------------------------
+
 set -Eeuo pipefail
 
 # ------------------------------------------------------------------------------
@@ -155,7 +156,7 @@ show_help() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 Description:
-  Prepares an OpenSUSE system with essential development tools,
+  Prepares a Debian system with essential development tools,
   installs/updates pyenv, the latest stable Python, and pipx-managed CLI tools.
   Uses a Nord‑themed enhanced template for robust error handling and logging.
 
@@ -192,37 +193,26 @@ parse_args() {
     done
 }
 
-# Print a styled section header using Nord accent colors
-print_section() {
-    local title="$1"
-    local border
-    border=$(printf '─%.0s' {1..60})
-    log INFO "${NORD10}${border}${NC}"
-    log INFO "${NORD10}  $title${NC}"
-    log INFO "${NORD10}${border}${NC}"
-}
-
 # ------------------------------------------------------------------------------
-# FUNCTION: Install Zypper-based Dependencies
+# FUNCTION: Install APT-based Dependencies
 # ------------------------------------------------------------------------------
-install_zypper_dependencies() {
-    print_section "Zypper Dependencies Installation"
+install_apt_dependencies() {
+    print_section "APT Dependencies Installation"
     log INFO "Refreshing package repositories..."
-    zypper --non-interactive refresh || handle_error "Failed to refresh repositories."
+    apt-get update -qq || handle_error "Failed to refresh package repositories."
 
     log INFO "Upgrading existing packages..."
-    zypper --non-interactive update || handle_error "Failed to update packages."
+    apt-get upgrade -y || handle_error "Failed to upgrade packages."
 
     log INFO "Installing required dependencies..."
-    zypper --non-interactive install \
-        gcc gcc-c++ make git curl wget vim tmux unzip zip ca-certificates \
-        libopenssl-devel libffi-devel zlib-devel bzip2-devel readline-devel \
-        sqlite3-devel ncurses-devel gdbm-devel nss-devel xz-devel xz \
-        libxml2-devel libxmlsec1-devel tk-devel llvm gnupg lsb-release jq || \
+    apt-get install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
+        libssl-dev libffi-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+        libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev xz-utils \
+        libxml2-dev libxmlsec1-dev tk-dev llvm gnupg lsb-release jq || \
         handle_error "Failed to install required dependencies."
 
     log INFO "Cleaning up package caches..."
-    zypper clean --all || log WARN "Failed to clean package caches."
+    apt-get clean || log WARN "Failed to clean package caches."
 }
 
 # ------------------------------------------------------------------------------
@@ -233,7 +223,7 @@ install_or_update_pyenv() {
     if [[ ! -d "${PYENV_ROOT}" ]]; then
         log INFO "pyenv not found. Installing pyenv..."
         git clone https://github.com/pyenv/pyenv.git "${PYENV_ROOT}" || handle_error "Failed to clone pyenv."
-        # Append pyenv initialization to ~/.bashrc if not present
+        # Append pyenv initialization to ~/.bashrc if not already present.
         if ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
             log INFO "Adding pyenv initialization to ~/.bashrc..."
             cat << 'EOF' >> "${HOME}/.bashrc"
@@ -254,7 +244,7 @@ EOF
         popd >/dev/null
     fi
 
-    # Ensure pyenv is available in this session
+    # Ensure pyenv is available in this session.
     export PYENV_ROOT="${HOME}/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
     eval "$(pyenv init -)"
@@ -293,10 +283,10 @@ install_latest_python() {
         log INFO "Python $latest_py3 is already installed and set as global."
     fi
 
-    # Refresh the shell environment with the new global Python
+    # Refresh the shell environment with the new global Python.
     eval "$(pyenv init -)"
     
-    # Return indicator if a new Python version was installed
+    # Return indicator if a new Python version was installed.
     if [[ "$install_new_python" == true ]]; then
         return 0
     else
@@ -311,14 +301,14 @@ install_or_upgrade_pipx_and_tools() {
     print_section "pipx Installation and Tools Update"
     local new_python_installed="${1:-false}"
 
-    # Install pipx if it does not exist
+    # Install pipx if it does not exist.
     if ! command_exists pipx; then
         log INFO "pipx not found. Installing pipx..."
         python -m pip install --upgrade pip || handle_error "Failed to upgrade pip."
         python -m pip install --user pipx || handle_error "Failed to install pipx."
     fi
 
-    # Ensure ~/.local/bin is in PATH; update ~/.bashrc if necessary
+    # Ensure ~/.local/bin is in PATH; update ~/.bashrc if necessary.
     if ! grep -q 'export PATH=.*\.local/bin' "${HOME}/.bashrc"; then
         log INFO "Adding ~/.local/bin to PATH in ~/.bashrc..."
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
@@ -349,7 +339,7 @@ install_or_upgrade_pipx_and_tools() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN ENTRY POINT
+# Print a styled section header using Nord accent colors
 # ------------------------------------------------------------------------------
 print_section() {
     local title="$1"
@@ -360,8 +350,11 @@ print_section() {
     log INFO "${NORD10}${border}${NC}"
 }
 
+# ------------------------------------------------------------------------------
+# MAIN ENTRY POINT
+# ------------------------------------------------------------------------------
 main() {
-    # Ensure the script is executed with Bash
+    # Ensure the script is executed with Bash.
     if [[ -z "${BASH_VERSION:-}" ]]; then
         echo -e "${NORD11}ERROR: Please run this script with bash.${NC}" >&2
         exit 1
@@ -370,15 +363,15 @@ main() {
     parse_args "$@"
     check_root
 
-    log INFO "Starting OpenSUSE development setup script..."
+    log INFO "Starting Debian development setup script..."
 
-    # 1. Install Zypper-based dependencies
-    install_zypper_dependencies
+    # 1. Install APT-based dependencies.
+    install_apt_dependencies
 
-    # 2. Install or update pyenv
+    # 2. Install or update pyenv.
     install_or_update_pyenv
 
-    # 3. Install the latest Python version via pyenv (if needed) and update pipx tools
+    # 3. Install the latest Python version via pyenv (if needed) and update pipx tools.
     if install_latest_python; then
         install_or_upgrade_pipx_and_tools "true"
     else
