@@ -2,16 +2,15 @@
 # ------------------------------------------------------------------------------
 # Script Name: cron_manager.sh
 # Description: An advanced interactive cron job manager that lets you list,
-#              add, edit, and remove cron jobs via a user‐friendly, Nord‑themed
+#              add, edit, and remove cron jobs via a user‑friendly, Nord‑themed
 #              interface. The tool walks you through common scheduling options,
 #              validates input, and updates your crontab accordingly.
-#
 # Author: Your Name | License: MIT
 # Version: 2.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
-#   ./advanced_cron_manager.sh
+#   ./cron_manager.sh
 #
 # Note:
 #   After making changes, reload your shell (e.g., source ~/.bashrc) if needed.
@@ -22,42 +21,96 @@
 # ENABLE STRICT MODE
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
-trap 'echo -e "\n${NORD11}An unexpected error occurred at line $LINENO.${NC}" >&2; exit 1' ERR
 
 # ------------------------------------------------------------------------------
-# Nord Color Theme Constants (24-bit ANSI escapes)
+# GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
+LOG_FILE="$HOME/.cron_manager.log"
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DISABLE_COLORS="${DISABLE_COLORS:-false}"
+# Global array to hold non‑comment cron jobs (for editing/removal)
+declare -a CRON_JOBS=()
+
+# ------------------------------------------------------------------------------
+# NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
+# ------------------------------------------------------------------------------
+NORD0='\033[38;2;46;52;64m'      # #2E3440
+NORD1='\033[38;2;59;66;82m'      # #3B4252
+NORD2='\033[38;2;67;76;94m'      # #434C5E
+NORD3='\033[38;2;76;86;106m'     # #4C566A
+NORD4='\033[38;2;216;222;233m'   # #D8DEE9 (text)
+NORD5='\033[38;2;229;233;240m'
+NORD6='\033[38;2;236;239;244m'
+NORD7='\033[38;2;143;188;187m'
 NORD8='\033[38;2;136;192;208m'   # Accent Blue (headings)
-NORD14='\033[38;2;163;190;140m'  # Green (success/info)
+NORD9='\033[38;2;129;161;193m'
+NORD10='\033[38;2;94;129;172m'
 NORD11='\033[38;2;191;97;106m'   # Red (errors)
 NORD12='\033[38;2;208;135;112m'  # Orange (warnings)
-NORD4='\033[38;2;216;222;233m'   # Light gray (text)
+NORD13='\033[38;2;235;203;139m'
+NORD14='\033[38;2;163;190;140m'  # Green (success/info)
+NORD15='\033[38;2;180;142;173m'
 NC='\033[0m'                    # No Color
 
 # ------------------------------------------------------------------------------
-# Global Variables
+# LOGGING FUNCTION
 # ------------------------------------------------------------------------------
-CRON_FILE_TEMP="$(mktemp)"
-BASHRC_FILE="$HOME/.bashrc"
-# (The script manages the current user's crontab.)
-# No special marker for cron jobs is needed here.
-
-# ------------------------------------------------------------------------------
-# Helper Function: Print Header
-# ------------------------------------------------------------------------------
-print_header() {
-    clear
-    echo -e "${NORD8}============================================${NC}"
-    echo -e "${NORD8}         Advanced Cron Manager            ${NC}"
-    echo -e "${NORD8}============================================${NC}"
+log() {
+    # Usage: log [LEVEL] message
+    local level="${1:-INFO}"
+    shift
+    local message="$*"
+    local upper_level="${level^^}"
+    local color="$NC"
+    if [[ "$DISABLE_COLORS" != true ]]; then
+        case "$upper_level" in
+            INFO)  color="${NORD14}" ;;  # Success/Info
+            WARN)  color="${NORD13}" ;;  # Warning
+            ERROR) color="${NORD11}" ;;  # Error
+            DEBUG) color="${NORD9}"  ;;  # Debug
+            *)     color="$NC"       ;;
+        esac
+    fi
+    local timestamp
+    timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
+    local log_entry="[$timestamp] [$upper_level] $message"
+    echo "$log_entry" >> "$LOG_FILE"
+    printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
 }
 
 # ------------------------------------------------------------------------------
-# Helper Function: Validate a Cron Expression (basic check for 5 fields)
+# ERROR HANDLING & CLEANUP FUNCTIONS
 # ------------------------------------------------------------------------------
+handle_error() {
+    local error_message="${1:-"Unknown error occurred"}"
+    local exit_code="${2:-1}"
+    log ERROR "$error_message (Exit Code: $exit_code)"
+    echo -e "${NORD11}ERROR: $error_message (Exit Code: $exit_code)${NC}" >&2
+    exit "$exit_code"
+}
+
+cleanup() {
+    log INFO "Performing cleanup tasks before exit."
+    # (Temporary files created within functions are removed after use.)
+}
+trap cleanup EXIT
+trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
+
+# ------------------------------------------------------------------------------
+# HELPER & UTILITY FUNCTIONS
+# ------------------------------------------------------------------------------
+print_header() {
+    clear
+    printf "%b============================================================%b\n" "${NORD8}" "${NC}"
+    printf "%b              Advanced Cron Manager                     %b\n" "${NORD8}" "${NC}"
+    printf "%b============================================================%b\n" "${NORD8}" "${NC}"
+}
+
+# Basic validation: Check that the cron expression has exactly 5 fields.
 validate_cron_expr() {
     local expr="$1"
-    # Remove extra whitespace and split into fields
+    # Remove extra whitespace and split into fields.
     local fields
     fields=($(echo "$expr" | xargs))
     if [ "${#fields[@]}" -ne 5 ]; then
@@ -67,45 +120,48 @@ validate_cron_expr() {
 }
 
 # ------------------------------------------------------------------------------
-# Function: List Current Cron Jobs
+# FUNCTION: List Current Cron Jobs
 # ------------------------------------------------------------------------------
 list_cron_jobs() {
+    CRON_JOBS=()  # Reset global array
     local cron_output
-    cron_output=$(crontab -l 2>/dev/null || echo "")
+    cron_output=$(crontab -l 2>/dev/null || true)
     if [[ -z "$cron_output" ]]; then
-        echo -e "${NORD12}No cron jobs found for user $USER.${NC}"
+        echo -e "${NORD12}No cron jobs found for user ${USER}.${NC}"
         return 1
     fi
     echo -e "${NORD14}Current Cron Jobs:${NC}"
-    echo -e "${NORD8}--------------------------------------------${NC}"
-    local i=1
+    printf "%b--------------------------------------------%b\n" "${NORD8}" "${NC}"
+    local counter=0
     while IFS= read -r line; do
-        # Ignore blank lines and comments.
-        if [[ -z "$line" || "$line" =~ ^# ]]; then
+        # Skip blank lines and comments.
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
             continue
         fi
-        printf "${NORD8}[%d]${NC} ${NORD4}%s${NC}\n" "$i" "$line"
-        cron_jobs_array[i]="$line"
-        ((i++))
+        ((counter++))
+        CRON_JOBS+=("$line")
+        printf "%b[%d]${NC} %b%s${NC}\n" "${NORD8}" "$counter" "${NORD4}" "$line"
     done <<< "$cron_output"
-    echo -e "${NORD8}--------------------------------------------${NC}"
+    printf "%b--------------------------------------------%b\n" "${NORD8}" "${NC}"
     return 0
 }
 
 # ------------------------------------------------------------------------------
-# Function: Update Crontab from a Temporary File
+# FUNCTION: Update Crontab from a Temporary File
 # ------------------------------------------------------------------------------
 update_crontab() {
     if crontab "$1"; then
+        log INFO "Crontab updated successfully."
         echo -e "${NORD14}Crontab updated successfully.${NC}"
     else
+        log ERROR "Failed to update crontab."
         echo -e "${NORD11}Failed to update crontab. Restoring previous settings.${NC}"
         return 1
     fi
 }
 
 # ------------------------------------------------------------------------------
-# Function: Add a New Cron Job
+# FUNCTION: Add a New Cron Job
 # ------------------------------------------------------------------------------
 add_cron_job() {
     echo -e "${NORD14}Select a schedule type:${NC}"
@@ -169,13 +225,13 @@ add_cron_job() {
         return 1
     fi
 
-    # Save current crontab to a temp file (if none exists, create empty file)
     local tmpfile
     tmpfile=$(mktemp)
     crontab -l 2>/dev/null > "$tmpfile" || true
     echo "$new_job" >> "$tmpfile"
     if update_crontab "$tmpfile"; then
         echo -e "${NORD14}New cron job added successfully.${NC}"
+        log INFO "New cron job added: $new_job"
     else
         echo -e "${NORD11}Failed to add new cron job.${NC}"
     fi
@@ -183,10 +239,9 @@ add_cron_job() {
 }
 
 # ------------------------------------------------------------------------------
-# Function: Edit an Existing Cron Job
+# FUNCTION: Edit an Existing Cron Job
 # ------------------------------------------------------------------------------
 edit_cron_job() {
-    local cron_jobs_array=()
     if ! list_cron_jobs; then
         return 1
     fi
@@ -198,16 +253,14 @@ edit_cron_job() {
         echo -e "${NORD12}Invalid selection.${NC}"
         return 1
     fi
-
-    # Get the selected cron job from the temporary file.
-    local selected_line
-    selected_line=$(sed -n "${choice}p" "$ALIAS_TEMP_FILE" 2>/dev/null || true)
-    # If ALIAS_TEMP_FILE is not available, re-read crontab.
-    if [[ -z "$selected_line" ]]; then
-        selected_line=$(crontab -l | sed -n "${choice}p")
+    local idx=$((choice - 1))
+    if (( idx < 0 || idx >= ${#CRON_JOBS[@]} )); then
+        echo -e "${NORD12}Invalid selection.${NC}"
+        return 1
     fi
 
-    echo -e "${NORD14}Current Cron Job:${NC} ${NORD4}${selected_line}${NC}"
+    local selected_job="${CRON_JOBS[$idx]}"
+    echo -e "${NORD14}Current Cron Job:${NC} ${NORD4}${selected_job}${NC}"
     echo -e "${NORD14}Enter new schedule and command for this job.${NC}"
     echo -e "${NORD14}Note: Provide a full cron expression (5 fields) followed by the command.${NC}"
     read -rp "New cron job line: " new_line
@@ -215,31 +268,48 @@ edit_cron_job() {
         echo -e "${NORD12}Edit cancelled.${NC}"
         return 1
     fi
-    if ! validate_cron_expr "$(echo "$new_line" | awk '{print $1,$2,$3,$4,$5}')"; then
+    # Validate the cron expression portion (first 5 fields).
+    local new_cron_expr
+    new_cron_expr=$(echo "$new_line" | awk '{print $1, $2, $3, $4, $5}')
+    if ! validate_cron_expr "$new_cron_expr"; then
         echo -e "${NORD11}Invalid cron expression in new job.${NC}"
         return 1
     fi
 
-    # Save current crontab to a temp file
-    local tmpfile
+    # Load the current crontab into a temporary file.
+    local tmpfile new_tmp
     tmpfile=$(mktemp)
+    new_tmp=$(mktemp)
     crontab -l 2>/dev/null > "$tmpfile" || true
 
-    # Replace the selected line with the new line.
-    sed -i "${choice}s/.*/$new_line/" "$tmpfile"
-    if update_crontab "$tmpfile"; then
+    # Replace the nth non-comment, non-blank line with the new_line.
+    local non_comment_index=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            echo "$line" >> "$new_tmp"
+        else
+            ((non_comment_index++))
+            if (( non_comment_index == choice )); then
+                echo "$new_line" >> "$new_tmp"
+            else
+                echo "$line" >> "$new_tmp"
+            fi
+        fi
+    done < "$tmpfile"
+
+    if update_crontab "$new_tmp"; then
         echo -e "${NORD14}Cron job updated successfully.${NC}"
+        log INFO "Cron job edited: Old: ${selected_job} New: ${new_line}"
     else
         echo -e "${NORD11}Failed to update cron job.${NC}"
     fi
-    rm "$tmpfile"
+    rm "$tmpfile" "$new_tmp"
 }
 
 # ------------------------------------------------------------------------------
-# Function: Remove an Existing Cron Job
+# FUNCTION: Remove an Existing Cron Job
 # ------------------------------------------------------------------------------
 remove_cron_job() {
-    local cron_jobs_array=()
     if ! list_cron_jobs; then
         return 1
     fi
@@ -251,28 +321,42 @@ remove_cron_job() {
         echo -e "${NORD12}Invalid selection.${NC}"
         return 1
     fi
-
     read -rp "Are you sure you want to delete job number $choice? (y/n): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         echo -e "${NORD12}Deletion cancelled.${NC}"
         return 0
     fi
 
-    local tmpfile
+    local tmpfile new_tmp
     tmpfile=$(mktemp)
+    new_tmp=$(mktemp)
     crontab -l 2>/dev/null > "$tmpfile" || true
-    # Remove the chosen line from the temporary crontab file.
-    sed -i "${choice}d" "$tmpfile"
-    if update_crontab "$tmpfile"; then
+
+    local non_comment_index=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]]; then
+            echo "$line" >> "$new_tmp"
+        else
+            ((non_comment_index++))
+            if (( non_comment_index == choice )); then
+                continue
+            else
+                echo "$line" >> "$new_tmp"
+            fi
+        fi
+    done < "$tmpfile"
+
+    if update_crontab "$new_tmp"; then
         echo -e "${NORD14}Cron job removed successfully.${NC}"
+        log INFO "Cron job number $choice removed."
     else
         echo -e "${NORD11}Failed to remove cron job.${NC}"
     fi
-    rm "$tmpfile"
+    rm "$tmpfile" "$new_tmp"
 }
 
 # ------------------------------------------------------------------------------
-# Main Interactive Menu
+# MAIN INTERACTIVE MENU
 # ------------------------------------------------------------------------------
 main_menu() {
     while true; do
@@ -283,7 +367,7 @@ main_menu() {
         echo -e "${NORD8}[3]${NC} Edit Existing Cron Job"
         echo -e "${NORD8}[4]${NC} Remove Cron Job"
         echo -e "${NORD8}[q]${NC} Quit"
-        echo -e "${NORD8}--------------------------------------------${NC}"
+        printf "%b--------------------------------------------%b\n" "${NORD8}" "${NC}"
         read -rp "Enter your choice: " choice
         case "${choice,,}" in
             1)
@@ -304,6 +388,7 @@ main_menu() {
                 ;;
             q)
                 echo -e "${NORD14}Goodbye!${NC}"
+                log INFO "Cron Manager terminated by user."
                 exit 0
                 ;;
             *)
@@ -315,8 +400,13 @@ main_menu() {
 }
 
 # ------------------------------------------------------------------------------
-# Script Entry Point
+# MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+main() {
     main_menu
+}
+
+# Invoke main() if this script is executed directly
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
 fi
