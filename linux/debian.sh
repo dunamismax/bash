@@ -185,6 +185,21 @@ PACKAGES=(
     foremost
     steghide
     hashid
+    g++
+    clang
+    ca-certificates
+    software-properties-common
+    apt-transport-https
+    gnupg
+    lsb-release
+    libncursesw5-dev
+    libgdbm-dev
+    libnss3-dev
+    liblzma-dev
+    libxml2-dev
+    libxmlsec1-dev
+    gdb
+    llvm
 )
 
 # ------------------------------------------------------------------------------
