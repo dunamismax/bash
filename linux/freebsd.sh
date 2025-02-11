@@ -241,19 +241,11 @@ i3_config() {
         die "Failed to install i3 and its addons."
     fi
 
-    # Ensure the ninja build tool is available (required for building ly)
-    if ! command -v ninja >/dev/null 2>&1; then
-        log INFO "Installing ninja build system..."
-        if ! pkg install -y ninja; then
-            die "Failed to install ninja."
-        fi
-    fi
+    log INFO "Cloning and installing ly login manager from GitHub using Zig..."
 
-    log INFO "Cloning and installing ly login manager from GitHub..."
-
-    # Define the source directory for ly
+    # Define the source directory and repository URL for ly
     LY_SRC="/usr/local/src/ly"
-    LY_REPO="https://github.com/nullgemm/ly.git"
+    LY_REPO="https://github.com/fairyglade/ly.git"
 
     # Clone or update the ly repository
     if [ -d "${LY_SRC}/ly" ]; then
@@ -272,37 +264,34 @@ i3_config() {
         cd ly || die "Cannot change directory to ly"
     fi
 
-    # Remove any previous build directory to ensure a clean build
-    if [ -d "build" ]; then
-        log INFO "Removing existing build directory..."
-        rm -rf build || warn "Could not remove existing build directory."
+    # Compile ly using Zig
+    log INFO "Compiling ly using Zig..."
+    if ! zig build; then
+        die "zig build for ly failed."
     fi
 
-    # Build and install ly using meson and ninja
-    log INFO "Setting up build environment for ly..."
-    if ! meson setup build; then
-        die "meson setup for ly failed."
+    # Optionally, test the build (uncomment the following if you wish to run the test)
+    # log INFO "Testing ly build..."
+    # if ! zig build run; then
+    #     warn "zig build run for ly failed."
+    # fi
+
+    # Install ly using Zig (FreeBSD install target, not the systemd one)
+    log INFO "Installing ly using Zig..."
+    if ! zig build install; then
+        die "zig build install for ly failed."
     fi
 
-    log INFO "Building ly..."
-    if ! ninja -C build; then
-        die "ninja build for ly failed."
-    fi
-
-    log INFO "Installing ly..."
-    if ! ninja -C build install; then
-        die "Installation of ly failed."
-    fi
-
-    # Enable ly to start automatically at boot
-    log INFO "Enabling ly display manager to start at boot..."
+    # Enable ly to start automatically at boot using FreeBSD's rc system
+    log INFO "Enabling ly display manager in rc.conf..."
     if ! sysrc ly_enable=YES; then
         warn "Failed to enable ly in rc.conf."
     else
-        log INFO "ly display manager enabled."
+        log INFO "ly display manager enabled in rc.conf."
     fi
 
-    # Optionally, start the ly service immediately (a reboot might be required to see full effect)
+    # Start the ly service immediately
+    log INFO "Starting ly display manager..."
     if ! service ly start; then
         warn "Failed to start ly display manager immediately."
     else
