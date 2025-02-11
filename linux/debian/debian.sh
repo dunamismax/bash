@@ -1110,7 +1110,7 @@ main() {
     copy_shell_configs
     #enable_dunamismax_services
     docker_config
-    install_homebrew_and_zig
+    install_zig_from_source
     install_ly
     configure_periodic
     final_checks
