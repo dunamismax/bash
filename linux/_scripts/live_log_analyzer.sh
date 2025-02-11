@@ -3,7 +3,7 @@
 # Script Name: live_log_analyzer.sh
 # Description: An advanced, interactive, real‑time log analyzer that lets you
 #              monitor various log files and systemd service logs with a beautiful
-#              Nord‑themed interface. The script scans pre‐configured log
+#              Nord‑themed interface. The script scans pre‑configured log
 #              categories (e.g., Website, System, Application, Security) and also
 #              allows you to monitor any custom log file. While tailing, new log
 #              entries stream from the bottom. Pressing Ctrl+C returns you to the
@@ -28,7 +28,7 @@ set -Eeuo pipefail
 trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
 # ------------------------------------------------------------------------------
-# NORD COLOR THEME CONSTANTS (24-bit ANSI escapes)
+# NORD COLOR THEME CONSTANTS (24‑bit ANSI escapes)
 # ------------------------------------------------------------------------------
 NORD0='\033[38;2;46;52;64m'      # Dark background
 NORD1='\033[38;2;59;66;82m'
@@ -68,7 +68,8 @@ log() {
         DEBUG) color="${NORD9}"  ;;     # Debug: blue
         *)     color="$NC"     ;;
     esac
-    echo -e "[$timestamp] [$upper_level] $message" >> /dev/null  # (Optional log file output)
+    # Optional log file output can be enabled by redirecting the output.
+    echo -e "[$timestamp] [$upper_level] $message" >> /dev/null
 }
 
 handle_error() {
@@ -98,7 +99,7 @@ print_help_hint() {
 }
 
 # ------------------------------------------------------------------------------
-# PRE-CONFIGURED LOG CATEGORIES & FILES
+# PRE‑CONFIGURED LOG CATEGORIES & FILES
 # ------------------------------------------------------------------------------
 # Website Logs (Caddy)
 WEBSITE_LOGS=(
@@ -168,7 +169,7 @@ tail_systemd_service() {
 select_systemd_service() {
     local input service
     read -rp "Enter systemd service name (or partial): " input
-    # Get matching services
+    # Get matching services.
     local matches
     matches=$(systemctl list-units --type=service --all | awk '{print $1}' | grep -i "$input")
     if [[ -z "$matches" ]]; then

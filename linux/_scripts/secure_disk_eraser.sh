@@ -5,8 +5,8 @@
 #              It installs required tools, lists attached disks with details,
 #              detects whether a disk is an HDD or SSD, and lets the user choose
 #              from several secure erasure methods (using hdparm, nvme-cli, or shred)
-#              with full interactive prompts, double-check confirmations, and Nord‑themed
-#              color output and progress bars.
+#              with full interactive prompts, double-check confirmations, and
+#              Nord‑themed color output.
 #
 # Requirements:
 #   • Must be run as root.
@@ -63,33 +63,18 @@ log() {
 }
 
 # ------------------------------------------------------------------------------
-# Progress Bar Function
+# (Progress Bar functionality removed)
 # ------------------------------------------------------------------------------
-progress_bar() {
-    # Usage: progress_bar "Message" duration_in_seconds
-    local message="$1"
-    local duration="${2:-3}"
-    local steps=50
-    local sleep_time
-    sleep_time=$(echo "$duration / $steps" | bc -l)
-    printf "\n${CYAN}%s [" "$message"
-    for ((i=1; i<=steps; i++)); do
-        printf "█"
-        sleep "$sleep_time"
-    done
-    printf "]${NC}\n"
-}
 
 # ------------------------------------------------------------------------------
 # Install Prerequisites Function
 # ------------------------------------------------------------------------------
 install_prerequisites() {
     log INFO "Installing required tools..."
-    progress_bar "Installing required tools" 8
     # Update repositories
-    apt update || handle_error "Failed to update repositories."
-    # Install hdparm and nvme-cli
-    apt install -y hdparm nvme-cli coreutils || handle_error "Failed to install prerequisites."
+    apt update || { log ERROR "Failed to update repositories."; exit 1; }
+    # Install hdparm, nvme-cli, and coreutils (for shred)
+    apt install -y hdparm nvme-cli coreutils || { log ERROR "Failed to install prerequisites."; exit 1; }
     log INFO "Required tools installed."
 }
 
@@ -97,8 +82,6 @@ install_prerequisites() {
 # List Attached Disks Function
 # ------------------------------------------------------------------------------
 list_disks() {
-    # Use lsblk to list disks and get rotational info
-    # Output columns: NAME, SIZE, TYPE, ROTA (1 = HDD, 0 = SSD)
     lsblk -d -o NAME,SIZE,TYPE,ROTA,MODEL | grep "disk"
 }
 
@@ -106,14 +89,12 @@ list_disks() {
 # Detect Disk Type Function
 # ------------------------------------------------------------------------------
 detect_disk_type() {
-    local disk="$1"  # e.g., sda or nvme0n1
-    local rota
-    # For NVMe drives, assume SSD
+    local disk="$1"
     if [[ "$disk" == nvme* ]]; then
         echo "nvme"
     else
-        # Read rotational flag from sysfs
         if [[ -f "/sys/block/${disk}/queue/rotational" ]]; then
+            local rota
             rota=$(cat /sys/block/"$disk"/queue/rotational)
             if [[ "$rota" -eq 1 ]]; then
                 echo "hdd"
@@ -142,7 +123,6 @@ select_disk() {
     local i=1
     declare -A disk_map
     while IFS= read -r line; do
-        # Each line: NAME SIZE TYPE ROTA MODEL
         local name size type rota model
         name=$(echo "$line" | awk '{print $1}')
         size=$(echo "$line" | awk '{print $2}')
@@ -185,9 +165,7 @@ secure_erase_hdparm() {
         echo -e "${YELLOW}Operation cancelled.${NC}"
         return 1
     fi
-    progress_bar "Setting security password" 3
     hdparm --user-master u --security-set-pass "$sec_pass" "$disk" || handle_error "Failed to set security password on $disk."
-    progress_bar "Issuing Secure Erase" 10
     hdparm --user-master u --security-erase "$sec_pass" "$disk" || handle_error "Secure Erase command failed on $disk."
     echo -e "${GREEN}Secure Erase via hdparm completed successfully on $disk.${NC}"
 }
@@ -204,7 +182,6 @@ nvme_secure_erase() {
         echo -e "${YELLOW}Operation cancelled.${NC}"
         return 1
     fi
-    progress_bar "Issuing NVMe format command" 10
     nvme format "$disk" || handle_error "nvme format failed on $disk."
     echo -e "${GREEN}NVMe format completed successfully on $disk.${NC}"
 }
@@ -226,7 +203,6 @@ shred_wipe() {
         echo -e "${YELLOW}Operation cancelled.${NC}"
         return 1
     fi
-    progress_bar "Wiping disk with shred" 15
     shred -n "$num_overwrites" -z -v "$disk" || handle_error "shred failed on $disk."
     echo -e "${GREEN}Disk wipe with shred completed successfully on $disk.${NC}"
 }
@@ -244,7 +220,6 @@ disk_eraser_menu() {
     if [[ "$disk_type" == "nvme" ]]; then
         echo -e "${CYAN}[1]${NC} NVMe Format (nvme-cli)"
         echo -e "${CYAN}[3]${NC} Shred Wipe (use with caution on SSDs)"
-        # hdparm typically doesn't work on NVMe.
     elif [[ "$disk_type" == "ssd" ]]; then
         echo -e "${CYAN}[1]${NC} Secure Erase (hdparm) [Works on some SSDs]"
         echo -e "${CYAN}[3]${NC} Shred Wipe (Not recommended for SSDs)"

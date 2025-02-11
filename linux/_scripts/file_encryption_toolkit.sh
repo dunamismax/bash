@@ -4,7 +4,7 @@
 # Description: An advanced file encryption, decryption, compression, and file
 #              management tool that supports a wide array of operations including
 #              copying, moving, deleting, advanced search, compressing/decompressing
-#              files using pigz (for multicore performance), password‐based file
+#              files using pigz (for multicore performance), password‑based file
 #              encryption/decryption, and interactive PGP operations (key creation,
 #              message encryption/decryption, signing, and verification). All of these
 #              functions are accessible via an interactive, Nord‑themed menu.
@@ -204,7 +204,9 @@ pgp_encrypt_message() {
         [[ "$line" == "." ]] && break
         msg+="$line"$'\n'
     done
-    echo "$msg" | gpg --encrypt --armor -r "$recipient" && echo -e "${NORD14}Message encrypted successfully.${NC}" || handle_error "PGP encryption failed."
+    echo "$msg" | gpg --encrypt --armor -r "$recipient" \
+        && echo -e "${NORD14}Message encrypted successfully.${NC}" \
+        || handle_error "PGP encryption failed."
 }
 
 pgp_decrypt_message() {
@@ -222,7 +224,9 @@ pgp_sign_message() {
         [[ "$line" == "." ]] && break
         msg+="$line"$'\n'
     done
-    echo "$msg" | gpg --clearsign && echo -e "${NORD14}Message signed successfully.${NC}" || handle_error "Signing failed."
+    echo "$msg" | gpg --clearsign \
+        && echo -e "${NORD14}Message signed successfully.${NC}" \
+        || handle_error "Signing failed."
 }
 
 pgp_verify_signature() {
@@ -230,7 +234,9 @@ pgp_verify_signature() {
     if [[ ! -f "$infile" ]]; then
         handle_error "File '$infile' does not exist."
     fi
-    gpg --verify "$infile" && echo -e "${NORD14}Signature verified successfully.${NC}" || handle_error "Signature verification failed."
+    gpg --verify "$infile" \
+        && echo -e "${NORD14}Signature verified successfully.${NC}" \
+        || handle_error "Signature verification failed."
 }
 
 # ------------------------------------------------------------------------------

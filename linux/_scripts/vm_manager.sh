@@ -3,7 +3,7 @@
 # Script Name: vm_manager.sh
 # Description: An advanced interactive virtual machine manager that allows you
 #              to list, create, start, stop, delete, and monitor KVM/QEMU virtual
-#              machines on OpenSUSE. The script uses virt‑install and virsh, and
+#              machines on Debian. The script uses virt‑install and virsh, and
 #              guides you through VM creation (including options for RAM, vCPUs,
 #              disk size, and ISO download via wget) in a fully interactive,
 #              Nord‑themed interface.
@@ -16,13 +16,16 @@
 #   sudo ./vm_manager.sh
 #
 # ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
 # ENABLE STRICT MODE
+# ------------------------------------------------------------------------------
 set -Eeuo pipefail
 trap 'echo -e "\n${NORD11}An error occurred at line ${LINENO}.${NC}" >&2; exit 1' ERR
 trap 'echo -e "\n${NORD11}Operation interrupted. Returning to main menu...${NC}"' SIGINT
 
 # ------------------------------------------------------------------------------
-# Nord Color Theme Constants (24‑bit ANSI escapes)
+# Nord Color Theme Constants (24‑bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
 NORD0='\033[38;2;46;52;64m'      # Dark background
 NORD1='\033[38;2;59;66;82m'
@@ -56,21 +59,6 @@ print_header() {
 
 print_divider() {
     echo -e "${NORD8}--------------------------------------------${NC}"
-}
-
-progress_bar() {
-    # Usage: progress_bar "Message" duration_in_seconds
-    local message="$1"
-    local duration="${2:-3}"
-    local steps=50
-    local sleep_time
-    sleep_time=$(echo "$duration / $steps" | bc -l)
-    printf "\n${NORD8}%s [" "$message"
-    for ((i=1; i<=steps; i++)); do
-        printf "█"
-        sleep "$sleep_time"
-    done
-    printf "]${NC}\n"
 }
 
 prompt_enter() {
@@ -169,10 +157,9 @@ monitor_vm() {
 
 download_iso() {
     read -rp "Enter the URL for the installation ISO: " iso_url
-    read -rp "Enter the desired filename (e.g., opensuse.iso): " iso_filename
+    read -rp "Enter the desired filename (e.g., debian.iso): " iso_filename
     local iso_path="${ISO_DIR}/${iso_filename}"
     echo -e "${NORD14}Downloading ISO to ${iso_path}...${NC}"
-    progress_bar "Downloading ISO" 10
     if wget -O "$iso_path" "$iso_url"; then
         echo -e "${NORD14}ISO downloaded successfully.${NC}"
         echo "$iso_path"
@@ -218,7 +205,6 @@ create_vm() {
     # Create a disk image for the VM.
     local disk_image="${VM_IMAGE_DIR}/${vm_name}.qcow2"
     echo -e "${NORD14}Creating disk image at ${disk_image}...${NC}"
-    progress_bar "Creating disk image" 5
     if ! qemu-img create -f qcow2 "$disk_image" "${disk_size}G"; then
         echo -e "${NORD11}Failed to create disk image.${NC}"
         prompt_enter
@@ -227,14 +213,13 @@ create_vm() {
 
     # Use virt-install to create the VM.
     echo -e "${NORD14}Starting VM installation using virt-install...${NC}"
-    progress_bar "Launching virt-install" 5
     virt-install --name "$vm_name" \
         --ram "$ram" \
         --vcpus "$vcpus" \
         --disk path="$disk_image",size="$disk_size",format=qcow2 \
         --cdrom "$iso_path" \
         --os-type linux \
-        --os-variant opensuse15 \
+        --os-variant debian10 \
         --graphics none \
         --console pty,target_type=serial \
         --noautoconsole

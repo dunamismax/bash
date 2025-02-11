@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: deploy-scripts.sh
-# Description: Deploys user scripts from a source directory to a target directory.
-#              Ensures proper ownership, performs a dry-run, and sets executable
-#              permissions. This version uses the Nord‑themed enhanced template for
-#              robust error handling, logging, and progress feedback.
+# Description: Deploys user scripts from a source directory to a target directory
+#              on Debian Linux. Ensures proper ownership, performs a dry‑run, and
+#              sets executable permissions using a Nord‑themed template for robust
+#              error handling and logging.
 #
 # Usage Examples:
 #   sudo ./deploy-scripts.sh [-d|--debug] [-q|--quiet]
 #   sudo ./deploy-scripts.sh -h|--help
 #
 # Author: Your Name | License: MIT
-# Version: 2.0
+# Version: 2.1
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
 
@@ -25,7 +25,7 @@ LOG_LEVEL="${LOG_LEVEL:-INFO}"                   # Options: INFO, DEBUG, WARN, E
 QUIET_MODE=false                                 # When true, suppress console output
 DISABLE_COLORS="${DISABLE_COLORS:-false}"        # Set to true to disable colored output
 
-# Deployment-specific configuration
+# Deployment‑specific configuration
 SCRIPT_SOURCE="/home/sawyer/github/bash/linux/_scripts"  # Source directory for scripts
 SCRIPT_TARGET="/home/sawyer/bin"                           # Target deployment directory
 EXPECTED_OWNER="sawyer"                                    # Expected owner of source directory
@@ -130,8 +130,8 @@ show_help() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 Description:
-  Deploys user scripts from a source directory to a target directory.
-  Ensures proper ownership, performs a dry-run, and sets executable permissions.
+  Deploys user scripts from a source directory to a target directory on Debian.
+  Ensures proper ownership, performs a dry‑run, and sets executable permissions.
   Uses a Nord‑themed enhanced template for robust error handling and logging.
 
 Options:
@@ -157,37 +157,6 @@ print_section() {
 }
 
 # ------------------------------------------------------------------------------
-# PROGRESS BAR FUNCTION
-# ------------------------------------------------------------------------------
-progress_bar() {
-    # Usage: progress_bar "Message" [duration_in_seconds]
-    local message="${1:-Processing...}"
-    local duration="${2:-5}"
-    local steps=50
-    local sleep_time
-    sleep_time=$(echo "$duration / $steps" | bc -l)
-    local progress=0
-    local filled=""
-    local unfilled=""
-
-    # Display the task message in Nord accent color
-    if [[ "$DISABLE_COLORS" != true ]]; then
-        printf "\n${NORD8}%s${NC}\n" "$message"
-    else
-        printf "\n%s\n" "$message"
-    fi
-
-    for (( i = 1; i <= steps; i++ )); do
-        progress=$(( i * 100 / steps ))
-        filled=$(printf "%-${i}s" | tr ' ' '█')
-        unfilled=$(printf "%-$(( steps - i ))s" | tr ' ' '░')
-        printf "\r${NORD8}[%s%s] %3d%%%s" "$filled" "$unfilled" "$progress" "$NC"
-        sleep "$sleep_time"
-    done
-    printf "\n"
-}
-
-# ------------------------------------------------------------------------------
 # DEPLOYMENT FUNCTION
 # ------------------------------------------------------------------------------
 deploy_user_scripts() {
@@ -207,16 +176,13 @@ deploy_user_scripts() {
         handle_error "Dry‑run failed for script deployment"
     fi
 
-    # 3. Show progress bar during actual deployment
-    progress_bar "Deploying scripts..." 4
-
-    # 4. Actual deployment
+    # 3. Actual deployment
     log INFO "Deploying scripts from '$SCRIPT_SOURCE' to '$SCRIPT_TARGET'..."
     if ! rsync -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}"; then
         handle_error "Script deployment failed"
     fi
 
-    # 5. Set executable permissions on deployed scripts
+    # 4. Set executable permissions on deployed scripts
     log INFO "Setting executable permissions on deployed scripts..."
     if ! find "${SCRIPT_TARGET}" -type f -exec chmod 755 {} \;; then
         handle_error "Failed to update script permissions in '$SCRIPT_TARGET'"

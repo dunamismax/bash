@@ -4,15 +4,14 @@
 # Description: An advanced interactive Docker container and Docker Compose
 #              manager that lets you list, start, stop, remove, and inspect
 #              containers and images, and also manage Docker Compose projects.
-#              The interface is fully interactive with Nord‑themed color coding
-#              and progress bars.
+#              The interface is fully interactive with Nord‑themed color coding.
 #
 # Author: Your Name | License: MIT
-# Version: 2.0
+# Version: 2.1
 # ------------------------------------------------------------------------------
 #
 # Usage:
-#   sudo ./advanced_docker_manager.sh
+#   sudo ./docker_manager.sh
 #
 # Requirements:
 #   • Docker and docker-compose must be installed.
@@ -61,19 +60,6 @@ print_divider() {
     echo -e "${NORD8}--------------------------------------------${NC}"
 }
 
-progress_bar() {
-    local message="$1"
-    local duration="${2:-3}"
-    local steps=50
-    local sleep_time=$(echo "$duration / $steps" | bc -l)
-    echo -ne "${NORD8}${message} ["
-    for ((i=0; i<steps; i++)); do
-        echo -ne "█"
-        sleep "$sleep_time"
-    done
-    echo -e "]${NC}"
-}
-
 # ------------------------------------------------------------------------------
 # Docker Container Manager Functions
 # ------------------------------------------------------------------------------
@@ -115,7 +101,7 @@ start_container() {
         return 1
     fi
     local id="${container_ids[num]}"
-    progress_bar "Starting container" 3
+    echo -e "${NORD8}Starting container...${NC}"
     docker start "$id" && echo -e "${NORD14}Container started successfully.${NC}" || echo -e "${NORD11}Failed to start container.${NC}"
     read -rp "Press Enter to continue..." dummy
 }
@@ -128,7 +114,7 @@ stop_container() {
         return 1
     fi
     local id="${container_ids[num]}"
-    progress_bar "Stopping container" 3
+    echo -e "${NORD8}Stopping container...${NC}"
     docker stop "$id" && echo -e "${NORD14}Container stopped successfully.${NC}" || echo -e "${NORD11}Failed to stop container.${NC}"
     read -rp "Press Enter to continue..." dummy
 }
@@ -141,7 +127,7 @@ remove_container() {
         return 1
     fi
     local id="${container_ids[num]}"
-    progress_bar "Removing container" 3
+    echo -e "${NORD8}Removing container...${NC}"
     docker rm "$id" && echo -e "${NORD14}Container removed successfully.${NC}" || echo -e "${NORD11}Failed to remove container.${NC}"
     read -rp "Press Enter to continue..." dummy
 }
@@ -227,7 +213,7 @@ remove_docker_image() {
         return 1
     fi
     local id="${image_ids[$num]}"
-    progress_bar "Removing image" 3
+    echo -e "${NORD8}Removing image...${NC}"
     docker rmi "$id" && echo -e "${NORD14}Image removed successfully.${NC}" || echo -e "${NORD11}Failed to remove image.${NC}"
     read -rp "Press Enter to continue..." dummy
 }
@@ -238,7 +224,7 @@ pull_docker_image() {
         echo -e "${NORD12}Image name cannot be empty.${NC}"
         return 1
     fi
-    progress_bar "Pulling image" 5
+    echo -e "${NORD8}Pulling image...${NC}"
     docker pull "$img" && echo -e "${NORD14}Image pulled successfully.${NC}" || echo -e "${NORD11}Failed to pull image.${NC}"
     read -rp "Press Enter to continue..." dummy
 }
@@ -297,15 +283,15 @@ docker_compose_manager() {
         read -rp "Enter your choice: " dc_choice
         case "$dc_choice" in
             1)
-                progress_bar "Bringing services up" 5
+                echo -e "${NORD8}Bringing services up...${NC}"
                 docker-compose up -d || echo -e "${NORD11}Failed to start services.${NC}"
                 ;;
             2)
-                progress_bar "Taking services down" 3
+                echo -e "${NORD8}Taking services down...${NC}"
                 docker-compose down || echo -e "${NORD11}Failed to take services down.${NC}"
                 ;;
             3)
-                progress_bar "Building services" 5
+                echo -e "${NORD8}Building services...${NC}"
                 docker-compose build || echo -e "${NORD11}Failed to build services.${NC}"
                 ;;
             4)
@@ -313,7 +299,7 @@ docker_compose_manager() {
                 read -rp "Press Enter to continue..." dummy
                 ;;
             5)
-                progress_bar "Restarting services" 3
+                echo -e "${NORD8}Restarting services...${NC}"
                 docker-compose restart || echo -e "${NORD11}Failed to restart services.${NC}"
                 ;;
             0)

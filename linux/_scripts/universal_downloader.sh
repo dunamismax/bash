@@ -2,12 +2,11 @@
 # ------------------------------------------------------------------------------
 # Script Name: universal_downloader.sh
 # Description: Advanced auto download tool that lets the user choose between
-#              downloading with wget or yt-dlp on OpenSUSE. For yt-dlp, the script
-#              prompts for a YouTube (video/playlist) link and a target download folder
-#              (creating it if needed) and downloads the media in highest quality,
+#              downloading with wget or yt-dlp on Debian. For yt-dlp, the script
+#              prompts for a YouTube (video/playlist) link and a target download folder,
+#              creating it if needed, and downloads the media in highest quality,
 #              merging audio and video into an mp4 via ffmpeg. For wget, it downloads the
-#              file into the specified directory. Both options display a beautiful Nord‑
-#              themed progress bar.
+#              file into the specified directory.
 #
 # Author: Your Name | License: MIT
 # Version: 2.0
@@ -17,8 +16,8 @@
 #   ./universal_downloader.sh
 #
 # Note:
-#   On OpenSUSE, ensure that wget, yt-dlp, ffmpeg, and other dependencies are installed.
-#   For example: sudo zypper install wget yt-dlp ffmpeg
+#   On Debian, ensure that wget, yt-dlp, ffmpeg, and other dependencies are installed.
+#   This script will attempt to install missing dependencies using apt.
 #
 # ------------------------------------------------------------------------------
 # ENABLE STRICT MODE
@@ -33,10 +32,9 @@ LOG_FILE="/var/log/media_downloader.log"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 QUIET_MODE=false
 DISABLE_COLORS="${DISABLE_COLORS:-false}"
-REFRESH_INTERVAL=0.1   # Progress bar refresh interval in seconds
 
 # ------------------------------------------------------------------------------
-# NORD COLOR THEME CONSTANTS (24‑bit ANSI escapes)
+# NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
 NORD0='\033[38;2;46;52;64m'      # Background Dark
 NORD1='\033[38;2;59;66;82m'
@@ -98,36 +96,13 @@ handle_error() {
 }
 
 # ------------------------------------------------------------------------------
-# PROGRESS BAR FUNCTION
+# INSTALL PREREQUISITES FUNCTION
 # ------------------------------------------------------------------------------
-# run_with_progress runs a given command in the background and displays a Nord‑themed
-# progress bar until the command completes.
-run_with_progress() {
-    local cmd="$1"
-    local message="$2"
-    
-    # Start the command in the background.
-    eval "$cmd" &
-    local pid=$!
-    
-    local steps=50
-    local progress=0
-    
-    # Display initial message and empty progress bar.
-    printf "\n${NORD8}%s [%s] 0%%%s" "$message" "$(printf '%0.s░' $(seq 1 $steps))" "${NC}"
-    
-    # Loop until the background process completes.
-    while kill -0 "$pid" 2>/dev/null; do
-        progress=$(( (progress + 1) % (steps + 1) ))
-        local filled=$(printf '%0.s█' $(seq 1 $progress))
-        local unfilled=$(printf '%0.s░' $(seq 1 $((steps - progress))))
-        local percent=$(( progress * 100 / steps ))
-        printf "\r${NORD8}%s [%s%s] %3d%%%s" "$message" "$filled" "$unfilled" "$percent" "${NC}"
-        sleep "$REFRESH_INTERVAL"
-    done
-    wait "$pid"
-    # Ensure the progress bar is complete.
-    printf "\r${NORD8}%s [%s] 100%%%s\n" "$message" "$(printf '%0.s█' $(seq 1 $steps))" "${NC}"
+install_prerequisites() {
+    log INFO "Installing required tools..."
+    apt update || handle_error "Failed to update repositories."
+    apt install -y wget yt-dlp ffmpeg || handle_error "Failed to install prerequisites."
+    log INFO "Required tools installed."
 }
 
 # ------------------------------------------------------------------------------
@@ -158,7 +133,7 @@ download_with_yt_dlp() {
     # -o sets the output directory and filename pattern.
     local cmd="yt-dlp -f bestvideo+bestaudio --merge-output-format mp4 -o '${download_dir}/%(title)s.%(ext)s' '${yt_link}'"
     log INFO "Starting download via yt-dlp..."
-    run_with_progress "$cmd" "Downloading with yt-dlp"
+    eval "$cmd" || handle_error "yt-dlp download failed."
     log INFO "Download completed with yt-dlp."
 }
 
@@ -184,7 +159,7 @@ download_with_wget() {
     # Build the wget command.
     local cmd="wget -q -P '${download_dir}' '${url}'"
     log INFO "Starting download via wget..."
-    run_with_progress "$cmd" "Downloading with wget"
+    eval "$cmd" || handle_error "wget download failed."
     log INFO "Download completed with wget."
 }
 
@@ -219,6 +194,7 @@ main() {
 # SCRIPT INVOCATION CHECK
 # ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    install_prerequisites
     main "$@"
     exit 0
 fi

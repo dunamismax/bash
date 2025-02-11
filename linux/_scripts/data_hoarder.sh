@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: data_hoarder.sh
-# Description: An advanced interactive data hoarding and management tool for OpenSUSE.
-#              This tool installs required tools, configures Kiwix for offline Wikipedia
-#              (and other ZIM files), allows interactive downloading of large data files,
-#              and configures remote access via a Caddy reverse proxy. All downloaded files,
-#              configurations, and data are stored under a central root directory:
+# Description: An advanced interactive data hoarding and management tool for
+#              Debian Linux. This tool installs required tools, configures Kiwix
+#              for offline Wikipedia (and other ZIM files), allows interactive
+#              downloading of large data files, and configures remote access via
+#              a Caddy reverse proxy. All downloaded files, configurations, and
+#              data are stored under a central root directory:
 #              /media/WD_BLACK/data_hoarding/
 #
 # Features:
@@ -13,24 +14,34 @@
 #   • Installs and configures Kiwix (downloads the kiwix-tools tarball and extracts it).
 #   • Downloads ZIM files (e.g., Wikipedia) interactively.
 #   • Creates a systemd service to run kiwix-serve.
-#   • Configures remote access by updating the Caddyfile and allowing the port via firewalld.
+#   • Configures remote access by updating the Caddyfile and updating firewall rules.
 #
 # Requirements:
-#   • Must be run as root on OpenSUSE.
+#   • Must be run as root on Debian Linux.
 #
 # Author: Your Name | License: MIT
+# Version: 1.0
+# ------------------------------------------------------------------------------
+#
+# Usage:
+#   sudo ./data_hoarder.sh
+#
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# ENABLE STRICT MODE
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
 
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/data_hoarder.log"     # Log file path
+LOG_FILE="/var/log/data_hoarder.log"         # Log file path
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_LEVEL="${LOG_LEVEL:-INFO}"            # Options: INFO, DEBUG, WARN, ERROR
-QUIET_MODE=false                          # When true, suppress console output
-DISABLE_COLORS="${DISABLE_COLORS:-false}"  # Set to true to disable colored output
+LOG_LEVEL="${LOG_LEVEL:-INFO}"                # Options: INFO, DEBUG, WARN, ERROR
+QUIET_MODE=false                              # When true, suppress console output
+DISABLE_COLORS="${DISABLE_COLORS:-false}"      # Set to true to disable colored output
 
 # Define the user under which the Kiwix service will run.
 # If run with sudo, use SUDO_USER; otherwise, default to root.
@@ -177,14 +188,15 @@ prompt_enter() {
 install_prerequisites() {
     log INFO "Installing required tools..."
     progress_bar "Installing required tools" 8
-    zypper refresh || handle_error "Failed to refresh repositories."
-    zypper --non-interactive install wget tar curl firewalld || handle_error "Failed to install core prerequisites."
+
+    apt-get update || handle_error "Failed to update repositories."
+    apt-get install -y wget tar curl firewalld || handle_error "Failed to install core prerequisites."
     systemctl enable --now firewalld || handle_error "Failed to enable firewalld."
 
     # Install Caddy if not already installed
     if ! command -v caddy &>/dev/null; then
         log INFO "Caddy not found. Installing Caddy..."
-        zypper --non-interactive install caddy || handle_error "Failed to install Caddy."
+        apt-get install -y caddy || handle_error "Failed to install Caddy."
     else
         log INFO "Caddy is already installed."
     fi

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: advanced_network_toolkit.sh
-# Description: An advanced, production‐grade network toolkit that performs common
+# Description: An advanced, production‑grade network toolkit that performs common
 #              and advanced network tests, diagnostics, performance measurements,
-#              and penetration testing tasks on Ubuntu. This interactive tool
+#              and penetration testing tasks on Debian. This interactive tool
 #              provides a Nord‑themed user interface to run connectivity tests,
 #              view network configuration, perform port scanning, run performance
 #              tests (speedtest, iperf), and execute various pen testing utilities.
@@ -146,7 +146,6 @@ traceroute_test() {
     print_divider
     echo -e "${NORD14}Traceroute to ${target}:${NC}"
     print_divider
-    # Use traceroute if installed; fallback to tracepath.
     if command -v traceroute &>/dev/null; then
         traceroute "$target" | sed "s/^/${NORD4}/; s/$/${NC}/"
     elif command -v tracepath &>/dev/null; then
@@ -274,6 +273,9 @@ banner_grab() {
     prompt_enter
 }
 
+# ------------------------------------------------------------------------------
+# FIREWALL & WIFI TOOLS FUNCTIONS
+# ------------------------------------------------------------------------------
 firewall_check() {
     print_header
     echo -e "${NORD14}Firewall Status:${NC}"
@@ -303,7 +305,7 @@ wifi_scan() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN MENU
+# MAIN MENU FUNCTIONS
 # ------------------------------------------------------------------------------
 main_menu() {
     while true; do
@@ -320,24 +322,12 @@ main_menu() {
         print_divider
         read -rp "Enter your choice: " choice
         case "$choice" in
-            1)
-                basic_menu
-                ;;
-            2)
-                connectivity_menu
-                ;;
-            3)
-                scanning_menu
-                ;;
-            4)
-                performance_menu
-                ;;
-            5)
-                advanced_menu
-                ;;
-            6)
-                extras_menu
-                ;;
+            1) basic_menu ;;
+            2) connectivity_menu ;;
+            3) scanning_menu ;;
+            4) performance_menu ;;
+            5) advanced_menu ;;
+            6) extras_menu ;;
             q|Q)
                 echo -e "${NORD14}Goodbye!${NC}"
                 exit 0
@@ -472,7 +462,6 @@ extras_menu() {
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Ensure the script is run as root (or with necessary privileges)
     if [[ "$EUID" -ne 0 ]]; then
         echo -e "${NORD12}This script may require root privileges for some tests.${NC}"
     fi
