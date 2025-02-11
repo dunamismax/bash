@@ -361,7 +361,7 @@ setup_repos_and_dotfiles() {
     mkdir -p "$GITHUB_DIR" || handle_error "Failed to create GitHub directory: $GITHUB_DIR"
     cd "$GITHUB_DIR" || handle_error "Failed to change directory to $GITHUB_DIR"
 
-    local repos=("bash" "c" "religion" "windows" "hugo" "python")
+    local repos=("bash" "c" "go" "windows" "misc" "python")
     for repo in "${repos[@]}"; do
         local repo_dir="${GITHUB_DIR}/${repo}"
         local repo_url="https://github.com/dunamismax/${repo}.git"
