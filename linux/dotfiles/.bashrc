@@ -45,24 +45,6 @@ export TZ="America/New_York"
 # Force 256-color mode for xterm
 [[ "$TERM" == "xterm" ]] && export TERM="xterm-256color"
 
-# Colorize man pages
-export LESS_TERMCAP_mb=$'\e[1;31m'   # Bold red for blinking text
-export LESS_TERMCAP_md=$'\e[1;36m'   # Bold cyan for bold text
-export LESS_TERMCAP_me=$'\e[0m'
-export LESS_TERMCAP_se=$'\e[0m'
-export LESS_TERMCAP_so=$'\e[1;33m'   # Bold yellow for standout mode
-export LESS_TERMCAP_ue=$'\e[0m'
-export LESS_TERMCAP_us=$'\e[1;32m'   # Bold green for underlined text
-
-# Enhanced History Settings
-export HISTSIZE=1000000
-export HISTFILESIZE=2000000
-export HISTFILE="$HOME/.bash_history"
-export HISTCONTROL="ignoreboth:erasedups"
-export HISTTIMEFORMAT="%F %T "
-export HISTIGNORE="ls:ll:cd:pwd:bg:fg:history:clear:exit"
-PROMPT_COMMAND='history -a; echo -ne "\033]0;${USER}@${HOSTNAME}: ${PWD}\007"'
-
 # ------------------------------------------------------------------------------
 # 2. Nord Color Scheme (Lighter Palette Only)
 # ------------------------------------------------------------------------------
@@ -75,24 +57,34 @@ NORD8="\[\033[38;2;136;192;208m\]"   # Frost: #88C0D0
 NORD9="\[\033[38;2;129;161;193m\]"   # Frost: #81A1C1
 NORD10="\[\033[38;2;94;129;172m\]"   # Frost: #5E81AC
 NORD11="\[\033[38;2;191;97;106m\]"   # Aurora: #BF616A
-NORD12="\[\033[38;2;208;135;112m\]"  # Aurora: #D08770
-NORD13="\[\033[38;2;235;203;139m\]"  # Aurora: #EBCB8B
-NORD14="\[\033[38;2;163;190;140m\]"  # Aurora: #A3BE8C
-NORD15="\[\033[38;2;180;142;173m\]"  # Aurora: #B48EAD
+NORD12="\[\033[38;2;208;135;112m\]"   # Aurora: #D08770
+NORD13="\[\033[38;2;235;203;139m\]"   # Aurora: #EBCB8B
+NORD14="\[\033[38;2;163;190;140m\]"   # Aurora: #A3BE8C
+NORD15="\[\033[38;2;180;142;173m\]"   # Aurora: #B48EAD
 RESET="\[\e[0m\]"
 
 # Customize LESS (pager) colors with the Nord palette
 export LESS="-R -X -F -i -J --mouse"
 export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'     # Nord11 for blink
-export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'     # Nord8 for bold
+export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'     # Nord8 for emphasis
 export LESS_TERMCAP_me=$'\e[0m'
-export LESS_TERMCAP_so=$'\e[1;38;2;235;203;139m'   # Nord13 for standout
+export LESS_TERMCAP_so=$'\e[38;2;235;203;139m'     # Nord13 for standout
 export LESS_TERMCAP_se=$'\e[0m'
-export LESS_TERMCAP_us=$'\e[1;38;2;163;190;140m'   # Nord14 for underline
+export LESS_TERMCAP_us=$'\e[38;2;163;190;140m'     # Nord14 for underline
 export LESS_TERMCAP_ue=$'\e[0m'
 
 # ------------------------------------------------------------------------------
-# 3. System Information & Greeting
+# 3. Enhanced History Settings
+# ------------------------------------------------------------------------------
+export HISTSIZE=1000000
+export HISTFILESIZE=2000000
+export HISTFILE="$HOME/.bash_history"
+export HISTCONTROL="ignoreboth:erasedups"
+export HISTTIMEFORMAT="%F %T "
+# (The PROMPT_COMMAND will be set later.)
+
+# ------------------------------------------------------------------------------
+# 4. System Information & Greeting
 # ------------------------------------------------------------------------------
 if command -v neofetch >/dev/null 2>&1; then
     neofetch
@@ -101,7 +93,7 @@ elif command -v screenfetch >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
-# 4. Development Environment Setup
+# 5. Development Environment Setup
 # ------------------------------------------------------------------------------
 # Initialize Pyenv if installed
 if [ -d "$HOME/.pyenv" ]; then
@@ -112,32 +104,25 @@ if [ -d "$HOME/.pyenv" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 5. Less (Pager) Setup
+# 6. Less (Pager) Setup
 # ------------------------------------------------------------------------------
 if [ -x /usr/bin/lesspipe ]; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
-# -------------------------------------------------------------------------------
-# 6. Prompt Customization - Clean, Nord-themed Single-Line Prompt
-# -------------------------------------------------------------------------------
-RESET="\[\e[0m\]"
-
-# Bold colors for better clarity
-USERNAME="\[\033[1;38;2;143;188;187m\]"   # Bold Nord7 – Frost (turquoise)
-HOSTNAME="\[\033[1;38;2;143;188;187m\]"   # Bold Nord7 – Frost (turquoise)
-DIR_COLOR="\[\033[1;38;2;129;161;193m\]"  # Bold Nord9 – Frost (blue)
-PROMPT_ICON="\[\033[1;38;2;94;129;172m\]>"  # Bold Nord10 – Frost (darker blue)
+# ------------------------------------------------------------------------------
+# 7. Prompt Customization - Clean, Nord-themed Single-Line Prompt
+# ------------------------------------------------------------------------------
+USERNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost (turquoise)
+HOSTNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost (turquoise)
+DIR_COLOR="\[\033[38;2;129;161;193m\]"  # Nord9 – Frost (blue)
+PROMPT_ICON="\[\033[38;2;94;129;172m\]>"  # Nord10 – Frost (darker blue)
 
 # Build the prompt: [username@hostname] [working_directory] >
-# Note: Appending ${NORD6} at the end sets the color for your typed commands.
 PS1="[${USERNAME}\u${RESET}@${HOSTNAME}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
 
-# Clear any interfering PROMPT_COMMAND (retaining only history appending)
-PROMPT_COMMAND="history -a"
-
 # ------------------------------------------------------------------------------
-# 7. Colorized Output for Common Commands
+# 8. Colorized Output for Common Commands
 # ------------------------------------------------------------------------------
 if command -v dircolors >/dev/null 2>&1; then
     if [ -r ~/.dircolors ]; then
@@ -156,7 +141,7 @@ if command -v dircolors >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
-# 8. Aliases & Shortcuts (Debian Package Management)
+# 9. Aliases & Shortcuts (Debian Package Management)
 # ------------------------------------------------------------------------------
 # Directory navigation shortcuts
 alias ll='ls -lah'
@@ -210,7 +195,7 @@ alias sudo='sudo '   # Ensure aliases work with sudo
 alias watch='watch '
 
 # ------------------------------------------------------------------------------
-# 9. Enhanced Functions
+# 10. Enhanced Functions
 # ------------------------------------------------------------------------------
 # Create and activate a Python virtual environment
 setup_venv() {
@@ -293,7 +278,7 @@ serve() {
 }
 
 # ------------------------------------------------------------------------------
-# 10. Bash Completion
+# 11. Bash Completion
 # ------------------------------------------------------------------------------
 if ! shopt -oq posix; then
     if [ -f /usr/share/bash-completion/bash_completion ]; then
@@ -304,27 +289,29 @@ if ! shopt -oq posix; then
 fi
 
 # ------------------------------------------------------------------------------
-# 11. Local Customizations
+# 12. Local Customizations
 # ------------------------------------------------------------------------------
 # Source a local bashrc file if it exists
 if [ -f ~/.bashrc.local ]; then
     source ~/.bashrc.local
 fi
 
-# Log each session (append to ~/.bash_sessions.log)
-export PROMPT_COMMAND="history -a; echo \"\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n\" >> ~/.bash_sessions.log; $PROMPT_COMMAND"
-
-# Auto-load all shell scripts in ~/bin/
-if [ -d "$HOME/bin" ]; then
+# Auto-load all shell scripts in ~/.bashrc.d/
+if [ -d "$HOME/.bashrc.d" ]; then
   for file in "$HOME"/.bashrc.d/*.sh; do
     [ -r "$file" ] && source "$file"
   done
 fi
 
 # ------------------------------------------------------------------------------
-# 12. Source Additional Environment Settings
+# 13. Source Additional Environment Settings
 # ------------------------------------------------------------------------------
 [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
+
+# ------------------------------------------------------------------------------
+# Final PROMPT_COMMAND Consolidation (removed window-title echo)
+# ------------------------------------------------------------------------------
+export PROMPT_COMMAND='history -a; echo "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
 
 # ------------------------------------------------------------------------------
 # End of ~/.bashrc
