@@ -331,42 +331,60 @@ update_system() {
 }
 
 # ensure_user
-# Creates the specified user if it does not already exist.
+# Creates the specified user and a corresponding group if they do not already exist.
 ensure_user() {
     print_section "User Setup"
+
     if id -u "$USERNAME" >/dev/null 2>&1; then
         log_info "User '$USERNAME' already exists."
     else
-        log_info "Creating user '$USERNAME'..."
-        if ! useradd -m -s /bin/bash "$USERNAME"; then
+        # Check if the group exists; if not, create it.
+        if ! getent group "$USERNAME" >/dev/null 2>&1; then
+            log_info "Creating group '$USERNAME'..."
+            if ! groupadd "$USERNAME"; then
+                handle_error "Failed to create group '$USERNAME'."
+            fi
+        else
+            log_info "Group '$USERNAME' already exists."
+        fi
+
+        log_info "Creating user '$USERNAME' with primary group '$USERNAME'..."
+        if ! useradd -m -s /bin/bash -g "$USERNAME" "$USERNAME"; then
             handle_error "Failed to create user '$USERNAME'."
         fi
+
         # Lock the password to prevent direct login.
         if ! passwd -l "$USERNAME" >/dev/null 2>&1; then
             log_warn "Failed to lock password for user '$USERNAME'."
         fi
+
         log_info "User '$USERNAME' created successfully."
     fi
 }
 
 # configure_sudoers
-# Ensures that the specified user has sudo privileges.
+# Ensures that the specified user has sudo privileges by creating a dedicated
+# sudoers file in /etc/sudoers.d/.
 configure_sudoers() {
     print_section "Sudoers Configuration"
-    local SUDOERS_FILE="/etc/sudoers"
+    local SUDOERS_ENTRY_FILE="/etc/sudoers.d/${USERNAME}"
 
-    # Backup the sudoers file if a backup does not already exist.
-    if [ ! -f "${SUDOERS_FILE}.bak" ]; then
-        cp "$SUDOERS_FILE" "${SUDOERS_FILE}.bak" || log_warn "Unable to create backup of sudoers file."
-        log_info "Backup of sudoers file created at ${SUDOERS_FILE}.bak"
-    fi
-
-    # Append the sudoers entry for the user if it does not already exist.
-    if grep -Eq "^[[:space:]]*${USERNAME}[[:space:]]+ALL=\(ALL\)[[:space:]]+ALL" "$SUDOERS_FILE"; then
-        log_info "Sudoers entry for '$USERNAME' already exists."
+    if [ -f "$SUDOERS_ENTRY_FILE" ]; then
+        log_info "Sudoers entry for '$USERNAME' already exists in $SUDOERS_ENTRY_FILE."
     else
-        echo "${USERNAME} ALL=(ALL) ALL" >> "$SUDOERS_FILE" || log_warn "Failed to append sudoers entry for '$USERNAME'."
-        log_info "Added sudoers entry for '$USERNAME'."
+        log_info "Creating sudoers entry for '$USERNAME' in $SUDOERS_ENTRY_FILE..."
+        echo "${USERNAME} ALL=(ALL) ALL" > "$SUDOERS_ENTRY_FILE" || handle_error "Failed to create sudoers entry file for '$USERNAME'."
+
+        # Set strict permissions to secure the sudoers file.
+        chmod 0440 "$SUDOERS_ENTRY_FILE" || log_warn "Failed to set permissions on $SUDOERS_ENTRY_FILE."
+
+        # Validate the syntax of the newly created sudoers file.
+        if visudo -cf "$SUDOERS_ENTRY_FILE"; then
+            log_info "Sudoers entry for '$USERNAME' created and validated successfully."
+        else
+            log_error "Syntax error detected in $SUDOERS_ENTRY_FILE. Please review the file."
+            handle_error "Sudoers configuration failed due to syntax errors."
+        fi
     fi
 
     log_info "Sudoers configuration complete."
@@ -386,22 +404,52 @@ install_packages() {
 # configure_ssh
 # Hardens the SSH server by disabling root login and password authentication.
 configure_ssh() {
-    print_section "SSH Hardening"
-    log_info "Configuring SSH server..."
-    local SSH_CONFIG="/etc/ssh/sshd_config"
-    if [ -f "$SSH_CONFIG" ]; then
-        cp "$SSH_CONFIG" "${SSH_CONFIG}.bak"
-        log_info "Backup of SSH config saved as ${SSH_CONFIG}.bak"
-        sed -i -e 's/^#\?PermitRootLogin.*/PermitRootLogin no/' \
-               -e 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' \
-               -e 's/^#\?PermitEmptyPasswords.*/PermitEmptyPasswords no/' "$SSH_CONFIG"
-        if ! systemctl restart ssh; then
-            handle_error "Failed to restart SSH service."
-        fi
-        log_info "SSH configuration updated and service restarted."
+    print_section "SSH Configuration"
+    log_info "Configuring OpenSSH Server..."
+
+    # Ensure OpenSSH Server is installed.
+    if ! dpkg -l | grep -qw openssh-server; then
+        apt install -y openssh-server || handle_error "Failed to install OpenSSH Server."
+        log_info "OpenSSH Server installed."
     else
-        log_warn "SSH configuration file not found at $SSH_CONFIG."
+        log_info "OpenSSH Server already installed."
     fi
+
+    # Enable and start SSH service.
+    systemctl enable --now ssh || handle_error "Failed to enable/start SSH service."
+
+    # Backup the sshd_config file with a timestamp.
+    local sshd_config="/etc/ssh/sshd_config"
+    local backup="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$sshd_config" "$backup" || handle_error "Failed to backup sshd_config."
+    log_info "Backed up sshd_config to $backup."
+
+    # Define SSH settings with best practices.
+    # Note: PasswordAuthentication is set to "yes" to allow password login.
+    # ClientAliveInterval is set to "0" to disable timeout (keeping sessions alive indefinitely).
+    declare -A ssh_settings=(
+        ["Port"]="22"
+        ["PermitRootLogin"]="no"
+        ["PasswordAuthentication"]="yes"
+        ["Protocol"]="2"
+        ["MaxAuthTries"]="4"
+        ["ClientAliveInterval"]="0"
+    )
+
+    for key in "${!ssh_settings[@]}"; do
+        if grep -q "^${key}[[:space:]]" "$sshd_config"; then
+            sed -i "s/^${key}[[:space:]].*/${key} ${ssh_settings[$key]}/" "$sshd_config"
+        else
+            echo "${key} ${ssh_settings[$key]}" >> "$sshd_config"
+        fi
+    done
+
+    # Optional: Remove any ClientAliveCountMax setting so that no idle timeout is enforced.
+    sed -i '/^ClientAliveCountMax/d' "$sshd_config"
+
+    # Restart SSH service to apply changes.
+    systemctl restart ssh || handle_error "Failed to restart SSH service."
+    log_info "SSH configuration updated successfully."
 }
 
 # configure_firewall
@@ -780,37 +828,76 @@ copy_shell_configs() {
 }
 
 # configure_periodic
-# Sets up a daily cron job for system maintenance (update, upgrade, autoremove).
+# Sets up a daily cron job for system maintenance including update, upgrade,
+# autoremove, and autoclean.
 configure_periodic() {
     print_section "Periodic Maintenance Setup"
-    log_info "Configuring periodic system maintenance tasks..."
+    log_info "Configuring daily system maintenance tasks..."
+
     local CRON_FILE="/etc/cron.daily/debian_maintenance"
+
+    # Backup any existing cron file.
+    if [ -f "$CRON_FILE" ]; then
+        mv "$CRON_FILE" "${CRON_FILE}.bak.$(date +%Y%m%d%H%M%S)" \
+            && log_info "Existing cron file backed up." \
+            || log_warn "Failed to backup existing cron file at $CRON_FILE."
+    fi
+
     cat <<'EOF' > "$CRON_FILE"
 #!/bin/sh
 # Debian maintenance script (added by debian_setup script)
-apt-get update -qq && apt-get upgrade -y && apt-get autoremove -y
+apt-get update -qq && apt-get upgrade -y && apt-get autoremove -y && apt-get autoclean -y
 EOF
-    chmod +x "$CRON_FILE" || log_warn "Failed to set execute permission on $CRON_FILE"
-    log_info "Periodic maintenance script created at $CRON_FILE."
+
+    if chmod +x "$CRON_FILE"; then
+        log_info "Daily maintenance script created and permissions set at $CRON_FILE."
+    else
+        log_warn "Failed to set execute permission on $CRON_FILE."
+    fi
 }
 
 # final_checks
-# Logs some final system information for confirmation.
+# Logs detailed final system information for confirmation.
 final_checks() {
     print_section "Final System Checks"
     log_info "Kernel version: $(uname -r)"
-    log_info "Disk usage: $(df -h / | awk 'NR==2 {print $0}')"
-    log_info "Physical memory: $(free -h | awk '/^Mem:/{print $2}')"
+    log_info "System uptime: $(uptime -p)"
+    log_info "Disk usage (root partition): $(df -h / | awk 'NR==2 {print $0}')"
+
+    # Detailed memory usage: total, used, and available.
+    local mem_total mem_used mem_free
+    read -r mem_total mem_used mem_free < <(free -h | awk '/^Mem:/{print $2, $3, $4}')
+    log_info "Memory usage: Total: ${mem_total}, Used: ${mem_used}, Free: ${mem_free}"
+
+    # Log CPU model info.
+    local cpu_model
+    cpu_model=$(lscpu | grep 'Model name' | sed 's/Model name:[[:space:]]*//')
+    log_info "CPU: ${cpu_model}"
+
+    # Log a summary of active network interfaces.
+    log_info "Active network interfaces:"
+    ip -brief address | while read -r iface; do
+         log_info "  $iface"
+    done
+
+    # Log system load averages.
+    local load_avg
+    load_avg=$(awk '{print $1", "$2", "$3}' /proc/loadavg)
+    log_info "Load averages (1, 5, 15 min): ${load_avg}"
 }
 
 # prompt_reboot
-# Informs the user that the setup is complete and initiates a reboot after a
-# brief delay.
+# Prompts the user to reboot the system now or later.
 prompt_reboot() {
     print_section "Reboot Prompt"
-    log_info "Setup complete. The system will reboot in 10 seconds. Press Ctrl+C to cancel."
-    sleep 10
-    shutdown -r now
+    log_info "Setup complete."
+    read -rp "Would you like to reboot now? [y/N]: " answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        log_info "Rebooting system now..."
+        shutdown -r now
+    else
+        log_info "Reboot canceled. Please remember to reboot later for all changes to take effect."
+    fi
 }
 
 # ------------------------------------------------------------------------------
