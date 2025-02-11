@@ -964,8 +964,7 @@ install_ly() {
     for dm in "${DM_LIST[@]}"; do
         if systemctl is-enabled "${dm}.service" &>/dev/null; then
             log INFO "Disabling ${dm}.service..."
-            sudo systemctl disable "${dm}.service" || handle_error "Failed to disable ${dm}.service."
-            sudo systemctl stop "${dm}.service"    || log WARN "Failed to stop ${dm}.service."
+            sudo systemctl disable --now "${dm}.service" || handle_error "Failed to disable ${dm}.service."
         fi
     done
 
@@ -975,10 +974,16 @@ install_ly() {
         sudo rm /etc/systemd/system/display-manager.service || log WARN "Failed to remove display-manager.service symlink."
     fi
 
-    # Step 5: Enable the Ly service
-    log INFO "Enabling ly.service..."
+    # Step 5: Enable Ly for next boot, but do not start now
+    log INFO "Enabling ly.service (for next boot)..."
     if ! sudo systemctl enable ly.service; then
         handle_error "Failed to enable ly.service."
+    fi
+
+    # If Ly starts automatically, stop it so your current session isn't interrupted
+    if systemctl is-active ly.service &>/dev/null; then
+        log INFO "Stopping ly.service to avoid a blank screen..."
+        sudo systemctl stop ly.service || log WARN "Failed to stop ly.service."
     fi
 
     # Step 6: Disable the getty on tty2 to prevent conflict
@@ -988,6 +993,7 @@ install_ly() {
     fi
 
     log INFO "Ly has been installed and configured as the default login manager."
+    log INFO "Ly will take effect on next reboot, or you can start it now with: sudo systemctl start ly.service"
 }
 
 # deploy_user_scripts
