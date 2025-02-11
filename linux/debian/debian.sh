@@ -952,10 +952,6 @@ install_ly() {
         handle_error "Compilation of Ly failed."
     fi
 
-    # (Optional testing step)
-    # log INFO "Testing Ly (this may take over tty2)..."
-    # zig build run
-
     # Step 4: Install Ly and its systemd service
     log INFO "Installing Ly systemd service..."
     if ! sudo zig build installsystemd; then
