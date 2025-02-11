@@ -15,18 +15,16 @@ USERNAME="sawyer"
 
 # Essential Package List (space-delimited)
 PACKAGES="bash zsh fish vim nano emacs mc neovim screen tmux \
-gcc gmake cmake meson intltool gettext pigz libtool pkgconf bzip2 xz git hugo \
-acpid chrony fail2ban sudo bash-completion logrotate net-tools \
+gcc gmake cmake meson intltool gettext pigz libtool pkgconf bzip2 git \
+chrony sudo bash-completion logrotate \
 curl wget tcpdump rsync nmap lynx bind-tools mtr netcat socat \
-htop neofetch tig jq vnstat tree fzf smartmontools lsof sysstat \
-gdisk fusefs-ntfs ncdu unzip zip parted lvm2 \
-perl patch bc gawk expect \
+htop neofetch tig jq vnstat tree fzf smartmontools lsof \
+gdisk fusefs-ntfs ncdu unzip zip \
+patch gawk expect \
 fd-find bat ripgrep hyperfine cheat \
-ffmpeg restic mpv \
-ranger nnn \
-muttr newsboat irssi weechat httpie youtube_dl \
+ffmpeg restic mpv nnn \
+newsboat irssi \
 taskwarrior calcurse \
-asciinema \
 cowsay figlet"
 
 # Nord Color Theme (for logging)
