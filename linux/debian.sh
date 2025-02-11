@@ -32,19 +32,19 @@ PACKAGES="bash zsh fish vim nano emacs mc neovim screen tmux \
 gcc make cmake meson intltool gettext pigz libtool pkg-config bzip2 git \
 chrony sudo bash-completion logrotate \
 curl wget tcpdump rsync nmap lynx dnsutils mtr netcat-openbsd socat \
-htop neofetch tig jq vnstat tree fzf smartmontools lsof \
+htop tig jq vnstat tree fzf smartmontools lsof \
 gdisk ntfs-3g ncdu unzip zip \
 patch gawk expect \
-fd-find bat ripgrep hyperfine cheat \
+fd-find bat ripgrep hyperfine \
 ffmpeg restic mpv nnn newsboat irssi \
-taskwarrior calcurse cowsay figlet \
-zfsutils-linux ufw fail2ban \
-aircrack-ng reaver hydra john sqlmap nikto gobuster dirb wfuzz wpscan metasploit-framework \
-netdiscover arp-scan enum4linux snort \
-ettercap-text-only tshark hashcat recon-ng theharvester crunch iotop iftop \
-dstat sysstat traceroute \
+taskwarrior cowsay figlet \
+ufw fail2ban \
+aircrack-ng reaver hydra john sqlmap gobuster dirb wfuzz \
+netdiscover arp-scan \
+ettercap-text-only tshark hashcat recon-ng crunch iotop iftop \
+sysstat traceroute \
 whois strace ltrace iperf3 binwalk \
-foremost steghide volatility hashid"
+foremost steghide hashid"
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
