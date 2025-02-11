@@ -697,6 +697,7 @@ main() {
     caddy_config
     copy_shell_configs
     enable_dunamismax_services
+    docker_config
     configure_periodic
     final_checks
     prompt_reboot
