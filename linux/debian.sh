@@ -378,13 +378,19 @@ configure_ssh() {
 configure_firewall() {
     print_section "Firewall Configuration"
     log INFO "Configuring firewall with ufw..."
-    ufw default deny incoming || warn "Failed to set default deny incoming"
-    ufw default allow outgoing || warn "Failed to set default allow outgoing"
-    ufw allow 22/tcp || warn "Failed to allow SSH"
-    ufw allow 80/tcp || warn "Failed to allow HTTP"
-    ufw allow 443/tcp || warn "Failed to allow HTTPS"
-    ufw allow 32400/tcp || warn "Failed to allow Plex Media Server port"
-    ufw --force enable || handle_error "Failed to enable ufw firewall"
+    local ufw_cmd="/usr/sbin/ufw"
+    if [ ! -x "$ufw_cmd" ]; then
+        handle_error "ufw command not found at $ufw_cmd. Please install ufw."
+    fi
+    "$ufw_cmd" default deny incoming || warn "Failed to set default deny incoming"
+    "$ufw_cmd" default allow outgoing || warn "Failed to set default allow outgoing"
+    "$ufw_cmd" allow 22/tcp || warn "Failed to allow SSH"
+    "$ufw_cmd" allow 80/tcp || warn "Failed to allow HTTP"
+    "$ufw_cmd" allow 443/tcp || warn "Failed to allow HTTPS"
+    "$ufw_cmd" allow 32400/tcp || warn "Failed to allow Plex Media Server port"
+    "$ufw_cmd" --force enable || handle_error "Failed to enable ufw firewall"
+    systemctl enable ufw || warn "Failed to enable ufw service"
+    systemctl start ufw || warn "Failed to start ufw service"
     log INFO "Firewall configured and enabled."
 }
 
