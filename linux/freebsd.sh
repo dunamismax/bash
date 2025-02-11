@@ -397,12 +397,6 @@ install_plex() {
 
 # Configure ZFS: load module, enable at boot, and import pool if necessary
 configure_zfs() {
-    log INFO "Configuring ZFS..."
-    if ! kldload zfs; then
-        die "Failed to load ZFS kernel module."
-    fi
-    sysrc zfs_enable=YES
-
     ZPOOL_NAME="WD_BLACK"
     if ! zpool list "$ZPOOL_NAME" >/dev/null 2>&1; then
         log INFO "Importing ZFS pool '$ZPOOL_NAME'..."
