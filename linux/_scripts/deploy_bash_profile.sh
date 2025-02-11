@@ -131,7 +131,7 @@ print_section() {
 copy_shell_configs() {
     print_section "Shell Configuration Files Update"
 
-    local source_dir="/home/$USERNAME/github/linux/dotfiles"
+    local source_dir="/home/$USERNAME/github/bash/linux/dotfiles"
     local dest_dir="/home/$USERNAME"
     local files=(".bashrc" ".profile")
 
