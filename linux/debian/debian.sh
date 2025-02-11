@@ -870,20 +870,21 @@ copy_shell_configs() {
 install_homebrew_and_zig() {
     print_section "Homebrew & Zig Installation"
 
-    local BREW_PREFIX="/home/${USERNAME}/.linuxbrew"
+    local USER_HOME="/home/${USERNAME}"
+    local BREW_PREFIX="${USER_HOME}/.linuxbrew"
     local BREW_BIN="${BREW_PREFIX}/bin/brew"
 
-    # Step 1: Ensure Homebrew is installed as a non-root user
+    # Step 1: Ensure Homebrew is installed as a non-root user in the correct location
     if ! command -v brew &>/dev/null; then
-        echo "Homebrew not found. Installing Homebrew for user '${USERNAME}'..."
+        echo "Homebrew not found. Installing Homebrew for user '${USERNAME}' in ${BREW_PREFIX}..."
 
-        # Ensure Homebrew directory exists before installing
+        # Ensure Homebrew directory exists and is owned by the user
         sudo -u "${USERNAME}" mkdir -p "${BREW_PREFIX}"
 
-        # Install Homebrew as the user
-        sudo -u "${USERNAME}" bash -c '
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        ' || {
+        # Install Homebrew explicitly to the correct directory
+        sudo -u "${USERNAME}" NONINTERACTIVE=1 bash -c "
+            /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
+        " || {
             echo "Error: Homebrew installation failed."
             return 1
         }
@@ -906,7 +907,7 @@ install_homebrew_and_zig() {
 
     # Load Homebrew environment manually
     if [ -x "$BREW_BIN" ]; then
-        eval "$($BREW_BIN shellenv)"
+        sudo -u "${USERNAME}" bash -c "eval \"\$(${BREW_BIN} shellenv)\""
     else
         echo "Error: Homebrew not found in expected location ($BREW_BIN)."
         return 1
