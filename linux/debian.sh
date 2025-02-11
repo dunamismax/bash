@@ -539,7 +539,7 @@ main() {
     configure_firewall
     configure_fail2ban
     install_plex
-    configure_zfs
+    #configure_zfs
     setup_repos
     configure_periodic
     configure_sysctl
