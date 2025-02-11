@@ -441,6 +441,30 @@ setup_repos() {
     done
 }
 
+# copy_shell_configs
+# Copies .bashrc and .profile into place from Git repo
+copy_shell_configs() {
+    print_section "Shell Configuration Files Update"
+
+    local source_dir="/home/$USERNAME/github/linux/dotfiles"
+    local dest_dir="/home/$USERNAME"
+    local files=(".bashrc" ".profile")
+
+    for file in "${files[@]}"; do
+        local src="${source_dir}/${file}"
+        local dest="${dest_dir}/${file}"
+        if [ -f "$src" ]; then
+            log_info "Copying ${src} to ${dest}..."
+            cp -f "$src" "$dest" || log_warn "Failed to copy ${src} to ${dest}."
+            chown "$USERNAME":"$USERNAME" "$dest" || log_warn "Failed to set ownership for ${dest}."
+        else
+            log_warn "Source file ${src} not found; skipping."
+        fi
+    done
+
+    log_info "Shell configuration files update completed."
+}
+
 # configure_periodic
 # Sets up a daily cron job for system maintenance (update, upgrade, autoremove).
 configure_periodic() {
@@ -509,6 +533,7 @@ main() {
     configure_zfs
     setup_repos
     caddy_config
+    copy_shell_configs
     configure_periodic
     final_checks
     prompt_reboot
