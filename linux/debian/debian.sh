@@ -195,6 +195,8 @@ PACKAGES=(
     libxmlsec1-dev
     gdb
     llvm
+    libxcb-xkb-dev
+    libpam0g-dev
 )
 
 # ------------------------------------------------------------------------------
