@@ -870,13 +870,13 @@ copy_shell_configs() {
 install_homebrew_and_zig() {
     print_section "Homebrew & Zig Installation"
 
-    # Hardcoded paths for the user "sawyer"
+    # Hardcoded paths for user "sawyer"
     local USER_HOME="/home/sawyer"
     local BREW_PREFIX="/home/sawyer/.linuxbrew"
     local BREW_BIN="${BREW_PREFIX}/bin/brew"
     local PROFILE_SCRIPT="/etc/profile.d/homebrew.sh"
 
-    # Step 1: Ensure Homebrew directory exists and is owned by the correct user
+    # Step 1: Ensure Homebrew directory exists and is owned by "sawyer"
     echo "Creating Homebrew directory at ${BREW_PREFIX}..."
     mkdir -p "${BREW_PREFIX}"
     chown -R sawyer:sawyer "${BREW_PREFIX}"
@@ -884,6 +884,8 @@ install_homebrew_and_zig() {
     # Step 2: Install Homebrew explicitly in the correct directory
     if [ ! -x "$BREW_BIN" ]; then
         echo "Homebrew not found. Installing Homebrew for 'sawyer' in ${BREW_PREFIX}..."
+
+        # Install Homebrew forcing the correct prefix
         sudo -u sawyer bash -c "
             NONINTERACTIVE=1 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
         " || {
@@ -900,14 +902,14 @@ install_homebrew_and_zig() {
         echo "Homebrew is already installed."
     fi
 
-    # Step 3: Add Homebrew to the system-wide PATH
+    # Step 3: Ensure Homebrew is in the system-wide PATH
     if ! grep -q "$BREW_PREFIX/bin" "$PROFILE_SCRIPT" 2>/dev/null; then
         echo "Adding Homebrew to system-wide PATH..."
         echo "export PATH=\"$BREW_PREFIX/bin:\$PATH\"" | tee "$PROFILE_SCRIPT"
         chmod +x "$PROFILE_SCRIPT"
     fi
 
-    # Load Homebrew environment manually
+    # Load Homebrew environment manually for the current session
     sudo -u sawyer bash -c "eval \"\$(${BREW_BIN} shellenv)\""
 
     # Step 4: Install Zig using Homebrew
