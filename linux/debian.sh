@@ -36,16 +36,15 @@ htop neofetch tig jq vnstat tree fzf smartmontools lsof \
 gdisk ntfs-3g ncdu unzip zip \
 patch gawk expect \
 fd-find bat ripgrep hyperfine cheat \
-ffmpeg restic mpv nnn \
-newsboat irssi \
-taskwarrior calcurse \
-cowsay figlet \
+ffmpeg restic mpv nnn newsboat irssi \
+taskwarrior calcurse cowsay figlet \
 zfsutils-linux ufw fail2ban \
-# Kali Linux & Pen Testing Tools
-aircrack-ng reaver hydra john sqlmap nikto gobuster dirb wfuzz wpscan metasploit-framework \
-netdiscover arp-scan enum4linux snort ettercap-text-only tshark hashcat recon-ng theharvester crunch \
-# Additional Sysadmin, IT & Hacker Utilities
-iotop iftop dstat sysstat traceroute whois strace ltrace iperf3 binwalk foremost steghide volatility hashid"
+aircrack-ng reaver hydra john sqlmap nikto \ gobuster dirb wfuzz wpscan metasploit-framework \
+netdiscover arp-scan enum4linux snort \
+ettercap-text-only tshark hashcat recon-ng \ theharvester crunchiotop iftop \
+dstat sysstat traceroute \
+whois strace ltrace iperf3 binwalk \
+foremost steghide volatility hashid"
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
