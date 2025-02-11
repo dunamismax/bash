@@ -1142,7 +1142,7 @@ main() {
     copy_shell_configs
     #enable_dunamismax_services
     docker_config
-    install_zig_from_source
+    install_zig_binary
     install_ly
     deploy_user_scripts
     configure_periodic
