@@ -275,81 +275,6 @@ install_packages() {
     progress_bar "Package installation complete..." 3
 }
 
-# Install the Zig programming language
-install_zig() {
-    print_section "Zig Installation"
-    log INFO "Installing Zig programming language..."
-    if command -v zig >/dev/null 2>&1; then
-        log INFO "Zig is already installed at $(command -v zig). Skipping installation."
-        return 0
-    fi
-
-    if ! apt-get install -y zig; then
-        handle_error "Failed to install Zig."
-    fi
-
-    if command -v zig >/dev/null 2>&1; then
-        log INFO "Zig installed successfully and is available at $(command -v zig)."
-    else
-        handle_error "Zig installation completed but binary not found in PATH."
-    fi
-}
-
-# Install i3 window manager and configure ly display manager via Zig
-i3_config() {
-    print_section "i3 & LY Configuration"
-    log INFO "Installing i3 and its addons..."
-    if ! apt-get install -y i3 i3status i3lock dmenu i3blocks; then
-        handle_error "Failed to install i3 and its addons."
-    fi
-
-    log INFO "Cloning and installing ly login manager from GitHub using Zig..."
-    local LY_SRC="/usr/local/src/ly"
-    local LY_REPO="https://github.com/fairyglade/ly.git"
-
-    if [ -d "${LY_SRC}/ly" ]; then
-        log INFO "Updating existing ly repository in ${LY_SRC}/ly..."
-        cd "${LY_SRC}/ly" || handle_error "Cannot change directory to ${LY_SRC}/ly"
-        if ! git pull; then
-            warn "Failed to update ly repository; continuing with existing code."
-        fi
-    else
-        log INFO "Cloning ly repository into ${LY_SRC}..."
-        mkdir -p "${LY_SRC}" || handle_error "Failed to create directory ${LY_SRC}"
-        cd "${LY_SRC}" || handle_error "Cannot change directory to ${LY_SRC}"
-        if ! git clone "$LY_REPO"; then
-            handle_error "Failed to clone ly repository from ${LY_REPO}"
-        fi
-        cd ly || handle_error "Cannot change directory to ly"
-    fi
-
-    log INFO "Compiling ly using Zig..."
-    if ! zig build; then
-        handle_error "zig build for ly failed."
-    fi
-
-    log INFO "Installing ly using Zig..."
-    if ! zig build install; then
-        handle_error "zig build install for ly failed."
-    fi
-
-    log INFO "Enabling ly display manager service..."
-    if ! systemctl enable ly.service; then
-        warn "Failed to enable ly service."
-    else
-        log INFO "ly service enabled."
-    fi
-
-    log INFO "Starting ly display manager..."
-    if ! systemctl start ly.service; then
-        warn "Failed to start ly service."
-    else
-        log INFO "ly service started."
-    fi
-
-    log INFO "i3 and ly configuration complete. You can now choose your desktop session at login."
-}
-
 # ------------------------------------------------------------------------------
 # CORE CONFIGURATION FUNCTIONS
 # ------------------------------------------------------------------------------
@@ -415,6 +340,14 @@ configure_fail2ban() {
 # Install and configure Plex Media Server
 install_plex() {
     print_section "Plex Media Server Installation"
+    log INFO "Ensuring required system utilities are available..."
+    export PATH="$PATH:/sbin:/usr/sbin"
+    if ! command -v ldconfig >/dev/null; then
+        handle_error "ldconfig command not found. Please install libc-bin or fix your PATH."
+    fi
+    if ! command -v start-stop-daemon >/dev/null; then
+        handle_error "start-stop-daemon command not found. Please install dpkg or fix your PATH."
+    fi
     log INFO "Downloading Plex Media Server deb file..."
     local plex_deb="/tmp/plexmediaserver.deb"
     local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
@@ -554,8 +487,6 @@ main() {
     setup_repos
     configure_periodic
     configure_sysctl
-    install_zig
-    i3_config
     final_checks
     prompt_reboot
 }
