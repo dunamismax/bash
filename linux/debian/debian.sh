@@ -73,7 +73,6 @@ PACKAGES=(
     python3-venv
     libfreetype6-dev
     flatpak
-    xfce4-dev-tools
     git
     ufw
     perl
@@ -115,8 +114,6 @@ PACKAGES=(
     restic
     fonts-dejavu
     flameshot
-    libxfce4ui-2-dev
-    libxfce4util-dev
     libgtk-3-dev
     libpolkit-gobject-1-dev
     gnome-keyring
@@ -827,6 +824,132 @@ copy_shell_configs() {
     log_info "Shell configuration files update completed."
 }
 
+# install_homebrew_and_zig
+install_homebrew_and_zig() {
+    # Step 1: Install Homebrew if not already installed.
+    if ! command -v brew &>/dev/null; then
+        echo "Homebrew not found. Installing Homebrew..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+            echo "Error: Homebrew installation failed."
+            return 1
+        }
+    else
+        echo "Homebrew is already installed."
+    fi
+
+    # Load Homebrew environment into the current shell.
+    # The brew shellenv command outputs the necessary environment variables.
+    eval "$(/usr/bin/env brew shellenv)"
+
+    # Step 2: Install Zig via Homebrew.
+    echo "Installing Zig using Homebrew..."
+    brew install zig || {
+        echo "Error: Failed to install Zig via Homebrew."
+        return 1
+    }
+
+    # Step 3: Ensure Zig is available system-wide.
+
+    # Determine Homebrew's prefix directory.
+    local brew_prefix
+    brew_prefix="$(brew --prefix)"
+
+    # Create (or update) a symlink for the Zig binary in /usr/local/bin.
+    if [ -f "${brew_prefix}/bin/zig" ]; then
+        echo "Linking Zig to /usr/local/bin..."
+        ln -sf "${brew_prefix}/bin/zig" /usr/local/bin/zig || {
+            echo "Error: Failed to create symlink for Zig."
+            return 1
+        }
+    else
+        echo "Error: Zig binary not found at ${brew_prefix}/bin/zig. Installation may have failed."
+        return 1
+    fi
+
+    # Create a system-wide profile file (if it doesn't already exist) to add Homebrew's bin directory to the PATH.
+    local profile_file="/etc/profile.d/homebrew.sh"
+    if [ ! -f "$profile_file" ]; then
+        echo "export PATH=\"${brew_prefix}/bin:\$PATH\"" > "$profile_file" || {
+            echo "Warning: Could not create $profile_file."
+        }
+        chmod +x "$profile_file" 2>/dev/null
+        echo "Created $profile_file to include Homebrew in the PATH for all users."
+    else
+        echo "$profile_file already exists. Ensure it contains '${brew_prefix}/bin'."
+    fi
+
+    echo "Installation complete. Zig should now be available system-wide."
+}
+
+# install_ly
+# Installs the Ly display manager / login manager and enables it
+install_ly() {
+    # Check for required commands.
+    for cmd in git zig systemctl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            echo "Error: '$cmd' is not installed. Please install it and try again."
+            return 1
+        fi
+    done
+
+    # Define the directory to clone the repository.
+    # Using /opt/ly here; adjust if necessary.
+    local LY_DIR="/opt/ly"
+
+    # Clone or update the repository.
+    if [ ! -d "$LY_DIR" ]; then
+        echo "Cloning Ly repository into $LY_DIR..."
+        sudo git clone https://github.com/fairyglade/ly "$LY_DIR" || {
+            echo "Error: Failed to clone the Ly repository."
+            return 1
+        }
+    else
+        echo "Ly repository already exists in $LY_DIR. Updating..."
+        cd "$LY_DIR" || { echo "Error: Failed to change directory to $LY_DIR."; return 1; }
+        sudo git pull || {
+            echo "Error: Failed to update the Ly repository."
+            return 1
+        }
+    fi
+
+    # Change directory to the repository.
+    cd "$LY_DIR" || { echo "Error: Failed to change directory to $LY_DIR."; return 1; }
+
+    # Compile Ly using Zig.
+    echo "Compiling Ly..."
+    zig build || {
+        echo "Error: Compilation of Ly failed."
+        return 1
+    }
+
+    # (Optional testing step: Uncomment if you wish to test Ly before installation.)
+    # echo "Testing Ly (this may take over tty2)..."
+    # zig build run
+
+    # Install Ly and its systemd service.
+    echo "Installing Ly systemd service..."
+    sudo zig build installsystemd || {
+        echo "Error: Installation of Ly systemd service failed."
+        return 1
+    }
+
+    # Enable the Ly service.
+    echo "Enabling ly.service..."
+    sudo systemctl enable ly.service || {
+        echo "Error: Failed to enable ly.service."
+        return 1
+    }
+
+    # Disable the getty on tty2 to prevent conflict with Ly.
+    echo "Disabling getty@tty2.service..."
+    sudo systemctl disable getty@tty2.service || {
+        echo "Error: Failed to disable getty@tty2.service."
+        return 1
+    }
+
+    echo "Ly has been installed and configured as the default login manager."
+}
+
 # configure_periodic
 # Sets up a daily cron job for system maintenance including update, upgrade,
 # autoremove, and autoclean.
@@ -937,6 +1060,8 @@ main() {
     copy_shell_configs
     enable_dunamismax_services
     docker_config
+    install_homebrew_and_zig
+    install_ly
     configure_periodic
     final_checks
     prompt_reboot
