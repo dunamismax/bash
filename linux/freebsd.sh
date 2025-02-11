@@ -110,6 +110,40 @@ ensure_user() {
     fi
 }
 
+configure_sudoers() {
+    log INFO "Configuring sudoers file for user '${USERNAME}'..."
+
+    # Define the sudoers file location (adjust if needed)
+    SUDOERS_FILE="/usr/local/etc/sudoers"
+
+    # Ensure the sudoers file exists
+    if [ ! -f "$SUDOERS_FILE" ]; then
+        die "Sudoers file not found at ${SUDOERS_FILE}. Is sudo installed?"
+    fi
+
+    # Backup the sudoers file if a backup does not already exist
+    if [ ! -f "${SUDOERS_FILE}.bak" ]; then
+        cp "$SUDOERS_FILE" "${SUDOERS_FILE}.bak" || warn "Unable to create backup of sudoers file"
+        log INFO "Backup of sudoers file created at ${SUDOERS_FILE}.bak"
+    fi
+
+    # Check if an entry for $USERNAME already exists (ignoring leading spaces)
+    if grep -Eq "^[[:space:]]*${USERNAME}[[:space:]]+ALL=\(ALL\)[[:space:]]+ALL" "$SUDOERS_FILE"; then
+        log INFO "Sudoers entry for '${USERNAME}' already exists."
+    else
+        # Append the sudoers entry for $USERNAME
+        echo "${USERNAME} ALL=(ALL) ALL" >> "$SUDOERS_FILE" || warn "Failed to append sudoers entry for '${USERNAME}'"
+        log INFO "Added sudoers entry for '${USERNAME}'."
+    fi
+
+    # Validate the syntax of the sudoers file
+    if ! visudo -c -f "$SUDOERS_FILE" >/dev/null 2>&1; then
+        die "Sudoers file syntax error! Please review ${SUDOERS_FILE}."
+    fi
+
+    log INFO "Sudoers configuration complete."
+}
+
 # Install essential system packages
 install_packages() {
     log INFO "Installing essential packages..."
@@ -401,6 +435,7 @@ main() {
     check_network
     update_system
     ensure_user
+    configure_sudoers
     install_packages
     configure_ssh
     configure_pf
