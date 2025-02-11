@@ -27,21 +27,20 @@ Bash Script Template below:
 
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Script Name: enhanced_script.sh
+# Script Name: ultimate_script.sh
 # Description: A robust and visually engaging Bash script template using the Nord
-#              color theme. This template provides detailed logging, progress bars,
-#              and strict error handling to serve as a foundation for all future scripts.
-# Author: dunamismax | License: MIT
-# Version: 2.0
+#              color theme, optimized for Debian Linux. This template provides
+#              detailed logging and strict error handling.
+# Author: YourName | License: MIT
+# Version: 3.1
 # ------------------------------------------------------------------------------
 #
-# Usage Examples:
-#   sudo ./enhanced_script.sh [-d|--debug] [-q|--quiet]
-#   sudo ./enhanced_script.sh -h|--help
+# Usage:
+#   sudo ./ultimate_script.sh
 #
 # Notes:
 #   - This script requires root privileges.
-#   - Logs are stored in /var/log/enhanced_script.log by default.
+#   - Logs are stored in /var/log/ultimate_script.log by default.
 #
 # ------------------------------------------------------------------------------
 
@@ -53,11 +52,9 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/enhanced_script.log"  # Log file path
+LOG_FILE="/var/log/ultimate_script.log"  # Log file path
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_LEVEL="${LOG_LEVEL:-INFO}"   # Options: INFO, DEBUG, WARN, ERROR
-QUIET_MODE=false                # When true, suppress console output
 DISABLE_COLORS="${DISABLE_COLORS:-false}"  # Set to true to disable colored output
 
 # ------------------------------------------------------------------------------
@@ -90,13 +87,6 @@ log() {
     shift
     local message="$*"
     local upper_level="${level^^}"
-
-    # Only log DEBUG messages when LOG_LEVEL is DEBUG
-    if [[ "$upper_level" == "DEBUG" && "${LOG_LEVEL^^}" != "DEBUG" ]]; then
-        return 0
-    fi
-
-    # Select color based on log level (if colors are enabled)
     local color="$NC"
     if [[ "$DISABLE_COLORS" != true ]]; then
         case "$upper_level" in
@@ -104,17 +94,14 @@ log() {
             WARN)  color="${NORD13}" ;;  # Yellowish
             ERROR) color="${NORD11}" ;;  # Reddish
             DEBUG) color="${NORD9}"  ;;  # Bluish
-            *)     color="$NC"     ;;
+            *)     color="$NC"       ;;
         esac
     fi
-
     local timestamp
     timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
     local log_entry="[$timestamp] [$upper_level] $message"
     echo "$log_entry" >> "$LOG_FILE"
-    if [[ "$QUIET_MODE" != true ]]; then
-        printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
-    fi
+    printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
 }
 
 # ------------------------------------------------------------------------------
@@ -131,7 +118,7 @@ handle_error() {
 
 cleanup() {
     log INFO "Performing cleanup tasks before exit."
-    # Insert any necessary cleanup tasks here (e.g., deleting temporary files)
+    # Insert any necessary cleanup tasks here (e.g., removing temporary files)
 }
 
 trap cleanup EXIT
@@ -146,36 +133,6 @@ check_root() {
     fi
 }
 
-enable_debug() {
-    LOG_LEVEL="DEBUG"
-    log DEBUG "Debug mode enabled: Verbose logging activated."
-}
-
-enable_quiet_mode() {
-    QUIET_MODE=true
-    log INFO "Quiet mode enabled: Console output suppressed."
-}
-
-show_help() {
-    cat << EOF
-Usage: $SCRIPT_NAME [OPTIONS]
-
-Description:
-  A robust and visually engaging Bash script template using the Nord color theme.
-  It offers detailed logging, progress bars, and strict error handling.
-
-Options:
-  -d, --debug   Enable debug (verbose) logging.
-  -q, --quiet   Suppress console output (logs still written to file).
-  -h, --help    Show this help message and exit.
-
-Examples:
-  sudo $SCRIPT_NAME --debug
-  sudo $SCRIPT_NAME --quiet
-  sudo $SCRIPT_NAME -h
-EOF
-}
-
 # Print a styled section header using Nord accent colors
 print_section() {
     local title="$1"
@@ -187,78 +144,20 @@ print_section() {
 }
 
 # ------------------------------------------------------------------------------
-# PROGRESS BAR FUNCTION
-# ------------------------------------------------------------------------------
-progress_bar() {
-    # Usage: progress_bar "Message" [duration_in_seconds]
-    local message="${1:-Processing...}"
-    local duration="${2:-5}"
-    local steps=50
-    local sleep_time
-    sleep_time=$(echo "$duration / $steps" | bc -l)
-    local progress=0
-    local filled=""
-    local unfilled=""
-
-    # Display the task message in Nord accent color
-    if [[ "$DISABLE_COLORS" != true ]]; then
-        printf "\n${NORD8}%s${NC}\n" "$message"
-    else
-        printf "\n%s\n" "$message"
-    fi
-
-    for (( i = 1; i <= steps; i++ )); do
-        progress=$(( i * 100 / steps ))
-        filled=$(printf "%-${i}s" | tr ' ' '█')
-        unfilled=$(printf "%-$(( steps - i ))s" | tr ' ' '░')
-        printf "\r${NORD8}[%s%s] %3d%%%s" "$filled" "$unfilled" "$progress" "$NC"
-        sleep "$sleep_time"
-    done
-    printf "\n"
-}
-
-# ------------------------------------------------------------------------------
 # MAIN LOGIC FUNCTIONS
 # ------------------------------------------------------------------------------
 function_one() {
     print_section "Starting Function One"
-    log INFO "Executing function_one tasks..."
-    # Simulate work with a progress bar (duration is adjustable)
-    progress_bar "Function One in progress..." 3
+    log INFO "Executing tasks in function_one..."
     sleep 1  # Replace with actual work
     log INFO "function_one completed successfully."
 }
 
 function_two() {
     print_section "Starting Function Two"
-    log INFO "Executing function_two tasks..."
-    progress_bar "Function Two in progress..." 3
+    log INFO "Executing tasks in function_two..."
     sleep 1  # Replace with actual work
     log INFO "function_two completed successfully."
-}
-
-# ------------------------------------------------------------------------------
-# ARGUMENT PARSING
-# ------------------------------------------------------------------------------
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -d|--debug)
-                enable_debug
-                ;;
-            -q|--quiet)
-                enable_quiet_mode
-                ;;
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            *)
-                log WARN "Unknown option: $1"
-                ;;
-        esac
-        shift
-    done
 }
 
 # ------------------------------------------------------------------------------
@@ -273,7 +172,7 @@ main() {
 
     check_root
 
-    # Ensure log directory exists and the log file is secured
+    # Ensure log directory exists and secure the log file
     local LOG_DIR
     LOG_DIR="$(dirname "$LOG_FILE")"
     if [[ ! -d "$LOG_DIR" ]]; then
@@ -283,7 +182,6 @@ main() {
     chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
     log INFO "Script execution started."
-    parse_args "$@"
 
     # Execute main functions
     function_one
