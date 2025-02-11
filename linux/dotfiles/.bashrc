@@ -1,19 +1,10 @@
-# ------------------------------------------------------------------------------
-#        ______                  ______
-#        ___  /_ ______ ____________  /_ _______________
-#        __  __ \_  __ `/__  ___/__  __ \__  ___/_  ___/
-#    ___ _  /_/ // /_/ / _(__  ) _  / / /_  /    / /__
-#    _(_)/_.___/ \__,_/  /____/  /_/ /_/ /_/     \___/
-#
-# ------------------------------------------------------------------------------
-
 #!/bin/bash
-# ~/.bashrc for OpenSUSE
+# ~/.bashrc for Debian - Enhanced Version
 
 # ------------------------------------------------------------------------------
-# 0. Early Exit for Non‐Interactive Shells
+# 0. Exit if not an interactive shell
 # ------------------------------------------------------------------------------
-case $- in
+case "$-" in
     *i*) ;;
       *) return;;
 esac
@@ -24,7 +15,7 @@ esac
 # Prepend essential directories to PATH
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
-# Enable useful bash options
+# Enable useful Bash options
 shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify
 
 # XDG Base Directories
@@ -46,13 +37,22 @@ elif command -v vim >/dev/null 2>&1; then
 fi
 export PAGER="less"
 
-# Locale and Timezone
+# Locale and Timezone (adjust TZ as needed)
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
 export TZ="America/New_York"
 
 # Force 256-color mode for xterm
 [[ "$TERM" == "xterm" ]] && export TERM="xterm-256color"
+
+# Colorize man pages
+export LESS_TERMCAP_mb=$'\e[1;31m'   # Bold red for blinking text
+export LESS_TERMCAP_md=$'\e[1;36m'   # Bold cyan for bold text
+export LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_se=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[1;33m'   # Bold yellow for standout mode
+export LESS_TERMCAP_ue=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[1;32m'   # Bold green for underlined text
 
 # Enhanced History Settings
 export HISTSIZE=1000000
@@ -61,13 +61,12 @@ export HISTFILE="$HOME/.bash_history"
 export HISTCONTROL="ignoreboth:erasedups"
 export HISTTIMEFORMAT="%F %T "
 export HISTIGNORE="ls:ll:cd:pwd:bg:fg:history:clear:exit"
-# Append history after each command and update terminal title
 PROMPT_COMMAND='history -a; echo -ne "\033]0;${USER}@${HOSTNAME}: ${PWD}\007"'
 
 # ------------------------------------------------------------------------------
 # 2. Nord Color Scheme (Lighter Palette Only)
-# (Nord0–Nord3 are intentionally omitted for better contrast on dark terminals)
 # ------------------------------------------------------------------------------
+# (Nord0–Nord3 omitted for improved contrast)
 NORD4="\[\033[38;2;216;222;233m\]"   # Snow Storm: #D8DEE9
 NORD5="\[\033[38;2;229;233;240m\]"   # Snow Storm: #E5E9F0
 NORD6="\[\033[38;2;236;239;244m\]"   # Snow Storm: #ECEFF4
@@ -82,7 +81,7 @@ NORD14="\[\033[38;2;163;190;140m\]"  # Aurora: #A3BE8C
 NORD15="\[\033[38;2;180;142;173m\]"  # Aurora: #B48EAD
 RESET="\[\e[0m\]"
 
-# Customize LESS (pager) colors with Nord palette
+# Customize LESS (pager) colors with the Nord palette
 export LESS="-R -X -F -i -J --mouse"
 export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'     # Nord11 for blink
 export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'     # Nord8 for bold
@@ -115,29 +114,30 @@ fi
 # ------------------------------------------------------------------------------
 # 5. Less (Pager) Setup
 # ------------------------------------------------------------------------------
-[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+if [ -x /usr/bin/lesspipe ]; then
+    eval "$(SHELL=/bin/sh lesspipe)"
+fi
 
 # ------------------------------------------------------------------------------
-# 6. Prompt Customization with Git Branch Integration
+# 6. Prompt Customization
 # ------------------------------------------------------------------------------
-# Function to detect current Git branch
-parse_git_branch() {
-    git symbolic-ref --short HEAD 2>/dev/null | sed "s/^/ (${NORD13//\\[/\\[})/; s/$/${RESET}/"
-}
-# Build the prompt using Nord colors:
-# • Username & hostname in Nord7, directory in Nord9, delimiters in Nord4.
-PROMPT_USER="${NORD7}\u"
-PROMPT_HOST="${NORD7}\h"
-PROMPT_DIR="${NORD9}\w"
-PROMPT_DELIM="${NORD4}:"
-PROMPT_GIT='$(parse_git_branch)'
-PROMPT_SYMBOL="${NORD4} ❯${RESET} "
-PS1="${PROMPT_USER}${NORD4}@${PROMPT_HOST}${PROMPT_DELIM}${PROMPT_DIR}${PROMPT_GIT}${PROMPT_DELIM} ${PROMPT_SYMBOL}"
+# Nord-themed single-line prompt (no Git integration)
+RESET="\[\e[0m\]"
+
+# Bold colors for better clarity
+USERNAME="\[\033[1;38;2;143;188;187m\]"   # Bold Nord7 – Frost (turquoise)
+HOSTNAME="\[\033[1;38;2;143;188;187m\]"   # Bold Nord7 – Frost (turquoise)
+DIR_COLOR="\[\033[1;38;2;129;161;193m\]"  # Bold Nord9 – Frost (blue)
+DELIM="\[\033[0;38;2;216;222;233m\]"      # Nord4 – Snow Storm (light gray)
+PROMPT_ICON="\[\033[1;38;2;94;129;172m\]>"  # Bold Nord10 – Frost (darker blue)
+
+# Build the prompt: username@hostname:working_dir >
+PS1="${USERNAME}\u${DELIM}@${HOSTNAME}\h${DELIM}:${DIR_COLOR}\w ${PROMPT_ICON}${RESET} "
 
 # ------------------------------------------------------------------------------
 # 7. Colorized Output for Common Commands
 # ------------------------------------------------------------------------------
-if [ -x /usr/bin/dircolors ]; then
+if command -v dircolors >/dev/null 2>&1; then
     if [ -r ~/.dircolors ]; then
         eval "$(dircolors -b ~/.dircolors)"
     else
@@ -154,9 +154,9 @@ if [ -x /usr/bin/dircolors ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 8. Aliases & Shortcuts (with OpenSUSE Package Management)
+# 8. Aliases & Shortcuts (Debian Package Management)
 # ------------------------------------------------------------------------------
-# Directory navigation
+# Directory navigation shortcuts
 alias ll='ls -lah'
 alias la='ls -A'
 alias l='ls -CF'
@@ -165,12 +165,12 @@ alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 
-# OpenSUSE System Management
-alias update='sudo zypper refresh && sudo zypper update'
-alias install='sudo zypper install'
-alias remove='sudo zypper remove'
-alias autoremove='sudo zypper remove -u'
-alias search='sudo zypper search'
+# Debian system management using APT
+alias update='sudo apt update && sudo apt upgrade'
+alias install='sudo apt install'
+alias remove='sudo apt remove'
+alias autoremove='sudo apt autoremove'
+alias search='apt search'
 
 # Safety aliases for file operations
 alias rm='rm -i'
@@ -193,7 +193,7 @@ alias j='jobs -l'
 alias path='echo -e ${PATH//:/\\n}'
 alias now='date +"%T"'
 alias nowdate='date +"%d-%m-%Y"'
-alias ports='ss -tulanp'   # Using 'ss' as a modern alternative to netstat
+alias ports='ss -tulanp'
 alias mem='free -h'
 alias disk='df -h'
 
@@ -204,7 +204,7 @@ alias dps='docker ps'
 alias di='docker images'
 
 # Miscellaneous
-alias sudo='sudo '   # Allow aliases to work with sudo
+alias sudo='sudo '   # Ensure aliases work with sudo
 alias watch='watch '
 
 # ------------------------------------------------------------------------------
@@ -270,7 +270,7 @@ fd() {
     find . -type d -iname "*$1*"
 }
 
-# Quickly backup a file with a timestamped .bak
+# Quickly back up a file with a timestamped .bak extension
 bak() {
     cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"
 }
@@ -309,9 +309,18 @@ if [ -f ~/.bashrc.local ]; then
     source ~/.bashrc.local
 fi
 
-# Optional: Trap errors and display a Nord‑themed error message
-# Uncomment the following line to enable error trapping:
-# trap 'echo -e "${NORD11}Error on line ${LINENO}: ${BASH_COMMAND}${RESET}"' ERR
+# Trap errors and display a Nord‑themed error message
+trap 'echo -e "${NORD11}Error on line ${LINENO}: ${BASH_COMMAND}${RESET}"' ERR
+
+# Log each session (append to ~/.bash_sessions.log)
+export PROMPT_COMMAND="history -a; echo \"\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n\" >> ~/.bash_sessions.log; $PROMPT_COMMAND"
+
+# Auto-load all shell scripts in ~/bin/
+if [ -d "$HOME/bin" ]; then
+  for file in "$HOME"/.bashrc.d/*.sh; do
+    [ -r "$file" ] && source "$file"
+  done
+fi
 
 # ------------------------------------------------------------------------------
 # 12. Source Additional Environment Settings
