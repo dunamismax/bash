@@ -870,46 +870,60 @@ copy_shell_configs() {
 install_homebrew_and_zig() {
     print_section "Homebrew & Zig Installation"
 
-    local HOMEBREW_PREFIX="/home/${USERNAME}/.linuxbrew"
-    local BREW_BIN="${HOMEBREW_PREFIX}/bin/brew"
+    local BREW_PREFIX="/home/${USERNAME}/.linuxbrew"
+    local BREW_BIN="${BREW_PREFIX}/bin/brew"
 
-    # Step 1: Install Homebrew as a non-root user
+    # Step 1: Ensure Homebrew is installed as a non-root user
     if ! command -v brew &>/dev/null; then
         echo "Homebrew not found. Installing Homebrew for user '${USERNAME}'..."
 
-        # Run installation as non-root user
+        # Ensure Homebrew directory exists before installing
+        sudo -u "${USERNAME}" mkdir -p "${BREW_PREFIX}"
+
+        # Install Homebrew as the user
         sudo -u "${USERNAME}" bash -c '
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
         ' || {
             echo "Error: Homebrew installation failed."
             return 1
         }
+
+        # Verify Homebrew installed correctly
+        if [ ! -x "$BREW_BIN" ]; then
+            echo "Error: Homebrew binary not found at $BREW_BIN. Installation failed."
+            return 1
+        fi
     else
         echo "Homebrew is already installed."
     fi
 
-    # Step 2: Ensure Homebrew is in the system PATH
-    if ! grep -q "$HOMEBREW_PREFIX/bin" /etc/profile.d/homebrew.sh 2>/dev/null; then
+    # Step 2: Ensure Homebrew is in the system-wide PATH
+    if ! grep -q "$BREW_PREFIX/bin" /etc/profile.d/homebrew.sh 2>/dev/null; then
         echo "Adding Homebrew to system-wide PATH..."
-        echo "export PATH=\"$HOMEBREW_PREFIX/bin:\$PATH\"" | tee /etc/profile.d/homebrew.sh
-        chmod +x /etc/profile.d/homebrew.sh
+        echo "export PATH=\"$BREW_PREFIX/bin:\$PATH\"" | sudo tee /etc/profile.d/homebrew.sh
+        sudo chmod +x /etc/profile.d/homebrew.sh
     fi
 
-    # Load Homebrew environment
-    eval "$(${BREW_BIN} shellenv)"
+    # Load Homebrew environment manually
+    if [ -x "$BREW_BIN" ]; then
+        eval "$($BREW_BIN shellenv)"
+    else
+        echo "Error: Homebrew not found in expected location ($BREW_BIN)."
+        return 1
+    fi
 
     # Step 3: Install Zig using Homebrew
     echo "Installing Zig using Homebrew..."
-    sudo -u "${USERNAME}" "${BREW_BIN}" install zig || {
+    sudo -u "${USERNAME}" "$BREW_BIN" install zig || {
         echo "Error: Failed to install Zig via Homebrew."
         return 1
     }
 
     # Step 4: Ensure Zig is available system-wide
-    local ZIG_PATH="${HOMEBREW_PREFIX}/bin/zig"
-    if [ -f "$ZIG_PATH" ]; then
+    local ZIG_PATH="${BREW_PREFIX}/bin/zig"
+    if [ -x "$ZIG_PATH" ]; then
         echo "Linking Zig to /usr/local/bin..."
-        ln -sf "$ZIG_PATH" /usr/local/bin/zig || {
+        sudo ln -sf "$ZIG_PATH" /usr/local/bin/zig || {
             echo "Error: Failed to create symlink for Zig."
             return 1
         }
