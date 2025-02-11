@@ -865,74 +865,70 @@ copy_shell_configs() {
     log_info "Shell configuration files update completed."
 }
 
-# install_homebrew_and_zig
-# Installs Homebrew and Zig as the standard non-root user and make it available system wide
-install_homebrew_and_zig() {
-    print_section "Homebrew & Zig Installation"
+# install_zig_from_source
+# Installs and builds Zig from source
+install_zig_from_source() {
+    print_section "Zig Source Installation"
 
     # Hardcoded paths for user "sawyer"
     local USER_HOME="/home/sawyer"
-    local BREW_PREFIX="/home/sawyer/.linuxbrew"
-    local BREW_BIN="${BREW_PREFIX}/bin/brew"
-    local PROFILE_SCRIPT="/etc/profile.d/homebrew.sh"
+    local ZIG_SRC_DIR="${USER_HOME}/zig"
+    local ZIG_BUILD_DIR="${ZIG_SRC_DIR}/build"
+    local ZIG_TARBALL_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.3188+34644511b.tar.xz"
+    local ZIG_TARBALL="${USER_HOME}/zig.tar.xz"
+    local INSTALL_PREFIX="/usr/local"
 
-    # Step 1: Ensure Homebrew directory exists and is owned by "sawyer"
-    echo "Creating Homebrew directory at ${BREW_PREFIX}..."
-    mkdir -p "${BREW_PREFIX}"
-    chown -R sawyer:sawyer "${BREW_PREFIX}"
+    # Step 1: Ensure required dependencies are installed
+    echo "Installing required dependencies..."
+    apt update -qq && apt install -y cmake make gcc g++ clang llvm lld || {
+        echo "Error: Failed to install build dependencies."
+        return 1
+    }
 
-    # Step 2: Install Homebrew explicitly in the correct directory
-    if [ ! -x "$BREW_BIN" ]; then
-        echo "Homebrew not found. Installing Homebrew for 'sawyer' in ${BREW_PREFIX}..."
+    # Step 2: Download Zig source tarball
+    echo "Downloading Zig source from ${ZIG_TARBALL_URL}..."
+    curl -L -o "${ZIG_TARBALL}" "${ZIG_TARBALL_URL}" || {
+        echo "Error: Failed to download Zig source."
+        return 1
+    }
 
-        # Install Homebrew forcing the correct prefix
-        sudo -u sawyer bash -c "
-            NONINTERACTIVE=1 /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
-        " || {
-            echo "Error: Homebrew installation failed."
-            return 1
-        }
+    # Step 3: Extract Zig source
+    echo "Extracting Zig source..."
+    mkdir -p "${ZIG_SRC_DIR}"
+    tar -xf "${ZIG_TARBALL}" -C "${USER_HOME}" --strip-components=1 || {
+        echo "Error: Failed to extract Zig source."
+        return 1
+    }
 
-        # Verify Homebrew installed correctly
-        if [ ! -x "$BREW_BIN" ]; then
-            echo "Error: Homebrew binary not found at $BREW_BIN. Installation failed."
-            return 1
-        fi
-    else
-        echo "Homebrew is already installed."
-    fi
+    # Step 4: Build Zig from source
+    echo "Building Zig from source..."
+    mkdir -p "${ZIG_BUILD_DIR}"
+    cd "${ZIG_BUILD_DIR}" || { echo "Error: Failed to enter build directory."; return 1; }
 
-    # Step 3: Ensure Homebrew is in the system-wide PATH
-    if ! grep -q "$BREW_PREFIX/bin" "$PROFILE_SCRIPT" 2>/dev/null; then
-        echo "Adding Homebrew to system-wide PATH..."
-        echo "export PATH=\"$BREW_PREFIX/bin:\$PATH\"" | tee "$PROFILE_SCRIPT"
-        chmod +x "$PROFILE_SCRIPT"
-    fi
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" || {
+        echo "Error: CMake configuration failed."
+        return 1
+    }
 
-    # Load Homebrew environment manually for the current session
-    sudo -u sawyer bash -c "eval \"\$(${BREW_BIN} shellenv)\""
-
-    # Step 4: Install Zig using Homebrew
-    echo "Installing Zig using Homebrew..."
-    sudo -u sawyer "$BREW_BIN" install zig || {
-        echo "Error: Failed to install Zig via Homebrew."
+    make -j$(nproc) install || {
+        echo "Error: Failed to compile and install Zig."
         return 1
     }
 
     # Step 5: Ensure Zig is available system-wide
-    local ZIG_PATH="${BREW_PREFIX}/bin/zig"
-    if [ -x "$ZIG_PATH" ]; then
-        echo "Linking Zig to /usr/local/bin..."
-        ln -sf "$ZIG_PATH" /usr/local/bin/zig || {
-            echo "Error: Failed to create symlink for Zig."
+    local ZIG_BIN="${INSTALL_PREFIX}/bin/zig"
+    if [ -x "$ZIG_BIN" ]; then
+        echo "Zig successfully installed at ${ZIG_BIN}."
+        ln -sf "$ZIG_BIN" /usr/local/bin/zig || {
+            echo "Error: Failed to create system-wide symlink for Zig."
             return 1
         }
     else
-        echo "Error: Zig binary not found at $ZIG_PATH. Installation may have failed."
+        echo "Error: Zig binary not found after build."
         return 1
     fi
 
-    echo "Installation complete. Zig should now be available system-wide."
+    echo "Zig installation complete. Verify by running: zig version"
 }
 
 # install_ly
