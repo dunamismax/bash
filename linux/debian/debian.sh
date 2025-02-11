@@ -892,15 +892,23 @@ install_zig_from_source() {
         return 1
     }
 
-    # Step 3: Extract Zig source
-    echo "Extracting Zig source..."
+    # Step 3: Ensure source directory is correctly set up
+    if [[ -e "${ZIG_SRC_DIR}" && ! -d "${ZIG_SRC_DIR}" ]]; then
+        echo "Removing conflicting file: ${ZIG_SRC_DIR}"
+        rm -f "${ZIG_SRC_DIR}" || { echo "Error: Failed to remove existing file '${ZIG_SRC_DIR}'."; return 1; }
+    fi
+
+    echo "Creating Zig source directory..."
     mkdir -p "${ZIG_SRC_DIR}"
+
+    # Step 4: Extract Zig source
+    echo "Extracting Zig source..."
     tar -xf "${ZIG_TARBALL}" -C "${USER_HOME}" --strip-components=1 || {
         echo "Error: Failed to extract Zig source."
         return 1
     }
 
-    # Step 4: Build Zig from source
+    # Step 5: Build Zig from source
     echo "Building Zig from source..."
     mkdir -p "${ZIG_BUILD_DIR}"
     cd "${ZIG_BUILD_DIR}" || { echo "Error: Failed to enter build directory."; return 1; }
@@ -915,7 +923,7 @@ install_zig_from_source() {
         return 1
     }
 
-    # Step 5: Ensure Zig is available system-wide
+    # Step 6: Ensure Zig is available system-wide
     local ZIG_BIN="${INSTALL_PREFIX}/bin/zig"
     if [ -x "$ZIG_BIN" ]; then
         echo "Zig successfully installed at ${ZIG_BIN}."
@@ -998,6 +1006,51 @@ install_ly() {
     }
 
     echo "Ly has been installed and configured as the default login manager."
+}
+
+# deploy_user_scripts
+# Copies all user scripts to bin folder and makes them executable
+deploy_user_scripts() {
+    print_section "Deploying User Scripts"
+    log INFO "Starting deployment of user scripts..."
+
+    # Hardcoded paths
+    local SCRIPT_SOURCE="/home/sawyer/github/bash/linux/_scripts"  # Source directory for scripts
+    local SCRIPT_TARGET="/home/sawyer/bin"                         # Target deployment directory
+    local EXPECTED_OWNER="sawyer"                                  # Expected owner of source directory
+
+    # Step 1: Check if source directory exists
+    if [[ ! -d "$SCRIPT_SOURCE" ]]; then
+        handle_error "Source directory '$SCRIPT_SOURCE' does not exist."
+    fi
+
+    # Step 2: Verify ownership of the source directory
+    local source_owner
+    source_owner="$(stat -c %U "$SCRIPT_SOURCE")" || handle_error "Failed to retrieve ownership details of '$SCRIPT_SOURCE'."
+
+    if [[ "$source_owner" != "$EXPECTED_OWNER" ]]; then
+        handle_error "Invalid script source ownership for '$SCRIPT_SOURCE' (Owner: $source_owner). Expected: $EXPECTED_OWNER"
+    fi
+
+    # Step 3: Perform a dry-run deployment
+    log INFO "Performing dry-run for script deployment..."
+    if ! rsync --dry-run -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}"; then
+        handle_error "Dry-run failed for script deployment."
+    fi
+
+    # Step 4: Execute actual deployment
+    log INFO "Deploying scripts from '$SCRIPT_SOURCE' to '$SCRIPT_TARGET'..."
+    if ! rsync -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}"; then
+        handle_error "Script deployment failed."
+    fi
+
+    # Step 5: Set executable permissions on deployed scripts
+    log INFO "Setting executable permissions on deployed scripts..."
+    if ! find "${SCRIPT_TARGET}" -type f -exec chmod 755 {} \;; then
+        handle_error "Failed to update script permissions in '$SCRIPT_TARGET'."
+    fi
+
+    log INFO "Script deployment completed successfully."
 }
 
 # configure_periodic
@@ -1112,6 +1165,7 @@ main() {
     docker_config
     install_zig_from_source
     install_ly
+    deploy_user_scripts
     configure_periodic
     final_checks
     prompt_reboot
