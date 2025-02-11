@@ -346,22 +346,37 @@ install_packages() {
 # -------------------------------------------------------------------------------
 # Configure firewalld
 # -------------------------------------------------------------------------------
-configure_firewalld() {
-    log INFO "Configuring firewalld firewall..."
-    if ! dpkg -s firewalld &>/dev/null; then
-        apt-get install -y firewalld || handle_error "Failed to install firewalld."
-    fi
-    systemctl enable --now firewalld || handle_error "Failed to enable/start firewalld."
+configure_ufw_firewall() {
+    log INFO "Configuring UFW firewall..."
 
-    # Open ports for ssh, http, https and Plex (if applicable)
-    for service in ssh http https; do
-        firewall-cmd --permanent --add-service="$service" || warn "Could not add service: $service"
-        log INFO "Added firewall service: $service"
-    done
-    # Example of adding a specific TCP port (e.g., Plex at 32400)
-    firewall-cmd --permanent --add-port=32400/tcp || warn "Could not open port 32400/tcp"
-    firewall-cmd --reload || warn "Failed to reload firewall configuration."
-    log INFO "firewalld configuration completed."
+    # Install UFW if not already present.
+    if ! dpkg -s ufw &>/dev/null; then
+        apt-get install -y ufw || handle_error "Failed to install UFW."
+    fi
+
+    # Set default policies: deny all incoming and allow outgoing traffic.
+    ufw default deny incoming || warn "Failed to set default deny for incoming connections."
+    ufw default allow outgoing || warn "Failed to set default allow for outgoing connections."
+
+    # Allow SSH (port 22), HTTP (port 80), HTTPS (port 443), and Plex (port 32400/tcp).
+    ufw allow ssh || warn "Failed to allow SSH connections."
+    ufw allow http || warn "Failed to allow HTTP connections."
+    ufw allow https || warn "Failed to allow HTTPS connections."
+    ufw allow 32400/tcp || warn "Failed to allow Plex port 32400/tcp."
+
+    # Optionally, allow any additional ports if required by your web server setup.
+    # For example, to allow port 8080 for an alternative web service:
+    # ufw allow 8080/tcp || warn "Failed to allow port 8080/tcp."
+
+    # Enable UFW if not already active.
+    if ! ufw status | grep -q "Status: active"; then
+        echo "y" | ufw enable || warn "Failed to enable UFW."
+    else
+        log INFO "UFW is already enabled."
+    fi
+
+    ufw reload || warn "Failed to reload UFW configuration."
+    log INFO "UFW firewall configuration completed."
 }
 
 release_ports() {
@@ -886,7 +901,7 @@ main() {
     ensure_user
     configure_ssh
     install_packages
-    configure_firewalld
+    configure_ufw_firewall
     configure_journald
     release_ports
     configure_fail2ban
