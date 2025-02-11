@@ -865,87 +865,57 @@ copy_shell_configs() {
     log_info "Shell configuration files update completed."
 }
 
-# install_zig_from_source
-# Installs and builds Zig from source
-install_zig_from_source() {
-    print_section "Zig Source Installation"
+# install_zig_binary
+install_zig_binary() {
+    print_section "Zig Binary Installation"
 
-    # Hardcoded paths for user "sawyer"
-    local USER_HOME="/home/sawyer"
-    local ZIG_INSTALL_DIR="${USER_HOME}/zig"   # Final installed Zig location
-    local TEMP_BUILD_DIR="/tmp/zig-build"      # Temporary directory for extraction
+    # Hardcoded paths
     local ZIG_TARBALL_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.3188+34644511b.tar.xz"
-    local ZIG_TARBALL="${TEMP_BUILD_DIR}/zig.tar.xz"
-    local INSTALL_PREFIX="/usr/local"
+    local ZIG_INSTALL_DIR="/opt/zig"
+    local TEMP_DOWNLOAD="/tmp/zig.tar.xz"
 
     # Step 1: Ensure required dependencies are installed
     echo "Installing required dependencies..."
-    apt update -qq && apt install -y cmake make gcc g++ clang llvm lld || {
-        echo "Error: Failed to install build dependencies."
+    apt update -qq && apt install -y curl tar || {
+        echo "Error: Failed to install required dependencies."
         return 1
     }
 
-    # Step 2: Prepare Temporary Build Directory
-    echo "Setting up temporary build directory..."
-    rm -rf "${TEMP_BUILD_DIR}"   # Ensure the temp directory is clean
-    mkdir -p "${TEMP_BUILD_DIR}"
-
-    # Step 3: Download Zig source tarball
-    echo "Downloading Zig source from ${ZIG_TARBALL_URL}..."
-    curl -L -o "${ZIG_TARBALL}" "${ZIG_TARBALL_URL}" || {
-        echo "Error: Failed to download Zig source."
+    # Step 2: Download Zig binary
+    echo "Downloading Zig binary from ${ZIG_TARBALL_URL}..."
+    curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}" || {
+        echo "Error: Failed to download Zig binary."
         return 1
     }
 
-    # Step 4: Extract Zig source into temporary directory
-    echo "Extracting Zig source to ${TEMP_BUILD_DIR}..."
-    tar -xf "${ZIG_TARBALL}" -C "${TEMP_BUILD_DIR}" --strip-components=1 || {
-        echo "Error: Failed to extract Zig source."
-        return 1
-    }
-
-    # Step 5: Build Zig from source
-    echo "Building Zig from source..."
-    mkdir -p "${TEMP_BUILD_DIR}/build"
-    cd "${TEMP_BUILD_DIR}/build" || { echo "Error: Failed to enter build directory."; return 1; }
-
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" || {
-        echo "Error: CMake configuration failed."
-        return 1
-    }
-
-    make -j$(nproc) install || {
-        echo "Error: Failed to compile and install Zig."
-        return 1
-    }
-
-    # Step 6: Move final installed Zig to the correct location
-    echo "Installing Zig to ${ZIG_INSTALL_DIR}..."
-    rm -rf "${ZIG_INSTALL_DIR}"   # Remove any existing Zig directory
+    # Step 3: Extract Zig to /opt/zig/
+    echo "Extracting Zig to ${ZIG_INSTALL_DIR}..."
+    rm -rf "${ZIG_INSTALL_DIR}"  # Ensure clean installation
     mkdir -p "${ZIG_INSTALL_DIR}"
-    cp -r "${INSTALL_PREFIX}/bin/zig" "${ZIG_INSTALL_DIR}/" || {
-        echo "Error: Failed to move Zig installation."
+    tar -xf "${TEMP_DOWNLOAD}" -C "${ZIG_INSTALL_DIR}" --strip-components=1 || {
+        echo "Error: Failed to extract Zig binary."
         return 1
     }
 
-    # Step 7: Ensure Zig is available system-wide
-    local ZIG_BIN="${ZIG_INSTALL_DIR}/zig"
-    if [ -x "$ZIG_BIN" ]; then
-        echo "Zig successfully installed at ${ZIG_BIN}."
-        ln -sf "$ZIG_BIN" /usr/local/bin/zig || {
-            echo "Error: Failed to create system-wide symlink for Zig."
-            return 1
-        }
+    # Step 4: Create a system-wide symlink for easy access
+    echo "Creating system-wide symlink for Zig..."
+    ln -sf "${ZIG_INSTALL_DIR}/zig" /usr/local/bin/zig || {
+        echo "Error: Failed to create symlink for Zig."
+        return 1
+    }
+
+    # Step 5: Cleanup temporary files
+    echo "Cleaning up installation files..."
+    rm -f "${TEMP_DOWNLOAD}"
+
+    # Step 6: Verify installation
+    if command -v zig &>/dev/null; then
+        echo "Zig installation completed successfully!"
+        zig version
     else
-        echo "Error: Zig binary not found after build."
+        echo "Error: Zig is not accessible from the command line."
         return 1
     fi
-
-    # Step 8: Cleanup Temporary Build Files
-    echo "Cleaning up temporary build files..."
-    rm -rf "${TEMP_BUILD_DIR}"
-
-    echo "Zig installation complete. Verify by running: zig version"
 }
 
 # install_ly
