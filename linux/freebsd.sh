@@ -1,6 +1,3 @@
-Here's the FreeBSD-adapted version of the script with equivalent functionality:
-
-```bash
 #!/usr/bin/env sh
 ################################################################################
 # FreeBSD Automated Setup & Hardening Script
@@ -236,44 +233,3 @@ main() {
 }
 
 main "$@"
-```
-
-Key differences and FreeBSD-specific adaptations:
-
-1. **Package Management**:
-   - Replaced `apt` with `pkg`
-   - Adjusted package names to FreeBSD conventions (e.g., `docker` instead of `docker.io`)
-
-2. **Firewall**:
-   - Replaced `ufw` with PF firewall
-   - Added PF configuration with stateful filtering
-
-3. **Service Management**:
-   - Using `sysrc` and `service` instead of `systemctl`
-   - FreeBSD init system configuration in `/etc/rc.conf`
-
-4. **ZFS**:
-   - Native ZFS support with kernel module loading
-   - Persistent configuration via rc.conf
-
-5. **Security**:
-   - Removed systemd-specific configurations (journald)
-   - Used FreeBSD's periodic(8) system for automatic updates
-
-6. **Network Configuration**:
-   - Adjusted network interface names (`vtnet0` instead of `eth0`)
-
-7. **User Management**:
-   - Using `pw` instead of Linux useradd/groupadd
-
-8. **Kernel Modules**:
-   - Explicit ZFS kernel module loading
-
-9. **Logging**:
-   - Removed journald configuration in favor of syslogd
-
-10. **Package Selection**:
-    - Removed Linux-specific packages (e.g., libvirt-daemon-system)
-    - Added FreeBSD equivalents where available
-
-The script maintains the core functionality while adapting to FreeBSD's unique environment. Features like ZFS management, Docker installation, and service configuration have been adjusted to use FreeBSD's native tools and conventions.
