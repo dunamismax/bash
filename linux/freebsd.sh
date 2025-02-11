@@ -144,6 +144,56 @@ configure_sudoers() {
     log INFO "Sudoers configuration complete."
 }
 
+configure_sysctl() {
+    log INFO "Applying kernel performance tuning parameters..."
+
+    SYSCTL_CONF="/etc/sysctl.conf"
+    BACKUP_CONF="/etc/sysctl.conf.bak"
+
+    # Create a backup of the sysctl configuration if one doesn't already exist.
+    if [ ! -f "$BACKUP_CONF" ]; then
+        cp "$SYSCTL_CONF" "$BACKUP_CONF" || warn "Unable to create a backup of $SYSCTL_CONF"
+        log INFO "Backup of sysctl.conf created at $BACKUP_CONF"
+    else
+        log INFO "Backup already exists at $BACKUP_CONF"
+    fi
+
+    # Append the custom performance tuning parameters if they haven't been added before.
+    if ! grep -q "## FreeBSD Performance Tuning" "$SYSCTL_CONF"; then
+        cat <<'EOF' >> "$SYSCTL_CONF"
+
+## FreeBSD Performance Tuning (added by freebsd_setup script)
+# Increase maximum socket buffer sizes for high network throughput.
+kern.ipc.maxsockbuf=16777216
+
+# Set default TCP send and receive space.
+net.inet.tcp.recvspace=262144
+net.inet.tcp.sendspace=262144
+
+# Adjust delayed ACK behavior for responsiveness.
+net.inet.tcp.delayed_ack=3
+
+# Set TCP Maximum Segment Lifetime (in milliseconds).
+net.inet.tcp.msl=1000
+
+# Configure TCP keepalive timings to detect dead peers more aggressively.
+net.inet.tcp.keepinit=3000
+net.inet.tcp.keepidle=300000
+net.inet.tcp.keepintvl=30000
+EOF
+        log INFO "Performance tuning parameters appended to $SYSCTL_CONF"
+    else
+        log INFO "Performance tuning parameters already exist in $SYSCTL_CONF"
+    fi
+
+    # Reload the sysctl settings to apply the new parameters.
+    if sysctl -q -p; then
+        log INFO "Kernel parameters reloaded successfully."
+    else
+        warn "Failed to reload sysctl parameters. Please review $SYSCTL_CONF for errors."
+    fi
+}
+
 # Install essential system packages
 install_packages() {
     log INFO "Installing essential packages..."
@@ -445,6 +495,7 @@ main() {
     setup_repos
     install_docker
     configure_periodic
+    configure_sysctl
     i3_config
     final_checks
     prompt_reboot
