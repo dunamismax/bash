@@ -543,6 +543,34 @@ install_plex() {
     fi
 }
 
+# release_ports
+# Force releases the ports needed for Caddy
+release_ports() {
+    log INFO "Releasing occupied network ports..."
+    local tcp_ports=("8080" "80" "443" "32400" "8324" "32469")
+    local udp_ports=("80" "443" "1900" "5353" "32410" "32411" "32412" "32413" "32414" "32415")
+
+    for port in "${tcp_ports[@]}"; do
+        local pids
+        pids=$(lsof -t -i TCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+        if [[ -n "$pids" ]]; then
+            log INFO "Killing processes on TCP port $port: $pids"
+            kill -9 $pids || log WARN "Failed to kill processes on TCP port $port"
+        fi
+    done
+
+    for port in "${udp_ports[@]}"; do
+        local pids
+        pids=$(lsof -t -i UDP:"$port" 2>/dev/null || true)
+        if [[ -n "$pids" ]]; then
+            log INFO "Killing processes on UDP port $port: $pids"
+            kill -9 $pids || log WARN "Failed to kill processes on UDP port $port"
+        fi
+    done
+
+    log INFO "Port release process completed."
+}
+
 # caddy_config
 # Downloads and installs Caddy and enables service
 caddy_config() {

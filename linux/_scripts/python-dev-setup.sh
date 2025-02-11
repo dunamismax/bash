@@ -47,7 +47,6 @@ PIPX_TOOLS=(
     tldr
     tox
     twine
-    yt-dlp
     poetry
     pre-commit
 )
