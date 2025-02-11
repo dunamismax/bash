@@ -415,19 +415,25 @@ configure_fail2ban() {
 # Install and configure Plex Media Server
 install_plex() {
     print_section "Plex Media Server Installation"
-    log INFO "Installing Plex Media Server..."
-    if ! apt-get install -y plexmediaserver; then
-        handle_error "Plex Media Server installation failed."
+    log INFO "Downloading Plex Media Server deb file..."
+    local plex_deb="/tmp/plexmediaserver.deb"
+    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
+    if ! wget -q -O "$plex_deb" "$plex_url"; then
+        handle_error "Failed to download Plex Media Server deb file."
     fi
-
+    log INFO "Installing Plex Media Server from deb file..."
+    if ! dpkg -i "$plex_deb"; then
+        log WARN "dpkg installation encountered errors, attempting to fix dependencies..."
+        if ! apt-get install -f -y; then
+            handle_error "Failed to install Plex Media Server due to unresolved dependencies."
+        fi
+    fi
     local PLEX_CONF="/etc/default/plexmediaserver"
     if [ -f "$PLEX_CONF" ]; then
-        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" \
-            || warn "Failed to set Plex user in $PLEX_CONF"
+        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" || warn "Failed to set Plex user in $PLEX_CONF"
     else
         echo "PLEX_MEDIA_SERVER_USER=${USERNAME}" > "$PLEX_CONF" || warn "Failed to create $PLEX_CONF"
     fi
-
     if ! systemctl enable plexmediaserver; then
         warn "Failed to enable Plex Media Server service."
     fi
