@@ -872,121 +872,109 @@ install_zig_binary() {
     print_section "Zig Binary Installation"
 
     # Hardcoded paths
-    local ZIG_TARBALL_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.3188+34644511b.tar.xz"
+    local ZIG_TARBALL_URL="https://ziglang.org/download/0.12.1/zig-linux-x86_64-0.12.1.tar.xz"
     local ZIG_INSTALL_DIR="/opt/zig"
     local TEMP_DOWNLOAD="/tmp/zig.tar.xz"
 
     # Step 1: Ensure required dependencies are installed
-    echo "Installing required dependencies..."
-    apt update -qq && apt install -y curl tar || {
-        echo "Error: Failed to install required dependencies."
-        return 1
-    }
+    log INFO "Ensuring required dependencies (curl, tar) are installed..."
+    if ! apt update -qq || ! apt install -y curl tar; then
+        handle_error "Failed to install required dependencies."
+    fi
 
     # Step 2: Download Zig binary
-    echo "Downloading Zig binary from ${ZIG_TARBALL_URL}..."
-    curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}" || {
-        echo "Error: Failed to download Zig binary."
-        return 1
-    }
+    log INFO "Downloading Zig binary from ${ZIG_TARBALL_URL}..."
+    if ! curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}"; then
+        handle_error "Failed to download Zig binary."
+    fi
 
     # Step 3: Extract Zig to /opt/zig/
-    echo "Extracting Zig to ${ZIG_INSTALL_DIR}..."
-    rm -rf "${ZIG_INSTALL_DIR}"  # Ensure clean installation
+    log INFO "Extracting Zig to ${ZIG_INSTALL_DIR}..."
+    rm -rf "${ZIG_INSTALL_DIR}"  # Ensure a clean installation
     mkdir -p "${ZIG_INSTALL_DIR}"
-    tar -xf "${TEMP_DOWNLOAD}" -C "${ZIG_INSTALL_DIR}" --strip-components=1 || {
-        echo "Error: Failed to extract Zig binary."
-        return 1
-    }
+    if ! tar -xf "${TEMP_DOWNLOAD}" -C "${ZIG_INSTALL_DIR}" --strip-components=1; then
+        handle_error "Failed to extract Zig binary."
+    fi
 
     # Step 4: Create a system-wide symlink for easy access
-    echo "Creating system-wide symlink for Zig..."
-    ln -sf "${ZIG_INSTALL_DIR}/zig" /usr/local/bin/zig || {
-        echo "Error: Failed to create symlink for Zig."
-        return 1
-    }
+    log INFO "Creating system-wide symlink for Zig..."
+    if ! ln -sf "${ZIG_INSTALL_DIR}/zig" /usr/local/bin/zig; then
+        handle_error "Failed to create symlink for Zig."
+    fi
 
-    # Step 5: Cleanup temporary files
-    echo "Cleaning up installation files..."
+    # Step 5: Clean up temporary files
+    log INFO "Cleaning up installation files..."
     rm -f "${TEMP_DOWNLOAD}"
 
     # Step 6: Verify installation
     if command -v zig &>/dev/null; then
-        echo "Zig installation completed successfully!"
-        zig version
+        log INFO "Zig installation completed successfully!"
+        log INFO "Zig version: $(zig version)"
     else
-        echo "Error: Zig is not accessible from the command line."
-        return 1
+        handle_error "Zig is not accessible from the command line."
     fi
 }
 
 # install_ly
 # Installs the Ly display manager / login manager and enables it
 install_ly() {
-    # Check for required commands.
-    for cmd in git zig systemctl; do
+    print_section "Ly Display Manager Installation"
+
+    # Step 1: Check for required commands
+    local REQUIRED_CMDS=(git zig systemctl)
+    for cmd in "${REQUIRED_CMDS[@]}"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
-            echo "Error: '$cmd' is not installed. Please install it and try again."
-            return 1
+            handle_error "'$cmd' is not installed. Please install it and try again."
         fi
     done
 
-    # Define the directory to clone the repository.
-    # Using /opt/ly here; adjust if necessary.
+    # Define the directory to clone the repository
     local LY_DIR="/opt/ly"
 
-    # Clone or update the repository.
+    # Step 2: Clone or update the Ly repository
     if [ ! -d "$LY_DIR" ]; then
-        echo "Cloning Ly repository into $LY_DIR..."
-        sudo git clone https://github.com/fairyglade/ly "$LY_DIR" || {
-            echo "Error: Failed to clone the Ly repository."
-            return 1
-        }
+        log INFO "Cloning Ly repository into $LY_DIR..."
+        if ! sudo git clone https://github.com/fairyglade/ly "$LY_DIR"; then
+            handle_error "Failed to clone the Ly repository."
+        fi
     else
-        echo "Ly repository already exists in $LY_DIR. Updating..."
-        cd "$LY_DIR" || { echo "Error: Failed to change directory to $LY_DIR."; return 1; }
-        sudo git pull || {
-            echo "Error: Failed to update the Ly repository."
-            return 1
-        }
+        log INFO "Ly repository already exists in $LY_DIR. Updating..."
+        cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
+        if ! sudo git pull; then
+            handle_error "Failed to update the Ly repository."
+        fi
     fi
 
-    # Change directory to the repository.
-    cd "$LY_DIR" || { echo "Error: Failed to change directory to $LY_DIR."; return 1; }
+    # Step 3: Compile Ly using Zig
+    cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
+    log INFO "Compiling Ly with Zig..."
+    if ! zig build; then
+        handle_error "Compilation of Ly failed."
+    fi
 
-    # Compile Ly using Zig.
-    echo "Compiling Ly..."
-    zig build || {
-        echo "Error: Compilation of Ly failed."
-        return 1
-    }
-
-    # (Optional testing step: Uncomment if you wish to test Ly before installation.)
-    # echo "Testing Ly (this may take over tty2)..."
+    # (Optional testing step)
+    # log INFO "Testing Ly (this may take over tty2)..."
     # zig build run
 
-    # Install Ly and its systemd service.
-    echo "Installing Ly systemd service..."
-    sudo zig build installsystemd || {
-        echo "Error: Installation of Ly systemd service failed."
-        return 1
-    }
+    # Step 4: Install Ly and its systemd service
+    log INFO "Installing Ly systemd service..."
+    if ! sudo zig build installsystemd; then
+        handle_error "Installation of Ly systemd service failed."
+    fi
 
-    # Enable the Ly service.
-    echo "Enabling ly.service..."
-    sudo systemctl enable ly.service || {
-        echo "Error: Failed to enable ly.service."
-        return 1
-    }
+    # Step 5: Enable the Ly service
+    log INFO "Enabling ly.service..."
+    if ! sudo systemctl enable ly.service; then
+        handle_error "Failed to enable ly.service."
+    fi
 
-    # Disable the getty on tty2 to prevent conflict with Ly.
-    echo "Disabling getty@tty2.service..."
-    sudo systemctl disable getty@tty2.service || {
-        echo "Error: Failed to disable getty@tty2.service."
-        return 1
-    }
+    # Step 6: Disable the getty on tty2 to prevent conflict
+    log INFO "Disabling getty@tty2.service..."
+    if ! sudo systemctl disable getty@tty2.service; then
+        handle_error "Failed to disable getty@tty2.service."
+    fi
 
-    echo "Ly has been installed and configured as the default login manager."
+    log INFO "Ly has been installed and configured as the default login manager."
 }
 
 # deploy_user_scripts
