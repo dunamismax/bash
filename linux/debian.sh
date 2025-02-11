@@ -220,44 +220,6 @@ configure_sudoers() {
     log_info "Sudoers configuration complete."
 }
 
-# configure_sysctl
-# Applies kernel performance tuning parameters by appending settings to sysctl.conf.
-configure_sysctl() {
-    print_section "Kernel Performance Tuning"
-    local SYSCTL_CONF="/etc/sysctl.conf"
-    local BACKUP_CONF="/etc/sysctl.conf.bak"
-
-    if [ ! -f "$BACKUP_CONF" ]; then
-        cp "$SYSCTL_CONF" "$BACKUP_CONF" || log_warn "Unable to create a backup of $SYSCTL_CONF"
-        log_info "Backup of sysctl.conf created at $BACKUP_CONF"
-    else
-        log_info "Backup already exists at $BACKUP_CONF"
-    fi
-
-    if ! grep -q "## Debian Performance Tuning" "$SYSCTL_CONF"; then
-        cat <<'EOF' >> "$SYSCTL_CONF"
-
-## Debian Performance Tuning (added by debian_setup script)
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.ipv4.tcp_rmem = 4096 87380 16777216
-net.ipv4.tcp_wmem = 4096 65536 16777216
-net.ipv4.tcp_keepalive_time = 300
-net.ipv4.tcp_keepalive_intvl = 30
-net.ipv4.tcp_keepalive_probes = 10
-EOF
-        log_info "Performance tuning parameters appended to $SYSCTL_CONF"
-    else
-        log_info "Performance tuning parameters already exist in $SYSCTL_CONF"
-    fi
-
-    if sysctl -p; then
-        log_info "Kernel parameters reloaded successfully."
-    else
-        log_warn "Failed to reload sysctl parameters. Please review $SYSCTL_CONF for errors."
-    fi
-}
-
 # install_packages
 # Installs a list of essential system packages.
 install_packages() {
@@ -484,7 +446,6 @@ main() {
     configure_zfs
     setup_repos
     configure_periodic
-    configure_sysctl
     final_checks
     prompt_reboot
 }
