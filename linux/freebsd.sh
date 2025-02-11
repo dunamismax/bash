@@ -118,6 +118,85 @@ install_packages() {
     fi
 }
 
+i3_config() {
+    log INFO "Installing i3 window manager and its addons..."
+
+    # Install i3 and common add-ons
+    if ! pkg install -y i3 i3status i3lock dmenu i3blocks; then
+        die "Failed to install i3 and its addons."
+    fi
+
+    # Ensure the ninja build tool is available (required for building ly)
+    if ! command -v ninja >/dev/null 2>&1; then
+        log INFO "Installing ninja build system..."
+        if ! pkg install -y ninja; then
+            die "Failed to install ninja."
+        fi
+    fi
+
+    log INFO "Cloning and installing ly login manager from GitHub..."
+
+    # Define the source directory for ly
+    LY_SRC="/usr/local/src/ly"
+    LY_REPO="https://github.com/nullgemm/ly.git"
+
+    # Clone or update the ly repository
+    if [ -d "${LY_SRC}/ly" ]; then
+        log INFO "Updating existing ly repository in ${LY_SRC}/ly..."
+        cd "${LY_SRC}/ly" || die "Cannot change directory to ${LY_SRC}/ly"
+        if ! git pull; then
+            warn "Failed to update ly repository; continuing with existing code."
+        fi
+    else
+        log INFO "Cloning ly repository into ${LY_SRC}..."
+        mkdir -p "${LY_SRC}" || die "Failed to create directory ${LY_SRC}"
+        cd "${LY_SRC}" || die "Cannot change directory to ${LY_SRC}"
+        if ! git clone "$LY_REPO"; then
+            die "Failed to clone ly repository from ${LY_REPO}"
+        fi
+        cd ly || die "Cannot change directory to ly"
+    fi
+
+    # Remove any previous build directory to ensure a clean build
+    if [ -d "build" ]; then
+        log INFO "Removing existing build directory..."
+        rm -rf build || warn "Could not remove existing build directory."
+    fi
+
+    # Build and install ly using meson and ninja
+    log INFO "Setting up build environment for ly..."
+    if ! meson setup build; then
+        die "meson setup for ly failed."
+    fi
+
+    log INFO "Building ly..."
+    if ! ninja -C build; then
+        die "ninja build for ly failed."
+    fi
+
+    log INFO "Installing ly..."
+    if ! ninja -C build install; then
+        die "Installation of ly failed."
+    fi
+
+    # Enable ly to start automatically at boot
+    log INFO "Enabling ly display manager to start at boot..."
+    if ! sysrc ly_enable=YES; then
+        warn "Failed to enable ly in rc.conf."
+    else
+        log INFO "ly display manager enabled."
+    fi
+
+    # Optionally, start the ly service immediately (a reboot might be required to see full effect)
+    if ! service ly start; then
+        warn "Failed to start ly display manager immediately."
+    else
+        log INFO "ly display manager started."
+    fi
+
+    log INFO "i3 and ly configuration complete. You can now choose your desktop session at login."
+}
+
 # ------------------------------------------------------------------------------
 # 4. CORE CONFIGURATION FUNCTIONS
 # ------------------------------------------------------------------------------
@@ -331,6 +410,7 @@ main() {
     setup_repos
     install_docker
     configure_periodic
+    i3_config
     final_checks
     prompt_reboot
 }
