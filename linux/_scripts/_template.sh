@@ -1,27 +1,26 @@
 This template is designed so that every Bash script you write using it will be robust, visually appealing, and extremely user‑friendly.
 
+────────────────────────────────────────────
 Enhanced Prompt Instructions
 
-	Objective:
-Create Bash scripts following a consistent and modern style. Use this template as a starting point. The script uses the Nord color palette for all terminal output and detailed logging. It also includes progress bars to visually indicate the progress of tasks.
+Objective:
+Create Bash scripts following a consistent and modern style. Use this template as a starting point. The script uses the Nord color palette for all terminal output and detailed logging.
 
-	Requirements:
-		1.	Structure & Organization:
+Requirements:
+	1.	Structure & Organization:
 	•	Organize the script into clear sections: configuration, logging, helper functions, main logic, and cleanup.
-	•	Use functions for modularity (e.g. logging, error handling, progress display).
+	•	Use functions for modularity (e.g., logging, error handling).
 	2.	Styling & Formatting:
 	•	Follow consistent indentation, spacing, and naming conventions (snake_case for variables and functions; UPPERCASE for constants).
 	•	Use descriptive comments and section headers.
 	3.	Nord Color Theme:
 	•	Integrate the Nord color palette (with 24‑bit ANSI escapes) to provide clear, colorful feedback.
-	•	Assign distinct Nord colors to different log levels and UI elements (e.g. progress bars, section headers).
-	4.	Progress Bars:
-	•	Include a function that renders a smooth progress bar with color feedback for any long‑running tasks.
-	5.	Error Handling & Cleanup:
+	•	Assign distinct Nord colors to different log levels and UI elements (e.g., section headers).
+	4.	Error Handling & Cleanup:
 	•	Trap errors and perform cleanup tasks before exit.
 
-	Confirmation:
-I confirm that this enhanced template’s style, structure, and features (including Nord-themed color feedback and progress bars) will be used as the standard for all future Bash scripting assistance.
+Confirmation:
+I confirm that this enhanced template’s style, structure, and features (including Nord-themed color feedback) will be used as the standard for all future Bash scripting assistance.
 
 Bash Script Template below:
 
@@ -195,4 +194,4 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi
 
-Use this enhanced template as the starting point for all future Bash scripts. It enforces a high standard for error handling, logging, and user feedback while showcasing the elegant Nord color theme. Now ask the user what you can assist them with do not give any feedback or produce any code yet.
+Use this refined template as the foundation for all future Bash scripts. It establishes a robust standard for error handling, logging, and user feedback while showcasing the elegant Nord color theme. Now ask the user what further assistance they require—do not provide any feedback or produce any code yet.
