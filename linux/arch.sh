@@ -144,10 +144,10 @@ install_packages() {
     pacman -S --needed --noconfirm git base-devel
     sudo -u "$USERNAME" bash -c "
         cd /tmp && git clone https://aur.archlinux.org/$AUR_HELPER.git &&
-        cd $AUR_HELPER && makepkg -si --noconfirm" || handle_error "AUR helper install failed"
+        cd $AUR_HELPER && makepkg -si --noconfirm"
 
     log INFO "Installing AUR packages"
-    sudo -u "$USERNAME" $AUR_HELPER -Syu --noconfirm "${AUR_PACKAGES[@]}" || handle_error "AUR package install failed"
+    sudo -u "$USERNAME" $AUR_HELPER -Syu --noconfirm "${AUR_PACKAGES[@]}"
 }
 
 # ==============================================================================
