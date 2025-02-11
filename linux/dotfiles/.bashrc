@@ -118,21 +118,23 @@ if [ -x /usr/bin/lesspipe ]; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
-# ------------------------------------------------------------------------------
-# 6. Prompt Customization
-# ------------------------------------------------------------------------------
-# Nord-themed single-line prompt (no Git integration)
+# -------------------------------------------------------------------------------
+# 6. Prompt Customization - Clean, Nord-themed Single-Line Prompt
+# -------------------------------------------------------------------------------
 RESET="\[\e[0m\]"
 
 # Bold colors for better clarity
 USERNAME="\[\033[1;38;2;143;188;187m\]"   # Bold Nord7 – Frost (turquoise)
 HOSTNAME="\[\033[1;38;2;143;188;187m\]"   # Bold Nord7 – Frost (turquoise)
 DIR_COLOR="\[\033[1;38;2;129;161;193m\]"  # Bold Nord9 – Frost (blue)
-DELIM="\[\033[0;38;2;216;222;233m\]"      # Nord4 – Snow Storm (light gray)
 PROMPT_ICON="\[\033[1;38;2;94;129;172m\]>"  # Bold Nord10 – Frost (darker blue)
 
-# Build the prompt: username@hostname:working_dir >
-PS1="${USERNAME}\u${DELIM}@${HOSTNAME}\h${DELIM}:${DIR_COLOR}\w ${PROMPT_ICON}${RESET} "
+# Build the prompt: [username@hostname] [working_directory] >
+# Note: Appending ${NORD6} at the end sets the color for your typed commands.
+PS1="[${USERNAME}\u${RESET}@${HOSTNAME}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
+
+# Clear any interfering PROMPT_COMMAND (retaining only history appending)
+PROMPT_COMMAND="history -a"
 
 # ------------------------------------------------------------------------------
 # 7. Colorized Output for Common Commands
@@ -308,9 +310,6 @@ fi
 if [ -f ~/.bashrc.local ]; then
     source ~/.bashrc.local
 fi
-
-# Trap errors and display a Nord‑themed error message
-trap 'echo -e "${NORD11}Error on line ${LINENO}: ${BASH_COMMAND}${RESET}"' ERR
 
 # Log each session (append to ~/.bash_sessions.log)
 export PROMPT_COMMAND="history -a; echo \"\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n\" >> ~/.bash_sessions.log; $PROMPT_COMMAND"
