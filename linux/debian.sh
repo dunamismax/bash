@@ -226,11 +226,6 @@ configure_sudoers() {
         log INFO "Added sudoers entry for '${USERNAME}'."
     fi
 
-    # Validate sudoers file syntax.
-    if ! visudo -c -f "$SUDOERS_FILE" >/dev/null 2>&1; then
-        handle_error "Sudoers file syntax error! Please review ${SUDOERS_FILE}."
-    fi
-
     log INFO "Sudoers configuration complete."
 }
 
