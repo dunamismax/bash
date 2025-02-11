@@ -31,23 +31,160 @@ USERNAME="sawyer"
 
 # List of essential packages to be installed.
 PACKAGES=(
-    bash zsh fish vim nano emacs mc neovim screen tmux
-    gcc make cmake meson intltool gettext pigz libtool pkg-config bzip2 git
-    chrony sudo bash-completion logrotate
-    curl wget tcpdump rsync nmap lynx dnsutils mtr netcat-openbsd socat
-    htop tig jq vnstat tree fzf smartmontools lsof
-    gdisk ntfs-3g ncdu unzip zip
-    patch gawk expect
-    fd-find bat ripgrep hyperfine
-    ffmpeg restic mpv nnn newsboat irssi
-    taskwarrior cowsay figlet
-    ufw fail2ban
-    aircrack-ng reaver hydra john sqlmap gobuster dirb wfuzz
-    netdiscover arp-scan
-    ettercap-text-only tshark hashcat recon-ng crunch iotop iftop
-    sysstat traceroute
-    whois strace ltrace iperf3 binwalk
-    foremost steghide hashid
+    bash
+    vim
+    nano
+    mc
+    screen
+    tmux
+    nodejs
+    npm
+    ninja-build
+    meson
+    fonts-font-awesome
+    intltool
+    gettext
+    build-essential
+    cmake
+    hugo
+    pigz
+    exim4
+    openssh-server
+    libtool
+    pkg-config
+    libssl-dev
+    rfkill
+    fonts-ubuntu
+    bzip2
+    libbz2-dev
+    libffi-dev
+    zlib1g-dev
+    libreadline-dev
+    libsqlite3-dev
+    tk-dev
+    iw
+    fonts-hack
+    libpolkit-agent-1-dev
+    xz-utils
+    libncurses5-dev
+    python3
+    python3-dev
+    python3-pip
+    python3-venv
+    libfreetype6-dev
+    flatpak
+    xfce4-dev-tools
+    git
+    ufw
+    perl
+    curl
+    wget
+    tcpdump
+    rsync
+    htop
+    passwd
+    bash-completion
+    neofetch
+    tig
+    jq
+    fonts-dejavu-core
+    fonts-firacode
+    nmap
+    tree
+    fzf
+    lynx
+    which
+    patch
+    smartmontools
+    ntfs-3g
+    ubuntu-restricted-extras
+    cups
+    neovim
+    libglib2.0-dev
+    qemu-kvm
+    libvirt-daemon-system
+    libvirt-clients
+    virtinst
+    bridge-utils
+    acpid
+    policykit-1
+    papirus-icon-theme
+    chrony
+    fail2ban
+    ffmpeg
+    restic
+    fonts-dejavu
+    flameshot
+    libxfce4ui-2-dev
+    libxfce4util-dev
+    libgtk-3-dev
+    libpolkit-gobject-1-dev
+    gnome-keyring
+    seahorse
+    thunar
+    dmenu
+    i3
+    i3status
+    feh
+    alacritty
+    picom
+    zsh
+    fish
+    emacs
+    gcc
+    make
+    sudo
+    logrotate
+    dnsutils
+    mtr
+    netcat-openbsd
+    socat
+    vnstat
+    lsof
+    gdisk
+    ncdu
+    unzip
+    zip
+    gawk
+    expect
+    fd-find
+    bat
+    ripgrep
+    hyperfine
+    mpv
+    nnn
+    newsboat
+    irssi
+    taskwarrior
+    cowsay
+    figlet
+    aircrack-ng
+    reaver
+    hydra
+    john
+    sqlmap
+    gobuster
+    dirb
+    wfuzz
+    netdiscover
+    arp-scan
+    ettercap-text-only
+    tshark
+    hashcat
+    recon-ng
+    crunch
+    iotop
+    iftop
+    sysstat
+    traceroute
+    whois
+    strace
+    ltrace
+    iperf3
+    binwalk
+    foremost
+    steghide
+    hashid
 )
 
 # ------------------------------------------------------------------------------
