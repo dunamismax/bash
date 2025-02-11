@@ -333,6 +333,69 @@ install_plex() {
     fi
 }
 
+# caddy_config
+# Downloads and installs Caddy and enables service
+caddy_config() {
+    print_section "Caddy Configuration"
+
+    # ---------------------------------------------------------------------------
+    # Step 1: Release occupied network ports.
+    # ---------------------------------------------------------------------------
+    log_info "Starting port release process for Caddy installation..."
+    release_ports
+
+    # ---------------------------------------------------------------------------
+    # Step 2: Install required dependencies and add the Caddy repository.
+    # ---------------------------------------------------------------------------
+    log_info "Installing dependencies for Caddy..."
+    apt install -y debian-keyring debian-archive-keyring apt-transport-https curl || \
+        handle_error "Failed to install dependencies for Caddy."
+
+    log_info "Adding Caddy GPG key..."
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
+        gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg || \
+        handle_error "Failed to add Caddy GPG key."
+
+    log_info "Adding Caddy repository..."
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
+        tee /etc/apt/sources.list.d/caddy-stable.list || \
+        handle_error "Failed to add Caddy repository."
+
+    # ---------------------------------------------------------------------------
+    # Step 3: Update package lists and install Caddy.
+    # ---------------------------------------------------------------------------
+    log_info "Updating package lists..."
+    apt update || handle_error "Failed to update package lists."
+
+    log_info "Installing Caddy..."
+    apt install -y caddy || handle_error "Failed to install Caddy."
+
+    log_info "Caddy installed successfully."
+
+    # ---------------------------------------------------------------------------
+    # Step 4: Copy custom Caddyfile.
+    # ---------------------------------------------------------------------------
+    local CUSTOM_CADDYFILE="/home/sawyer/github/linux/dotfiles/Caddyfile"
+    local DEST_CADDYFILE="/etc/caddy/Caddyfile"
+    if [ -f "$CUSTOM_CADDYFILE" ]; then
+        log_info "Copying custom Caddyfile from $CUSTOM_CADDYFILE to $DEST_CADDYFILE..."
+        cp -f "$CUSTOM_CADDYFILE" "$DEST_CADDYFILE" || log_warn "Failed to copy custom Caddyfile."
+    else
+        log_warn "Custom Caddyfile not found at $CUSTOM_CADDYFILE"
+    fi
+
+    # ---------------------------------------------------------------------------
+    # Step 5: Enable and start (restart) the Caddy service.
+    # ---------------------------------------------------------------------------
+    log_info "Enabling Caddy service..."
+    systemctl enable caddy || log_warn "Failed to enable Caddy service."
+
+    log_info "Restarting Caddy service to apply new configuration..."
+    systemctl restart caddy || log_warn "Failed to restart Caddy service."
+
+    log_info "Caddy configuration completed successfully."
+}
+
 # configure_zfs
 # Imports a ZFS pool (if not already imported) and sets its mountpoint.
 configure_zfs() {
@@ -445,6 +508,7 @@ main() {
     install_plex
     configure_zfs
     setup_repos
+    caddy_config
     configure_periodic
     final_checks
     prompt_reboot
