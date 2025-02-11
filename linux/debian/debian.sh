@@ -95,7 +95,6 @@ PACKAGES=(
     patch
     smartmontools
     ntfs-3g
-    ubuntu-restricted-extras
     cups
     neovim
     libglib2.0-dev
