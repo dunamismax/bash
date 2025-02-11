@@ -866,11 +866,21 @@ copy_shell_configs() {
 }
 
 # install_homebrew_and_zig
+# Installs Homebrew and Zig as the standard non-root user and make it available system wide
 install_homebrew_and_zig() {
-    # Step 1: Install Homebrew if not already installed.
+    print_section "Homebrew & Zig Installation"
+
+    local HOMEBREW_PREFIX="/home/${USERNAME}/.linuxbrew"
+    local BREW_BIN="${HOMEBREW_PREFIX}/bin/brew"
+
+    # Step 1: Install Homebrew as a non-root user
     if ! command -v brew &>/dev/null; then
-        echo "Homebrew not found. Installing Homebrew..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+        echo "Homebrew not found. Installing Homebrew for user '${USERNAME}'..."
+
+        # Run installation as non-root user
+        sudo -u "${USERNAME}" bash -c '
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        ' || {
             echo "Error: Homebrew installation failed."
             return 1
         }
@@ -878,45 +888,34 @@ install_homebrew_and_zig() {
         echo "Homebrew is already installed."
     fi
 
-    # Load Homebrew environment into the current shell.
-    # The brew shellenv command outputs the necessary environment variables.
-    eval "$(/usr/bin/env brew shellenv)"
+    # Step 2: Ensure Homebrew is in the system PATH
+    if ! grep -q "$HOMEBREW_PREFIX/bin" /etc/profile.d/homebrew.sh 2>/dev/null; then
+        echo "Adding Homebrew to system-wide PATH..."
+        echo "export PATH=\"$HOMEBREW_PREFIX/bin:\$PATH\"" | tee /etc/profile.d/homebrew.sh
+        chmod +x /etc/profile.d/homebrew.sh
+    fi
 
-    # Step 2: Install Zig via Homebrew.
+    # Load Homebrew environment
+    eval "$(${BREW_BIN} shellenv)"
+
+    # Step 3: Install Zig using Homebrew
     echo "Installing Zig using Homebrew..."
-    brew install zig || {
+    sudo -u "${USERNAME}" "${BREW_BIN}" install zig || {
         echo "Error: Failed to install Zig via Homebrew."
         return 1
     }
 
-    # Step 3: Ensure Zig is available system-wide.
-
-    # Determine Homebrew's prefix directory.
-    local brew_prefix
-    brew_prefix="$(brew --prefix)"
-
-    # Create (or update) a symlink for the Zig binary in /usr/local/bin.
-    if [ -f "${brew_prefix}/bin/zig" ]; then
+    # Step 4: Ensure Zig is available system-wide
+    local ZIG_PATH="${HOMEBREW_PREFIX}/bin/zig"
+    if [ -f "$ZIG_PATH" ]; then
         echo "Linking Zig to /usr/local/bin..."
-        ln -sf "${brew_prefix}/bin/zig" /usr/local/bin/zig || {
+        ln -sf "$ZIG_PATH" /usr/local/bin/zig || {
             echo "Error: Failed to create symlink for Zig."
             return 1
         }
     else
-        echo "Error: Zig binary not found at ${brew_prefix}/bin/zig. Installation may have failed."
+        echo "Error: Zig binary not found at $ZIG_PATH. Installation may have failed."
         return 1
-    fi
-
-    # Create a system-wide profile file (if it doesn't already exist) to add Homebrew's bin directory to the PATH.
-    local profile_file="/etc/profile.d/homebrew.sh"
-    if [ ! -f "$profile_file" ]; then
-        echo "export PATH=\"${brew_prefix}/bin:\$PATH\"" > "$profile_file" || {
-            echo "Warning: Could not create $profile_file."
-        }
-        chmod +x "$profile_file" 2>/dev/null
-        echo "Created $profile_file to include Homebrew in the PATH for all users."
-    else
-        echo "$profile_file already exists. Ensure it contains '${brew_prefix}/bin'."
     fi
 
     echo "Installation complete. Zig should now be available system-wide."
