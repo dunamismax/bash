@@ -361,26 +361,41 @@ ensure_user() {
 
 # configure_sudoers
 # Ensures that the specified user has sudo privileges by creating a dedicated
-# sudoers file in /etc/sudoers.d/.
+# sudoers file in /etc/sudoers.d/. Installs 'sudo' if necessary (for visudo).
 configure_sudoers() {
     print_section "Sudoers Configuration"
     local SUDOERS_ENTRY_FILE="/etc/sudoers.d/${USERNAME}"
 
+    # Ensure 'sudo' (and thus 'visudo') is installed on a fresh Debian system.
+    if ! command -v visudo &>/dev/null; then
+        log_info "visudo not found. Installing the 'sudo' package..."
+        apt-get update -qq || handle_error "Failed to update package repository for installing 'sudo'."
+        apt-get install -y sudo || handle_error "Failed to install the 'sudo' package."
+        log_info "sudo installed successfully."
+    fi
+
+    # If the sudoers file already exists, log it; otherwise create it.
     if [ -f "$SUDOERS_ENTRY_FILE" ]; then
         log_info "Sudoers entry for '$USERNAME' already exists in $SUDOERS_ENTRY_FILE."
     else
         log_info "Creating sudoers entry for '$USERNAME' in $SUDOERS_ENTRY_FILE..."
-        echo "${USERNAME} ALL=(ALL) ALL" > "$SUDOERS_ENTRY_FILE" || handle_error "Failed to create sudoers entry file for '$USERNAME'."
+        {
+            echo "${USERNAME} ALL=(ALL) ALL"
+        } > "$SUDOERS_ENTRY_FILE" || handle_error "Failed to create sudoers entry file for '$USERNAME'."
 
         # Set strict permissions to secure the sudoers file.
         chmod 0440 "$SUDOERS_ENTRY_FILE" || log_warn "Failed to set permissions on $SUDOERS_ENTRY_FILE."
 
-        # Validate the syntax of the newly created sudoers file.
-        if visudo -cf "$SUDOERS_ENTRY_FILE"; then
-            log_info "Sudoers entry for '$USERNAME' created and validated successfully."
+        # Validate the syntax of the newly created sudoers file, if visudo is available.
+        if command -v visudo &>/dev/null; then
+            if visudo -cf "$SUDOERS_ENTRY_FILE"; then
+                log_info "Sudoers entry for '$USERNAME' created and validated successfully."
+            else
+                log_error "Syntax error detected in $SUDOERS_ENTRY_FILE. Please review the file."
+                handle_error "Sudoers configuration failed due to syntax errors."
+            fi
         else
-            log_error "Syntax error detected in $SUDOERS_ENTRY_FILE. Please review the file."
-            handle_error "Sudoers configuration failed due to syntax errors."
+            log_warn "visudo command is not available; skipping syntax check. Verify manually if needed."
         fi
     fi
 
