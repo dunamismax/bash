@@ -872,10 +872,10 @@ install_zig_from_source() {
 
     # Hardcoded paths for user "sawyer"
     local USER_HOME="/home/sawyer"
-    local ZIG_SRC_DIR="${USER_HOME}/zig"
-    local ZIG_BUILD_DIR="${ZIG_SRC_DIR}/build"
+    local ZIG_INSTALL_DIR="${USER_HOME}/zig"   # Final installed Zig location
+    local TEMP_BUILD_DIR="/tmp/zig-build"      # Temporary directory for extraction
     local ZIG_TARBALL_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.3188+34644511b.tar.xz"
-    local ZIG_TARBALL="${USER_HOME}/zig.tar.xz"
+    local ZIG_TARBALL="${TEMP_BUILD_DIR}/zig.tar.xz"
     local INSTALL_PREFIX="/usr/local"
 
     # Step 1: Ensure required dependencies are installed
@@ -885,33 +885,29 @@ install_zig_from_source() {
         return 1
     }
 
-    # Step 2: Download Zig source tarball
+    # Step 2: Prepare Temporary Build Directory
+    echo "Setting up temporary build directory..."
+    rm -rf "${TEMP_BUILD_DIR}"   # Ensure the temp directory is clean
+    mkdir -p "${TEMP_BUILD_DIR}"
+
+    # Step 3: Download Zig source tarball
     echo "Downloading Zig source from ${ZIG_TARBALL_URL}..."
     curl -L -o "${ZIG_TARBALL}" "${ZIG_TARBALL_URL}" || {
         echo "Error: Failed to download Zig source."
         return 1
     }
 
-    # Step 3: Ensure source directory is correctly set up
-    if [[ -e "${ZIG_SRC_DIR}" && ! -d "${ZIG_SRC_DIR}" ]]; then
-        echo "Removing conflicting file: ${ZIG_SRC_DIR}"
-        rm -f "${ZIG_SRC_DIR}" || { echo "Error: Failed to remove existing file '${ZIG_SRC_DIR}'."; return 1; }
-    fi
-
-    echo "Creating Zig source directory..."
-    mkdir -p "${ZIG_SRC_DIR}"
-
-    # Step 4: Extract Zig source
-    echo "Extracting Zig source..."
-    tar -xf "${ZIG_TARBALL}" -C "${USER_HOME}" --strip-components=1 || {
+    # Step 4: Extract Zig source into temporary directory
+    echo "Extracting Zig source to ${TEMP_BUILD_DIR}..."
+    tar -xf "${ZIG_TARBALL}" -C "${TEMP_BUILD_DIR}" --strip-components=1 || {
         echo "Error: Failed to extract Zig source."
         return 1
     }
 
     # Step 5: Build Zig from source
     echo "Building Zig from source..."
-    mkdir -p "${ZIG_BUILD_DIR}"
-    cd "${ZIG_BUILD_DIR}" || { echo "Error: Failed to enter build directory."; return 1; }
+    mkdir -p "${TEMP_BUILD_DIR}/build"
+    cd "${TEMP_BUILD_DIR}/build" || { echo "Error: Failed to enter build directory."; return 1; }
 
     cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" || {
         echo "Error: CMake configuration failed."
@@ -923,8 +919,17 @@ install_zig_from_source() {
         return 1
     }
 
-    # Step 6: Ensure Zig is available system-wide
-    local ZIG_BIN="${INSTALL_PREFIX}/bin/zig"
+    # Step 6: Move final installed Zig to the correct location
+    echo "Installing Zig to ${ZIG_INSTALL_DIR}..."
+    rm -rf "${ZIG_INSTALL_DIR}"   # Remove any existing Zig directory
+    mkdir -p "${ZIG_INSTALL_DIR}"
+    cp -r "${INSTALL_PREFIX}/bin/zig" "${ZIG_INSTALL_DIR}/" || {
+        echo "Error: Failed to move Zig installation."
+        return 1
+    }
+
+    # Step 7: Ensure Zig is available system-wide
+    local ZIG_BIN="${ZIG_INSTALL_DIR}/zig"
     if [ -x "$ZIG_BIN" ]; then
         echo "Zig successfully installed at ${ZIG_BIN}."
         ln -sf "$ZIG_BIN" /usr/local/bin/zig || {
@@ -935,6 +940,10 @@ install_zig_from_source() {
         echo "Error: Zig binary not found after build."
         return 1
     fi
+
+    # Step 8: Cleanup Temporary Build Files
+    echo "Cleaning up temporary build files..."
+    rm -rf "${TEMP_BUILD_DIR}"
 
     echo "Zig installation complete. Verify by running: zig version"
 }
