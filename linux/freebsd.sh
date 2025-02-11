@@ -202,6 +202,37 @@ install_packages() {
     fi
 }
 
+install_zig() {
+    log INFO "Installing Zig programming language from FreeBSD ports..."
+
+    # Check if Zig is already installed.
+    if command -v zig >/dev/null 2>&1; then
+        log INFO "Zig is already installed at $(command -v zig). Skipping installation."
+        return 0
+    fi
+
+    # Verify that the ports tree for Zig exists.
+    if [ ! -d "/usr/ports/lang/zig010" ]; then
+        die "Ports directory /usr/ports/lang/zig010 not found. Ensure that your ports tree is installed and updated."
+    fi
+
+    # Change to the Zig port directory.
+    cd /usr/ports/lang/zig010 || die "Failed to change directory to /usr/ports/lang/zig010."
+
+    # Build and install Zig from ports.
+    log INFO "Building and installing Zig from /usr/ports/lang/zig010..."
+    if ! make install clean; then
+        die "Failed to build and install Zig from ports."
+    fi
+
+    # Verify that Zig is now available in the system PATH.
+    if command -v zig >/dev/null 2>&1; then
+        log INFO "Zig installed successfully and is available at $(command -v zig)."
+    else
+        die "Zig installation completed but the binary is not found in PATH. Please check your installation."
+    fi
+}
+
 i3_config() {
     log INFO "Installing i3 window manager and its addons..."
 
@@ -496,6 +527,7 @@ main() {
     install_docker
     configure_periodic
     configure_sysctl
+    install_zig
     i3_config
     final_checks
     prompt_reboot
