@@ -12,7 +12,7 @@
 #         - Full system update and package manager configuration
 #
 #     • Package Installation:
-#         - Comprehensive package installation from core/community/AUR repos
+#         - Comprehensive package installation from core/community
 #         - Development tools and programming language support
 #
 #     • Security Enhancements:
@@ -46,10 +46,9 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?"' ERR
 
 LOG_FILE="/var/log/arch_setup.log"
 USERNAME="sawyer"
-AUR_HELPER="yay"
 
 # -------------------------------------------------------------------------------
-# Package List (Core/Community/AUR)
+# Package List (Core/Community)
 # -------------------------------------------------------------------------------
 CORE_PACKAGES=(
   base base-devel linux linux-firmware grub efibootmgr intel-ucode amd-ucode
@@ -57,11 +56,6 @@ CORE_PACKAGES=(
   docker docker-compose qemu libvirt virt-manager dnsmasq bridge-utils
   htop neofetch jq rsync tree fzf lsof smartmontools sysstat iotop
   inotify-tools strace nmap tcpdump wget curl rsync openssl-1.1
-)
-
-AUR_PACKAGES=(
-  plex-media-server caddy-bin visual-studio-code-bin
-  zfs-linux-git linux-zfs-headers
 )
 
 # -------------------------------------------------------------------------------
@@ -139,16 +133,6 @@ create_user() {
 install_packages() {
     log INFO "Installing core packages"
     pacman -Syu --noconfirm --needed "${CORE_PACKAGES[@]}" || handle_error "Core package install failed"
-
-    log INFO "Installing AUR helper ($AUR_HELPER)"
-    pacman -S --needed --noconfirm git base-devel
-    sudo -u "$USERNAME" bash -c "
-        cd /tmp && git clone https://aur.archlinux.org/$AUR_HELPER.git &&
-        cd $AUR_HELPER && makepkg -si --noconfirm"
-
-    log INFO "Installing AUR packages"
-    sudo -u "$USERNAME" $AUR_HELPER -Syu --noconfirm "${AUR_PACKAGES[@]}"
-}
 
 # ==============================================================================
 # 5. SECURITY CONFIGURATION
@@ -305,7 +289,6 @@ EOF
 finalize() {
     log INFO "Cleaning package cache"
     paccache -rk 2
-    sudo -u "$USERNAME" $AUR_HELPER -Scc --noconfirm
     
     log INFO "System Information:"
     free -h | awk '/Mem/{print "Memory: " $3 "/" $2}'
