@@ -440,11 +440,67 @@ install_caddy() {
 
 install_plex() {
     log INFO "Installing Plex Media Server..."
-    # -----------------------------------------------------------------------------
-    # [PLACEHOLDER] Plex installation for Debian:
-    # Implement Plex Media Server installation steps for Debian here.
-    # -----------------------------------------------------------------------------
-    log INFO "Plex installation placeholder executed. Please fill in with your Debian-specific Plex installation steps."
+
+    # Check if Plex is already installed.
+    if dpkg -s plexmediaserver &>/dev/null; then
+        log INFO "Plex Media Server is already installed."
+        return
+    fi
+
+    # Ensure curl is available.
+    if ! command -v curl &>/dev/null; then
+        apt-get install -y curl || handle_error "Failed to install curl required for Plex."
+    fi
+
+    # Hard-coded URL for the Plex .deb package.
+    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
+    local plex_deb="plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
+
+    log INFO "Downloading Plex package from $plex_url..."
+    curl -L -o "$plex_deb" "$plex_url" || handle_error "Failed to download Plex package."
+
+    log INFO "Installing Plex Media Server .deb package..."
+    if ! dpkg -i "$plex_deb"; then
+        log WARN "dpkg installation failed; attempting to fix dependencies..."
+        apt-get install -f -y || handle_error "Failed to resolve dependencies for Plex Media Server."
+    fi
+
+    # Create the 'plex' group if it does not exist.
+    if ! getent group plex &>/dev/null; then
+        log INFO "Creating plex group..."
+        groupadd plex || handle_error "Failed to create plex group."
+    fi
+
+    # Create the 'plex' user if it does not exist.
+    if ! id plex &>/dev/null; then
+        log INFO "Creating plex user..."
+        useradd -r -g plex -d /var/lib/plexmediaserver -s /usr/sbin/nologin plex || handle_error "Failed to create plex user."
+    fi
+
+    # Adjust ownership and permissions on the Plex library directory, if it exists.
+    if [ -d /var/lib/plexmediaserver ]; then
+        log INFO "Setting ownership and write permissions on /var/lib/plexmediaserver..."
+        chown -R plex:plex /var/lib/plexmediaserver || warn "Failed to change ownership for /var/lib/plexmediaserver."
+        chmod g+w /var/lib/plexmediaserver || warn "Failed to add group write permission to /var/lib/plexmediaserver."
+    else
+        warn "/var/lib/plexmediaserver directory not found."
+    fi
+
+    # Workaround: Add a cron job to start Plex a minute after reboot.
+    log INFO "Adding cron job to start Plex Media Server after boot..."
+    if ! crontab -l 2>/dev/null | grep -q "systemctl start plexmediaserver.service"; then
+        (crontab -l 2>/dev/null; echo "@reboot sleep 60; systemctl start plexmediaserver.service") | crontab - \
+            || warn "Failed to add Plex service activation cron job."
+    fi
+
+    # Enable and restart the Plex service.
+    systemctl enable plexmediaserver || warn "Failed to enable Plex Media Server service."
+    systemctl restart plexmediaserver || warn "Failed to start Plex Media Server service."
+
+    log INFO "Plex Media Server installed and configured successfully."
+
+    # Clean up the downloaded .deb file.
+    rm -f "$plex_deb" || warn "Failed to remove Plex .deb package file."
 }
 
 install_and_mount_zfs() {
