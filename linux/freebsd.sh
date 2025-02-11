@@ -436,29 +436,6 @@ setup_repos() {
 }
 
 # ------------------------------------------------------------------------------
-# 6. DOCKER CONFIGURATION
-# ------------------------------------------------------------------------------
-
-# Install Docker and Docker Compose, enable the service, and add the user to the docker group
-install_docker() {
-    log INFO "Installing Docker and Docker Compose..."
-    if ! pkg install -y docker docker-compose; then
-        die "Docker installation failed."
-    fi
-
-    sysrc docker_enable=YES
-    if ! service docker start; then
-        die "Failed to start Docker service."
-    fi
-
-    if ! pw groupmod docker -m "$USERNAME"; then
-        warn "Failed to add user '$USERNAME' to docker group."
-    else
-        log INFO "User '$USERNAME' added to docker group."
-    fi
-}
-
-# ------------------------------------------------------------------------------
 # 7. FINALIZATION
 # ------------------------------------------------------------------------------
 
@@ -505,7 +482,6 @@ main() {
     install_plex
     configure_zfs
     setup_repos
-    install_docker
     configure_periodic
     configure_sysctl
     install_zig
