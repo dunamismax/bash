@@ -1145,11 +1145,11 @@ main() {
     configure_firewall
     configure_fail2ban
     install_plex
-    #configure_zfs
+    configure_zfs
     setup_repos
     caddy_config
     copy_shell_configs
-    #enable_dunamismax_services
+    enable_dunamismax_services
     docker_config
     install_zig_binary
     install_ly
