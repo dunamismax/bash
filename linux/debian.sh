@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: debian_setup.sh
-# Description: Automated Debian Setup & Hardening Script with enhanced logging,
-#              Nord‑themed color output, progress bars, and robust error handling.
+# Description: Automated Debian setup and hardening script with robust error
+#              handling and improved logging. This script configures system
+#              updates, user setup, firewall rules, SSH hardening, package
+#              installation, and additional services.
 # Author: Your Name | License: MIT
-# Version: 2.0
+# Version: 2.1
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -12,7 +14,7 @@
 #
 # Notes:
 #   - This script must be run as root.
-#   - Logs are stored in /var/log/debian_setup.log.
+#   - Log output is saved to /var/log/debian_setup.log.
 #
 # ------------------------------------------------------------------------------
 
@@ -27,218 +29,209 @@ set -Eeuo pipefail
 LOG_FILE="/var/log/debian_setup.log"
 USERNAME="sawyer"
 
-# Package List
-PACKAGES="bash zsh fish vim nano emacs mc neovim screen tmux \
-gcc make cmake meson intltool gettext pigz libtool pkg-config bzip2 git \
-chrony sudo bash-completion logrotate \
-curl wget tcpdump rsync nmap lynx dnsutils mtr netcat-openbsd socat \
-htop tig jq vnstat tree fzf smartmontools lsof \
-gdisk ntfs-3g ncdu unzip zip \
-patch gawk expect \
-fd-find bat ripgrep hyperfine \
-ffmpeg restic mpv nnn newsboat irssi \
-taskwarrior cowsay figlet \
-ufw fail2ban \
-aircrack-ng reaver hydra john sqlmap gobuster dirb wfuzz \
-netdiscover arp-scan \
-ettercap-text-only tshark hashcat recon-ng crunch iotop iftop \
-sysstat traceroute \
-whois strace ltrace iperf3 binwalk \
-foremost steghide hashid"
+# List of essential packages to be installed.
+PACKAGES=(
+    bash zsh fish vim nano emacs mc neovim screen tmux
+    gcc make cmake meson intltool gettext pigz libtool pkg-config bzip2 git
+    chrony sudo bash-completion logrotate
+    curl wget tcpdump rsync nmap lynx dnsutils mtr netcat-openbsd socat
+    htop tig jq vnstat tree fzf smartmontools lsof
+    gdisk ntfs-3g ncdu unzip zip
+    patch gawk expect
+    fd-find bat ripgrep hyperfine
+    ffmpeg restic mpv nnn newsboat irssi
+    taskwarrior cowsay figlet
+    ufw fail2ban
+    aircrack-ng reaver hydra john sqlmap gobuster dirb wfuzz
+    netdiscover arp-scan
+    ettercap-text-only tshark hashcat recon-ng crunch iotop iftop
+    sysstat traceroute
+    whois strace ltrace iperf3 binwalk
+    foremost steghide hashid
+)
 
 # ------------------------------------------------------------------------------
-# NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
+# COLOR CONSTANTS (Nord theme; 24‑bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-NORD0='\033[38;2;46;52;64m'      # #2E3440
-NORD1='\033[38;2;59;66;82m'      # #3B4252
-NORD2='\033[38;2;67;76;94m'      # #434C5E
-NORD3='\033[38;2;76;86;106m'     # #4C566A
-NORD4='\033[38;2;216;222;233m'   # #D8DEE9
-NORD5='\033[38;2;229;233;240m'   # #E5E9F0
-NORD6='\033[38;2;236;239;244m'   # #ECEFF4
-NORD7='\033[38;2;143;188;187m'   # #8FBCBB
-NORD8='\033[38;2;136;192;208m'   # #88C0D0
-NORD9='\033[38;2;129;161;193m'   # #81A1C1
-NORD10='\033[38;2;94;129;172m'   # #5E81AC
-NORD11='\033[38;2;191;97;106m'   # #BF616A
-NORD12='\033[38;2;208;135;112m'  # #D08770
-NORD13='\033[38;2;235;203;139m'  # #EBCB8B
-NORD14='\033[38;2;163;190;140m'  # #A3BE8C
-NORD15='\033[38;2;180;142;173m'  # #B48EAD
+NORD0='\033[38;2;46;52;64m'      # Dark background color
+NORD1='\033[38;2;59;66;82m'
+NORD2='\033[38;2;67;76;94m'
+NORD3='\033[38;2;76;86;106m'
+NORD4='\033[38;2;216;222;233m'
+NORD5='\033[38;2;229;233;240m'
+NORD6='\033[38;2;236;239;244m'
+NORD7='\033[38;2;143;188;187m'
+NORD8='\033[38;2;136;192;208m'
+NORD9='\033[38;2;129;161;193m'   # Bluish for DEBUG messages
+NORD10='\033[38;2;94;129;172m'
+NORD11='\033[38;2;191;97;106m'   # Reddish for ERROR messages
+NORD12='\033[38;2;208;135;112m'
+NORD13='\033[38;2;235;203;139m'  # Yellowish for WARN messages
+NORD14='\033[38;2;163;190;140m'  # Greenish for INFO messages
 NC='\033[0m'                    # No Color
 
 # ------------------------------------------------------------------------------
-# LOGGING FUNCTION
+# LOGGING FUNCTIONS
 # ------------------------------------------------------------------------------
+# log <LEVEL> <message>
+# Logs the provided message with a timestamp and level both to the log file
+# and (if outputting to a terminal) to stderr with a themed color.
 log() {
-    # Usage: log [LEVEL] message
     local level="${1:-INFO}"
     shift
     local message="$*"
-    local upper_level="${level^^}"
-    local color="$NC"
-
-    case "$upper_level" in
-        INFO)  color="${NORD14}" ;;  # Greenish
-        WARN)  color="${NORD13}" ;;  # Yellowish
-        ERROR) color="${NORD11}" ;;  # Reddish
-        DEBUG) color="${NORD9}"  ;;  # Bluish
-        *)     color="$NC"     ;;
-    esac
-
     local timestamp
     timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
-    local log_entry="[$timestamp] [$upper_level] $message"
+    local log_entry="[$timestamp] [${level^^}] $message"
+
+    # Append the log entry to the log file.
     echo "$log_entry" >> "$LOG_FILE"
-    printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
+
+    # If stderr is a terminal, add color.
+    if [ -t 2 ]; then
+        case "${level^^}" in
+            INFO)  printf "%b%s%b\n" "$NORD14" "$log_entry" "$NC" ;;
+            WARN)  printf "%b%s%b\n" "$NORD13" "$log_entry" "$NC" ;;
+            ERROR) printf "%b%s%b\n" "$NORD11" "$log_entry" "$NC" ;;
+            DEBUG) printf "%b%s%b\n" "$NORD9"  "$log_entry" "$NC" ;;
+            *)     printf "%s\n" "$log_entry" ;;
+        esac
+    else
+        echo "$log_entry" >&2
+    fi
 }
 
-warn() {
-    log WARN "$@"
-}
+log_info()  { log INFO "$@"; }
+log_warn()  { log WARN "$@"; }
+log_error() { log ERROR "$@"; }
+log_debug() { log DEBUG "$@"; }
 
+# handle_error <error_message> [exit_code]
+# Logs an error message and terminates the script with the provided exit code.
 handle_error() {
-    local error_message="${1:-"Unknown error occurred"}"
+    local error_message="${1:-"An unknown error occurred."}"
     local exit_code="${2:-1}"
-    log ERROR "$error_message (Exit Code: $exit_code)"
-    log ERROR "Script encountered an error at line $LINENO in function ${FUNCNAME[1]:-main}."
+    log_error "$error_message (Exit Code: $exit_code)"
+    log_error "Error encountered at line $LINENO in function ${FUNCNAME[1]:-main}."
     echo -e "${NORD11}ERROR: $error_message (Exit Code: $exit_code)${NC}" >&2
     exit "$exit_code"
 }
 
+# cleanup
+# This function is executed upon script exit to perform any necessary cleanup.
 cleanup() {
-    log INFO "Performing cleanup tasks before exit."
-    # Insert any necessary cleanup commands here
+    log_info "Performing cleanup tasks before exit."
+    # Insert any necessary cleanup commands here.
 }
 
 trap cleanup EXIT
 trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 
 # ------------------------------------------------------------------------------
-# PROGRESS BAR FUNCTION
+# UTILITY FUNCTIONS
 # ------------------------------------------------------------------------------
-progress_bar() {
-    # Usage: progress_bar "Message" [duration_in_seconds]
-    local message="${1:-Processing...}"
-    local duration="${2:-5}"
-    local steps=50
-    local sleep_time
-    sleep_time=$(echo "$duration / $steps" | bc -l)
-    local progress=0
-    local filled=""
-    local unfilled=""
 
-    printf "\n${NORD8}%s${NC}\n" "$message"
-
-    for (( i = 1; i <= steps; i++ )); do
-        progress=$(( i * 100 / steps ))
-        filled=$(printf "%-${i}s" | tr ' ' '█')
-        unfilled=$(printf "%-$(( steps - i ))s" | tr ' ' '░')
-        printf "\r${NORD8}[%s%s] %3d%%%s" "$filled" "$unfilled" "$progress" "$NC"
-        sleep "$sleep_time"
-    done
-    printf "\n"
-}
-
-# ------------------------------------------------------------------------------
-# SECTION HEADER FUNCTION
-# ------------------------------------------------------------------------------
+# print_section <title>
+# Logs a formatted section header.
 print_section() {
     local title="$1"
     local border
     border=$(printf '─%.0s' {1..60})
-    log INFO "${NORD10}${border}${NC}"
-    log INFO "${NORD10}  $title${NC}"
-    log INFO "${NORD10}${border}${NC}"
+    log_info "${NORD10}${border}${NC}"
+    log_info "${NORD10}  $title${NC}"
+    log_info "${NORD10}${border}${NC}"
 }
 
-# ------------------------------------------------------------------------------
-# UTILITY FUNCTIONS
-# ------------------------------------------------------------------------------
-
-# Ensure the script is run as root
+# check_root
+# Exits with an error if the script is not executed as root.
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         handle_error "Script must be run as root. Exiting."
     fi
 }
 
-# Check for network connectivity by pinging a reliable host
+# check_network
+# Tests network connectivity by pinging a well-known host.
 check_network() {
     print_section "Network Connectivity Check"
-    log INFO "Verifying network connectivity..."
+    log_info "Verifying network connectivity..."
     if ! ping -c 1 -W 5 google.com >/dev/null 2>&1; then
         handle_error "No network connectivity. Please verify your network settings."
     fi
-    log INFO "Network connectivity verified."
+    log_info "Network connectivity verified."
 }
 
-# Update package repositories and upgrade system packages
+# update_system
+# Updates package repository information and upgrades installed packages.
 update_system() {
     print_section "System Update & Upgrade"
-    log INFO "Updating package repositories..."
+    log_info "Updating package repositories..."
     if ! apt-get update -qq; then
         handle_error "Failed to update package repositories."
     fi
 
-    log INFO "Upgrading system packages..."
+    log_info "Upgrading system packages..."
     if ! apt-get upgrade -y; then
         handle_error "Failed to upgrade packages."
     fi
 
-    progress_bar "System update complete..." 3
+    log_info "System update and upgrade complete."
 }
 
-# Create the specified user if it does not already exist
+# ensure_user
+# Creates the specified user if it does not already exist.
 ensure_user() {
     print_section "User Setup"
     if id -u "$USERNAME" >/dev/null 2>&1; then
-        log INFO "User '$USERNAME' already exists."
+        log_info "User '$USERNAME' already exists."
     else
-        log INFO "Creating user '$USERNAME'..."
+        log_info "Creating user '$USERNAME'..."
         if ! useradd -m -s /bin/bash "$USERNAME"; then
             handle_error "Failed to create user '$USERNAME'."
         fi
+        # Lock the password to prevent direct login.
         if ! passwd -l "$USERNAME" >/dev/null 2>&1; then
-            warn "Failed to lock password for user '$USERNAME'."
+            log_warn "Failed to lock password for user '$USERNAME'."
         fi
-        log INFO "User '$USERNAME' created successfully."
+        log_info "User '$USERNAME' created successfully."
     fi
 }
 
-# Configure the sudoers file for the specified user
+# configure_sudoers
+# Ensures that the specified user has sudo privileges.
 configure_sudoers() {
     print_section "Sudoers Configuration"
     local SUDOERS_FILE="/etc/sudoers"
 
-    # Backup sudoers file if a backup does not already exist.
+    # Backup the sudoers file if a backup does not already exist.
     if [ ! -f "${SUDOERS_FILE}.bak" ]; then
-        cp "$SUDOERS_FILE" "${SUDOERS_FILE}.bak" || warn "Unable to create backup of sudoers file"
-        log INFO "Backup of sudoers file created at ${SUDOERS_FILE}.bak"
+        cp "$SUDOERS_FILE" "${SUDOERS_FILE}.bak" || log_warn "Unable to create backup of sudoers file."
+        log_info "Backup of sudoers file created at ${SUDOERS_FILE}.bak"
     fi
 
-    # Append entry for the user if it does not exist.
+    # Append the sudoers entry for the user if it does not already exist.
     if grep -Eq "^[[:space:]]*${USERNAME}[[:space:]]+ALL=\(ALL\)[[:space:]]+ALL" "$SUDOERS_FILE"; then
-        log INFO "Sudoers entry for '${USERNAME}' already exists."
+        log_info "Sudoers entry for '$USERNAME' already exists."
     else
-        echo "${USERNAME} ALL=(ALL) ALL" >> "$SUDOERS_FILE" || warn "Failed to append sudoers entry for '${USERNAME}'"
-        log INFO "Added sudoers entry for '${USERNAME}'."
+        echo "${USERNAME} ALL=(ALL) ALL" >> "$SUDOERS_FILE" || log_warn "Failed to append sudoers entry for '$USERNAME'."
+        log_info "Added sudoers entry for '$USERNAME'."
     fi
 
-    log INFO "Sudoers configuration complete."
+    log_info "Sudoers configuration complete."
 }
 
-# Apply kernel performance tuning parameters
+# configure_sysctl
+# Applies kernel performance tuning parameters by appending settings to sysctl.conf.
 configure_sysctl() {
     print_section "Kernel Performance Tuning"
     local SYSCTL_CONF="/etc/sysctl.conf"
     local BACKUP_CONF="/etc/sysctl.conf.bak"
 
     if [ ! -f "$BACKUP_CONF" ]; then
-        cp "$SYSCTL_CONF" "$BACKUP_CONF" || warn "Unable to create a backup of $SYSCTL_CONF"
-        log INFO "Backup of sysctl.conf created at $BACKUP_CONF"
+        cp "$SYSCTL_CONF" "$BACKUP_CONF" || log_warn "Unable to create a backup of $SYSCTL_CONF"
+        log_info "Backup of sysctl.conf created at $BACKUP_CONF"
     else
-        log INFO "Backup already exists at $BACKUP_CONF"
+        log_info "Backup already exists at $BACKUP_CONF"
     fi
 
     if ! grep -q "## Debian Performance Tuning" "$SYSCTL_CONF"; then
@@ -253,94 +246,93 @@ net.ipv4.tcp_keepalive_time = 300
 net.ipv4.tcp_keepalive_intvl = 30
 net.ipv4.tcp_keepalive_probes = 10
 EOF
-        log INFO "Performance tuning parameters appended to $SYSCTL_CONF"
+        log_info "Performance tuning parameters appended to $SYSCTL_CONF"
     else
-        log INFO "Performance tuning parameters already exist in $SYSCTL_CONF"
+        log_info "Performance tuning parameters already exist in $SYSCTL_CONF"
     fi
 
     if sysctl -p; then
-        log INFO "Kernel parameters reloaded successfully."
+        log_info "Kernel parameters reloaded successfully."
     else
-        warn "Failed to reload sysctl parameters. Please review $SYSCTL_CONF for errors."
+        log_warn "Failed to reload sysctl parameters. Please review $SYSCTL_CONF for errors."
     fi
 }
 
-# Install essential system packages
+# install_packages
+# Installs a list of essential system packages.
 install_packages() {
     print_section "Essential Package Installation"
-    log INFO "Installing packages..."
-    if ! apt-get install -y ${PACKAGES}; then
+    log_info "Installing packages..."
+    if ! apt-get install -y "${PACKAGES[@]}"; then
         handle_error "Failed to install one or more packages."
     fi
-    progress_bar "Package installation complete..." 3
+    log_info "Package installation complete."
 }
 
-# ------------------------------------------------------------------------------
-# CORE CONFIGURATION FUNCTIONS
-# ------------------------------------------------------------------------------
-
-# Harden and configure the SSH server
+# configure_ssh
+# Hardens the SSH server by disabling root login and password authentication.
 configure_ssh() {
     print_section "SSH Hardening"
-    log INFO "Configuring SSH server..."
+    log_info "Configuring SSH server..."
     local SSH_CONFIG="/etc/ssh/sshd_config"
     if [ -f "$SSH_CONFIG" ]; then
         cp "$SSH_CONFIG" "${SSH_CONFIG}.bak"
-        log INFO "Backup of SSH config saved as ${SSH_CONFIG}.bak"
+        log_info "Backup of SSH config saved as ${SSH_CONFIG}.bak"
         sed -i -e 's/^#\?PermitRootLogin.*/PermitRootLogin no/' \
                -e 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' \
                -e 's/^#\?PermitEmptyPasswords.*/PermitEmptyPasswords no/' "$SSH_CONFIG"
         if ! systemctl restart ssh; then
             handle_error "Failed to restart SSH service."
         fi
-        log INFO "SSH configuration updated and service restarted."
+        log_info "SSH configuration updated and service restarted."
     else
-        warn "SSH configuration file not found at $SSH_CONFIG."
+        log_warn "SSH configuration file not found at $SSH_CONFIG."
     fi
 }
 
-# Configure the firewall using ufw
+# configure_firewall
+# Configures the Uncomplicated Firewall (ufw) with default rules and enables it.
 configure_firewall() {
     print_section "Firewall Configuration"
-    log INFO "Configuring firewall with ufw..."
+    log_info "Configuring firewall with ufw..."
     local ufw_cmd="/usr/sbin/ufw"
     if [ ! -x "$ufw_cmd" ]; then
         handle_error "ufw command not found at $ufw_cmd. Please install ufw."
     fi
-    "$ufw_cmd" default deny incoming || warn "Failed to set default deny incoming"
-    "$ufw_cmd" default allow outgoing || warn "Failed to set default allow outgoing"
-    "$ufw_cmd" allow 22/tcp || warn "Failed to allow SSH"
-    "$ufw_cmd" allow 80/tcp || warn "Failed to allow HTTP"
-    "$ufw_cmd" allow 443/tcp || warn "Failed to allow HTTPS"
-    "$ufw_cmd" allow 32400/tcp || warn "Failed to allow Plex Media Server port"
+
+    "$ufw_cmd" default deny incoming || log_warn "Failed to set default deny incoming"
+    "$ufw_cmd" default allow outgoing || log_warn "Failed to set default allow outgoing"
+    "$ufw_cmd" allow 22/tcp || log_warn "Failed to allow SSH"
+    "$ufw_cmd" allow 80/tcp || log_warn "Failed to allow HTTP"
+    "$ufw_cmd" allow 443/tcp || log_warn "Failed to allow HTTPS"
+    "$ufw_cmd" allow 32400/tcp || log_warn "Failed to allow Plex Media Server port"
     "$ufw_cmd" --force enable || handle_error "Failed to enable ufw firewall"
-    systemctl enable ufw || warn "Failed to enable ufw service"
-    systemctl start ufw || warn "Failed to start ufw service"
-    log INFO "Firewall configured and enabled."
+    systemctl enable ufw || log_warn "Failed to enable ufw service"
+    systemctl start ufw || log_warn "Failed to start ufw service"
+    log_info "Firewall configured and enabled."
 }
 
-# Enable and start the fail2ban service
+# configure_fail2ban
+# Enables and starts the fail2ban service for intrusion prevention.
 configure_fail2ban() {
     print_section "fail2ban Configuration"
-    log INFO "Enabling fail2ban service..."
+    log_info "Enabling fail2ban service..."
     if ! systemctl enable fail2ban; then
-        warn "Failed to enable fail2ban service."
+        log_warn "Failed to enable fail2ban service."
     fi
     if ! systemctl start fail2ban; then
-        warn "Failed to start fail2ban service."
+        log_warn "Failed to start fail2ban service."
     else
-        log INFO "fail2ban service started successfully."
+        log_info "fail2ban service started successfully."
     fi
 }
 
-# ------------------------------------------------------------------------------
-# STORAGE & SERVICES CONFIGURATION
-# ------------------------------------------------------------------------------
-
-# Install and configure Plex Media Server
+# install_plex
+# Downloads and installs the Plex Media Server package, then configures it to
+# run under the specified user account.
 install_plex() {
     print_section "Plex Media Server Installation"
-    log INFO "Ensuring required system utilities are available..."
+    log_info "Ensuring required system utilities are available..."
     export PATH="$PATH:/sbin:/usr/sbin"
     if ! command -v ldconfig >/dev/null; then
         handle_error "ldconfig command not found. Please install libc-bin or fix your PATH."
@@ -348,57 +340,62 @@ install_plex() {
     if ! command -v start-stop-daemon >/dev/null; then
         handle_error "start-stop-daemon command not found. Please install dpkg or fix your PATH."
     fi
-    log INFO "Downloading Plex Media Server deb file..."
+    log_info "Downloading Plex Media Server deb file..."
     local plex_deb="/tmp/plexmediaserver.deb"
     local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
     if ! wget -q -O "$plex_deb" "$plex_url"; then
         handle_error "Failed to download Plex Media Server deb file."
     fi
-    log INFO "Installing Plex Media Server from deb file..."
+    log_info "Installing Plex Media Server from deb file..."
     if ! dpkg -i "$plex_deb"; then
-        log WARN "dpkg installation encountered errors, attempting to fix dependencies..."
+        log_warn "dpkg installation encountered errors, attempting to fix dependencies..."
         if ! apt-get install -f -y; then
             handle_error "Failed to install Plex Media Server due to unresolved dependencies."
         fi
     fi
     local PLEX_CONF="/etc/default/plexmediaserver"
     if [ -f "$PLEX_CONF" ]; then
-        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" || warn "Failed to set Plex user in $PLEX_CONF"
+        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" \
+            || log_warn "Failed to set Plex user in $PLEX_CONF"
     else
-        echo "PLEX_MEDIA_SERVER_USER=${USERNAME}" > "$PLEX_CONF" || warn "Failed to create $PLEX_CONF"
+        echo "PLEX_MEDIA_SERVER_USER=${USERNAME}" > "$PLEX_CONF" \
+            || log_warn "Failed to create $PLEX_CONF"
     fi
     if ! systemctl enable plexmediaserver; then
-        warn "Failed to enable Plex Media Server service."
+        log_warn "Failed to enable Plex Media Server service."
     fi
     if ! systemctl start plexmediaserver; then
-        warn "Plex Media Server failed to start."
+        log_warn "Plex Media Server failed to start."
     else
-        log INFO "Plex Media Server installed and started."
+        log_info "Plex Media Server installed and started."
     fi
 }
 
-# Configure ZFS: import pool and set mountpoint
+# configure_zfs
+# Imports a ZFS pool (if not already imported) and sets its mountpoint.
 configure_zfs() {
     print_section "ZFS Configuration"
     local ZPOOL_NAME="WD_BLACK"
     if ! zpool list "$ZPOOL_NAME" >/dev/null 2>&1; then
-        log INFO "Importing ZFS pool '$ZPOOL_NAME'..."
+        log_info "Importing ZFS pool '$ZPOOL_NAME'..."
         if ! zpool import "$ZPOOL_NAME"; then
             handle_error "Failed to import ZFS pool '$ZPOOL_NAME'."
         fi
     fi
 
     if ! zfs set mountpoint=/media/"$ZPOOL_NAME" "$ZPOOL_NAME"; then
-        warn "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
+        log_warn "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
     else
-        log INFO "ZFS pool '$ZPOOL_NAME' mountpoint set to /media/$ZPOOL_NAME."
+        log_info "ZFS pool '$ZPOOL_NAME' mountpoint set to /media/$ZPOOL_NAME."
     fi
 }
 
-# Clone GitHub repositories into the user's home directory
+# setup_repos
+# Clones several GitHub repositories into a dedicated directory in the user's
+# home folder.
 setup_repos() {
     print_section "GitHub Repositories Setup"
-    log INFO "Setting up GitHub repositories for user '$USERNAME'..."
+    log_info "Setting up GitHub repositories for user '$USERNAME'..."
     local GH_DIR="/home/$USERNAME/github"
     if ! mkdir -p "$GH_DIR"; then
         handle_error "Failed to create GitHub directory at $GH_DIR."
@@ -407,49 +404,49 @@ setup_repos() {
     for repo in bash windows web python go misc; do
         local REPO_DIR="$GH_DIR/$repo"
         if [ -d "$REPO_DIR" ]; then
-            log INFO "Removing existing directory for repository '$repo'."
+            log_info "Removing existing directory for repository '$repo'."
             rm -rf "$REPO_DIR"
         fi
         if ! git clone "https://github.com/dunamismax/$repo.git" "$REPO_DIR"; then
-            warn "Failed to clone repository '$repo'."
+            log_warn "Failed to clone repository '$repo'."
         else
             chown -R "$USERNAME:$USERNAME" "$REPO_DIR"
-            log INFO "Repository '$repo' cloned successfully."
+            log_info "Repository '$repo' cloned successfully."
         fi
     done
 }
 
-# Configure periodic system maintenance tasks via cron
+# configure_periodic
+# Sets up a daily cron job for system maintenance (update, upgrade, autoremove).
 configure_periodic() {
     print_section "Periodic Maintenance Setup"
-    log INFO "Configuring periodic system maintenance tasks..."
+    log_info "Configuring periodic system maintenance tasks..."
     local CRON_FILE="/etc/cron.daily/debian_maintenance"
     cat <<'EOF' > "$CRON_FILE"
 #!/bin/sh
 # Debian maintenance script (added by debian_setup script)
 apt-get update -qq && apt-get upgrade -y && apt-get autoremove -y
 EOF
-    chmod +x "$CRON_FILE" || warn "Failed to set execute permission on $CRON_FILE"
-    log INFO "Periodic maintenance script created at $CRON_FILE."
+    chmod +x "$CRON_FILE" || log_warn "Failed to set execute permission on $CRON_FILE"
+    log_info "Periodic maintenance script created at $CRON_FILE."
 }
 
-# ------------------------------------------------------------------------------
-# FINALIZATION FUNCTIONS
-# ------------------------------------------------------------------------------
-
-# Log final system status
+# final_checks
+# Logs some final system information for confirmation.
 final_checks() {
     print_section "Final System Checks"
-    log INFO "Kernel version: $(uname -r)"
-    log INFO "Disk usage: $(df -h /)"
-    log INFO "Physical memory: $(free -h | awk '/^Mem:/{print $2}')"
+    log_info "Kernel version: $(uname -r)"
+    log_info "Disk usage: $(df -h / | awk 'NR==2 {print $0}')"
+    log_info "Physical memory: $(free -h | awk '/^Mem:/{print $2}')"
 }
 
-# Prompt for system reboot with a countdown progress bar
+# prompt_reboot
+# Informs the user that the setup is complete and initiates a reboot after a
+# brief delay.
 prompt_reboot() {
     print_section "Reboot Prompt"
-    log INFO "Setup complete. The system will reboot shortly. Press Ctrl+C to cancel."
-    progress_bar "Rebooting in 10 seconds..." 10
+    log_info "Setup complete. The system will reboot in 10 seconds. Press Ctrl+C to cancel."
+    sleep 10
     shutdown -r now
 }
 
@@ -457,13 +454,13 @@ prompt_reboot() {
 # MAIN EXECUTION
 # ------------------------------------------------------------------------------
 main() {
-    # Ensure the script is executed with Bash
+    # Ensure the script is being executed with Bash.
     if [[ -z "${BASH_VERSION:-}" ]]; then
         echo -e "${NORD11}ERROR: Please run this script with bash.${NC}" >&2
         exit 1
     fi
 
-    # Ensure log directory exists and set proper permissions
+    # Ensure that the log directory exists and has the proper permissions.
     local LOG_DIR
     LOG_DIR="$(dirname "$LOG_FILE")"
     if [[ ! -d "$LOG_DIR" ]]; then
@@ -472,7 +469,8 @@ main() {
     touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
     chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
-    log INFO "Debian setup script execution started."
+    log_info "Debian setup script execution started."
+
     check_root
     check_network
     update_system
@@ -483,7 +481,7 @@ main() {
     configure_firewall
     configure_fail2ban
     install_plex
-    #configure_zfs
+    configure_zfs
     setup_repos
     configure_periodic
     configure_sysctl
