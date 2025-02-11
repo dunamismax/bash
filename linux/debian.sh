@@ -441,6 +441,114 @@ setup_repos() {
     done
 }
 
+# enable_dunamismax_services
+# Creates and enables and starts the systemsd service files for FastAPI website
+enable_dunamismax_services() {
+    print_section "DunamisMax Services Setup"
+    log_info "Enabling DunamisMax website services..."
+
+    # DunamisMax AI Agents Service
+    cat <<EOF >/etc/systemd/system/dunamismax-ai-agents.service
+[Unit]
+Description=DunamisMax AI Agents Service
+After=network.target
+
+[Service]
+User=${USERNAME}
+Group=${USERNAME}
+WorkingDirectory=/home/${USERNAME}/github/web/ai_agents
+Environment="PATH=/home/${USERNAME}/github/web/ai_agents/.venv/bin"
+EnvironmentFile=/home/${USERNAME}/github/web/ai_agents/.env
+ExecStart=/home/${USERNAME}/github/web/ai_agents/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8200
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # DunamisMax File Converter Service
+    cat <<EOF >/etc/systemd/system/dunamismax-files.service
+[Unit]
+Description=DunamisMax File Converter Service
+After=network.target
+
+[Service]
+User=${USERNAME}
+Group=${USERNAME}
+WorkingDirectory=/home/${USERNAME}/github/web/converter_service
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/${USERNAME}/github/web/converter_service/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8300
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # DunamisMax Messenger Service
+    cat <<EOF >/etc/systemd/system/dunamismax-messenger.service
+[Unit]
+Description=DunamisMax Messenger
+After=network.target
+
+[Service]
+User=${USERNAME}
+Group=${USERNAME}
+WorkingDirectory=/home/${USERNAME}/github/web/messenger
+Environment="PATH=/home/${USERNAME}/github/web/messenger/.venv/bin"
+ExecStart=/home/${USERNAME}/github/web/messenger/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8100
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # DunamisMax Notes Service
+    cat <<EOF >/etc/systemd/system/dunamismax-notes.service
+[Unit]
+Description=DunamisMax Notes Page
+After=network.target
+
+[Service]
+User=${USERNAME}
+Group=${USERNAME}
+WorkingDirectory=/home/${USERNAME}/github/web/notes
+Environment="PATH=/home/${USERNAME}/github/web/notes/.venv/bin"
+ExecStart=/home/${USERNAME}/github/web/notes/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8500
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # DunamisMax Main Website Service
+    cat <<EOF >/etc/systemd/system/dunamismax.service
+[Unit]
+Description=DunamisMax Main Website
+After=network.target
+
+[Service]
+User=${USERNAME}
+Group=${USERNAME}
+WorkingDirectory=/home/${USERNAME}/github/web/dunamismax
+Environment="PATH=/home/${USERNAME}/github/web/dunamismax/.venv/bin"
+ExecStart=/home/${USERNAME}/github/web/dunamismax/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Reload systemd configuration and enable the services
+    systemctl daemon-reload
+    systemctl enable dunamismax-ai-agents.service
+    systemctl enable dunamismax-files.service
+    systemctl enable dunamismax-messenger.service
+    systemctl enable dunamismax-notes.service
+    systemctl enable dunamismax.service
+
+    log_info "DunamisMax services enabled."
+}
+
 # copy_shell_configs
 # Copies .bashrc and .profile into place from Git repo
 copy_shell_configs() {
@@ -534,6 +642,7 @@ main() {
     setup_repos
     caddy_config
     copy_shell_configs
+    enable_dunamismax_services
     configure_periodic
     final_checks
     prompt_reboot
