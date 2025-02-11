@@ -54,7 +54,6 @@ PACKAGES=(
     pkg-config
     libssl-dev
     rfkill
-    fonts-ubuntu
     bzip2
     libbz2-dev
     libffi-dev
