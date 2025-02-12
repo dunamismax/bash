@@ -506,24 +506,39 @@ install_configure_zfs() {
 setup_repos() {
     print_section "GitHub Repositories Setup"
     log_info "Setting up GitHub repositories for user '$USERNAME'..."
+
     local GH_DIR="/home/$USERNAME/github"
+
+    # Create the GitHub directory if it doesn't exist.
     if ! mkdir -p "$GH_DIR"; then
         handle_error "Failed to create GitHub directory at $GH_DIR."
     fi
 
+    # Loop through each repository and clone it.
     for repo in bash windows web python go misc; do
         local REPO_DIR="$GH_DIR/$repo"
+
+        # Remove the repo directory if it already exists.
         if [ -d "$REPO_DIR" ]; then
-            log_info "Removing existing directory for repository '$repo'."
-            rm -rf "$REPO_DIR"
+            log_info "Removing existing repository directory for '$repo'..."
+            rm -rf "$REPO_DIR" || log_warn "Failed to remove existing directory '$REPO_DIR'."
         fi
+
+        log_info "Cloning repository '$repo' into '$REPO_DIR'..."
         if ! git clone "https://github.com/dunamismax/$repo.git" "$REPO_DIR"; then
             log_warn "Failed to clone repository '$repo'."
         else
-            chown -R "$USERNAME:$USERNAME" "$REPO_DIR"
             log_info "Repository '$repo' cloned successfully."
         fi
     done
+
+    # Ensure the entire GitHub directory is owned by the target user.
+    log_info "Setting ownership of '$GH_DIR' and all its contents to '$USERNAME'..."
+    if ! chown -R "$USERNAME:$USERNAME" "$GH_DIR"; then
+        log_warn "Failed to set ownership for '$GH_DIR'."
+    else
+        log_info "Ownership for '$GH_DIR' has been set to '$USERNAME'."
+    fi
 }
 
 enable_dunamismax_services() {
@@ -933,6 +948,34 @@ EOF
     fi
 }
 
+home_permissions() {
+    print_section "Home Directory Permissions"
+    log_info "Setting ownership of /home/$USERNAME and all its contents to $USERNAME..."
+
+    # Recursively change ownership of /home/$USERNAME.
+    if ! chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"; then
+        handle_error "Failed to change ownership of /home/$USERNAME."
+    fi
+
+    # Set the setgid bit on all directories so new files inherit the group.
+    log_info "Setting the setgid bit on all directories in /home/$USERNAME..."
+    if ! find "/home/$USERNAME" -type d -exec chmod g+s {} \;; then
+        log_warn "Failed to set the setgid bit on one or more directories in /home/$USERNAME."
+    fi
+
+    # Apply default ACLs (if setfacl is available) to ensure the user has full permissions on newly created files.
+    log_info "Applying default ACLs on /home/$USERNAME..."
+    if command -v setfacl &>/dev/null; then
+        if ! setfacl -R -d -m u:"$USERNAME":rwx "/home/$USERNAME"; then
+            log_warn "Failed to apply default ACLs on /home/$USERNAME."
+        fi
+    else
+        log_warn "setfacl not found; skipping default ACL configuration."
+    fi
+
+    log_info "Home directory permissions updated. Note: Future file ownership is determined by the process creating the file."
+}
+
 final_checks() {
     print_section "Final System Checks"
     log_info "Kernel version: $(uname -r)"
@@ -1011,6 +1054,7 @@ main() {
     enable_dunamismax_services
     configure_periodic
     final_checks
+    home_permissions
     install_ly
     prompt_reboot
 }
