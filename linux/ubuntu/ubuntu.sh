@@ -175,10 +175,8 @@ PACKAGES=(
     libpam0g-dev
 )
 
-# ------------------------------------------------------------------------------
-# COLOR CONSTANTS (Nord theme; 24‑bit ANSI escape sequences)
-# ------------------------------------------------------------------------------
-NORD0='\033[38;2;46;52;64m'      # Dark background color
+# Nord Theme Colors (24-bit ANSI)
+NORD0='\033[38;2;46;52;64m'       # Dark background
 NORD1='\033[38;2;59;66;82m'
 NORD2='\033[38;2;67;76;94m'
 NORD3='\033[38;2;76;86;106m'
@@ -187,42 +185,37 @@ NORD5='\033[38;2;229;233;240m'
 NORD6='\033[38;2;236;239;244m'
 NORD7='\033[38;2;143;188;187m'
 NORD8='\033[38;2;136;192;208m'
-NORD9='\033[38;2;129;161;193m'   # Bluish for DEBUG messages
+NORD9='\033[38;2;129;161;193m'    # Debug messages
 NORD10='\033[38;2;94;129;172m'
-NORD11='\033[38;2;191;97;106m'   # Reddish for ERROR messages
+NORD11='\033[38;2;191;97;106m'    # Error messages
 NORD12='\033[38;2;208;135;112m'
-NORD13='\033[38;2;235;203;139m'  # Yellowish for WARN messages
-NORD14='\033[38;2;163;190;140m'  # Greenish for INFO messages
-NC='\033[0m'                    # No Color
+NORD13='\033[38;2;235;203;139m'   # Warning messages
+NORD14='\033[38;2;163;190;140m'   # Info messages
+NC='\033[0m'                     # Reset to No Color
 
-# ------------------------------------------------------------------------------
-# LOGGING FUNCTIONS
-# ------------------------------------------------------------------------------
-# log <LEVEL> <message>
-# Logs the provided message with a timestamp and level both to the log file
-# and (if outputting to a terminal) to stderr with a themed color.
+# Logging Functions
 log() {
     local level="${1:-INFO}"
     shift
     local message="$*"
     local timestamp
     timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
-    local log_entry="[$timestamp] [${level^^}] $message"
-
-    # Append the log entry to the log file.
-    echo "$log_entry" >> "$LOG_FILE"
-
-    # If stderr is a terminal, add color.
+    local entry="[$timestamp] [${level^^}] $message"
+    
+    # Append log entry to file
+    echo "$entry" >> "$LOG_FILE"
+    
+    # If stderr is a terminal, print with color; otherwise, print plain.
     if [ -t 2 ]; then
         case "${level^^}" in
-            INFO)  printf "%b%s%b\n" "$NORD14" "$log_entry" "$NC" ;;
-            WARN)  printf "%b%s%b\n" "$NORD13" "$log_entry" "$NC" ;;
-            ERROR) printf "%b%s%b\n" "$NORD11" "$log_entry" "$NC" ;;
-            DEBUG) printf "%b%s%b\n" "$NORD9"  "$log_entry" "$NC" ;;
-            *)     printf "%s\n" "$log_entry" ;;
+            INFO)  printf "%b%s%b\n" "$NORD14" "$entry" "$NC" ;;
+            WARN)  printf "%b%s%b\n" "$NORD13" "$entry" "$NC" ;;
+            ERROR) printf "%b%s%b\n" "$NORD11" "$entry" "$NC" ;;
+            DEBUG) printf "%b%s%b\n" "$NORD9"  "$entry" "$NC" ;;
+            *)     printf "%s\n" "$entry" ;;
         esac
     else
-        echo "$log_entry" >&2
+        echo "$entry" >&2
     fi
 }
 
@@ -232,25 +225,23 @@ log_error() { log ERROR "$@"; }
 log_debug() { log DEBUG "$@"; }
 
 handle_error() {
-    local error_message="${1:-"An unknown error occurred."}"
-    local exit_code="${2:-1}"
-    log_error "$error_message (Exit Code: $exit_code)"
+    local msg="${1:-An unknown error occurred.}"
+    local code="${2:-1}"
+    log_error "$msg (Exit Code: $code)"
     log_error "Error encountered at line $LINENO in function ${FUNCNAME[1]:-main}."
-    echo -e "${NORD11}ERROR: $error_message (Exit Code: $exit_code)${NC}" >&2
-    exit "$exit_code"
+    echo -e "${NORD11}ERROR: $msg (Exit Code: $code)${NC}" >&2
+    exit "$code"
 }
 
 cleanup() {
     log_info "Performing cleanup tasks before exit."
-    # Insert any necessary cleanup commands here.
+    # Add any cleanup commands here.
 }
 
 trap cleanup EXIT
 trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 
-# ------------------------------------------------------------------------------
-# UTILITY FUNCTIONS
-# ------------------------------------------------------------------------------
+# Utility Functions
 
 print_section() {
     local title="$1"
@@ -418,6 +409,7 @@ configure_ssh() {
 configure_firewall() {
     print_section "Firewall Configuration"
     log_info "Configuring firewall with ufw..."
+
     local ufw_cmd="/usr/sbin/ufw"
     if [ ! -x "$ufw_cmd" ]; then
         handle_error "ufw command not found at $ufw_cmd. Please install ufw."
@@ -430,6 +422,7 @@ configure_firewall() {
     "$ufw_cmd" allow 443/tcp || log_warn "Failed to allow HTTPS"
     "$ufw_cmd" allow 32400/tcp || log_warn "Failed to allow Plex Media Server port"
     "$ufw_cmd" --force enable || handle_error "Failed to enable ufw firewall"
+
     systemctl enable ufw || log_warn "Failed to enable ufw service"
     systemctl start ufw || log_warn "Failed to start ufw service"
     log_info "Firewall configured and enabled."
@@ -438,9 +431,11 @@ configure_firewall() {
 configure_fail2ban() {
     print_section "fail2ban Configuration"
     log_info "Enabling fail2ban service..."
+
     if ! systemctl enable fail2ban; then
         log_warn "Failed to enable fail2ban service."
     fi
+
     if ! systemctl start fail2ban; then
         log_warn "Failed to start fail2ban service."
     else
@@ -450,43 +445,52 @@ configure_fail2ban() {
 
 install_plex() {
     print_section "Plex Media Server Installation"
-    log_info "Ensuring required system utilities are available..."
-    export PATH="$PATH:/sbin:/usr/sbin"
-    if ! command -v ldconfig >/dev/null; then
-        handle_error "ldconfig command not found. Please install libc-bin or fix your PATH."
+    log_info "Installing Plex Media Server from the official Plex repository..."
+
+    # Ensure curl is available.
+    if ! command -v curl >/dev/null; then
+        handle_error "curl is required but not installed. Please install curl."
     fi
-    if ! command -v start-stop-daemon >/dev/null; then
-        handle_error "start-stop-daemon command not found. Please install dpkg or fix your PATH."
+
+    # Add Plex GPG key.
+    log_info "Adding Plex repository GPG key..."
+    curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key | apt-key add - || \
+        handle_error "Failed to add Plex GPG key."
+
+    # Add the Plex repository if not already present.
+    local plex_repo="/etc/apt/sources.list.d/plexmediaserver.list"
+    if [ ! -f "$plex_repo" ]; then
+        log_info "Adding Plex repository to $plex_repo..."
+        echo "deb https://downloads.plex.tv/repo/deb public main" > "$plex_repo" || \
+            handle_error "Failed to add Plex repository."
+    else
+        log_info "Plex repository already exists at $plex_repo."
     fi
-    log_info "Downloading Plex Media Server deb file..."
-    local plex_deb="/tmp/plexmediaserver.deb"
-    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
-    if ! wget -q -O "$plex_deb" "$plex_url"; then
-        handle_error "Failed to download Plex Media Server deb file."
-    fi
-    log_info "Installing Plex Media Server from deb file..."
-    if ! dpkg -i "$plex_deb"; then
-        log_warn "dpkg installation encountered errors, attempting to fix dependencies..."
-        if ! apt-get install -f -y; then
-            handle_error "Failed to install Plex Media Server due to unresolved dependencies."
-        fi
-    fi
+
+    # Update package lists and install Plex.
+    log_info "Updating package lists..."
+    apt-get update -qq || handle_error "Failed to update package lists."
+
+    log_info "Installing Plex Media Server..."
+    apt-get install -y plexmediaserver || handle_error "Failed to install Plex Media Server."
+
+    # Configure Plex to run as the specified user.
     local PLEX_CONF="/etc/default/plexmediaserver"
     if [ -f "$PLEX_CONF" ]; then
+        log_info "Configuring Plex to run as ${USERNAME}..."
         sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" \
             || log_warn "Failed to set Plex user in $PLEX_CONF"
     else
-        echo "PLEX_MEDIA_SERVER_USER=${USERNAME}" > "$PLEX_CONF" \
-            || log_warn "Failed to create $PLEX_CONF"
+        log_warn "$PLEX_CONF not found; skipping user configuration."
     fi
-    if ! systemctl enable plexmediaserver; then
-        log_warn "Failed to enable Plex Media Server service."
-    fi
-    if ! systemctl start plexmediaserver; then
-        log_warn "Plex Media Server failed to start."
-    else
-        log_info "Plex Media Server installed and started."
-    fi
+
+    # Enable and restart Plex service.
+    log_info "Enabling Plex Media Server service..."
+    systemctl enable plexmediaserver || log_warn "Failed to enable Plex Media Server service."
+    log_info "Restarting Plex Media Server service..."
+    systemctl restart plexmediaserver || log_warn "Plex Media Server failed to start."
+
+    log_info "Plex Media Server installed and started successfully."
 }
 
 caddy_config() {
@@ -552,8 +556,6 @@ caddy_config() {
     log_info "Caddy configuration completed successfully."
 }
 
-# install_configure_zfs
-# Imports a ZFS pool (if not already imported) and sets its mountpoint.
 install_configure_zfs() {
     # Ensure the function is run as root.
     if [[ "$(id -u)" -ne 0 ]]; then
@@ -612,9 +614,6 @@ install_configure_zfs() {
     log INFO "ZFS installation and configuration finished successfully."
 }
 
-# setup_repos
-# Clones several GitHub repositories into a dedicated directory in the user's
-# home folder.
 setup_repos() {
     print_section "GitHub Repositories Setup"
     log_info "Setting up GitHub repositories for user '$USERNAME'..."
@@ -638,8 +637,6 @@ setup_repos() {
     done
 }
 
-# enable_dunamismax_services
-# Creates and enables and starts the systemsd service files for FastAPI website
 enable_dunamismax_services() {
     print_section "DunamisMax Services Setup"
     log_info "Enabling DunamisMax website services..."
@@ -746,28 +743,29 @@ EOF
     log_info "DunamisMax services enabled."
 }
 
-# docker_config
-# Installs and enables Docker and Docker Compose
 docker_config() {
     print_section "Docker Configuration"
     log_info "Starting Docker installation and configuration..."
 
-    # -------------------------------
-    # Install Docker (using apt-get)
-    # -------------------------------
+    # Install Docker if not already installed.
     if command -v docker &>/dev/null; then
         log_info "Docker is already installed."
     else
-        log_info "Docker is not installed. Installing Docker..."
+        log_info "Docker not found; updating package lists and installing Docker..."
         apt-get update || handle_error "Failed to update package lists."
         apt-get install -y docker.io || handle_error "Failed to install Docker."
         log_info "Docker installed successfully."
     fi
 
-    # Add the user to the docker group
-    usermod -aG docker "$USERNAME" || log_warn "Failed to add $USERNAME to the docker group."
+    # Add target user to the docker group if not already a member.
+    if ! id -nG "$USERNAME" | grep -qw docker; then
+        log_info "Adding user '$USERNAME' to the docker group..."
+        usermod -aG docker "$USERNAME" || log_warn "Failed to add $USERNAME to the docker group."
+    else
+        log_info "User '$USERNAME' is already in the docker group."
+    fi
 
-    # Create or update Docker daemon configuration
+    # Configure Docker daemon.
     mkdir -p /etc/docker || handle_error "Failed to create /etc/docker directory."
     cat <<EOF >/etc/docker/daemon.json
 {
@@ -779,18 +777,18 @@ docker_config() {
   "exec-opts": ["native.cgroupdriver=systemd"]
 }
 EOF
+    log_info "Docker daemon configuration updated."
 
-    # Enable and restart the Docker service
+    # Enable and restart Docker service.
     systemctl enable docker || log_warn "Could not enable Docker service."
     systemctl restart docker || handle_error "Failed to restart Docker."
-    log_info "Docker configuration completed."
+    log_info "Docker service is enabled and running."
 
-    # -------------------------------
-    # Install Docker Compose
-    # -------------------------------
+    # Install Docker Compose if not installed.
     log_info "Starting Docker Compose installation..."
     if ! command -v docker-compose &>/dev/null; then
         local version="2.20.2"
+        log_info "Docker Compose not found; downloading version ${version}..."
         curl -L "https://github.com/docker/compose/releases/download/v${version}/docker-compose-$(uname -s)-$(uname -m)" \
             -o /usr/local/bin/docker-compose || handle_error "Failed to download Docker Compose."
         chmod +x /usr/local/bin/docker-compose || handle_error "Failed to set executable permission on Docker Compose."
@@ -800,24 +798,16 @@ EOF
     fi
 }
 
-# copy_shell_configs
-# Copies .bashrc and .profile into place from Git repo
 copy_shell_configs() {
-    # Check that the function is executed as root.
-    if [[ "$(id -u)" -ne 0 ]]; then
-        handle_error "copy_shell_configs must be run as root."
-    fi
-
-    print_section "Shell Configuration Files Update"
-
+    print_section "Updating Shell Configuration Files"
     local source_dir="/home/${USERNAME}/github/bash/linux/dotfiles"
     local dest_dir="/home/${USERNAME}"
     local files=(".bashrc" ".profile")
-
+    
     for file in "${files[@]}"; do
         local src="${source_dir}/${file}"
         local dest="${dest_dir}/${file}"
-        if [[ -f "$src" ]]; then
+        if [ -f "$src" ]; then
             log_info "Copying ${src} to ${dest}..."
             cp -f "$src" "$dest" || log_warn "Failed to copy ${src} to ${dest}."
             chown "${USERNAME}:${USERNAME}" "$dest" || log_warn "Failed to set ownership for ${dest}."
@@ -829,178 +819,155 @@ copy_shell_configs() {
     log_info "Shell configuration files update completed."
 }
 
-# install_zig_binary
 install_zig_binary() {
-    print_section "Zig Binary Installation"
+    print_section "Zig Installation"
+    log_info "Installing Zig binary from the official release..."
 
-    # Hardcoded paths
-    local ZIG_TARBALL_URL="https://ziglang.org/download/0.12.1/zig-linux-x86_64-0.12.1.tar.xz"
+    # Specify the desired Zig version.
+    local ZIG_VERSION="0.12.1"
+    local ZIG_TARBALL_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
     local ZIG_INSTALL_DIR="/opt/zig"
     local TEMP_DOWNLOAD="/tmp/zig.tar.xz"
 
-    # Step 1: Ensure required dependencies are installed
-    log INFO "Ensuring required dependencies (curl, tar) are installed..."
-    if ! apt update -qq || ! apt install -y curl tar; then
-        handle_error "Failed to install required dependencies."
-    fi
+    log_info "Ensuring required dependencies (curl, tar) are installed..."
+    apt-get update -qq || handle_error "Failed to update package lists."
+    apt-get install -y curl tar || handle_error "Failed to install required dependencies."
 
-    # Step 2: Download Zig binary
-    log INFO "Downloading Zig binary from ${ZIG_TARBALL_URL}..."
-    if ! curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}"; then
-        handle_error "Failed to download Zig binary."
-    fi
+    log_info "Downloading Zig ${ZIG_VERSION} binary from ${ZIG_TARBALL_URL}..."
+    curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}" || handle_error "Failed to download Zig binary."
 
-    # Step 3: Extract Zig to /opt/zig/
-    log INFO "Extracting Zig to ${ZIG_INSTALL_DIR}..."
-    rm -rf "${ZIG_INSTALL_DIR}"  # Ensure a clean installation
-    mkdir -p "${ZIG_INSTALL_DIR}"
-    if ! tar -xf "${TEMP_DOWNLOAD}" -C "${ZIG_INSTALL_DIR}" --strip-components=1; then
-        handle_error "Failed to extract Zig binary."
-    fi
+    log_info "Extracting Zig to ${ZIG_INSTALL_DIR}..."
+    rm -rf "${ZIG_INSTALL_DIR}"  # Clean any previous installation.
+    mkdir -p "${ZIG_INSTALL_DIR}" || handle_error "Failed to create ${ZIG_INSTALL_DIR}."
+    tar -xf "${TEMP_DOWNLOAD}" -C "${ZIG_INSTALL_DIR}" --strip-components=1 || handle_error "Failed to extract Zig binary."
 
-    # Step 4: Create a system-wide symlink for easy access
-    log INFO "Creating system-wide symlink for Zig..."
-    if ! ln -sf "${ZIG_INSTALL_DIR}/zig" /usr/local/bin/zig; then
-        handle_error "Failed to create symlink for Zig."
-    fi
+    log_info "Creating symlink for Zig in /usr/local/bin..."
+    ln -sf "${ZIG_INSTALL_DIR}/zig" /usr/local/bin/zig || handle_error "Failed to create symlink for Zig."
 
-    # Step 5: Clean up temporary files
-    log INFO "Cleaning up installation files..."
+    log_info "Cleaning up temporary files..."
     rm -f "${TEMP_DOWNLOAD}"
 
-    # Step 6: Verify installation
     if command -v zig &>/dev/null; then
-        log INFO "Zig installation completed successfully!"
-        log INFO "Zig version: $(zig version)"
+        log_info "Zig installation completed successfully! Version: $(zig version)"
     else
         handle_error "Zig is not accessible from the command line."
     fi
 }
 
-# install_ly
-# Installs the Ly display manager / login manager and enables it
 install_ly() {
     print_section "Ly Display Manager Installation"
+    log_info "Installing Ly Display Manager..."
 
-    # Step 1: Check for required commands
-    local REQUIRED_CMDS=(git zig systemctl)
-    for cmd in "${REQUIRED_CMDS[@]}"; do
+    # Verify required commands are available.
+    local required_cmds=(git zig systemctl)
+    for cmd in "${required_cmds[@]}"; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             handle_error "'$cmd' is not installed. Please install it and try again."
         fi
     done
 
-    # Define the directory to clone the repository
     local LY_DIR="/opt/ly"
 
-    # Step 2: Clone or update the Ly repository
+    # Clone or update the Ly repository.
     if [ ! -d "$LY_DIR" ]; then
-        log INFO "Cloning Ly repository into $LY_DIR..."
-        if ! sudo git clone https://github.com/fairyglade/ly "$LY_DIR"; then
-            handle_error "Failed to clone the Ly repository."
-        fi
+        log_info "Cloning Ly repository into $LY_DIR..."
+        git clone https://github.com/fairyglade/ly "$LY_DIR" || handle_error "Failed to clone the Ly repository."
     else
-        log INFO "Ly repository already exists in $LY_DIR. Updating..."
+        log_info "Ly repository already exists in $LY_DIR. Updating..."
         cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
-        if ! sudo git pull; then
-            handle_error "Failed to update the Ly repository."
-        fi
+        git pull || handle_error "Failed to update the Ly repository."
     fi
 
-    # Step 3: Compile Ly using Zig
+    # Compile Ly using Zig.
     cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
-    log INFO "Compiling Ly with Zig..."
-    if ! zig build; then
-        handle_error "Compilation of Ly failed."
-    fi
+    log_info "Compiling Ly with Zig..."
+    zig build || handle_error "Compilation of Ly failed."
 
-    # Step 4: Install Ly and its systemd service
-    log INFO "Installing Ly systemd service..."
-    if ! sudo zig build installsystemd; then
-        handle_error "Installation of Ly systemd service failed."
-    fi
+    # Install Ly's systemd service.
+    log_info "Installing Ly systemd service..."
+    zig build installsystemd || handle_error "Installation of Ly systemd service failed."
 
-    # Step 4a: Disable existing display managers to avoid conflicts
-    log INFO "Disabling any existing display managers (gdm, sddm, lightdm, etc.)..."
-    local DM_LIST=(gdm sddm lightdm lxdm)
-    for dm in "${DM_LIST[@]}"; do
+    # Disable any conflicting display managers.
+    log_info "Disabling existing display managers (gdm, sddm, lightdm, lxdm)..."
+    local dm_list=(gdm sddm lightdm lxdm)
+    for dm in "${dm_list[@]}"; do
         if systemctl is-enabled "${dm}.service" &>/dev/null; then
-            log INFO "Disabling ${dm}.service..."
-            sudo systemctl disable --now "${dm}.service" || handle_error "Failed to disable ${dm}.service."
+            log_info "Disabling ${dm}.service..."
+            systemctl disable --now "${dm}.service" || handle_error "Failed to disable ${dm}.service."
         fi
     done
 
-    # If there's a leftover display-manager.service symlink, remove it
+    # Remove leftover display-manager symlink if it exists.
     if [ -L /etc/systemd/system/display-manager.service ]; then
-        log INFO "Removing leftover /etc/systemd/system/display-manager.service symlink..."
-        sudo rm /etc/systemd/system/display-manager.service || log WARN "Failed to remove display-manager.service symlink."
+        log_info "Removing leftover /etc/systemd/system/display-manager.service symlink..."
+        rm /etc/systemd/system/display-manager.service || log_warn "Failed to remove display-manager.service symlink."
     fi
 
-    # Step 5: Enable Ly for next boot, but do not start now
-    log INFO "Enabling ly.service (for next boot)..."
-    if ! sudo systemctl enable ly.service; then
-        handle_error "Failed to enable ly.service."
-    fi
+    # Enable Ly to start on next boot.
+    log_info "Enabling ly.service for next boot..."
+    systemctl enable ly.service || handle_error "Failed to enable ly.service."
 
-    # If Ly starts automatically, stop it so your current session isn't interrupted
+    # Stop ly.service if it is currently active to avoid interrupting the current session.
     if systemctl is-active ly.service &>/dev/null; then
-        log INFO "Stopping ly.service to avoid a blank screen..."
-        sudo systemctl stop ly.service || log WARN "Failed to stop ly.service."
+        log_info "Stopping active ly.service to avoid a blank screen..."
+        systemctl stop ly.service || log_warn "Failed to stop ly.service."
     fi
 
-    # Step 6: Disable the getty on tty2 to prevent conflict
-    log INFO "Disabling getty@tty2.service..."
-    if ! sudo systemctl disable getty@tty2.service; then
-        handle_error "Failed to disable getty@tty2.service."
-    fi
+    # Disable tty2 getty to prevent conflicts.
+    log_info "Disabling getty@tty2.service..."
+    systemctl disable getty@tty2.service || handle_error "Failed to disable getty@tty2.service."
 
-    log INFO "Ly has been installed and configured as the default login manager."
-    log INFO "Ly will take effect on next reboot, or you can start it now with: sudo systemctl start ly.service"
+    log_info "Ly has been installed and configured as the default login manager."
+    log_info "Ly will take effect on next reboot, or you can start it now with: systemctl start ly.service"
 }
 
-# deploy_user_scripts
-# Copies all user scripts to bin folder and makes them executable
 deploy_user_scripts() {
     print_section "Deploying User Scripts"
-    log INFO "Starting deployment of user scripts..."
+    log_info "Starting deployment of user scripts..."
 
-    # Hardcoded paths
-    local SCRIPT_SOURCE="/home/sawyer/github/bash/linux/_scripts"  # Source directory for scripts
-    local SCRIPT_TARGET="/home/sawyer/bin"                         # Target deployment directory
-    local EXPECTED_OWNER="sawyer"                                  # Expected owner of source directory
+    # Use the target user's home directory from the global USERNAME variable.
+    local SCRIPT_SOURCE="/home/${USERNAME}/github/bash/linux/_scripts"
+    local SCRIPT_TARGET="/home/${USERNAME}/bin"
+    local EXPECTED_OWNER="${USERNAME}"
 
-    # Step 1: Check if source directory exists
-    if [[ ! -d "$SCRIPT_SOURCE" ]]; then
+    # Ensure the source directory exists.
+    if [ ! -d "$SCRIPT_SOURCE" ]; then
         handle_error "Source directory '$SCRIPT_SOURCE' does not exist."
     fi
 
-    # Step 2: Verify ownership of the source directory
+    # Verify that the source directory is owned by the expected user.
     local source_owner
-    source_owner="$(stat -c %U "$SCRIPT_SOURCE")" || handle_error "Failed to retrieve ownership details of '$SCRIPT_SOURCE'."
-
-    if [[ "$source_owner" != "$EXPECTED_OWNER" ]]; then
+    source_owner=$(stat -c %U "$SCRIPT_SOURCE") || handle_error "Failed to retrieve ownership details of '$SCRIPT_SOURCE'."
+    if [ "$source_owner" != "$EXPECTED_OWNER" ]; then
         handle_error "Invalid script source ownership for '$SCRIPT_SOURCE' (Owner: $source_owner). Expected: $EXPECTED_OWNER"
     fi
 
-    # Step 3: Perform a dry-run deployment
-    log INFO "Performing dry-run for script deployment..."
-    if ! rsync --dry-run -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}"; then
+    # Ensure the target directory exists.
+    if [ ! -d "$SCRIPT_TARGET" ]; then
+        log_info "Creating target directory '$SCRIPT_TARGET'..."
+        mkdir -p "$SCRIPT_TARGET" || handle_error "Failed to create target directory '$SCRIPT_TARGET'."
+        chown "${USERNAME}:${USERNAME}" "$SCRIPT_TARGET" || log_warn "Failed to set ownership for '$SCRIPT_TARGET'."
+    fi
+
+    # Perform a dry-run deployment with rsync.
+    log_info "Performing dry-run for script deployment..."
+    if ! rsync --dry-run -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}/"; then
         handle_error "Dry-run failed for script deployment."
     fi
 
-    # Step 4: Execute actual deployment
-    log INFO "Deploying scripts from '$SCRIPT_SOURCE' to '$SCRIPT_TARGET'..."
-    if ! rsync -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}"; then
+    # Execute the actual deployment.
+    log_info "Deploying scripts from '$SCRIPT_SOURCE' to '$SCRIPT_TARGET'..."
+    if ! rsync -ah --delete "${SCRIPT_SOURCE}/" "${SCRIPT_TARGET}/"; then
         handle_error "Script deployment failed."
     fi
 
-    # Step 5: Set executable permissions on deployed scripts
-    log INFO "Setting executable permissions on deployed scripts..."
+    # Set executable permissions on all files in the target directory.
+    log_info "Setting executable permissions on deployed scripts..."
     if ! find "${SCRIPT_TARGET}" -type f -exec chmod 755 {} \;; then
         handle_error "Failed to update script permissions in '$SCRIPT_TARGET'."
     fi
 
-    log INFO "Script deployment completed successfully."
+    log_info "Script deployment completed successfully."
 }
 
 python_dev_setup() {
