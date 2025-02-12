@@ -1205,6 +1205,27 @@ EOF
     log_info "SUCCESS! Your system is now prepared with the latest stable Python (via pyenv), pipx updated, and a curated set of CLI tools."
 }
 
+# venv_setup
+# Loops through the web folder running "venv" in each subfolder
+venv_setup() {
+    # Ensure alias expansion is enabled (in non-interactive shells it may be off)
+    shopt -s expand_aliases
+    shopt -s nullglob  # Prevents literal pattern if no directories exist
+
+    local base_dir="/home/sawyer/github/web"
+    local dir
+
+    for dir in "$base_dir"/*; do
+        if [ -d "$dir" ]; then
+            echo "Setting up virtual environment in: $dir"
+            pushd "$dir" > /dev/null || { echo "Failed to enter directory: $dir"; continue; }
+            # Run the alias 'venv' (assumed to be defined in your bashrc)
+            venv
+            popd > /dev/null
+        fi
+    done
+}
+
 # configure_periodic
 # Sets up a daily cron job for system maintenance including update, upgrade,
 # autoremove, and autoclean.
@@ -1319,6 +1340,7 @@ main() {
     install_ly
     deploy_user_scripts
     python_dev_setup
+    venv_setup
     configure_periodic
     final_checks
     prompt_reboot
