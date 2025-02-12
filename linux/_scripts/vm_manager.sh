@@ -3,13 +3,13 @@
 # Script Name: vm_manager.sh
 # Description: An advanced interactive virtual machine manager that allows you
 #              to list, create, start, stop, delete, and monitor KVM/QEMU virtual
-#              machines on Debian. The script uses virt‑install and virsh, and
-#              guides you through VM creation (including options for RAM, vCPUs,
-#              disk size, and ISO download via wget) in a fully interactive,
-#              Nord‑themed interface.
+#              machines on Ubuntu. It uses virt‑install and virsh to guide you
+#              through VM creation (including options for RAM, vCPUs, disk size,
+#              and ISO download via wget) in a fully interactive, Nord‑themed
+#              interface.
 #
 # Author: Your Name | License: MIT
-# Version: 2.0
+# Version: 2.1
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -18,14 +18,20 @@
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-# ENABLE STRICT MODE
+# ENABLE STRICT MODE & ERROR TRAPPING
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
-trap 'echo -e "\n${NORD11}An error occurred at line ${LINENO}.${NC}" >&2; exit 1' ERR
+
+cleanup() {
+    log INFO "Performing cleanup tasks before exit."
+    # Add any cleanup tasks here.
+}
+trap cleanup EXIT
 trap 'echo -e "\n${NORD11}Operation interrupted. Returning to main menu...${NC}"' SIGINT
+trap 'handle_error "Script failed at line $LINENO in function ${FUNCNAME[1]:-main}."' ERR
 
 # ------------------------------------------------------------------------------
-# Nord Color Theme Constants (24‑bit ANSI escape sequences)
+# NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
 NORD0='\033[38;2;46;52;64m'      # Dark background
 NORD1='\033[38;2;59;66;82m'
@@ -40,7 +46,7 @@ NORD14='\033[38;2;163;190;140m'  # Green (labels/values)
 NC='\033[0m'                    # No Color
 
 # ------------------------------------------------------------------------------
-# Global Variables
+# GLOBAL VARIABLES
 # ------------------------------------------------------------------------------
 VM_IMAGE_DIR="/var/lib/libvirt/images"   # Default location for VM disk images
 ISO_DIR="/var/lib/libvirt/boot"            # Directory to store downloaded ISOs
@@ -48,8 +54,15 @@ mkdir -p "$ISO_DIR"
 TMP_ISO="/tmp/vm_install.iso"              # Temporary ISO download location
 
 # ------------------------------------------------------------------------------
-# Helper Functions
+# HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
+check_root() {
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        echo -e "${NORD11}Error: This script must be run as root. Exiting.${NC}" >&2
+        exit 1
+    fi
+}
+
 print_header() {
     clear
     echo -e "${NORD8}============================================${NC}"
@@ -65,8 +78,38 @@ prompt_enter() {
     read -rp "Press Enter to continue..." dummy
 }
 
+log() {
+    # Usage: log [LEVEL] "message"
+    local level="${1:-INFO}"
+    shift
+    local message="$*"
+    local upper_level="${level^^}"
+    local timestamp
+    timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
+    local color="$NC"
+    case "$upper_level" in
+        INFO)  color="${NORD14}" ;;      # Info: green
+        WARN|WARNING)
+            upper_level="WARN"
+            color="${NORD12}" ;;          # Warning: orange
+        ERROR) color="${NORD11}" ;;         # Error: red
+        DEBUG) color="${NORD3}"  ;;         # Debug: lighter blue
+        *)     color="$NC"     ;;
+    esac
+    local log_entry="[$timestamp] [$upper_level] $message"
+    echo "$log_entry" >> "/var/log/vm_manager.log"
+    printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
+}
+
+handle_error() {
+    local error_message="${1:-"Unknown error occurred"}"
+    local exit_code="${2:-1}"
+    log ERROR "$error_message (Exit Code: $exit_code)"
+    exit "$exit_code"
+}
+
 # ------------------------------------------------------------------------------
-# VM Management Functions
+# VM MANAGEMENT FUNCTIONS
 # ------------------------------------------------------------------------------
 list_vms() {
     print_header
@@ -115,22 +158,19 @@ delete_vm() {
         prompt_enter
         return 0
     fi
-
+    # Retrieve disk image path from VM XML before undefining the VM.
+    local disk
+    disk=$(virsh dumpxml "$vm_name" 2>/dev/null | grep -oP 'source file="\K[^"]+')
     # If the VM is running, force shutdown first.
-    if virsh list --state-running | grep -q "$vm_name"; then
+    if virsh list --state-running | grep -qw "$vm_name"; then
         virsh destroy "$vm_name"
     fi
     if virsh undefine "$vm_name"; then
         echo -e "${NORD14}VM '$vm_name' undefined successfully.${NC}"
-        read -rp "Do you want to remove its disk image? (y/n): " remove_disk
-        if [[ "$remove_disk" =~ ^[Yy]$ ]]; then
-            local disk
-            # Retrieve disk path from VM XML definition if available
-            disk=$(virsh dumpxml "$vm_name" | grep -oP 'source file="\K[^"]+')
-            if [[ -n "$disk" && -f "$disk" ]]; then
-                rm -f "$disk" && echo -e "${NORD14}Disk image removed.${NC}"
-            else
-                echo -e "${NORD12}Disk image not found or already removed.${NC}"
+        if [[ -n "$disk" ]]; then
+            read -rp "Do you want to remove its disk image at $disk? (y/n): " remove_disk
+            if [[ "$remove_disk" =~ ^[Yy]$ ]]; then
+                rm -f "$disk" && echo -e "${NORD14}Disk image removed.${NC}" || echo -e "${NORD12}Failed to remove disk image.${NC}"
             fi
         fi
     else
@@ -157,7 +197,7 @@ monitor_vm() {
 
 download_iso() {
     read -rp "Enter the URL for the installation ISO: " iso_url
-    read -rp "Enter the desired filename (e.g., debian.iso): " iso_filename
+    read -rp "Enter the desired filename (e.g., ubuntu.iso): " iso_filename
     local iso_path="${ISO_DIR}/${iso_filename}"
     echo -e "${NORD14}Downloading ISO to ${iso_path}...${NC}"
     if wget -O "$iso_path" "$iso_url"; then
@@ -177,7 +217,7 @@ create_vm() {
     read -rp "Enter RAM in MB: " ram
     read -rp "Enter disk size in GB: " disk_size
 
-    # Ask user for ISO location
+    # Ask user for ISO location.
     echo -e "${NORD14}Provide installation ISO:${NC}"
     echo -e "${NORD8}[1]${NC} Use existing ISO file"
     echo -e "${NORD8}[2]${NC} Download ISO via URL (wget)"
@@ -219,7 +259,7 @@ create_vm() {
         --disk path="$disk_image",size="$disk_size",format=qcow2 \
         --cdrom "$iso_path" \
         --os-type linux \
-        --os-variant debian10 \
+        --os-variant ubuntu20.04 \
         --graphics none \
         --console pty,target_type=serial \
         --noautoconsole
@@ -233,7 +273,7 @@ create_vm() {
 }
 
 # ------------------------------------------------------------------------------
-# Main Interactive Menu
+# MAIN INTERACTIVE MENU
 # ------------------------------------------------------------------------------
 main_menu() {
     while true; do
@@ -279,10 +319,11 @@ main_menu() {
 }
 
 # ------------------------------------------------------------------------------
-# Main Entry Point
+# MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Ensure required commands exist
+    check_root
+    # Ensure required commands exist.
     for cmd in virsh virt-install qemu-img wget; do
         if ! command -v "$cmd" &>/dev/null; then
             echo -e "${NORD11}Error: Required command '$cmd' is not installed. Exiting.${NC}"
@@ -294,7 +335,7 @@ main() {
 }
 
 # ------------------------------------------------------------------------------
-# Execute Main if Script is Run Directly
+# SCRIPT INVOCATION CHECK
 # ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"

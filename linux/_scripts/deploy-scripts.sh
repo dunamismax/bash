@@ -2,7 +2,7 @@
 # ------------------------------------------------------------------------------
 # Script Name: deploy-scripts.sh
 # Description: Deploys user scripts from a source directory to a target directory
-#              on Debian Linux. Ensures proper ownership, performs a dry‑run, and
+#              on Ubuntu Linux. Ensures proper ownership, performs a dry‑run, and
 #              sets executable permissions using a Nord‑themed template for robust
 #              error handling and logging.
 #
@@ -130,7 +130,7 @@ show_help() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 Description:
-  Deploys user scripts from a source directory to a target directory on Debian.
+  Deploys user scripts from a source directory to a target directory on Ubuntu.
   Ensures proper ownership, performs a dry‑run, and sets executable permissions.
   Uses a Nord‑themed enhanced template for robust error handling and logging.
 

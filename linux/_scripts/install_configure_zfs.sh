@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: install_configure_zfs.sh
-# Description: Installs, configures, and enables ZFS on Debian. It adds the
-#              backports repository for newer ZFS packages, installs the required
-#              packages, imports the ZFS pool "WD_BLACK" (if not already imported),
-#              sets its mountpoint to /media/WD_BLACK, and enables auto mounting.
+# Description: Installs, configures, and enables ZFS on Ubuntu. This script
+#              installs the required ZFS packages, imports the ZFS pool "WD_BLACK"
+#              (if not already imported), sets its mountpoint to /media/WD_BLACK,
+#              and enables auto‑mounting services.
+#
 # Author: YourName | License: MIT
-# Version: 1.0
+# Version: 2.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -14,7 +15,6 @@
 #
 # Requirements:
 #   - Must be run as root.
-#   - Debian with backports enabled.
 #
 # ------------------------------------------------------------------------------
 
@@ -117,54 +117,18 @@ print_section() {
 }
 
 # ------------------------------------------------------------------------------
-# FUNCTION: Add Backports Repository for ZFS
-# ------------------------------------------------------------------------------
-add_backports_repo() {
-    print_section "Adding Backports Repository"
-    local repo_file="/etc/apt/sources.list.d/bookworm-backports.list"
-    if [[ ! -f "$repo_file" ]]; then
-        cat <<EOF > "$repo_file"
-deb http://deb.debian.org/debian bookworm-backports main contrib
-deb-src http://deb.debian.org/debian bookworm-backports main contrib
-EOF
-        log INFO "Backports repository added to $repo_file."
-    else
-        log INFO "Backports repository already exists at $repo_file."
-    fi
-
-    local pin_file="/etc/apt/preferences.d/90_zfs"
-    if [[ ! -f "$pin_file" ]]; then
-        cat <<EOF > "$pin_file"
-Package: src:zfs-linux
-Pin: release n=bookworm-backports
-Pin-Priority: 990
-EOF
-        log INFO "ZFS package pinning configured in $pin_file."
-    else
-        log INFO "ZFS package pinning already exists at $pin_file."
-    fi
-}
-
-# ------------------------------------------------------------------------------
-# FUNCTION: Install ZFS Packages
+# FUNCTION: Install ZFS Packages on Ubuntu
 # ------------------------------------------------------------------------------
 install_zfs() {
     print_section "Installing ZFS Packages"
-    # Update package lists
     log INFO "Updating package lists..."
     apt update
 
-    # Install prerequisites and kernel headers
-    log INFO "Installing prerequisites..."
-    apt install -y dpkg-dev linux-headers-generic linux-image-generic
-
-    # Install ZFS packages from backports using noninteractive mode
     log INFO "Installing ZFS packages..."
-    DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux
+    apt install -y zfsutils-linux
 
     log INFO "ZFS packages installed successfully."
 
-    # Enable systemd services for ZFS (if available)
     log INFO "Enabling ZFS auto-import and mount services..."
     systemctl enable zfs-import-cache.service || log WARN "Failed to enable zfs-import-cache.service."
     systemctl enable zfs-mount.service || log WARN "Failed to enable zfs-mount.service."
@@ -218,10 +182,7 @@ main() {
 
     log INFO "ZFS installation and configuration started."
 
-    # Add backports repo and pin ZFS package
-    add_backports_repo
-
-    # Install ZFS and dependencies
+    # Install ZFS packages and dependencies
     install_zfs
 
     # Configure the ZFS pool and set the mountpoint

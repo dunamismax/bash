@@ -854,153 +854,6 @@ deploy_user_scripts() {
     log_info "Script deployment completed successfully."
 }
 
-python_dev_setup() {
-    local user_home
-    user_home="$(eval echo ~"${USERNAME}")"
-
-    # -------------------------------------------------------------------------
-    # 1) Install System Dependencies
-    # -------------------------------------------------------------------------
-    print_section "APT Dependencies Installation"
-    apt install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
-        libssl-dev libffi-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
-        libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev xz-utils libedit-dev libzstd-dev \
-        libxml2-dev libxmlsec1-dev tk-dev llvm gnupg lsb-release jq || handle_error "Failed to install required dependencies."
-    apt clean || log_warn "Failed to clean package caches."
-
-    # -------------------------------------------------------------------------
-    # 2) pyenv Installation/Update
-    # -------------------------------------------------------------------------
-    print_section "pyenv Installation/Update"
-    if [ ! -d "${user_home}/.pyenv" ]; then
-        git clone https://github.com/pyenv/pyenv.git "${user_home}/.pyenv" || handle_error "Failed to clone pyenv."
-
-        # Append pyenv initialization to the target user's .bashrc if not already present.
-        if ! grep -q 'export PYENV_ROOT' "${user_home}/.bashrc"; then
-            cat << 'EOF' >> "${user_home}/.bashrc"
-
-# >>> pyenv initialization >>>
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-if command -v pyenv 1>/dev/null 2>&1; then
-    eval "$(pyenv init -)"
-fi
-# <<< pyenv initialization <<<
-EOF
-        fi
-    else
-        pushd "${user_home}/.pyenv" >/dev/null || handle_error "Failed to enter pyenv directory."
-        git pull --ff-only || handle_error "Failed to update pyenv."
-        popd >/dev/null
-    fi
-
-    # Ensure the user "sawyer" owns the entire .pyenv directory (fixes permissions).
-    chown -R "${USERNAME}:${USERNAME}" "${user_home}/.pyenv"
-
-    # Load pyenv into current environment.
-    export PYENV_ROOT="${user_home}/.pyenv"
-    export PATH="$PYENV_ROOT/bin:$PATH"
-    eval "$(pyenv init -)"
-
-    # -------------------------------------------------------------------------
-    # 3) Install Latest Python 3 via pyenv
-    # -------------------------------------------------------------------------
-    print_section "Python Installation via pyenv"
-    local latest_py3
-    latest_py3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')" \
-        || handle_error "Failed to determine the latest Python version."
-    if [ -z "$latest_py3" ]; then
-        handle_error "Could not determine the latest Python 3.x version."
-    fi
-
-    local current_py3
-    current_py3="$(pyenv global 2>/dev/null || true)"
-
-    # Only install/upgrade if we're not already on the latest version.
-    local new_python_installed=false
-    if [ "$current_py3" != "$latest_py3" ]; then
-        if ! pyenv versions --bare | grep -q "^${latest_py3}$"; then
-            pyenv install "$latest_py3" || handle_error "Failed to install Python $latest_py3."
-        fi
-        pyenv global "$latest_py3" || handle_error "Failed to set Python $latest_py3 as global."
-        new_python_installed=true
-    fi
-    eval "$(pyenv init -)"  # Re-init to pick up the newly installed version.
-
-    # -------------------------------------------------------------------------
-    # 4) pipx Installation and Global Tools
-    # -------------------------------------------------------------------------
-    print_section "pipx Installation and Tools Update"
-    # Use the target user's home for --user installs.
-    HOME="$user_home" python3 -m pip install --upgrade pip || handle_error "Failed to upgrade pip."
-    HOME="$user_home" python3 -m pip install --user pipx || handle_error "Failed to install pipx."
-
-    # Ensure .local/bin is in PATH via .bashrc if not already present.
-    if ! grep -q 'export PATH=.*\.local/bin' "${user_home}/.bashrc"; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${user_home}/.bashrc"
-    fi
-    export PATH="${user_home}/.local/bin:$PATH"
-
-    pipx upgrade pipx || true
-    if [ "$new_python_installed" = true ]; then
-        pipx reinstall-all || true
-    else
-        pipx upgrade-all || true
-    fi
-
-    # Install/Upgrade a curated list of pipx-managed tools.
-    local PIPX_TOOLS=( ansible-core black cookiecutter coverage flake8 isort ipython mypy pip-tools \
-                       pylint pyupgrade pytest rich-cli tldr tox twine poetry pre-commit )
-    local tool
-    for tool in "${PIPX_TOOLS[@]}"; do
-        if pipx list | grep -q "$tool"; then
-            pipx upgrade "$tool" || true
-        else
-            pipx install "$tool" || true
-        fi
-    done
-
-    print_section "Python Development Setup Complete"
-    log_info "SUCCESS! ${USERNAME}'s environment is now set up with the latest stable Python (via pyenv), pipx updated, and a curated set of CLI tools."
-
-    # -------------------------------------------------------------------------
-    # 5) Create Virtual Environments in Each Web Subdirectory
-    # -------------------------------------------------------------------------
-    print_section "VENV setup for FastAPI Applications"
-    shopt -s nullglob
-
-    base_dir="${user_home}/github/web"
-
-    for dir in "$base_dir"/*; do
-        if [ -d "$dir" ]; then
-            echo "Setting up virtual environment in: $dir"
-            pushd "$dir" > /dev/null || { echo "Failed to enter directory: $dir"; continue; }
-
-            # Create the virtual environment if it doesn't exist.
-            if [ ! -d ".venv" ]; then
-                echo "Creating virtual environment in .venv..."
-                python3 -m venv .venv || { echo "Failed to create venv in $dir"; popd > /dev/null; continue; }
-            fi
-
-            # Activate the virtual environment.
-            # shellcheck source=/dev/null
-            source .venv/bin/activate || { echo "Failed to activate venv in $dir"; popd > /dev/null; continue; }
-
-            # Install requirements if the file exists.
-            if [ -f "requirements.txt" ]; then
-                pip install -r requirements.txt || { echo "Failed to install requirements in $dir"; deactivate; popd > /dev/null; continue; }
-            else
-                echo "No requirements.txt found in $dir"
-            fi
-
-            # Deactivate the virtual environment.
-            deactivate
-
-            popd > /dev/null
-        fi
-    done
-}
-
 configure_periodic() {
     print_section "Periodic Maintenance Setup"
     log_info "Configuring daily system maintenance tasks..."
@@ -1102,11 +955,10 @@ main() {
     docker_config
     install_zig_binary
     deploy_user_scripts
-    #python_dev_setup
     enable_dunamismax_services
     configure_periodic
     final_checks
-    #install_ly
+    install_ly
     prompt_reboot
 }
 

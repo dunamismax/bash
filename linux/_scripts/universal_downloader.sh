@@ -2,27 +2,35 @@
 # ------------------------------------------------------------------------------
 # Script Name: universal_downloader.sh
 # Description: Advanced auto download tool that lets the user choose between
-#              downloading with wget or yt-dlp on Debian. For yt-dlp, the script
+#              downloading with wget or yt-dlp on Ubuntu. For yt-dlp, the script
 #              prompts for a YouTube (video/playlist) link and a target download folder,
 #              creating it if needed, and downloads the media in highest quality,
-#              merging audio and video into an mp4 via ffmpeg. For wget, it downloads the
-#              file into the specified directory.
+#              merging audio and video into an mp4 via ffmpeg. For wget, it downloads
+#              the file into the specified directory.
 #
 # Author: Your Name | License: MIT
-# Version: 2.0
+# Version: 2.1
 # ------------------------------------------------------------------------------
 #
-# Usage Examples:
+# Usage:
 #   ./universal_downloader.sh
 #
 # Note:
-#   On Debian, ensure that wget, yt-dlp, ffmpeg, and other dependencies are installed.
+#   Ensure that wget, yt-dlp, ffmpeg, and other dependencies are installed.
 #   This script will attempt to install missing dependencies using apt.
 #
 # ------------------------------------------------------------------------------
-# ENABLE STRICT MODE
+
+# ------------------------------------------------------------------------------
+# ENABLE STRICT MODE & ERROR TRAPPING
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
+
+cleanup() {
+    log INFO "Cleanup: Exiting script."
+    # Add any additional cleanup tasks here.
+}
+trap cleanup EXIT
 trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
 # ------------------------------------------------------------------------------
@@ -34,24 +42,24 @@ QUIET_MODE=false
 DISABLE_COLORS="${DISABLE_COLORS:-false}"
 
 # ------------------------------------------------------------------------------
-# NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
+# NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-NORD0='\033[38;2;46;52;64m'      # Background Dark
+NORD0='\033[38;2;46;52;64m'      # Dark background
 NORD1='\033[38;2;59;66;82m'
 NORD2='\033[38;2;67;76;94m'
 NORD3='\033[38;2;76;86;106m'
 NORD4='\033[38;2;216;222;233m'
 NORD5='\033[38;2;229;233;240m'
 NORD6='\033[38;2;236;239;244m'
-NORD7='\033[38;2;143;188;187m'   # Teal (for success messages)
+NORD7='\033[38;2;143;188;187m'   # Teal (for success)
 NORD8='\033[38;2;136;192;208m'   # Accent
-NORD9='\033[38;2;129;161;193m'
+NORD9='\033[38;2;129;161;193m'   # Blue (for debug)
 NORD10='\033[38;2;94;129;172m'
 NORD11='\033[38;2;191;97;106m'   # Red (for errors)
 NORD12='\033[38;2;208;135;112m'
-NORD13='\033[38;2;235;203;139m'
+NORD13='\033[38;2;235;203;139m'  # Yellow (for warnings)
 NORD14='\033[38;2;163;190;140m'  # Green (for info)
-NC='\033[0m'                    # No Color
+NC='\033[0m'                    # Reset Color
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
@@ -68,12 +76,12 @@ log() {
     local color="$NC"
     if [[ "$DISABLE_COLORS" != true ]]; then
         case "$upper_level" in
-            INFO)  color="${NORD14}" ;;  # Info: green
+            INFO)  color="${NORD14}" ;;      # Info: green
             WARN|WARNING)
                 upper_level="WARN"
-                color="${NORD13}" ;;      # Warning: yellow
-            ERROR) color="${NORD11}" ;;     # Error: red
-            DEBUG) color="${NORD9}"  ;;     # Debug: blue
+                color="${NORD13}" ;;          # Warning: yellow
+            ERROR) color="${NORD11}" ;;         # Error: red
+            DEBUG) color="${NORD9}"  ;;         # Debug: blue
             *)     color="$NC"     ;;
         esac
     fi
@@ -100,8 +108,8 @@ handle_error() {
 # ------------------------------------------------------------------------------
 install_prerequisites() {
     log INFO "Installing required tools..."
-    apt update || handle_error "Failed to update repositories."
-    apt install -y wget yt-dlp ffmpeg || handle_error "Failed to install prerequisites."
+    sudo apt update || handle_error "Failed to update repositories."
+    sudo apt install -y wget yt-dlp ffmpeg || handle_error "Failed to install prerequisites."
     log INFO "Required tools installed."
 }
 
@@ -109,13 +117,13 @@ install_prerequisites() {
 # DOWNLOAD FUNCTIONS
 # ------------------------------------------------------------------------------
 download_with_yt_dlp() {
-    # Prompt for a YouTube link (video or playlist).
+    # Prompt for a YouTube (video/playlist) link.
     read -rp $'\n'"Enter YouTube link (video or playlist): " yt_link
     if [[ -z "$yt_link" ]]; then
         handle_error "YouTube link cannot be empty."
     fi
 
-    # Prompt for a download directory.
+    # Prompt for a target download directory.
     read -rp "Enter download directory: " download_dir
     if [[ -z "$download_dir" ]]; then
         handle_error "Download directory cannot be empty."
@@ -127,10 +135,10 @@ download_with_yt_dlp() {
         log INFO "Created directory: $download_dir"
     fi
 
-    # Build the yt-dlp command:
-    # -f bestvideo+bestaudio selects the best quality video and audio.
-    # --merge-output-format mp4 merges them into a single MP4.
-    # -o sets the output directory and filename pattern.
+    # Build and run the yt-dlp command:
+    # -f bestvideo+bestaudio selects highest quality video and audio.
+    # --merge-output-format mp4 merges them into an mp4 file.
+    # -o specifies the output path and filename pattern.
     local cmd="yt-dlp -f bestvideo+bestaudio --merge-output-format mp4 -o '${download_dir}/%(title)s.%(ext)s' '${yt_link}'"
     log INFO "Starting download via yt-dlp..."
     eval "$cmd" || handle_error "yt-dlp download failed."
@@ -138,13 +146,13 @@ download_with_yt_dlp() {
 }
 
 download_with_wget() {
-    # Prompt for a URL.
+    # Prompt for a URL to download.
     read -rp $'\n'"Enter URL to download: " url
     if [[ -z "$url" ]]; then
         handle_error "URL cannot be empty."
     fi
 
-    # Prompt for the output directory.
+    # Prompt for an output directory.
     read -rp "Enter output directory: " download_dir
     if [[ -z "$download_dir" ]]; then
         handle_error "Download directory cannot be empty."
@@ -156,7 +164,7 @@ download_with_wget() {
         log INFO "Created directory: $download_dir"
     fi
 
-    # Build the wget command.
+    # Build and run the wget command.
     local cmd="wget -q -P '${download_dir}' '${url}'"
     log INFO "Starting download via wget..."
     eval "$cmd" || handle_error "wget download failed."
@@ -168,7 +176,7 @@ download_with_wget() {
 # ------------------------------------------------------------------------------
 main() {
     # Display a welcome banner.
-    printf "\n%s%s%s\n" "${NORD8}" "=== Media Downloader ===" "${NC}"
+    printf "\n%s%s%s\n" "${NORD8}" "=== Universal Downloader ===" "${NC}"
     echo "Select Download Method:"
     echo "  1) wget"
     echo "  2) yt-dlp"

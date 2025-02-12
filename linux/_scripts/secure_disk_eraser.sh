@@ -2,28 +2,38 @@
 # ------------------------------------------------------------------------------
 # Script Name: secure_disk_eraser.sh
 # Description: An advanced, interactive HDD/SSD eraser tool for Ubuntu/Debian.
-#              It installs required tools, lists attached disks with details,
-#              detects whether a disk is an HDD or SSD, and lets the user choose
-#              from several secure erasure methods (using hdparm, nvme-cli, or shred)
-#              with full interactive prompts, double-check confirmations, and
-#              Nord‑themed color output.
+#              This script installs required tools, lists attached disks with
+#              details, detects whether a disk is an HDD, SSD, or NVMe, and lets
+#              the user choose from several secure erasure methods (using hdparm,
+#              nvme-cli, or shred) with full interactive prompts and double‑check
+#              confirmations, all with Nord‑themed color output.
 #
 # Requirements:
 #   • Must be run as root.
 #   • Works on Ubuntu/Debian.
 #
 # Tools used:
-#   • hdparm – for ATA Secure Erase.
+#   • hdparm   – for ATA Secure Erase.
 #   • nvme-cli – for NVMe formatting.
-#   • shred – for multiple overwrites (suitable for HDDs).
+#   • shred    – for multiple overwrites (suitable for HDDs).
 #
 # Author: Your Name | License: MIT
 # ------------------------------------------------------------------------------
-set -Eeuo pipefail
-trap 'echo -e "\n${RED}An error occurred at line ${LINENO}.${NC}"; exit 1' ERR
 
 # ------------------------------------------------------------------------------
-# Nord Color Theme Constants (24-bit ANSI escape sequences)
+# ENABLE STRICT MODE & SET ERROR TRAPPING
+# ------------------------------------------------------------------------------
+set -Eeuo pipefail
+
+cleanup() {
+    log INFO "Performing cleanup tasks before exit."
+    # Add any cleanup tasks if needed.
+}
+trap cleanup EXIT
+trap 'handle_error "An unexpected error occurred at line $LINENO in function ${FUNCNAME[1]:-main}."' ERR
+
+# ------------------------------------------------------------------------------
+# NORD COLOR THEME CONSTANTS (24-bit ANSI escapes)
 # ------------------------------------------------------------------------------
 RED='\033[38;2;191;97;106m'      # For errors
 YELLOW='\033[38;2;235;203;139m'   # For warnings/labels
@@ -34,16 +44,17 @@ GRAY='\033[38;2;216;222;233m'     # Light gray text
 NC='\033[0m'                     # Reset Color
 
 # ------------------------------------------------------------------------------
-# Global Variables
+# GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/secure_disk_eraser.log"
 DEBIAN_FRONTEND=noninteractive
 TOOLS=(hdparm nvme-cli coreutils)  # coreutils provides shred
 
 # ------------------------------------------------------------------------------
-# Logging Function
+# LOGGING FUNCTION
 # ------------------------------------------------------------------------------
 log() {
+    # Usage: log LEVEL message
     local level="${1:-INFO}"
     shift
     local message="$*"
@@ -63,52 +74,76 @@ log() {
 }
 
 # ------------------------------------------------------------------------------
-# (Progress Bar functionality removed)
+# HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
+check_root() {
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        handle_error "This script must be run as root."
+    fi
+}
+
+handle_error() {
+    local error_message="${1:-"An error occurred. See log for details."}"
+    local exit_code="${2:-1}"
+    log ERROR "$error_message (Exit Code: $exit_code)"
+    echo -e "${RED}ERROR: $error_message (Exit Code: $exit_code)${NC}" >&2
+    exit "$exit_code"
+}
+
+prompt_enter() {
+    read -rp "Press Enter to continue..." dummy
+}
+
+print_section() {
+    local title="$1"
+    local border
+    border=$(printf '─%.0s' {1..60})
+    log INFO "${CYAN}${border}${NC}"
+    log INFO "${CYAN}  $title${NC}"
+    log INFO "${CYAN}${border}${NC}"
+}
 
 # ------------------------------------------------------------------------------
-# Install Prerequisites Function
+# INSTALL PREREQUISITES FUNCTION
 # ------------------------------------------------------------------------------
 install_prerequisites() {
-    log INFO "Installing required tools..."
-    # Update repositories
+    print_section "Installing Required Tools"
+    log INFO "Updating package repositories..."
     apt update || { log ERROR "Failed to update repositories."; exit 1; }
-    # Install hdparm, nvme-cli, and coreutils (for shred)
+    log INFO "Installing hdparm, nvme-cli, and coreutils (for shred)..."
     apt install -y hdparm nvme-cli coreutils || { log ERROR "Failed to install prerequisites."; exit 1; }
     log INFO "Required tools installed."
 }
 
 # ------------------------------------------------------------------------------
-# List Attached Disks Function
+# LIST ATTACHED DISKS
 # ------------------------------------------------------------------------------
 list_disks() {
     lsblk -d -o NAME,SIZE,TYPE,ROTA,MODEL | grep "disk"
 }
 
 # ------------------------------------------------------------------------------
-# Detect Disk Type Function
+# DETECT DISK TYPE FUNCTION
 # ------------------------------------------------------------------------------
 detect_disk_type() {
     local disk="$1"
     if [[ "$disk" == nvme* ]]; then
         echo "nvme"
-    else
-        if [[ -f "/sys/block/${disk}/queue/rotational" ]]; then
-            local rota
-            rota=$(cat /sys/block/"$disk"/queue/rotational)
-            if [[ "$rota" -eq 1 ]]; then
-                echo "hdd"
-            else
-                echo "ssd"
-            fi
+    elif [[ -f "/sys/block/${disk}/queue/rotational" ]]; then
+        local rota
+        rota=$(cat "/sys/block/$disk/queue/rotational")
+        if [[ "$rota" -eq 1 ]]; then
+            echo "hdd"
         else
-            echo "unknown"
+            echo "ssd"
         fi
+    else
+        echo "unknown"
     fi
 }
 
 # ------------------------------------------------------------------------------
-# Prompt User for Disk Selection
+# PROMPT USER FOR DISK SELECTION
 # ------------------------------------------------------------------------------
 select_disk() {
     log INFO "Scanning for attached disks..."
@@ -123,13 +158,12 @@ select_disk() {
     local i=1
     declare -A disk_map
     while IFS= read -r line; do
-        local name size type rota model
+        local name size type rota model disk_type
         name=$(echo "$line" | awk '{print $1}')
         size=$(echo "$line" | awk '{print $2}')
         type=$(echo "$line" | awk '{print $3}')
         rota=$(echo "$line" | awk '{print $4}')
         model=$(echo "$line" | cut -d' ' -f5-)
-        local disk_type
         disk_type=$(detect_disk_type "$name")
         printf "${CYAN}[%d]${NC} /dev/%s - Size: %s, Type: %s, Model: %s\n" "$i" "$name" "$size" "$disk_type" "$model"
         disk_map["$i"]="$name"
@@ -153,12 +187,12 @@ select_disk() {
 }
 
 # ------------------------------------------------------------------------------
-# Secure Erase using hdparm
+# SECURE ERASE USING HDPARM (for ATA drives and some SSDs)
 # ------------------------------------------------------------------------------
 secure_erase_hdparm() {
     local disk="$1"
-    echo -e "${GREEN}Preparing to securely erase $disk using hdparm...${NC}"
-    read -rp "Enter a temporary security password (will be erased after): " sec_pass
+    echo -e "${GREEN}Preparing to securely erase ${disk} using hdparm...${NC}"
+    read -rp "Enter a temporary security password (this will be cleared): " sec_pass
     echo -e "${YELLOW}WARNING: This operation is irreversible.${NC}"
     read -rp "Type 'ERASE' to confirm and proceed: " confirm
     if [[ "$confirm" != "ERASE" ]]; then
@@ -171,11 +205,11 @@ secure_erase_hdparm() {
 }
 
 # ------------------------------------------------------------------------------
-# Secure Erase for NVMe using nvme-cli
+# SECURE ERASE FOR NVME USING NVME-CLI
 # ------------------------------------------------------------------------------
 nvme_secure_erase() {
     local disk="$1"
-    echo -e "${GREEN}Preparing to format NVMe drive $disk using nvme-cli...${NC}"
+    echo -e "${GREEN}Preparing to format NVMe drive ${disk} using nvme-cli...${NC}"
     echo -e "${YELLOW}WARNING: This operation is irreversible.${NC}"
     read -rp "Type 'ERASE' to confirm and proceed: " confirm
     if [[ "$confirm" != "ERASE" ]]; then
@@ -187,7 +221,7 @@ nvme_secure_erase() {
 }
 
 # ------------------------------------------------------------------------------
-# Wipe Disk using shred
+# WIPE DISK USING SHRED
 # ------------------------------------------------------------------------------
 shred_wipe() {
     local disk="$1"
@@ -196,8 +230,8 @@ shred_wipe() {
         echo -e "${YELLOW}Invalid number; defaulting to 3 overwrites.${NC}"
         num_overwrites=3
     fi
-    echo -e "${GREEN}Preparing to wipe $disk using shred with $num_overwrites passes...${NC}"
-    echo -e "${YELLOW}WARNING: This operation is irreversible and very time-consuming.${NC}"
+    echo -e "${GREEN}Preparing to wipe ${disk} using shred with ${num_overwrites} passes...${NC}"
+    echo -e "${YELLOW}WARNING: This operation is irreversible and may take a long time.${NC}"
     read -rp "Type 'ERASE' to confirm and proceed: " confirm
     if [[ "$confirm" != "ERASE" ]]; then
         echo -e "${YELLOW}Operation cancelled.${NC}"
@@ -208,10 +242,10 @@ shred_wipe() {
 }
 
 # ------------------------------------------------------------------------------
-# Disk Eraser Menu
+# DISK ERASER MENU
 # ------------------------------------------------------------------------------
 disk_eraser_menu() {
-    local disk selected_disk disk_type
+    local selected_disk disk disk_type
     selected_disk=$(select_disk)
     disk=$(basename "$selected_disk")
     disk_type=$(detect_disk_type "$disk")
@@ -255,13 +289,13 @@ disk_eraser_menu() {
 }
 
 # ------------------------------------------------------------------------------
-# Main Interactive Menu
+# MAIN INTERACTIVE MENU
 # ------------------------------------------------------------------------------
 main_menu() {
     while true; do
         clear
         echo -e "${CYAN}============================================${NC}"
-        echo -e "${CYAN}        Secure HDD/SSD Eraser Tool          ${NC}"
+        echo -e "${CYAN}         Secure HDD/SSD Eraser Tool         ${NC}"
         echo -e "${CYAN}============================================${NC}"
         echo -e "${GREEN}[1]${NC} List Attached Disks"
         echo -e "${GREEN}[2]${NC} Erase a Disk"
@@ -290,15 +324,23 @@ main_menu() {
 }
 
 # ------------------------------------------------------------------------------
-# Main Entry Point
+# MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
+    # Ensure the script is run with Bash and as root.
+    if [[ -z "${BASH_VERSION:-}" ]]; then
+        echo -e "${RED}ERROR: Please run this script with bash.${NC}" >&2
+        exit 1
+    fi
+    check_root
     log INFO "Starting Secure Disk Eraser Tool..."
     install_prerequisites
     main_menu
 }
 
-# Execute main if the script is run directly
+# ------------------------------------------------------------------------------
+# SCRIPT INVOCATION CHECK
+# ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi

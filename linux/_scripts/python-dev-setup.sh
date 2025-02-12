@@ -1,35 +1,43 @@
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
 # Script Name: python_dev_setup.sh
-# Description: Prepares a Debian system with essential development tools,
+# Description: Prepares an Ubuntu system with essential development tools,
 #              installs/updates pyenv, the latest stable Python, and pipx‑managed
 #              CLI tools using a robust Nord‑themed enhanced template.
+#
+#              IMPORTANT: Do not run this script with sudo! It must be run as a
+#              standard non‑root user so that pyenv installs properly.
+#
 # Author: Your Name | License: MIT
-# Version: 2.0
+# Version: 2.1
 # ------------------------------------------------------------------------------
 #
 # Usage Examples:
-#   sudo ./python_dev_setup.sh [-d|--debug] [-q|--quiet]
-#   sudo ./python_dev_setup.sh -h|--help
+#   ./python_dev_setup.sh [-d|--debug] [-q|--quiet]
+#   ./python_dev_setup.sh -h|--help
 #
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# ENABLE STRICT MODE
+# ------------------------------------------------------------------------------
 set -Eeuo pipefail
 
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/python_dev_setup.log"      # Log file path
+# Log file now stored in your home directory (non‑root user has write access)
+LOG_FILE="${HOME}/.python_dev_setup.log"
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_LEVEL="${LOG_LEVEL:-INFO}"                  # Options: INFO, DEBUG, WARN, ERROR
-QUIET_MODE=false                                # When true, suppress console output
-DISABLE_COLORS="${DISABLE_COLORS:-false}"       # Set to true to disable colored output
+LOG_LEVEL="${LOG_LEVEL:-INFO}"        # Options: INFO, DEBUG, WARN, ERROR
+QUIET_MODE=false                      # When true, suppress console output
+DISABLE_COLORS="${DISABLE_COLORS:-false}"  # Set to true to disable colored output
 
 # pyenv configuration
 PYENV_ROOT="${HOME}/.pyenv"
 
-# List of pipx-managed tools to install/upgrade
+# List of pipx‑managed tools to install/upgrade
 PIPX_TOOLS=(
     ansible-core
     black
@@ -52,7 +60,7 @@ PIPX_TOOLS=(
 )
 
 # ------------------------------------------------------------------------------
-# NORD COLOR THEME CONSTANTS (24‑bit ANSI escape sequences)
+# NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
 NORD0='\033[38;2;46;52;64m'      # #2E3440
 NORD1='\033[38;2;59;66;82m'      # #3B4252
@@ -130,9 +138,10 @@ trap 'handle_error "Script failed at line $LINENO. See above for details."' ERR
 # ------------------------------------------------------------------------------
 # HELPER & UTILITY FUNCTIONS
 # ------------------------------------------------------------------------------
-check_root() {
-    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-        handle_error "This script must be run as root."
+# Ensure the script is run as a non‑root user.
+check_non_root() {
+    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+        handle_error "Do NOT run this script as root. Please run as your normal user."
     fi
 }
 
@@ -155,9 +164,10 @@ show_help() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 Description:
-  Prepares a Debian system with essential development tools,
-  installs/updates pyenv, the latest stable Python, and pipx-managed CLI tools.
+  Prepares an Ubuntu system with essential development tools,
+  installs/updates pyenv, the latest stable Python, and pipx‑managed CLI tools.
   Uses a Nord‑themed enhanced template for robust error handling and logging.
+  IMPORTANT: Do NOT run this script with sudo.
 
 Options:
   -d, --debug   Enable debug (verbose) logging.
@@ -165,9 +175,9 @@ Options:
   -h, --help    Show this help message and exit.
 
 Examples:
-  sudo $SCRIPT_NAME --debug
-  sudo $SCRIPT_NAME --quiet
-  sudo $SCRIPT_NAME -h
+  $SCRIPT_NAME --debug
+  $SCRIPT_NAME --quiet
+  $SCRIPT_NAME -h
 EOF
 }
 
@@ -193,25 +203,25 @@ parse_args() {
 }
 
 # ------------------------------------------------------------------------------
-# FUNCTION: Install APT-based Dependencies
+# FUNCTION: Install APT-based Dependencies (using sudo where required)
 # ------------------------------------------------------------------------------
 install_apt_dependencies() {
     print_section "APT Dependencies Installation"
     log INFO "Refreshing package repositories..."
-    apt-get update -qq || handle_error "Failed to refresh package repositories."
+    sudo apt-get update -qq || handle_error "Failed to refresh package repositories."
 
     log INFO "Upgrading existing packages..."
-    apt-get upgrade -y || handle_error "Failed to upgrade packages."
+    sudo apt-get upgrade -y || handle_error "Failed to upgrade packages."
 
     log INFO "Installing required dependencies..."
-    apt-get install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
+    sudo apt-get install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
         libssl-dev libffi-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
         libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev xz-utils \
         libxml2-dev libxmlsec1-dev tk-dev llvm gnupg lsb-release jq || \
         handle_error "Failed to install required dependencies."
 
     log INFO "Cleaning up package caches..."
-    apt-get clean || log WARN "Failed to clean package caches."
+    sudo apt-get clean || log WARN "Failed to clean package caches."
 }
 
 # ------------------------------------------------------------------------------
@@ -360,11 +370,11 @@ main() {
     fi
 
     parse_args "$@"
-    check_root
+    check_non_root
 
-    log INFO "Starting Debian development setup script..."
+    log INFO "Starting Ubuntu development setup script..."
 
-    # 1. Install APT-based dependencies.
+    # 1. Install APT-based dependencies (using sudo for system packages).
     install_apt_dependencies
 
     # 2. Install or update pyenv.

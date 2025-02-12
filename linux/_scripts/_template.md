@@ -1,19 +1,45 @@
+This template is designed so that every Bash script you write using it will be robust, visually appealing, and extremely user‑friendly.
+
+────────────────────────────────────────────
+Enhanced Prompt Instructions
+
+Objective:
+Create Ubuntu Bash scripts following a consistent and modern style. Use this template as a starting point. The script uses the Nord color palette for all terminal output and detailed logging.
+
+Requirements:
+	1.	Structure & Organization:
+	•	Organize the script into clear sections: configuration, logging, helper functions, main logic, and cleanup.
+	•	Use functions for modularity (e.g., logging, error handling).
+	2.	Styling & Formatting:
+	•	Follow consistent indentation, spacing, and naming conventions (snake_case for variables and functions; UPPERCASE for constants).
+	•	Use descriptive comments and section headers.
+	3.	Nord Color Theme:
+	•	Integrate the Nord color palette (with 24‑bit ANSI escapes) to provide clear, colorful feedback.
+	•	Assign distinct Nord colors to different log levels and UI elements (e.g., section headers).
+	4.	Error Handling & Cleanup:
+	•	Trap errors and perform cleanup tasks before exit.
+
+Confirmation:
+I confirm that this enhanced template’s style, structure, and features (including Nord-themed color feedback) will be used as the standard for all future Bash scripting assistance.
+
+Ubuntu Bash Script Template below:
+
 #!/usr/bin/env bash
 # ------------------------------------------------------------------------------
-# Script Name: copy_shell_configs.sh
-# Description: A script to update shell configuration files by copying them
-#              from the dotfiles directory to the user's home directory (/home/sawyer).
+# Script Name: ultimate_script.sh
+# Description: A robust and visually engaging Bash script template using the Nord
+#              color theme, optimized for Ubuntu Linux. This template provides
+#              detailed logging and strict error handling.
 # Author: YourName | License: MIT
-# Version: 1.0
+# Version: 3.1
 # ------------------------------------------------------------------------------
 #
 # Usage:
-#   sudo ./copy_shell_configs.sh
+#   sudo ./ultimate_script.sh
 #
 # Notes:
 #   - This script requires root privileges.
-#   - Ensure that the source directory (/home/sawyer/github/linux/dotfiles)
-#     exists and contains the desired configuration files.
+#   - Logs are stored in /var/log/ultimate_script.log by default.
 #
 # ------------------------------------------------------------------------------
 
@@ -25,11 +51,10 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/copy_shell_configs.log"  # Log file path
+LOG_FILE="/var/log/ultimate_script.log"  # Log file path
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DISABLE_COLORS="${DISABLE_COLORS:-false}"     # Set to true to disable colored output
-USERNAME="sawyer"
+DISABLE_COLORS="${DISABLE_COLORS:-false}"  # Set to true to disable colored output
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
@@ -53,7 +78,7 @@ NORD15='\033[38;2;180;142;173m'  # #B48EAD
 NC='\033[0m'                    # No Color
 
 # ------------------------------------------------------------------------------
-# LOGGING FUNCTIONS
+# LOGGING FUNCTION
 # ------------------------------------------------------------------------------
 log() {
     # Usage: log [LEVEL] message
@@ -78,14 +103,6 @@ log() {
     printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
 }
 
-log_info() {
-    log INFO "$@"
-}
-
-log_warn() {
-    log WARN "$@"
-}
-
 # ------------------------------------------------------------------------------
 # ERROR HANDLING & CLEANUP FUNCTIONS
 # ------------------------------------------------------------------------------
@@ -99,15 +116,15 @@ handle_error() {
 }
 
 cleanup() {
-    log_info "Performing cleanup tasks before exit."
-    # Add any necessary cleanup tasks here (e.g., removing temporary files)
+    log INFO "Performing cleanup tasks before exit."
+    # Insert any necessary cleanup tasks here (e.g., removing temporary files)
 }
 
 trap cleanup EXIT
 trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 
 # ------------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# HELPER & UTILITY FUNCTIONS
 # ------------------------------------------------------------------------------
 check_root() {
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -120,39 +137,26 @@ print_section() {
     local title="$1"
     local border
     border=$(printf '─%.0s' {1..60})
-    log_info "${NORD10}${border}${NC}"
-    log_info "${NORD10}  $title${NC}"
-    log_info "${NORD10}${border}${NC}"
+    log INFO "${NORD10}${border}${NC}"
+    log INFO "${NORD10}  $title${NC}"
+    log INFO "${NORD10}${border}${NC}"
 }
 
 # ------------------------------------------------------------------------------
-# MAIN FUNCTION: COPY SHELL CONFIGURATION FILES
+# MAIN LOGIC FUNCTIONS
 # ------------------------------------------------------------------------------
-copy_shell_configs() {
-    # Check that the function is executed as root.
-    if [[ "$(id -u)" -ne 0 ]]; then
-        handle_error "copy_shell_configs must be run as root."
-    fi
+function_one() {
+    print_section "Starting Function One"
+    log INFO "Executing tasks in function_one..."
+    sleep 1  # Replace with actual work
+    log INFO "function_one completed successfully."
+}
 
-    print_section "Shell Configuration Files Update"
-
-    local source_dir="/home/${USERNAME}/github/bash/linux/dotfiles"
-    local dest_dir="/home/${USERNAME}"
-    local files=(".bashrc" ".profile")
-
-    for file in "${files[@]}"; do
-        local src="${source_dir}/${file}"
-        local dest="${dest_dir}/${file}"
-        if [[ -f "$src" ]]; then
-            log_info "Copying ${src} to ${dest}..."
-            cp -f "$src" "$dest" || log_warn "Failed to copy ${src} to ${dest}."
-            chown "${USERNAME}:${USERNAME}" "$dest" || log_warn "Failed to set ownership for ${dest}."
-        else
-            log_warn "Source file ${src} not found; skipping."
-        fi
-    done
-
-    log_info "Shell configuration files update completed."
+function_two() {
+    print_section "Starting Function Two"
+    log INFO "Executing tasks in function_two..."
+    sleep 1  # Replace with actual work
+    log INFO "function_two completed successfully."
 }
 
 # ------------------------------------------------------------------------------
@@ -176,14 +180,18 @@ main() {
     touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
     chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
-    log_info "Script execution started."
+    log INFO "Script execution started."
 
-    copy_shell_configs
+    # Execute main functions
+    function_one
+    function_two
 
-    log_info "Script execution finished successfully."
+    log INFO "Script execution finished successfully."
 }
 
 # Invoke main() if this script is executed directly
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi
+
+Use this refined template as the foundation for all future Bash scripts. It establishes a robust standard for error handling, logging, and user feedback while showcasing the elegant Nord color theme. Now ask the user what further assistance they require—do not provide any feedback or produce any code yet.
