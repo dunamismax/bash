@@ -86,7 +86,6 @@ PACKAGES=(
     virtinst
     bridge-utils
     acpid
-    fail2ban
     ffmpeg
     restic
     flameshot
@@ -414,21 +413,6 @@ configure_firewall() {
     systemctl enable ufw || log_warn "Failed to enable ufw service"
     systemctl start ufw || log_warn "Failed to start ufw service"
     log_info "Firewall configured and enabled."
-}
-
-configure_fail2ban() {
-    print_section "fail2ban Configuration"
-    log_info "Enabling fail2ban service..."
-
-    if ! systemctl enable fail2ban; then
-        log_warn "Failed to enable fail2ban service."
-    fi
-
-    if ! systemctl start fail2ban; then
-        log_warn "Failed to start fail2ban service."
-    else
-        log_info "fail2ban service started successfully."
-    fi
 }
 
 install_plex() {
@@ -1199,7 +1183,6 @@ main() {
     install_packages
     configure_ssh
     configure_firewall
-    configure_fail2ban
     install_plex
     #install_configure_zfs
     caddy_config
