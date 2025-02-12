@@ -638,21 +638,86 @@ caddy_config() {
 
 # configure_zfs
 # Imports a ZFS pool (if not already imported) and sets its mountpoint.
-configure_zfs() {
-    print_section "ZFS Configuration"
+install_configure_zfs() {
+    # Ensure the function is run as root.
+    if [[ "$(id -u)" -ne 0 ]]; then
+        echo "ERROR: install_configure_zfs must be run as root." >&2
+        return 1
+    fi
+
+    # Define local variables.
+    local LOG_FILE="/var/log/install_configure_zfs.log"
+    local repo_file="/etc/apt/sources.list.d/bookworm-backports.list"
+    local pin_file="/etc/apt/preferences.d/90_zfs"
     local ZPOOL_NAME="WD_BLACK"
+    local LOG_DIR
+
+    # Ensure log directory exists and secure the log file.
+    LOG_DIR="$(dirname "$LOG_FILE")"
+    if [[ ! -d "$LOG_DIR" ]]; then
+        mkdir -p "$LOG_DIR" || { log ERROR "Failed to create log directory: $LOG_DIR"; return 1; }
+    fi
+    touch "$LOG_FILE" || { log ERROR "Failed to create log file: $LOG_FILE"; return 1; }
+    chmod 600 "$LOG_FILE" || { log ERROR "Failed to set permissions on $LOG_FILE"; return 1; }
+
+    log INFO "ZFS installation and configuration started."
+
+    # -- Add Backports Repository and Configure Package Pinning --
+    if [[ ! -f "$repo_file" ]]; then
+        cat <<EOF > "$repo_file"
+deb http://deb.debian.org/debian bookworm-backports main contrib
+deb-src http://deb.debian.org/debian bookworm-backports main contrib
+EOF
+        log INFO "Backports repository added to $repo_file."
+    else
+        log INFO "Backports repository already exists at $repo_file."
+    fi
+
+    if [[ ! -f "$pin_file" ]]; then
+        cat <<EOF > "$pin_file"
+Package: src:zfs-linux
+Pin: release n=bookworm-backports
+Pin-Priority: 990
+EOF
+        log INFO "ZFS package pinning configured in $pin_file."
+    else
+        log INFO "ZFS package pinning already exists at $pin_file."
+    fi
+
+    # -- Update Package Lists and Install ZFS Packages --
+    log INFO "Updating package lists..."
+    apt update || { log ERROR "Failed to update package lists."; return 1; }
+
+    log INFO "Installing prerequisites..."
+    apt install -y dpkg-dev linux-headers-generic linux-image-generic || { log ERROR "Failed to install prerequisites."; return 1; }
+
+    log INFO "Installing ZFS packages..."
+    DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux || { log ERROR "Failed to install ZFS packages."; return 1; }
+    log INFO "ZFS packages installed successfully."
+
+    # -- Enable ZFS Services --
+    log INFO "Enabling ZFS auto-import and mount services..."
+    systemctl enable zfs-import-cache.service || log WARN "Failed to enable zfs-import-cache.service."
+    systemctl enable zfs-mount.service || log WARN "Failed to enable zfs-mount.service."
+
+    # -- Configure and Mount ZFS Pool --
     if ! zpool list "$ZPOOL_NAME" >/dev/null 2>&1; then
-        log_info "Importing ZFS pool '$ZPOOL_NAME'..."
-        if ! zpool import "$ZPOOL_NAME"; then
-            handle_error "Failed to import ZFS pool '$ZPOOL_NAME'."
+        log INFO "Importing ZFS pool '$ZPOOL_NAME'..."
+        if ! zpool import -f "$ZPOOL_NAME"; then
+            log ERROR "Failed to import ZFS pool '$ZPOOL_NAME'."
+            return 1
         fi
+    else
+        log INFO "ZFS pool '$ZPOOL_NAME' is already imported."
     fi
 
     if ! zfs set mountpoint=/media/"$ZPOOL_NAME" "$ZPOOL_NAME"; then
-        log_warn "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
+        log WARN "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
     else
-        log_info "ZFS pool '$ZPOOL_NAME' mountpoint set to /media/$ZPOOL_NAME."
+        log INFO "ZFS pool '$ZPOOL_NAME' mountpoint set to /media/$ZPOOL_NAME."
     fi
+
+    log INFO "ZFS installation and configuration finished successfully."
 }
 
 # setup_repos
@@ -1145,7 +1210,7 @@ main() {
     configure_firewall
     configure_fail2ban
     install_plex
-    configure_zfs
+    install_configure_zfs
     setup_repos
     caddy_config
     copy_shell_configs
