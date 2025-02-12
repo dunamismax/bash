@@ -910,6 +910,40 @@ home_permissions() {
     log_info "Home directory permissions updated. Note: Future file ownership is determined by the process creating the file."
 }
 
+dotfiles_load() {
+    print_section "Loading Dotfiles"
+
+    # Copy the Alacritty configuration folder.
+    log_info "Copying Alacritty configuration to ~/.config/alacritty..."
+    mkdir -p "/home/$USERNAME/.config/alacritty"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/dotfiles/alacritty/" "/home/$USERNAME/.config/alacritty/"; then
+        handle_error "Failed to copy Alacritty configuration."
+    fi
+
+    # Copy the i3 configuration folder.
+    log_info "Copying i3 configuration to ~/.config/i3..."
+    mkdir -p "/home/$USERNAME/.config/i3"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/dotfiles/i3/" "/home/$USERNAME/.config/i3/"; then
+        handle_error "Failed to copy i3 configuration."
+    fi
+
+    # Copy the i3blocks configuration folder.
+    log_info "Copying i3blocks configuration to ~/.config/i3blocks..."
+    mkdir -p "/home/$USERNAME/.config/i3blocks"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/dotfiles/i3blocks/" "/home/$USERNAME/.config/i3blocks/"; then
+        handle_error "Failed to copy i3blocks configuration."
+    fi
+
+    # Copy the picom configuration folder.
+    log_info "Copying picom configuration to ~/.config/picom..."
+    mkdir -p "/home/$USERNAME/.config/picom"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/dotfiles/picom/" "/home/$USERNAME/.config/picom/"; then
+        handle_error "Failed to copy picom configuration."
+    fi
+
+    log_info "Dotfiles loaded successfully."
+}
+
 final_checks() {
     print_section "Final System Checks"
     log_info "Kernel version: $(uname -r)"
@@ -987,6 +1021,7 @@ main() {
     configure_periodic
     final_checks
     home_permissions
+    dotfiles_load
     install_ly
     prompt_reboot
 }
