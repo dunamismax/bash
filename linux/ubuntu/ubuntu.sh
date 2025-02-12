@@ -176,19 +176,9 @@ PACKAGES=(
 )
 
 # Nord Theme Colors (24-bit ANSI)
-NORD0='\033[38;2;46;52;64m'       # Dark background
-NORD1='\033[38;2;59;66;82m'
-NORD2='\033[38;2;67;76;94m'
-NORD3='\033[38;2;76;86;106m'
-NORD4='\033[38;2;216;222;233m'
-NORD5='\033[38;2;229;233;240m'
-NORD6='\033[38;2;236;239;244m'
-NORD7='\033[38;2;143;188;187m'
-NORD8='\033[38;2;136;192;208m'
 NORD9='\033[38;2;129;161;193m'    # Debug messages
 NORD10='\033[38;2;94;129;172m'
 NORD11='\033[38;2;191;97;106m'    # Error messages
-NORD12='\033[38;2;208;135;112m'
 NORD13='\033[38;2;235;203;139m'   # Warning messages
 NORD14='\033[38;2;163;190;140m'   # Info messages
 NC='\033[0m'                     # Reset to No Color
@@ -201,10 +191,10 @@ log() {
     local timestamp
     timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
     local entry="[$timestamp] [${level^^}] $message"
-    
+
     # Append log entry to file
     echo "$entry" >> "$LOG_FILE"
-    
+
     # If stderr is a terminal, print with color; otherwise, print plain.
     if [ -t 2 ]; then
         case "${level^^}" in
@@ -270,12 +260,12 @@ check_network() {
 update_system() {
     print_section "System Update & Upgrade"
     log_info "Updating package repositories..."
-    if ! apt-get update -qq; then
+    if ! apt update -qq; then
         handle_error "Failed to update package repositories."
     fi
 
     log_info "Upgrading system packages..."
-    if ! apt-get upgrade -y; then
+    if ! apt upgrade -y; then
         handle_error "Failed to upgrade packages."
     fi
 
@@ -313,8 +303,7 @@ configure_sudoers() {
     # Ensure 'sudo' (and thus 'visudo') is available. On Ubuntu sudo is normally pre-installed.
     if ! command -v visudo &>/dev/null; then
         log_info "visudo not found. Installing the 'sudo' package..."
-        apt-get update -qq || handle_error "Failed to update package repository for installing 'sudo'."
-        apt-get install -y sudo || handle_error "Failed to install the 'sudo' package."
+        apt install -y sudo || handle_error "Failed to install the 'sudo' package."
         log_info "'sudo' installed successfully."
     fi
 
@@ -345,7 +334,7 @@ configure_sudoers() {
 install_packages() {
     print_section "Essential Package Installation"
     log_info "Installing packages..."
-    if ! apt-get install -y "${PACKAGES[@]}"; then
+    if ! apt install -y "${PACKAGES[@]}"; then
         handle_error "Failed to install one or more packages."
     fi
     log_info "Package installation complete."
@@ -358,8 +347,7 @@ configure_ssh() {
     # Ensure OpenSSH Server is installed.
     if ! dpkg -s openssh-server &>/dev/null; then
         log_info "openssh-server is not installed. Updating repository and installing..."
-        apt-get update -qq || handle_error "Failed to update package repository."
-        apt-get install -y openssh-server || handle_error "Failed to install OpenSSH Server."
+        apt install -y openssh-server || handle_error "Failed to install OpenSSH Server."
         log_info "OpenSSH Server installed successfully."
     else
         log_info "OpenSSH Server already installed."
@@ -469,10 +457,9 @@ install_plex() {
 
     # Update package lists and install Plex.
     log_info "Updating package lists..."
-    apt-get update -qq || handle_error "Failed to update package lists."
 
     log_info "Installing Plex Media Server..."
-    apt-get install -y plexmediaserver || handle_error "Failed to install Plex Media Server."
+    apt install -y plexmediaserver || handle_error "Failed to install Plex Media Server."
 
     # Configure Plex to run as the specified user.
     local PLEX_CONF="/etc/default/plexmediaserver"
@@ -558,7 +545,7 @@ caddy_config() {
 
 install_configure_zfs() {
     print_section "Install and configure ZFS and mount WD_BLACK"
-    
+
     # Define local variables.
     local LOG_FILE="/var/log/install_configure_zfs.log"
     local ZPOOL_NAME="WD_BLACK"
@@ -748,8 +735,7 @@ docker_config() {
         log_info "Docker is already installed."
     else
         log_info "Docker not found; updating package lists and installing Docker..."
-        apt-get update || handle_error "Failed to update package lists."
-        apt-get install -y docker.io || handle_error "Failed to install Docker."
+        apt install -y docker.io || handle_error "Failed to install Docker."
         log_info "Docker installed successfully."
     fi
 
@@ -799,7 +785,7 @@ copy_shell_configs() {
     local source_dir="/home/${USERNAME}/github/bash/linux/dotfiles"
     local dest_dir="/home/${USERNAME}"
     local files=(".bashrc" ".profile")
-    
+
     for file in "${files[@]}"; do
         local src="${source_dir}/${file}"
         local dest="${dest_dir}/${file}"
@@ -826,8 +812,7 @@ install_zig_binary() {
     local TEMP_DOWNLOAD="/tmp/zig.tar.xz"
 
     log_info "Ensuring required dependencies (curl, tar) are installed..."
-    apt-get update -qq || handle_error "Failed to update package lists."
-    apt-get install -y curl tar || handle_error "Failed to install required dependencies."
+    apt install -y curl tar || handle_error "Failed to install required dependencies."
 
     log_info "Downloading Zig ${ZIG_VERSION} binary from ${ZIG_TARBALL_URL}..."
     curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}" || handle_error "Failed to download Zig binary."
@@ -971,13 +956,11 @@ python_dev_setup() {
     user_home=$(eval echo "~${USERNAME}")
 
     print_section "APT Dependencies Installation"
-    apt-get update -qq || handle_error "Failed to update package repositories."
-    apt-get upgrade -y || handle_error "Failed to upgrade packages."
-    apt-get install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
+    apt install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
         libssl-dev libffi-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
         libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev xz-utils \
         libxml2-dev libxmlsec1-dev tk-dev llvm gnupg lsb-release jq || handle_error "Failed to install required dependencies."
-    apt-get clean || log_warn "Failed to clean package caches."
+    apt clean || log_warn "Failed to clean package caches."
 
     print_section "pyenv Installation/Update"
     if [ ! -d "${user_home}/.pyenv" ]; then
@@ -1177,13 +1160,13 @@ main() {
     setup_repos
     caddy_config
     copy_shell_configs
-    enable_dunamismax_services
     docker_config
     install_zig_binary
     install_ly
     deploy_user_scripts
     python_dev_setup
     venv_setup
+    enable_dunamismax_services
     configure_periodic
     final_checks
     prompt_reboot
