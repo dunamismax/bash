@@ -84,6 +84,19 @@ PACKAGES=(
     lsof
     unzip
     zip
+
+    # Minimal i3-based GUI environment (for a headless/server Ubuntu)
+    xorg                 # Core X server
+    x11-xserver-utils    # Common X utilities
+    i3-wm                # i3 window manager
+    i3status             # Status bar
+    i3lock               # Screen locker
+    i3blocks             # Alternative status bar (optional)
+    dmenu                # Program launcher
+    xterm                # Basic terminal emulator
+    alacritty            # Advanced terminal emulator
+    feh                  # Lightweight image viewer (often used for setting wallpapers)
+    fonts-dejavu-core    # Basic font set
 )
 
 # Nord Theme Colors (24-bit ANSI)
