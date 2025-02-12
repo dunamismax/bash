@@ -786,6 +786,7 @@ copy_shell_configs() {
     local dest_dir="/home/${USERNAME}"
     local files=(".bashrc" ".profile")
 
+    # 1) Copy the specified dotfiles from source to destination.
     for file in "${files[@]}"; do
         local src="${source_dir}/${file}"
         local dest="${dest_dir}/${file}"
@@ -798,7 +799,19 @@ copy_shell_configs() {
         fi
     done
 
-    log_info "Shell configuration files update completed."
+    # 2) Enable alias expansion in this script.
+    shopt -s expand_aliases
+
+    # 3) Source the new .bashrc so that aliases and functions become available now.
+    #    Hard-coded to /home/sawyer/.bashrc:
+    if [ -f "/home/sawyer/.bashrc" ]; then
+        log_info "Sourcing /home/sawyer/.bashrc in the current script..."
+        source /home/sawyer/.bashrc
+    else
+        log_warn "No .bashrc found at /home/sawyer/.bashrc; skipping source."
+    fi
+
+    log_info "Shell configuration files update completed (aliases/functions loaded)."
 }
 
 install_zig_binary() {
@@ -954,6 +967,7 @@ deploy_user_scripts() {
 python_dev_setup() {
     local user_home
     user_home=$(eval echo "~${USERNAME}")
+    source /home/sawyer/.bashrc
 
     print_section "APT Dependencies Installation"
     apt install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
@@ -1151,15 +1165,15 @@ main() {
     update_system
     ensure_user
     configure_sudoers
+    setup_repos
+    copy_shell_configs
     install_packages
     configure_ssh
     configure_firewall
     configure_fail2ban
     install_plex
     install_configure_zfs
-    setup_repos
     caddy_config
-    copy_shell_configs
     docker_config
     install_zig_binary
     install_ly
