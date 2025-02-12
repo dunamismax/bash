@@ -1111,14 +1111,15 @@ deploy_user_scripts() {
     log INFO "Script deployment completed successfully."
 }
 
-# python_dev_setup
-# Sets up the latest pip and python via Pyenv
 python_dev_setup() {
-    # Parse any passed arguments and ensure root privileges (helpers defined globally)
-    parse_args "$@"
-    check_root
+    # This function installs the latest stable Python via pyenv and sets up pipx
+    # for the target user (defined by the global variable USERNAME).
+    # It is intended to be run as root.
 
-    # Install APT-based dependencies
+    # Determine the target user's home directory.
+    local user_home
+    user_home=$(eval echo "~${USERNAME}")
+
     print_section "APT Dependencies Installation"
     apt-get update -qq || handle_error "Failed to update package repositories."
     apt-get upgrade -y || handle_error "Failed to upgrade packages."
@@ -1128,12 +1129,12 @@ python_dev_setup() {
         libxml2-dev libxmlsec1-dev tk-dev llvm gnupg lsb-release jq || handle_error "Failed to install required dependencies."
     apt-get clean || log_warn "Failed to clean package caches."
 
-    # Install or update pyenv
     print_section "pyenv Installation/Update"
-    if [ ! -d "${HOME}/.pyenv" ]; then
-        git clone https://github.com/pyenv/pyenv.git "${HOME}/.pyenv" || handle_error "Failed to clone pyenv."
-        if ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
-            cat << 'EOF' >> "${HOME}/.bashrc"
+    if [ ! -d "${user_home}/.pyenv" ]; then
+        git clone https://github.com/pyenv/pyenv.git "${user_home}/.pyenv" || handle_error "Failed to clone pyenv."
+        # Append pyenv initialization to the target user's .bashrc if not already present.
+        if ! grep -q 'export PYENV_ROOT' "${user_home}/.bashrc"; then
+            cat << 'EOF' >> "${user_home}/.bashrc"
 
 # >>> pyenv initialization >>>
 export PYENV_ROOT="$HOME/.pyenv"
@@ -1144,19 +1145,22 @@ fi
 # <<< pyenv initialization <<<
 EOF
         fi
+        # Fix ownership so that the target user owns the pyenv installation.
+        chown -R "${USERNAME}:${USERNAME}" "${user_home}/.pyenv"
     else
-        pushd "${HOME}/.pyenv" >/dev/null || handle_error "Failed to enter pyenv directory."
+        pushd "${user_home}/.pyenv" >/dev/null || handle_error "Failed to enter pyenv directory."
         git pull --ff-only || handle_error "Failed to update pyenv."
         popd >/dev/null
     fi
-    export PYENV_ROOT="${HOME}/.pyenv"
+
+    export PYENV_ROOT="${user_home}/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
     eval "$(pyenv init -)"
 
-    # Install the latest stable Python via pyenv
     print_section "Python Installation via pyenv"
     local latest_py3
-    latest_py3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')" || handle_error "Failed to determine the latest Python version."
+    latest_py3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')" \
+        || handle_error "Failed to determine the latest Python version."
     if [ -z "$latest_py3" ]; then
         handle_error "Could not determine the latest Python 3.x version."
     fi
@@ -1167,22 +1171,21 @@ EOF
             pyenv install "$latest_py3" || handle_error "Failed to install Python $latest_py3."
         fi
         pyenv global "$latest_py3" || handle_error "Failed to set Python $latest_py3 as global."
-        local new_python_installed=true
+        new_python_installed=true
     else
-        local new_python_installed=false
+        new_python_installed=false
     fi
     eval "$(pyenv init -)"
 
-    # Install or upgrade pipx and its managed tools
     print_section "pipx Installation and Tools Update"
-    if ! command -v pipx >/dev/null 2>&1; then
-        python -m pip install --upgrade pip || handle_error "Failed to upgrade pip."
-        python -m pip install --user pipx || handle_error "Failed to install pipx."
+    # Run pip commands with HOME set to the target user's home so that --user installs go there.
+    HOME="$user_home" python3 -m pip install --upgrade pip || handle_error "Failed to upgrade pip."
+    HOME="$user_home" python3 -m pip install --user pipx || handle_error "Failed to install pipx."
+    # Ensure that the target user's .bashrc adds the local bin directory to PATH.
+    if ! grep -q 'export PATH=.*\.local/bin' "${user_home}/.bashrc"; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${user_home}/.bashrc"
     fi
-    if ! grep -q 'export PATH=.*\.local/bin' "${HOME}/.bashrc"; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
+    export PATH="${user_home}/.local/bin:$PATH"
     pipx upgrade pipx || true
     if [ "$new_python_installed" = true ]; then
         pipx reinstall-all || true
@@ -1190,7 +1193,7 @@ EOF
         pipx upgrade-all || true
     fi
 
-    # List of pipx-managed tools
+    # List of pipx-managed tools (adjust as needed).
     local PIPX_TOOLS=( ansible-core black cookiecutter coverage flake8 isort ipython mypy pip-tools pylint pyupgrade pytest rich-cli tldr tox twine poetry pre-commit )
     local tool
     for tool in "${PIPX_TOOLS[@]}"; do
@@ -1202,7 +1205,7 @@ EOF
     done
 
     print_section "Python Development Setup Complete"
-    log_info "SUCCESS! Your system is now prepared with the latest stable Python (via pyenv), pipx updated, and a curated set of CLI tools."
+    log_info "SUCCESS! ${USERNAME}'s environment is now set up with the latest stable Python (via pyenv), pipx updated, and a curated set of CLI tools."
 }
 
 # venv_setup
