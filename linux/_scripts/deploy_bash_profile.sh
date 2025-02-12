@@ -129,19 +129,24 @@ print_section() {
 # MAIN FUNCTION: COPY SHELL CONFIGURATION FILES
 # ------------------------------------------------------------------------------
 copy_shell_configs() {
+    # Check that the function is executed as root.
+    if [[ "$(id -u)" -ne 0 ]]; then
+        handle_error "copy_shell_configs must be run as root."
+    fi
+
     print_section "Shell Configuration Files Update"
 
-    local source_dir="/home/$USERNAME/github/bash/linux/dotfiles"
-    local dest_dir="/home/$USERNAME"
+    local source_dir="/home/${USERNAME}/github/bash/linux/dotfiles"
+    local dest_dir="/home/${USERNAME}"
     local files=(".bashrc" ".profile")
 
     for file in "${files[@]}"; do
         local src="${source_dir}/${file}"
         local dest="${dest_dir}/${file}"
-        if [ -f "$src" ]; then
+        if [[ -f "$src" ]]; then
             log_info "Copying ${src} to ${dest}..."
             cp -f "$src" "$dest" || log_warn "Failed to copy ${src} to ${dest}."
-            chown "$USERNAME":"$USERNAME" "$dest" || log_warn "Failed to set ownership for ${dest}."
+            chown "${USERNAME}:${USERNAME}" "$dest" || log_warn "Failed to set ownership for ${dest}."
         else
             log_warn "Source file ${src} not found; skipping."
         fi
