@@ -277,9 +277,7 @@ configure_ssh() {
     cp "$sshd_config" "$backup" || handle_error "Failed to backup $sshd_config"
     log_info "Backed up $sshd_config to $backup"
 
-    # Define desired SSH settings for a hardened configuration.
-    # Here we disable root login, disable password authentication (use keys only),
-    # disallow empty passwords and challenge-response logins, and enforce protocol 2.
+    # Define desired SSH settings.
     declare -A ssh_settings=(
         ["Port"]="22"
         ["PermitRootLogin"]="no"
@@ -434,57 +432,62 @@ caddy_config() {
 }
 
 install_configure_zfs() {
-    print_section "Install and configure ZFS and mount WD_BLACK"
+    print_section "ZFS Installation and Configuration"
 
-    # Define local variables.
-    local LOG_FILE="/var/log/install_configure_zfs.log"
+    # Define variables for the pool and its desired mount point.
     local ZPOOL_NAME="WD_BLACK"
-    local LOG_DIR
+    local MOUNT_POINT="/media/${ZPOOL_NAME}"
 
-    # Ensure log directory exists and secure the log file.
-    LOG_DIR="$(dirname "$LOG_FILE")"
-    if [[ ! -d "$LOG_DIR" ]]; then
-        mkdir -p "$LOG_DIR" || { log ERROR "Failed to create log directory: $LOG_DIR"; return 1; }
+    # -- Update Package Lists and Install Prerequisites --
+    log_info "Updating package lists..."
+    if ! apt update; then
+        log_error "Failed to update package lists."
+        return 1
     fi
-    touch "$LOG_FILE" || { log ERROR "Failed to create log file: $LOG_FILE"; return 1; }
-    chmod 600 "$LOG_FILE" || { log ERROR "Failed to set permissions on $LOG_FILE"; return 1; }
 
-    log INFO "ZFS installation and configuration started."
+    log_info "Installing prerequisites for ZFS..."
+    if ! apt install -y dpkg-dev linux-headers-generic linux-image-generic; then
+        log_error "Failed to install prerequisites."
+        return 1
+    fi
 
-    # -- Update Package Lists and Install ZFS Packages --
-    log INFO "Updating package lists..."
-    apt update || { log ERROR "Failed to update package lists."; return 1; }
-
-    log INFO "Installing prerequisites and ZFS packages..."
-    # Install any necessary build and kernel header packages.
-    apt install -y dpkg-dev linux-headers-generic linux-image-generic || { log ERROR "Failed to install prerequisites."; return 1; }
-    # Install ZFS from Ubuntu's official repositories.
-    DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux || { log ERROR "Failed to install ZFS packages."; return 1; }
-    log INFO "ZFS packages installed successfully."
+    # -- Install ZFS Packages from Ubuntu's Official Repositories --
+    log_info "Installing ZFS packages..."
+    if ! DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux; then
+        log_error "Failed to install ZFS packages."
+        return 1
+    fi
+    log_info "ZFS packages installed successfully."
 
     # -- Enable ZFS Services --
-    log INFO "Enabling ZFS auto-import and mount services..."
-    systemctl enable zfs-import-cache.service || log WARN "Failed to enable zfs-import-cache.service."
-    systemctl enable zfs-mount.service || log WARN "Failed to enable zfs-mount.service."
+    log_info "Enabling ZFS auto-import and mount services..."
+    if ! systemctl enable zfs-import-cache.service; then
+        log_warn "Could not enable zfs-import-cache.service."
+    fi
+    if ! systemctl enable zfs-mount.service; then
+        log_warn "Could not enable zfs-mount.service."
+    fi
 
-    # -- Configure and Mount ZFS Pool --
+    # -- Import the ZFS Pool if Not Already Imported --
     if ! zpool list "$ZPOOL_NAME" >/dev/null 2>&1; then
-        log INFO "Importing ZFS pool '$ZPOOL_NAME'..."
+        log_info "Importing ZFS pool '$ZPOOL_NAME'..."
         if ! zpool import -f "$ZPOOL_NAME"; then
-            log ERROR "Failed to import ZFS pool '$ZPOOL_NAME'."
+            log_error "Failed to import ZFS pool '$ZPOOL_NAME'."
             return 1
         fi
     else
-        log INFO "ZFS pool '$ZPOOL_NAME' is already imported."
+        log_info "ZFS pool '$ZPOOL_NAME' is already imported."
     fi
 
-    if ! zfs set mountpoint=/media/"$ZPOOL_NAME" "$ZPOOL_NAME"; then
-        log WARN "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
+    # -- Set the Mountpoint for the ZFS Pool --
+    log_info "Setting mountpoint for ZFS pool '$ZPOOL_NAME' to '$MOUNT_POINT'..."
+    if ! zfs set mountpoint="${MOUNT_POINT}" "$ZPOOL_NAME"; then
+        log_warn "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
     else
-        log INFO "ZFS pool '$ZPOOL_NAME' mountpoint set to /media/$ZPOOL_NAME."
+        log_info "Mountpoint for pool '$ZPOOL_NAME' successfully set to '$MOUNT_POINT'."
     fi
 
-    log INFO "ZFS installation and configuration finished successfully."
+    log_info "ZFS installation and configuration finished successfully."
 }
 
 setup_repos() {
