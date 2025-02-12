@@ -745,65 +745,102 @@ install_ly() {
     print_section "Ly Display Manager Installation"
     log_info "Installing Ly Display Manager..."
 
-    # Verify required commands are available.
+    # 1) Verify required commands are available.
     local required_cmds=(git zig systemctl)
     for cmd in "${required_cmds[@]}"; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
+        if ! command -v "$cmd" &>/dev/null; then
             handle_error "'$cmd' is not installed. Please install it and try again."
         fi
     done
 
-    local LY_DIR="/opt/ly"
+    # 2) Install Ly's build dependencies for Ubuntu.
+    #    Ly needs various dev libraries (pam, xcb, xkb, etc.) to build properly with Zig.
+    log_info "Installing Ly build dependencies for Ubuntu..."
+    if ! apt update; then
+        handle_error "Failed to update package lists before installing dependencies."
+    fi
+    if ! apt install -y \
+        build-essential \
+        libpam0g-dev \
+        libxcb-xkb-dev \
+        libxcb-randr0-dev \
+        libxcb-xinerama0-dev \
+        libxcb-xrm-dev \
+        libxkbcommon-dev \
+        libxkbcommon-x11-dev
+    then
+        handle_error "Failed to install Ly build dependencies."
+    fi
 
-    # Clone or update the Ly repository.
+    # 3) Clone or update the Ly repository.
+    local LY_DIR="/opt/ly"
     if [ ! -d "$LY_DIR" ]; then
         log_info "Cloning Ly repository into $LY_DIR..."
-        git clone https://github.com/fairyglade/ly "$LY_DIR" || handle_error "Failed to clone the Ly repository."
+        if ! git clone https://github.com/fairyglade/ly "$LY_DIR"; then
+            handle_error "Failed to clone the Ly repository."
+        fi
     else
         log_info "Ly repository already exists in $LY_DIR. Updating..."
         cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
-        git pull || handle_error "Failed to update the Ly repository."
+        if ! git pull; then
+            handle_error "Failed to update the Ly repository."
+        fi
     fi
 
-    # Compile Ly using Zig.
+    # 4) Compile Ly using Zig.
     cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
     log_info "Compiling Ly with Zig..."
-    zig build || handle_error "Compilation of Ly failed."
+    if ! zig build; then
+        handle_error "Compilation of Ly failed."
+    fi
 
-    # Install Ly's systemd service.
+    # 5) Install Ly's systemd service.
     log_info "Installing Ly systemd service..."
-    zig build installsystemd || handle_error "Installation of Ly systemd service failed."
+    if ! zig build installsystemd; then
+        handle_error "Installation of Ly systemd service failed."
+    fi
 
-    # Disable any conflicting display managers.
+    # 6) Disable any conflicting display managers.
     log_info "Disabling existing display managers (gdm, sddm, lightdm, lxdm)..."
     local dm_list=(gdm sddm lightdm lxdm)
     for dm in "${dm_list[@]}"; do
         if systemctl is-enabled "${dm}.service" &>/dev/null; then
             log_info "Disabling ${dm}.service..."
-            systemctl disable --now "${dm}.service" || handle_error "Failed to disable ${dm}.service."
+            if ! systemctl disable --now "${dm}.service"; then
+                handle_error "Failed to disable ${dm}.service."
+            fi
         fi
     done
 
-    # Remove leftover display-manager symlink if it exists.
+    # 7) Remove leftover display-manager symlink if it exists.
     if [ -L /etc/systemd/system/display-manager.service ]; then
         log_info "Removing leftover /etc/systemd/system/display-manager.service symlink..."
-        rm /etc/systemd/system/display-manager.service || log_warn "Failed to remove display-manager.service symlink."
+        if ! rm /etc/systemd/system/display-manager.service; then
+            log_warn "Failed to remove display-manager.service symlink."
+        fi
     fi
 
-    # Enable Ly to start on next boot.
+    # 8) Enable Ly to start on next boot.
     log_info "Enabling ly.service for next boot..."
-    systemctl enable ly.service || handle_error "Failed to enable ly.service."
+    if ! systemctl enable ly.service; then
+        handle_error "Failed to enable ly.service."
+    fi
 
-    # Stop ly.service if it is currently active to avoid interrupting the current session.
+    # 9) Stop Ly service if it is currently active to avoid interrupting the current session.
     if systemctl is-active ly.service &>/dev/null; then
         log_info "Stopping active ly.service to avoid a blank screen..."
-        systemctl stop ly.service || log_warn "Failed to stop ly.service."
+        if ! systemctl stop ly.service; then
+            log_warn "Failed to stop ly.service."
+        fi
     fi
 
-    # Disable tty2 getty to prevent conflicts.
+    # 10) Disable tty2 getty to prevent conflicts.
     log_info "Disabling getty@tty2.service..."
-    systemctl disable getty@tty2.service || handle_error "Failed to disable getty@tty2.service."
+    if ! systemctl disable getty@tty2.service; then
+        handle_error "Failed to disable getty@tty2.service."
+    fi
 
+    # 11) Inform the user of successful installation.
     log_info "Ly has been installed and configured as the default login manager."
     log_info "Ly will take effect on next reboot, or you can start it now with: systemctl start ly.service"
 }
