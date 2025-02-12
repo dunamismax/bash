@@ -1070,36 +1070,35 @@ EOF
     # 5) Create Virtual Environments in Each Web Subdirectory
     # -------------------------------------------------------------------------
     print_section "VENV setup for FastAPI Applications"
-    # If your script is not interactive, ensure we don't rely on alias expansions.
     shopt -s nullglob
 
-    # Define the function that replaces the 'venv' alias from .bashrc
-    setup_venv() {
-        local venv_name=".venv"
-        # Deactivate any existing venv in this shell
-        if type deactivate &>/dev/null; then
-            deactivate
-        fi
-        # Create venv if it doesn't exist
-        if [ ! -d "$venv_name" ]; then
-            echo "Creating virtual environment in $venv_name..."
-            python3 -m venv "$venv_name"
-        fi
-        # Activate and install requirements
-        source "$venv_name/bin/activate"
-        [ -f "requirements.txt" ] && pip install -r requirements.txt
-        [ -f "requirements-dev.txt" ] && pip install -r requirements-dev.txt
-    }
+    base_dir="${user_home}/github/web"
 
-
-    # Loop over each subdirectory in the web folder and create/activate a venv
-    local base_dir="${user_home}/github/web"
-    local dir
     for dir in "$base_dir"/*; do
         if [ -d "$dir" ]; then
             echo "Setting up virtual environment in: $dir"
             pushd "$dir" > /dev/null || { echo "Failed to enter directory: $dir"; continue; }
-            setup_venv
+
+            # Create the virtual environment if it doesn't exist.
+            if [ ! -d ".venv" ]; then
+                echo "Creating virtual environment in .venv..."
+                python3 -m venv .venv || { echo "Failed to create venv in $dir"; popd > /dev/null; continue; }
+            fi
+
+            # Activate the virtual environment.
+            # shellcheck source=/dev/null
+            source .venv/bin/activate || { echo "Failed to activate venv in $dir"; popd > /dev/null; continue; }
+
+            # Install requirements if the file exists.
+            if [ -f "requirements.txt" ]; then
+                pip install -r requirements.txt || { echo "Failed to install requirements in $dir"; deactivate; popd > /dev/null; continue; }
+            else
+                echo "No requirements.txt found in $dir"
+            fi
+
+            # Deactivate the virtual environment.
+            deactivate
+
             popd > /dev/null
         fi
     done
