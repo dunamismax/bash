@@ -1,35 +1,26 @@
 #!/usr/bin/env bash
-# ------------------------------------------------------------------------------
-# Script Name: debian_setup.sh
-# Description: Automated Debian setup and hardening script with robust error
-#              handling and improved logging. This script configures system
-#              updates, user setup, firewall rules, SSH hardening, package
-#              installation, and additional services.
-# Author: Your Name | License: MIT
-# Version: 2.1
-# ------------------------------------------------------------------------------
 #
-# Usage:
-#   sudo ./debian_setup.sh
+# ubuntu_setup.sh - Automated Ubuntu Setup and Hardening Script
 #
-# Notes:
-#   - This script must be run as root.
-#   - Log output is saved to /var/log/debian_setup.log.
+# This script automates the initial configuration and hardening of an Ubuntu system.
+# It performs system updates, installs essential packages, sets up users, configures
+# the firewall and SSH, and deploys various additional services to streamline deployment.
 #
-# ------------------------------------------------------------------------------
+# Usage: sudo ./ubuntu_setup.sh
+#
+# Note:
+#   - Must be run as root.
+#   - Log output is saved to /var/log/ubuntu_setup.log.
+#
+# Author: dunamismax | License: MIT | Version: 2.1
+#
 
-# ------------------------------------------------------------------------------
-# ENABLE STRICT MODE
-# ------------------------------------------------------------------------------
 set -Eeuo pipefail
 
-# ------------------------------------------------------------------------------
-# GLOBAL VARIABLES & CONFIGURATION
-# ------------------------------------------------------------------------------
-LOG_FILE="/var/log/debian_setup.log"
+LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 
-# List of essential packages to be installed.
+# List of essential packages to be installed on Ubuntu.
 PACKAGES=(
     bash
     vim
@@ -37,18 +28,13 @@ PACKAGES=(
     mc
     screen
     tmux
-    nodejs
-    npm
     ninja-build
     meson
-    fonts-font-awesome
     intltool
     gettext
     build-essential
     cmake
-    hugo
     pigz
-    exim4
     openssh-server
     libtool
     pkg-config
@@ -62,7 +48,6 @@ PACKAGES=(
     libsqlite3-dev
     tk-dev
     iw
-    fonts-hack
     libpolkit-agent-1-dev
     xz-utils
     libncurses5-dev
@@ -71,7 +56,6 @@ PACKAGES=(
     python3-pip
     python3-venv
     libfreetype6-dev
-    flatpak
     git
     ufw
     perl
@@ -85,8 +69,6 @@ PACKAGES=(
     neofetch
     tig
     jq
-    fonts-dejavu-core
-    fonts-firacode
     nmap
     tree
     fzf
@@ -104,19 +86,13 @@ PACKAGES=(
     virtinst
     bridge-utils
     acpid
-    policykit-1
-    papirus-icon-theme
     chrony
     fail2ban
     ffmpeg
     restic
-    fonts-dejavu
     flameshot
     libgtk-3-dev
     libpolkit-gobject-1-dev
-    gnome-keyring
-    seahorse
-    thunar
     dmenu
     i3
     i3status
@@ -255,8 +231,6 @@ log_warn()  { log WARN "$@"; }
 log_error() { log ERROR "$@"; }
 log_debug() { log DEBUG "$@"; }
 
-# handle_error <error_message> [exit_code]
-# Logs an error message and terminates the script with the provided exit code.
 handle_error() {
     local error_message="${1:-"An unknown error occurred."}"
     local exit_code="${2:-1}"
@@ -266,8 +240,6 @@ handle_error() {
     exit "$exit_code"
 }
 
-# cleanup
-# This function is executed upon script exit to perform any necessary cleanup.
 cleanup() {
     log_info "Performing cleanup tasks before exit."
     # Insert any necessary cleanup commands here.
@@ -280,8 +252,6 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 # UTILITY FUNCTIONS
 # ------------------------------------------------------------------------------
 
-# print_section <title>
-# Logs a formatted section header.
 print_section() {
     local title="$1"
     local border
@@ -291,16 +261,12 @@ print_section() {
     log_info "${NORD10}${border}${NC}"
 }
 
-# check_root
-# Exits with an error if the script is not executed as root.
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         handle_error "Script must be run as root. Exiting."
     fi
 }
 
-# check_network
-# Tests network connectivity by pinging a well-known host.
 check_network() {
     print_section "Network Connectivity Check"
     log_info "Verifying network connectivity..."
@@ -310,8 +276,6 @@ check_network() {
     log_info "Network connectivity verified."
 }
 
-# update_system
-# Updates package repository information and upgrades installed packages.
 update_system() {
     print_section "System Update & Upgrade"
     log_info "Updating package repositories..."
@@ -327,30 +291,22 @@ update_system() {
     log_info "System update and upgrade complete."
 }
 
-# ensure_user
-# Creates the specified user and a corresponding group if they do not already exist.
 ensure_user() {
     print_section "User Setup"
 
     if id -u "$USERNAME" >/dev/null 2>&1; then
         log_info "User '$USERNAME' already exists."
     else
-        # Check if the group exists; if not, create it.
-        if ! getent group "$USERNAME" >/dev/null 2>&1; then
-            log_info "Creating group '$USERNAME'..."
-            if ! groupadd "$USERNAME"; then
-                handle_error "Failed to create group '$USERNAME'."
-            fi
-        else
-            log_info "Group '$USERNAME' already exists."
-        fi
-
-        log_info "Creating user '$USERNAME' with primary group '$USERNAME'..."
-        if ! useradd -m -s /bin/bash -g "$USERNAME" "$USERNAME"; then
+        log_info "Creating user '$USERNAME'..."
+        # Create the user non-interactively:
+        #   --disabled-password prevents password login,
+        #   --gecos "" provides empty GECOS fields,
+        #   --shell /bin/bash sets the default shell.
+        if ! adduser --disabled-password --gecos "" --shell /bin/bash "$USERNAME"; then
             handle_error "Failed to create user '$USERNAME'."
         fi
 
-        # Lock the password to prevent direct login.
+        # Explicitly lock the password to be extra sure no password login is possible.
         if ! passwd -l "$USERNAME" >/dev/null 2>&1; then
             log_warn "Failed to lock password for user '$USERNAME'."
         fi
@@ -359,51 +315,42 @@ ensure_user() {
     fi
 }
 
-# configure_sudoers
-# Ensures that the specified user has sudo privileges by creating a dedicated
-# sudoers file in /etc/sudoers.d/. Installs 'sudo' if necessary (for visudo).
 configure_sudoers() {
     print_section "Sudoers Configuration"
     local SUDOERS_ENTRY_FILE="/etc/sudoers.d/${USERNAME}"
 
-    # Ensure 'sudo' (and thus 'visudo') is installed on a fresh Debian system.
+    # Ensure 'sudo' (and thus 'visudo') is available. On Ubuntu sudo is normally pre-installed.
     if ! command -v visudo &>/dev/null; then
         log_info "visudo not found. Installing the 'sudo' package..."
         apt-get update -qq || handle_error "Failed to update package repository for installing 'sudo'."
         apt-get install -y sudo || handle_error "Failed to install the 'sudo' package."
-        log_info "sudo installed successfully."
+        log_info "'sudo' installed successfully."
     fi
 
-    # If the sudoers file already exists, log it; otherwise create it.
+    # Check if the sudoers file for the user already exists.
     if [ -f "$SUDOERS_ENTRY_FILE" ]; then
         log_info "Sudoers entry for '$USERNAME' already exists in $SUDOERS_ENTRY_FILE."
     else
         log_info "Creating sudoers entry for '$USERNAME' in $SUDOERS_ENTRY_FILE..."
         {
-            echo "${USERNAME} ALL=(ALL) ALL"
+            echo "${USERNAME} ALL=(ALL:ALL) ALL"
         } > "$SUDOERS_ENTRY_FILE" || handle_error "Failed to create sudoers entry file for '$USERNAME'."
 
         # Set strict permissions to secure the sudoers file.
         chmod 0440 "$SUDOERS_ENTRY_FILE" || log_warn "Failed to set permissions on $SUDOERS_ENTRY_FILE."
 
-        # Validate the syntax of the newly created sudoers file, if visudo is available.
-        if command -v visudo &>/dev/null; then
-            if visudo -cf "$SUDOERS_ENTRY_FILE"; then
-                log_info "Sudoers entry for '$USERNAME' created and validated successfully."
-            else
-                log_error "Syntax error detected in $SUDOERS_ENTRY_FILE. Please review the file."
-                handle_error "Sudoers configuration failed due to syntax errors."
-            fi
+        # Validate the syntax of the new sudoers file.
+        if visudo -cf "$SUDOERS_ENTRY_FILE"; then
+            log_info "Sudoers entry for '$USERNAME' created and validated successfully."
         else
-            log_warn "visudo command is not available; skipping syntax check. Verify manually if needed."
+            log_error "Syntax error detected in $SUDOERS_ENTRY_FILE. Please review the file."
+            handle_error "Sudoers configuration failed due to syntax errors."
         fi
     fi
 
     log_info "Sudoers configuration complete."
 }
 
-# install_packages
-# Installs a list of essential system packages.
 install_packages() {
     print_section "Essential Package Installation"
     log_info "Installing packages..."
@@ -413,59 +360,61 @@ install_packages() {
     log_info "Package installation complete."
 }
 
-# configure_ssh
-# Hardens the SSH server by disabling root login and password authentication.
 configure_ssh() {
     print_section "SSH Configuration"
     log_info "Configuring OpenSSH Server..."
 
     # Ensure OpenSSH Server is installed.
-    if ! dpkg -l | grep -qw openssh-server; then
-        apt install -y openssh-server || handle_error "Failed to install OpenSSH Server."
-        log_info "OpenSSH Server installed."
+    if ! dpkg -s openssh-server &>/dev/null; then
+        log_info "openssh-server is not installed. Updating repository and installing..."
+        apt-get update -qq || handle_error "Failed to update package repository."
+        apt-get install -y openssh-server || handle_error "Failed to install OpenSSH Server."
+        log_info "OpenSSH Server installed successfully."
     else
         log_info "OpenSSH Server already installed."
     fi
 
-    # Enable and start SSH service.
+    # Enable and start the SSH service.
     systemctl enable --now ssh || handle_error "Failed to enable/start SSH service."
 
-    # Backup the sshd_config file with a timestamp.
+    # Backup the existing sshd_config file.
     local sshd_config="/etc/ssh/sshd_config"
+    if [ ! -f "$sshd_config" ]; then
+        handle_error "SSHD configuration file not found: $sshd_config"
+    fi
     local backup="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
-    cp "$sshd_config" "$backup" || handle_error "Failed to backup sshd_config."
-    log_info "Backed up sshd_config to $backup."
+    cp "$sshd_config" "$backup" || handle_error "Failed to backup $sshd_config"
+    log_info "Backed up $sshd_config to $backup"
 
-    # Define SSH settings with best practices.
-    # Note: PasswordAuthentication is set to "yes" to allow password login.
-    # ClientAliveInterval is set to "0" to disable timeout (keeping sessions alive indefinitely).
+    # Define desired SSH settings for a hardened configuration.
+    # Here we disable root login, disable password authentication (use keys only),
+    # disallow empty passwords and challenge-response logins, and enforce protocol 2.
     declare -A ssh_settings=(
         ["Port"]="22"
         ["PermitRootLogin"]="no"
-        ["PasswordAuthentication"]="yes"
+        ["PasswordAuthentication"]="no"
+        ["PermitEmptyPasswords"]="no"
+        ["ChallengeResponseAuthentication"]="no"
         ["Protocol"]="2"
-        ["MaxAuthTries"]="4"
-        ["ClientAliveInterval"]="0"
+        ["MaxAuthTries"]="3"
+        ["ClientAliveInterval"]="300"
+        ["ClientAliveCountMax"]="2"
     )
 
+    # Update or add each setting in the sshd_config file.
     for key in "${!ssh_settings[@]}"; do
-        if grep -q "^${key}[[:space:]]" "$sshd_config"; then
+        if grep -qE "^${key}[[:space:]]" "$sshd_config"; then
             sed -i "s/^${key}[[:space:]].*/${key} ${ssh_settings[$key]}/" "$sshd_config"
         else
             echo "${key} ${ssh_settings[$key]}" >> "$sshd_config"
         fi
     done
 
-    # Optional: Remove any ClientAliveCountMax setting so that no idle timeout is enforced.
-    sed -i '/^ClientAliveCountMax/d' "$sshd_config"
-
-    # Restart SSH service to apply changes.
+    # Restart the SSH service to apply the new configuration.
     systemctl restart ssh || handle_error "Failed to restart SSH service."
     log_info "SSH configuration updated successfully."
 }
 
-# configure_firewall
-# Configures the Uncomplicated Firewall (ufw) with default rules and enables it.
 configure_firewall() {
     print_section "Firewall Configuration"
     log_info "Configuring firewall with ufw..."
@@ -486,8 +435,6 @@ configure_firewall() {
     log_info "Firewall configured and enabled."
 }
 
-# configure_fail2ban
-# Enables and starts the fail2ban service for intrusion prevention.
 configure_fail2ban() {
     print_section "fail2ban Configuration"
     log_info "Enabling fail2ban service..."
@@ -501,9 +448,6 @@ configure_fail2ban() {
     fi
 }
 
-# install_plex
-# Downloads and installs the Plex Media Server package, then configures it to
-# run under the specified user account.
 install_plex() {
     print_section "Plex Media Server Installation"
     log_info "Ensuring required system utilities are available..."
@@ -545,48 +489,30 @@ install_plex() {
     fi
 }
 
-# release_ports
-# Force releases the ports needed for Caddy
-release_ports() {
-    log INFO "Releasing occupied network ports..."
-    local tcp_ports=("8080" "80" "443" "32400" "8324" "32469")
-    local udp_ports=("80" "443" "1900" "5353" "32410" "32411" "32412" "32413" "32414" "32415")
+caddy_config() {
+    print_section "Caddy Configuration"
 
+    log_info "Releasing occupied network ports..."
+    local tcp_ports=( "8080" "80" "443" "32400" "8324" "32469" )
+    local udp_ports=( "80" "443" "1900" "5353" "32410" "32411" "32412" "32413" "32414" "32415" )
     for port in "${tcp_ports[@]}"; do
         local pids
         pids=$(lsof -t -i TCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
-            log INFO "Killing processes on TCP port $port: $pids"
-            kill -9 $pids || log WARN "Failed to kill processes on TCP port $port"
+            log_info "Killing processes on TCP port $port: $pids"
+            kill -9 $pids || log_warn "Failed to kill processes on TCP port $port"
         fi
     done
-
     for port in "${udp_ports[@]}"; do
         local pids
         pids=$(lsof -t -i UDP:"$port" 2>/dev/null || true)
         if [[ -n "$pids" ]]; then
-            log INFO "Killing processes on UDP port $port: $pids"
-            kill -9 $pids || log WARN "Failed to kill processes on UDP port $port"
+            log_info "Killing processes on UDP port $port: $pids"
+            kill -9 $pids || log_warn "Failed to kill processes on UDP port $port"
         fi
     done
+    log_info "Port release process completed."
 
-    log INFO "Port release process completed."
-}
-
-# caddy_config
-# Downloads and installs Caddy and enables service
-caddy_config() {
-    print_section "Caddy Configuration"
-
-    # ---------------------------------------------------------------------------
-    # Step 1: Release occupied network ports.
-    # ---------------------------------------------------------------------------
-    log_info "Starting port release process for Caddy installation..."
-    release_ports
-
-    # ---------------------------------------------------------------------------
-    # Step 2: Install required dependencies and add the Caddy repository.
-    # ---------------------------------------------------------------------------
     log_info "Installing dependencies for Caddy..."
     apt install -y debian-keyring debian-archive-keyring apt-transport-https curl || \
         handle_error "Failed to install dependencies for Caddy."
@@ -601,20 +527,13 @@ caddy_config() {
         tee /etc/apt/sources.list.d/caddy-stable.list || \
         handle_error "Failed to add Caddy repository."
 
-    # ---------------------------------------------------------------------------
-    # Step 3: Update package lists and install Caddy.
-    # ---------------------------------------------------------------------------
     log_info "Updating package lists..."
     apt update || handle_error "Failed to update package lists."
 
     log_info "Installing Caddy..."
     apt install -y caddy || handle_error "Failed to install Caddy."
-
     log_info "Caddy installed successfully."
 
-    # ---------------------------------------------------------------------------
-    # Step 4: Copy custom Caddyfile.
-    # ---------------------------------------------------------------------------
     local CUSTOM_CADDYFILE="/home/sawyer/github/linux/dotfiles/Caddyfile"
     local DEST_CADDYFILE="/etc/caddy/Caddyfile"
     if [ -f "$CUSTOM_CADDYFILE" ]; then
@@ -624,13 +543,10 @@ caddy_config() {
         log_warn "Custom Caddyfile not found at $CUSTOM_CADDYFILE"
     fi
 
-    # ---------------------------------------------------------------------------
-    # Step 5: Enable and start (restart) the Caddy service.
-    # ---------------------------------------------------------------------------
     log_info "Enabling Caddy service..."
     systemctl enable caddy || log_warn "Failed to enable Caddy service."
 
-    log_info "Restarting Caddy service to apply new configuration..."
+    log_info "Restarting Caddy service..."
     systemctl restart caddy || log_warn "Failed to restart Caddy service."
 
     log_info "Caddy configuration completed successfully."
