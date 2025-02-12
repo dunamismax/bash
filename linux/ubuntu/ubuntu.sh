@@ -467,12 +467,10 @@ install_plex() {
     # Enable and restart Plex service.
     log_info "Enabling Plex Media Server service..."
     systemctl enable plexmediaserver || log_warn "Failed to enable Plex Media Server service."
-    log_info "Restarting Plex Media Server service..."
-    systemctl restart plexmediaserver || log_warn "Plex Media Server failed to start."
 
     # Clean up the temporary .deb file.
     rm -f "$temp_deb"
-    log_info "Plex Media Server installed and started successfully."
+    log_info "Plex Media Server installed successfully."
 }
 
 caddy_config() {
@@ -1171,13 +1169,13 @@ main() {
     caddy_config
     docker_config
     install_zig_binary
-    install_ly
     deploy_user_scripts
     python_dev_setup
     venv_setup
     enable_dunamismax_services
     configure_periodic
     final_checks
+    install_ly
     prompt_reboot
 }
 
