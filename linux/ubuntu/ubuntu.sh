@@ -383,13 +383,13 @@ configure_ssh() {
     declare -A ssh_settings=(
         ["Port"]="22"
         ["PermitRootLogin"]="no"
-        ["PasswordAuthentication"]="no"
+        ["PasswordAuthentication"]="yes"
         ["PermitEmptyPasswords"]="no"
         ["ChallengeResponseAuthentication"]="no"
         ["Protocol"]="2"
-        ["MaxAuthTries"]="3"
-        ["ClientAliveInterval"]="300"
-        ["ClientAliveCountMax"]="2"
+        ["MaxAuthTries"]="5"
+        ["ClientAliveInterval"]="600"
+        ["ClientAliveCountMax"]="48"
     )
 
     # Update or add each setting in the sshd_config file.
@@ -557,12 +557,8 @@ caddy_config() {
 }
 
 install_configure_zfs() {
-    # Ensure the function is run as root.
-    if [[ "$(id -u)" -ne 0 ]]; then
-        echo "ERROR: install_configure_zfs must be run as root." >&2
-        return 1
-    fi
-
+    print_section "Install and configure ZFS and mount WD_BLACK"
+    
     # Define local variables.
     local LOG_FILE="/var/log/install_configure_zfs.log"
     local ZPOOL_NAME="WD_BLACK"
@@ -1063,6 +1059,7 @@ EOF
 }
 
 venv_setup() {
+    print_section "VENV setup"
     # Ensure alias expansion is enabled (in non-interactive shells it may be off)
     shopt -s expand_aliases
     shopt -s nullglob  # Prevents literal pattern if no directories exist
