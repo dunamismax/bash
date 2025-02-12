@@ -1206,11 +1206,11 @@ main() {
     docker_config
     install_zig_binary
     deploy_user_scripts
-    python_dev_setup
+    #python_dev_setup
     enable_dunamismax_services
     configure_periodic
     final_checks
-    install_ly
+    #install_ly
     prompt_reboot
 }
 

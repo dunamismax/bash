@@ -284,7 +284,7 @@ install_latest_python() {
 
     # Refresh the shell environment with the new global Python.
     eval "$(pyenv init -)"
-    
+
     # Return indicator if a new Python version was installed.
     if [[ "$install_new_python" == true ]]; then
         return 0
