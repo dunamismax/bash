@@ -636,7 +636,7 @@ caddy_config() {
     log_info "Caddy configuration completed successfully."
 }
 
-# configure_zfs
+# install_configure_zfs
 # Imports a ZFS pool (if not already imported) and sets its mountpoint.
 install_configure_zfs() {
     # Ensure the function is run as root.
@@ -647,8 +647,6 @@ install_configure_zfs() {
 
     # Define local variables.
     local LOG_FILE="/var/log/install_configure_zfs.log"
-    local repo_file="/etc/apt/sources.list.d/bookworm-backports.list"
-    local pin_file="/etc/apt/preferences.d/90_zfs"
     local ZPOOL_NAME="WD_BLACK"
     local LOG_DIR
 
@@ -662,36 +660,14 @@ install_configure_zfs() {
 
     log INFO "ZFS installation and configuration started."
 
-    # -- Add Backports Repository and Configure Package Pinning --
-    if [[ ! -f "$repo_file" ]]; then
-        cat <<EOF > "$repo_file"
-deb http://deb.debian.org/debian bookworm-backports main contrib
-deb-src http://deb.debian.org/debian bookworm-backports main contrib
-EOF
-        log INFO "Backports repository added to $repo_file."
-    else
-        log INFO "Backports repository already exists at $repo_file."
-    fi
-
-    if [[ ! -f "$pin_file" ]]; then
-        cat <<EOF > "$pin_file"
-Package: src:zfs-linux
-Pin: release n=bookworm-backports
-Pin-Priority: 990
-EOF
-        log INFO "ZFS package pinning configured in $pin_file."
-    else
-        log INFO "ZFS package pinning already exists at $pin_file."
-    fi
-
     # -- Update Package Lists and Install ZFS Packages --
     log INFO "Updating package lists..."
     apt update || { log ERROR "Failed to update package lists."; return 1; }
 
-    log INFO "Installing prerequisites..."
+    log INFO "Installing prerequisites and ZFS packages..."
+    # Install any necessary build and kernel header packages.
     apt install -y dpkg-dev linux-headers-generic linux-image-generic || { log ERROR "Failed to install prerequisites."; return 1; }
-
-    log INFO "Installing ZFS packages..."
+    # Install ZFS from Ubuntu's official repositories.
     DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux || { log ERROR "Failed to install ZFS packages."; return 1; }
     log INFO "ZFS packages installed successfully."
 
