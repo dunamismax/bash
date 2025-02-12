@@ -910,6 +910,28 @@ home_permissions() {
     log_info "Home directory permissions updated. Note: Future file ownership is determined by the process creating the file."
 }
 
+install_fastfetch() {
+    print_section "Fastfetch Installation"
+    local FASTFETCH_URL="https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-linux-amd64.deb"
+    local TEMP_DEB="/tmp/fastfetch-linux-amd64.deb"
+
+    log_info "Downloading fastfetch from ${FASTFETCH_URL}..."
+    if ! curl -L -o "$TEMP_DEB" "$FASTFETCH_URL"; then
+        handle_error "Failed to download fastfetch deb file."
+    fi
+
+    log_info "Installing fastfetch..."
+    if ! dpkg -i "$TEMP_DEB"; then
+        log_warn "fastfetch installation encountered issues; attempting to fix dependencies..."
+        if ! apt install -f -y; then
+            handle_error "Failed to fix dependencies for fastfetch."
+        fi
+    fi
+
+    rm -f "$TEMP_DEB"
+    log_info "Fastfetch installed successfully."
+}
+
 dotfiles_load() {
     print_section "Loading Dotfiles"
 
@@ -1022,6 +1044,7 @@ main() {
     final_checks
     home_permissions
     dotfiles_load
+    install_fastfetch
     install_ly
     prompt_reboot
 }

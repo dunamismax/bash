@@ -86,11 +86,7 @@ export HISTTIMEFORMAT="%F %T "
 # ------------------------------------------------------------------------------
 # 4. System Information & Greeting
 # ------------------------------------------------------------------------------
-if command -v neofetch >/dev/null 2>&1; then
-    neofetch
-elif command -v screenfetch >/dev/null 2>&1; then
-    screenfetch
-fi
+fastfetch
 
 # ------------------------------------------------------------------------------
 # 5. Development Environment Setup

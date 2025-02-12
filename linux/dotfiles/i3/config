@@ -27,9 +27,6 @@ bindsym $mod+Return exec $term
 # Launch dmenu for application launching
 bindsym $mod+d exec dmenu_run
 
-# Lock the screen using i3lock (black background)
-bindsym $mod+l exec i3lock -c 000000
-
 # Reload i3 configuration file
 bindsym $mod+Shift+c reload
 
