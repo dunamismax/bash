@@ -956,6 +956,12 @@ dotfiles_load() {
         handle_error "Failed to copy i3blocks configuration."
     fi
 
+    # Set execute permissions on all scripts within the i3blocks/scripts directory.
+    log_info "Setting execute permissions for i3blocks scripts..."
+    if ! chmod -R +x "/home/$USERNAME/.config/i3blocks/scripts"; then
+        log_warn "Failed to set execute permissions on i3blocks scripts."
+    fi
+
     # Copy the picom configuration folder.
     log_info "Copying picom configuration to ~/.config/picom..."
     mkdir -p "/home/$USERNAME/.config/picom"
