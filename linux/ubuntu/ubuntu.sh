@@ -20,157 +20,70 @@ set -Eeuo pipefail
 LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 
-# List of essential packages to be installed on Ubuntu.
+# List of essential packages for an Ubuntu server/development environment.
 PACKAGES=(
     bash
     vim
     nano
-    mc
     screen
     tmux
-    ninja-build
-    meson
-    intltool
-    gettext
+    mc
+
+    # Development tools and build systems
     build-essential
     cmake
-    pigz
+    ninja-build
+    meson
+    gettext
+    git
+
+    # Basic server and networking
     openssh-server
-    libtool
-    pkg-config
-    libssl-dev
-    rfkill
-    bzip2
-    libbz2-dev
-    libffi-dev
-    zlib1g-dev
-    libreadline-dev
-    libsqlite3-dev
-    tk-dev
-    iw
-    libpolkit-agent-1-dev
-    xz-utils
-    libncurses5-dev
+    ufw
+    curl
+    wget
+    rsync
+    htop
+    sudo
+    bash-completion
+
+    # Python development
     python3
     python3-dev
     python3-pip
     python3-venv
-    libfreetype6-dev
-    git
-    ufw
-    perl
-    curl
-    wget
-    tcpdump
-    rsync
-    htop
-    passwd
-    bash-completion
-    neofetch
-    tig
-    jq
-    nmap
-    tree
-    fzf
-    lynx
-    which
-    patch
-    smartmontools
-    ntfs-3g
-    cups
-    neovim
-    libglib2.0-dev
-    qemu-kvm
-    libvirt-daemon-system
-    libvirt-clients
-    virtinst
-    bridge-utils
-    acpid
-    ffmpeg
-    restic
-    flameshot
-    libgtk-3-dev
-    libpolkit-gobject-1-dev
-    dmenu
-    i3
-    i3status
-    feh
-    alacritty
-    picom
-    zsh
-    fish
-    emacs
-    gcc
-    make
-    sudo
-    logrotate
-    dnsutils
-    mtr
-    netcat-openbsd
-    socat
-    vnstat
-    lsof
-    gdisk
-    ncdu
-    unzip
-    zip
-    gawk
-    expect
-    fd-find
-    bat
-    ripgrep
-    hyperfine
-    mpv
-    nnn
-    newsboat
-    irssi
-    taskwarrior
-    cowsay
-    figlet
-    aircrack-ng
-    reaver
-    hydra
-    john
-    sqlmap
-    gobuster
-    dirb
-    wfuzz
-    netdiscover
-    arp-scan
-    ettercap-text-only
-    tshark
-    hashcat
-    recon-ng
-    crunch
-    iotop
-    iftop
-    sysstat
-    traceroute
-    whois
-    strace
-    ltrace
-    iperf3
-    binwalk
-    foremost
-    steghide
-    hashid
-    g++
-    clang
-    ca-certificates
-    software-properties-common
-    apt-transport-https
-    gnupg
-    lsb-release
-    libncursesw5-dev
+
+    # Essential libraries for building software
+    libssl-dev
+    libffi-dev
+    zlib1g-dev
+    libreadline-dev
+    libbz2-dev
+    tk-dev
+    xz-utils
+    libncurses5-dev
     libgdbm-dev
     libnss3-dev
     liblzma-dev
     libxml2-dev
     libxmlsec1-dev
-    gdb
+
+    # System and package management utilities
+    ca-certificates
+    software-properties-common
+    apt-transport-https
+    gnupg
+    lsb-release
+
+    # Additional compilers and tools
+    clang
     llvm
-    libxcb-xkb-dev
-    libpam0g-dev
+
+    # Common utilities
+    netcat-openbsd
+    lsof
+    unzip
+    zip
 )
 
 # Nord Theme Colors (24-bit ANSI)
