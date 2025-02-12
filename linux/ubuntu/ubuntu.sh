@@ -196,65 +196,6 @@ update_system() {
     log_info "System update and upgrade complete."
 }
 
-ensure_user() {
-    print_section "User Setup"
-
-    if id -u "$USERNAME" >/dev/null 2>&1; then
-        log_info "User '$USERNAME' already exists."
-    else
-        log_info "Creating user '$USERNAME'..."
-        # Create the user non-interactively:
-        #   --disabled-password prevents password login,
-        #   --gecos "" provides empty GECOS fields,
-        #   --shell /bin/bash sets the default shell.
-        if ! adduser --disabled-password --gecos "" --shell /bin/bash "$USERNAME"; then
-            handle_error "Failed to create user '$USERNAME'."
-        fi
-
-        # Explicitly lock the password to be extra sure no password login is possible.
-        if ! passwd -l "$USERNAME" >/dev/null 2>&1; then
-            log_warn "Failed to lock password for user '$USERNAME'."
-        fi
-
-        log_info "User '$USERNAME' created successfully."
-    fi
-}
-
-configure_sudoers() {
-    print_section "Sudoers Configuration"
-    local SUDOERS_ENTRY_FILE="/etc/sudoers.d/${USERNAME}"
-
-    # Ensure 'sudo' (and thus 'visudo') is available. On Ubuntu sudo is normally pre-installed.
-    if ! command -v visudo &>/dev/null; then
-        log_info "visudo not found. Installing the 'sudo' package..."
-        apt install -y sudo || handle_error "Failed to install the 'sudo' package."
-        log_info "'sudo' installed successfully."
-    fi
-
-    # Check if the sudoers file for the user already exists.
-    if [ -f "$SUDOERS_ENTRY_FILE" ]; then
-        log_info "Sudoers entry for '$USERNAME' already exists in $SUDOERS_ENTRY_FILE."
-    else
-        log_info "Creating sudoers entry for '$USERNAME' in $SUDOERS_ENTRY_FILE..."
-        {
-            echo "${USERNAME} ALL=(ALL:ALL) ALL"
-        } > "$SUDOERS_ENTRY_FILE" || handle_error "Failed to create sudoers entry file for '$USERNAME'."
-
-        # Set strict permissions to secure the sudoers file.
-        chmod 0440 "$SUDOERS_ENTRY_FILE" || log_warn "Failed to set permissions on $SUDOERS_ENTRY_FILE."
-
-        # Validate the syntax of the new sudoers file.
-        if visudo -cf "$SUDOERS_ENTRY_FILE"; then
-            log_info "Sudoers entry for '$USERNAME' created and validated successfully."
-        else
-            log_error "Syntax error detected in $SUDOERS_ENTRY_FILE. Please review the file."
-            handle_error "Sudoers configuration failed due to syntax errors."
-        fi
-    fi
-
-    log_info "Sudoers configuration complete."
-}
-
 install_packages() {
     print_section "Essential Package Installation"
     log_info "Installing packages..."
@@ -1030,8 +971,6 @@ main() {
     check_root
     check_network
     update_system
-    ensure_user
-    configure_sudoers
     setup_repos
     copy_shell_configs
     install_packages
