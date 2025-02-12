@@ -854,21 +854,13 @@ install_ly() {
         handle_error "Failed to enable ly.service."
     fi
 
-    # 9) Stop Ly service if it is currently active to avoid interrupting the current session.
-    if systemctl is-active ly.service &>/dev/null; then
-        log_info "Stopping active ly.service to avoid a blank screen..."
-        if ! systemctl stop ly.service; then
-            log_warn "Failed to stop ly.service."
-        fi
-    fi
-
-    # 10) Disable tty2 getty to prevent conflicts.
+    # 09) Disable tty2 getty to prevent conflicts.
     log_info "Disabling getty@tty2.service..."
     if ! systemctl disable getty@tty2.service; then
         handle_error "Failed to disable getty@tty2.service."
     fi
 
-    # 11) Inform the user of successful installation.
+    # 10) Inform the user of successful installation.
     log_info "Ly has been installed and configured as the default login manager."
     log_info "Ly will take effect on next reboot, or you can start it now with: systemctl start ly.service"
 }
