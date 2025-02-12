@@ -361,7 +361,8 @@ configure_ssh() {
     if [ ! -f "$sshd_config" ]; then
         handle_error "SSHD configuration file not found: $sshd_config"
     fi
-    local backup="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
+    local backup
+    backup="${sshd_config}.bak.$(date +%Y%m%d%H%M%S)"
     cp "$sshd_config" "$backup" || handle_error "Failed to backup $sshd_config"
     log_info "Backed up $sshd_config to $backup"
 
