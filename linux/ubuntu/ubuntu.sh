@@ -97,6 +97,7 @@ PACKAGES=(
     alacritty            # Advanced terminal emulator
     feh                  # Lightweight image viewer (often used for setting wallpapers)
     fonts-dejavu-core    # Basic font set
+    picom                # Compositor
 )
 
 # Nord Theme Colors (24-bit ANSI)

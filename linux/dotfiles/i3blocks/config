@@ -1,0 +1,89 @@
+###############################################################################
+# i3blocks Configuration File
+# Ubuntu Server Setup with i3 and i3blocks
+#
+# This configuration file defines several blocks for monitoring system status,
+# including the date/time, CPU usage, memory usage, battery level, network
+# status, and volume level. Each block can call a command or custom script.
+#
+# To use custom scripts for blocks like CPU, memory, network, or volume, place
+# your scripts in ~/.config/i3blocks/scripts/ (make sure they are executable).
+###############################################################################
+
+[general]
+# Set the default markup (none or pango for rich text formatting)
+markup = none
+
+###############################################################################
+# Time Block
+###############################################################################
+[time]
+# Display the current date and time.
+command = date "+%a %d %b %Y, %H:%M:%S"
+interval = 1
+separator = true
+separator_block_width = 15
+
+###############################################################################
+# CPU Usage Block
+###############################################################################
+[cpu]
+# Command should output CPU usage information (e.g., via a custom script).
+# Example: Create a script at ~/.config/i3blocks/scripts/cpu.sh
+# that outputs: "CPU: 12%"
+command = ~/.config/i3blocks/scripts/cpu.sh
+interval = 3
+separator = true
+separator_block_width = 15
+align = right
+
+###############################################################################
+# Memory Usage Block
+###############################################################################
+[memory]
+# Command should output memory usage info.
+# Example: Create a script at ~/.config/i3blocks/scripts/memory.sh
+command = ~/.config/i3blocks/scripts/memory.sh
+interval = 3
+separator = true
+separator_block_width = 15
+align = right
+
+###############################################################################
+# Battery Block
+###############################################################################
+[battery]
+# Uses acpi to show battery status (modify as needed).
+command = acpi -b | cut -d, -f2
+interval = 30
+separator = true
+separator_block_width = 15
+align = right
+
+###############################################################################
+# Network Block
+###############################################################################
+[network]
+# Command should output network usage/status.
+# Example: Create a script at ~/.config/i3blocks/scripts/network.sh
+command = ~/.config/i3blocks/scripts/network.sh
+interval = 3
+separator = true
+separator_block_width = 15
+align = right
+
+###############################################################################
+# Volume Block
+###############################################################################
+[volume]
+# Command should output volume status.
+# Example: Create a script at ~/.config/i3blocks/scripts/volume.sh
+command = ~/.config/i3blocks/scripts/volume.sh
+interval = 1
+separator = true
+separator_block_width = 15
+align = right
+
+###############################################################################
+# End of i3blocks Configuration File
+###############################################################################
