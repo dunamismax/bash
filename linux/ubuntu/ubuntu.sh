@@ -967,7 +967,7 @@ python_dev_setup() {
     print_section "APT Dependencies Installation"
     apt install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
         libssl-dev libffi-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
-        libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev xz-utils \
+        libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev xz-utils libedit-dev libzstd-dev \
         libxml2-dev libxmlsec1-dev tk-dev llvm gnupg lsb-release jq || handle_error "Failed to install required dependencies."
     apt clean || log_warn "Failed to clean package caches."
 
