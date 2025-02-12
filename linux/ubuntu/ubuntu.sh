@@ -434,40 +434,33 @@ configure_fail2ban() {
 
 install_plex() {
     print_section "Plex Media Server Installation"
-    log_info "Installing Plex Media Server from the official Plex repository..."
+    log_info "Installing Plex Media Server from downloaded .deb file..."
 
     # Ensure curl is available.
     if ! command -v curl >/dev/null; then
         handle_error "curl is required but not installed. Please install curl."
     fi
 
-    # Add Plex GPG key.
-    log_info "Adding Plex repository GPG key..."
-    curl -fsSL https://downloads.plex.tv/plex-keys/PlexSign.key | apt-key add - || \
-        handle_error "Failed to add Plex GPG key."
+    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
+    local temp_deb="/tmp/plexmediaserver.deb"
 
-    # Add the Plex repository if not already present.
-    local plex_repo="/etc/apt/sources.list.d/plexmediaserver.list"
-    if [ ! -f "$plex_repo" ]; then
-        log_info "Adding Plex repository to $plex_repo..."
-        echo "deb https://downloads.plex.tv/repo/deb public main" > "$plex_repo" || \
-            handle_error "Failed to add Plex repository."
-    else
-        log_info "Plex repository already exists at $plex_repo."
+    log_info "Downloading Plex Media Server package from ${plex_url}..."
+    if ! curl -L -o "$temp_deb" "$plex_url"; then
+        handle_error "Failed to download Plex Media Server .deb file."
     fi
 
-    # Update package lists and install Plex.
-    log_info "Updating package lists..."
-
-    log_info "Installing Plex Media Server..."
-    apt install -y plexmediaserver || handle_error "Failed to install Plex Media Server."
+    log_info "Installing Plex Media Server package..."
+    if ! dpkg -i "$temp_deb"; then
+        log_warn "dpkg encountered issues. Attempting to fix missing dependencies..."
+        apt install -f -y || handle_error "Failed to install dependencies for Plex Media Server."
+    fi
 
     # Configure Plex to run as the specified user.
     local PLEX_CONF="/etc/default/plexmediaserver"
     if [ -f "$PLEX_CONF" ]; then
         log_info "Configuring Plex to run as ${USERNAME}..."
-        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" \
-            || log_warn "Failed to set Plex user in $PLEX_CONF"
+        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" || \
+            log_warn "Failed to set Plex user in $PLEX_CONF"
     else
         log_warn "$PLEX_CONF not found; skipping user configuration."
     fi
@@ -478,6 +471,8 @@ install_plex() {
     log_info "Restarting Plex Media Server service..."
     systemctl restart plexmediaserver || log_warn "Plex Media Server failed to start."
 
+    # Clean up the temporary .deb file.
+    rm -f "$temp_deb"
     log_info "Plex Media Server installed and started successfully."
 }
 
@@ -1173,7 +1168,7 @@ main() {
     configure_firewall
     configure_fail2ban
     install_plex
-    install_configure_zfs
+    #install_configure_zfs
     caddy_config
     docker_config
     install_zig_binary
