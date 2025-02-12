@@ -86,7 +86,6 @@ PACKAGES=(
     virtinst
     bridge-utils
     acpid
-    chrony
     fail2ban
     ffmpeg
     restic
