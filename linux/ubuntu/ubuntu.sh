@@ -971,11 +971,6 @@ deploy_user_scripts() {
 }
 
 python_dev_setup() {
-    # This function installs the latest stable Python via pyenv and sets up pipx
-    # for the target user (defined by the global variable USERNAME).
-    # It is intended to be run as root.
-
-    # Determine the target user's home directory.
     local user_home
     user_home=$(eval echo "~${USERNAME}")
 
@@ -1067,8 +1062,6 @@ EOF
     log_info "SUCCESS! ${USERNAME}'s environment is now set up with the latest stable Python (via pyenv), pipx updated, and a curated set of CLI tools."
 }
 
-# venv_setup
-# Loops through the web folder running "venv" in each subfolder
 venv_setup() {
     # Ensure alias expansion is enabled (in non-interactive shells it may be off)
     shopt -s expand_aliases
@@ -1088,26 +1081,23 @@ venv_setup() {
     done
 }
 
-# configure_periodic
-# Sets up a daily cron job for system maintenance including update, upgrade,
-# autoremove, and autoclean.
 configure_periodic() {
     print_section "Periodic Maintenance Setup"
     log_info "Configuring daily system maintenance tasks..."
 
-    local CRON_FILE="/etc/cron.daily/debian_maintenance"
+    local CRON_FILE="/etc/cron.daily/ubuntu_maintenance"
 
-    # Backup any existing cron file.
+    # Backup any existing maintenance script.
     if [ -f "$CRON_FILE" ]; then
-        mv "$CRON_FILE" "${CRON_FILE}.bak.$(date +%Y%m%d%H%M%S)" \
-            && log_info "Existing cron file backed up." \
-            || log_warn "Failed to backup existing cron file at $CRON_FILE."
+        mv "$CRON_FILE" "${CRON_FILE}.bak.$(date +%Y%m%d%H%M%S)" && \
+            log_info "Existing cron file backed up." || \
+            log_warn "Failed to backup existing cron file at $CRON_FILE."
     fi
 
     cat <<'EOF' > "$CRON_FILE"
 #!/bin/sh
-# Debian maintenance script (added by debian_setup script)
-apt-get update -qq && apt-get upgrade -y && apt-get autoremove -y && apt-get autoclean -y
+# Ubuntu maintenance script (added by ubuntu_setup script)
+apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
 EOF
 
     if chmod +x "$CRON_FILE"; then
@@ -1117,25 +1107,23 @@ EOF
     fi
 }
 
-# final_checks
-# Logs detailed final system information for confirmation.
 final_checks() {
     print_section "Final System Checks"
     log_info "Kernel version: $(uname -r)"
     log_info "System uptime: $(uptime -p)"
     log_info "Disk usage (root partition): $(df -h / | awk 'NR==2 {print $0}')"
 
-    # Detailed memory usage: total, used, and available.
+    # Retrieve memory usage details.
     local mem_total mem_used mem_free
     read -r mem_total mem_used mem_free < <(free -h | awk '/^Mem:/{print $2, $3, $4}')
     log_info "Memory usage: Total: ${mem_total}, Used: ${mem_used}, Free: ${mem_free}"
 
-    # Log CPU model info.
+    # Log CPU model.
     local cpu_model
     cpu_model=$(lscpu | grep 'Model name' | sed 's/Model name:[[:space:]]*//')
     log_info "CPU: ${cpu_model}"
 
-    # Log a summary of active network interfaces.
+    # Log active network interfaces.
     log_info "Active network interfaces:"
     ip -brief address | while read -r iface; do
          log_info "  $iface"
@@ -1147,8 +1135,6 @@ final_checks() {
     log_info "Load averages (1, 5, 15 min): ${load_avg}"
 }
 
-# prompt_reboot
-# Prompts the user to reboot the system now or later.
 prompt_reboot() {
     print_section "Reboot Prompt"
     log_info "Setup complete."
@@ -1161,27 +1147,25 @@ prompt_reboot() {
     fi
 }
 
-# ------------------------------------------------------------------------------
-# MAIN EXECUTION
-# ------------------------------------------------------------------------------
 main() {
-    # Ensure the script is being executed with Bash.
+    # Ensure the script is executed with Bash.
     if [[ -z "${BASH_VERSION:-}" ]]; then
         echo -e "${NORD11}ERROR: Please run this script with bash.${NC}" >&2
         exit 1
     fi
 
-    # Ensure that the log directory exists and has the proper permissions.
+    # Ensure the log directory exists and set proper permissions.
     local LOG_DIR
     LOG_DIR="$(dirname "$LOG_FILE")"
-    if [[ ! -d "$LOG_DIR" ]]; then
+    if [ ! -d "$LOG_DIR" ]; then
         mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
     fi
     touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
     chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
-    log_info "Debian setup script execution started."
+    log_info "Ubuntu setup script execution started."
 
+    # Execute setup functions (ensure these are defined earlier in the script).
     check_root
     check_network
     update_system
