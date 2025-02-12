@@ -1111,6 +1111,100 @@ deploy_user_scripts() {
     log INFO "Script deployment completed successfully."
 }
 
+# python_dev_setup
+# Sets up the latest pip and python via Pyenv
+python_dev_setup() {
+    # Parse any passed arguments and ensure root privileges (helpers defined globally)
+    parse_args "$@"
+    check_root
+
+    # Install APT-based dependencies
+    print_section "APT Dependencies Installation"
+    apt-get update -qq || handle_error "Failed to update package repositories."
+    apt-get upgrade -y || handle_error "Failed to upgrade packages."
+    apt-get install -y build-essential git curl wget vim tmux unzip zip ca-certificates \
+        libssl-dev libffi-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+        libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev xz-utils \
+        libxml2-dev libxmlsec1-dev tk-dev llvm gnupg lsb-release jq || handle_error "Failed to install required dependencies."
+    apt-get clean || log_warn "Failed to clean package caches."
+
+    # Install or update pyenv
+    print_section "pyenv Installation/Update"
+    if [ ! -d "${HOME}/.pyenv" ]; then
+        git clone https://github.com/pyenv/pyenv.git "${HOME}/.pyenv" || handle_error "Failed to clone pyenv."
+        if ! grep -q 'export PYENV_ROOT' "${HOME}/.bashrc"; then
+            cat << 'EOF' >> "${HOME}/.bashrc"
+
+# >>> pyenv initialization >>>
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+if command -v pyenv 1>/dev/null 2>&1; then
+    eval "$(pyenv init -)"
+fi
+# <<< pyenv initialization <<<
+EOF
+        fi
+    else
+        pushd "${HOME}/.pyenv" >/dev/null || handle_error "Failed to enter pyenv directory."
+        git pull --ff-only || handle_error "Failed to update pyenv."
+        popd >/dev/null
+    fi
+    export PYENV_ROOT="${HOME}/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
+
+    # Install the latest stable Python via pyenv
+    print_section "Python Installation via pyenv"
+    local latest_py3
+    latest_py3="$(pyenv install -l | awk '/^[[:space:]]*3\.[0-9]+\.[0-9]+$/{latest=$1}END{print latest}')" || handle_error "Failed to determine the latest Python version."
+    if [ -z "$latest_py3" ]; then
+        handle_error "Could not determine the latest Python 3.x version."
+    fi
+    local current_py3
+    current_py3="$(pyenv global 2>/dev/null || true)"
+    if [ "$current_py3" != "$latest_py3" ]; then
+        if ! pyenv versions --bare | grep -q "^${latest_py3}$"; then
+            pyenv install "$latest_py3" || handle_error "Failed to install Python $latest_py3."
+        fi
+        pyenv global "$latest_py3" || handle_error "Failed to set Python $latest_py3 as global."
+        local new_python_installed=true
+    else
+        local new_python_installed=false
+    fi
+    eval "$(pyenv init -)"
+
+    # Install or upgrade pipx and its managed tools
+    print_section "pipx Installation and Tools Update"
+    if ! command -v pipx >/dev/null 2>&1; then
+        python -m pip install --upgrade pip || handle_error "Failed to upgrade pip."
+        python -m pip install --user pipx || handle_error "Failed to install pipx."
+    fi
+    if ! grep -q 'export PATH=.*\.local/bin' "${HOME}/.bashrc"; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+    pipx upgrade pipx || true
+    if [ "$new_python_installed" = true ]; then
+        pipx reinstall-all || true
+    else
+        pipx upgrade-all || true
+    fi
+
+    # List of pipx-managed tools
+    local PIPX_TOOLS=( ansible-core black cookiecutter coverage flake8 isort ipython mypy pip-tools pylint pyupgrade pytest rich-cli tldr tox twine poetry pre-commit )
+    local tool
+    for tool in "${PIPX_TOOLS[@]}"; do
+        if pipx list | grep -q "$tool"; then
+            pipx upgrade "$tool" || true
+        else
+            pipx install "$tool" || true
+        fi
+    done
+
+    print_section "Python Development Setup Complete"
+    log_info "SUCCESS! Your system is now prepared with the latest stable Python (via pyenv), pipx updated, and a curated set of CLI tools."
+}
+
 # configure_periodic
 # Sets up a daily cron job for system maintenance including update, upgrade,
 # autoremove, and autoclean.
@@ -1224,6 +1318,7 @@ main() {
     install_zig_binary
     install_ly
     deploy_user_scripts
+    python_dev_setup
     configure_periodic
     final_checks
     prompt_reboot
