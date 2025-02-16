@@ -6,7 +6,7 @@ check_root() { [ "$(id -u)" -eq 0 ] || { echo "Run as root"; exit 1; }; }
 check_network() { ping -c1 -W5 google.com >/dev/null || { echo "No network connectivity"; exit 1; }; }
 update_system() { apk update && apk upgrade; }
 install_packages() { 
-  apk add --no-cache bash vim nano screen tmux mc build-base cmake ninja meson gettext git openssh curl wget rsync htop sudo python3 py3-pip py3-venv tzdata iptables ca-certificates bash-completion cronie; 
+  apk add --no-cache bash vim nano screen tmux mc build-base cmake ninja meson gettext git openssh curl wget rsync htop sudo python3 py3-pip tzdata iptables ca-certificates bash-completion; 
 }
 create_user() { 
   if ! id -u "$USERNAME" >/dev/null 2>&1; then 
