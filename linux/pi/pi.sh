@@ -84,6 +84,10 @@ PACKAGES=(
     lsof
     unzip
     zip
+    
+    # XFCE
+    xfce4
+    xfce4-goodies
 
     # Minimal i3-based GUI environment (for a headless/server Ubuntu)
     xorg                 # Core X server
@@ -1041,7 +1045,7 @@ main() {
     configure_firewall
     #install_plex
     #install_configure_zfs
-    #caddy_config
+    caddy_config
     #docker_config
     install_zig_binary
     deploy_user_scripts
