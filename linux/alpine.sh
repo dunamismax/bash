@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 USERNAME="sawyer"
 
 check_root() {
@@ -7,30 +7,31 @@ check_root() {
 }
 
 check_network() {
-  ping -c1 -W5 google.com >/dev/null || { echo "No network connectivity"; exit 1; }
+  ping -c1 -W5 google.com >/dev/null || { echo "No network connectivity"; }
 }
 
 update_system() {
-  apk update && apk upgrade
+  apk update || true
+  apk upgrade || true
 }
 
 install_packages() {
   apk add --no-cache \
     bash vim nano screen tmux mc build-base cmake ninja meson gettext git \
-    openssh curl wget rsync htop sudo python3 py3-pip tzdata iptables \
-    ca-certificates bash-completion openrc
+    openssh curl wget rsync htop sudo python3 py3-pip tzdata \
+    iptables ca-certificates bash-completion openrc || true
 }
 
 create_user() {
   if ! id -u "$USERNAME" >/dev/null 2>&1; then
-    adduser "$USERNAME"
-    passwd "$USERNAME"
+    adduser "$USERNAME" || true
+    passwd "$USERNAME" || true
     echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers
   fi
 }
 
 configure_timezone() {
-  cp /usr/share/zoneinfo/America/New_York /etc/localtime || true
+  cp /usr/share/zoneinfo/America/New_York /etc/localtime 2>/dev/null || true
   echo "America/New_York" > /etc/timezone
 }
 
@@ -38,86 +39,88 @@ setup_repos() {
   mkdir -p /home/${USERNAME}/github
   for repo in bash windows web python go misc; do
     rm -rf /home/${USERNAME}/github/$repo
-    git clone "https://github.com/dunamismax/$repo.git" /home/${USERNAME}/github/$repo || true
+    git clone "https://github.com/dunamismax/$repo.git" "/home/${USERNAME}/github/$repo" || true
   done
-  chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/github
+  chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}/github" || true
 }
 
 copy_shell_configs() {
   for file in .bashrc .profile; do
-    cp -f /home/${USERNAME}/github/bash/linux/dotfiles/$file /home/${USERNAME}/ 2>/dev/null || true
+    cp -f "/home/${USERNAME}/github/bash/linux/dotfiles/$file" "/home/${USERNAME}/" 2>/dev/null || true
   done
 }
 
 configure_ssh() {
-  # Make sure openrc is set up
   if [ ! -f /sbin/openrc-run ]; then
-    echo "OpenRC not found. Installing openrc..."
-    apk add --no-cache openrc
+    apk add --no-cache openrc || true
   fi
   rc-update add sshd default || true
   rc-service sshd stop 2>/dev/null || true
-  rc-service sshd start
+  rc-service sshd start || true
 }
 
 install_zig_binary() {
-  apk add --no-cache curl tar
+  apk add --no-cache curl tar || true
   rm -rf /opt/zig
   mkdir -p /opt/zig
-  curl -L -o /tmp/zig.tar.xz https://ziglang.org/download/0.12.1/zig-linux-armv7a-0.12.1.tar.xz
-  tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
-  ln -sf /opt/zig/zig /usr/local/bin/zig
+  curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.12.1/zig-linux-armv7a-0.12.1.tar.xz" || true
+  tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1 || true
+  ln -sf /opt/zig/zig /usr/local/bin/zig || true
   rm -f /tmp/zig.tar.xz
-  zig version >/dev/null || { echo "Zig installation failed"; exit 1; }
+  if ! zig version >/dev/null 2>&1; then
+    echo "Zig installation failed"
+  fi
 }
 
 configure_firewall() {
-  iptables -P INPUT DROP
-  iptables -P FORWARD DROP
-  iptables -P OUTPUT ACCEPT
-  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-  iptables -A INPUT -i lo -j ACCEPT
-  iptables -A INPUT -p icmp -j ACCEPT
-  iptables -A INPUT -p tcp --dport 22 -j ACCEPT
-  iptables -A INPUT -p tcp --dport 80 -j ACCEPT
-  iptables -A INPUT -p tcp --dport 443 -j ACCEPT
-  iptables -A INPUT -p tcp --dport 32400 -j ACCEPT
+  iptables -P INPUT DROP || true
+  iptables -P FORWARD DROP || true
+  iptables -P OUTPUT ACCEPT || true
+  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || true
+  iptables -A INPUT -i lo -j ACCEPT || true
+  iptables -A INPUT -p icmp -j ACCEPT || true
+  iptables -A INPUT -p tcp --dport 22 -j ACCEPT || true
+  iptables -A INPUT -p tcp --dport 80 -j ACCEPT || true
+  iptables -A INPUT -p tcp --dport 443 -j ACCEPT || true
+  iptables -A INPUT -p tcp --dport 32400 -j ACCEPT || true
 }
 
 deploy_user_scripts() {
-  mkdir -p /home/${USERNAME}/bin
-  rsync -ah --delete /home/${USERNAME}/github/bash/linux/_scripts/ /home/${USERNAME}/bin/ 2>/dev/null || true
-  find /home/${USERNAME}/bin -type f -exec chmod 755 {} \;
+  mkdir -p "/home/${USERNAME}/bin"
+  rsync -ah --delete "/home/${USERNAME}/github/bash/linux/_scripts/" "/home/${USERNAME}/bin/" 2>/dev/null || true
+  find "/home/${USERNAME}/bin" -type f -exec chmod 755 {} \; || true
 }
 
 setup_cron() {
-  rc-update add crond default || true
-  rc-service crond start
+  # Removed cronie installation
+  if command -v crond >/dev/null 2>&1; then
+    rc-service crond start || true
+  fi
 }
 
 final_checks() {
   echo "Kernel: $(uname -r)"
   echo "Uptime: $(uptime -p)"
   df -h /
-  free -h
+  free -h || true
 }
 
 home_permissions() {
-  chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}
-  find /home/${USERNAME} -type d -exec chmod g+s {} \; 2>/dev/null || true
+  chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}" || true
+  find "/home/${USERNAME}" -type d -exec chmod g+s {} \; 2>/dev/null || true
 }
 
 dotfiles_load() {
   mkdir -p \
-    /home/${USERNAME}/.config/alacritty \
-    /home/${USERNAME}/.config/i3 \
-    /home/${USERNAME}/.config/i3blocks \
-    /home/${USERNAME}/.config/picom
-  rsync -a --delete /home/${USERNAME}/github/bash/linux/dotfiles/alacritty/ /home/${USERNAME}/.config/alacritty/ 2>/dev/null || true
-  rsync -a --delete /home/${USERNAME}/github/bash/linux/dotfiles/i3/ /home/${USERNAME}/.config/i3/ 2>/dev/null || true
-  rsync -a --delete /home/${USERNAME}/github/bash/linux/dotfiles/i3blocks/ /home/${USERNAME}/.config/i3blocks/ 2>/dev/null || true
-  chmod -R +x /home/${USERNAME}/.config/i3blocks/scripts 2>/dev/null || true
-  rsync -a --delete /home/${USERNAME}/github/bash/linux/dotfiles/picom/ /home/${USERNAME}/.config/picom/ 2>/dev/null || true
+    "/home/${USERNAME}/.config/alacritty" \
+    "/home/${USERNAME}/.config/i3" \
+    "/home/${USERNAME}/.config/i3blocks" \
+    "/home/${USERNAME}/.config/picom"
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/alacritty/" "/home/${USERNAME}/.config/alacritty/" 2>/dev/null || true
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3/" "/home/${USERNAME}/.config/i3/" 2>/dev/null || true
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks/" "/home/${USERNAME}/.config/i3blocks/" 2>/dev/null || true
+  chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" 2>/dev/null || true
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/" 2>/dev/null || true
 }
 
 cleanup() {
