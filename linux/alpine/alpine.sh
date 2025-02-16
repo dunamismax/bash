@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Alpine Linux System Setup Script
-# Fully configures a clean install of Alpine with all needed
-# tools and configurations for hardening and security and dev.
+# Fully configures a clean install of Alpine with all needed tools and configurations for hardening,
+# security, and development.
+
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+# Color definitions for logging
 NORD9='\033[38;2;129;161;193m'    # Debug messages
 NORD11='\033[38;2;191;97;106m'    # Error messages
 NORD13='\033[38;2;235;203;139m'   # Warning messages
@@ -57,12 +59,24 @@ cleanup() {
 trap cleanup EXIT
 trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 
+# Check for required commands
+command_exists() {
+  if ! command -v "$1" &>/dev/null; then
+    log_error "Required command '$1' not found. Exiting."
+    exit 1
+  fi
+}
+
+for cmd in curl tar git rsync; do
+  command_exists "$cmd"
+done
+
 # Configuration Variables
 USERNAME="sawyer"
 TIMEZONE="America/New_York"
 
-# Zig installation (adjust URL/architecture as needed)
-ZIG_URL="https://ziglang.org/download/0.12.1/zig-linux-armv7a-0.12.1.tar.xz"
+# Zig installation configuration (x86_64 build)
+ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.3224+5ab511307.tar.xz"
 ZIG_DIR="/opt/zig"
 ZIG_BIN="/usr/local/bin/zig"
 
@@ -94,7 +108,9 @@ check_network() {
 
 update_system() {
   log_info "Updating package repositories..."
-  apk update && apk upgrade || log_warn "System update/upgrade encountered issues."
+  if ! apk update || ! apk upgrade; then
+    log_warn "System update/upgrade encountered issues."
+  fi
 }
 
 install_packages() {
@@ -109,8 +125,12 @@ install_packages() {
 create_user() {
   if ! id "$USERNAME" &>/dev/null; then
     log_info "Creating user '$USERNAME'..."
-    adduser -D "$USERNAME" || log_warn "Failed to create user '$USERNAME'."
-    echo "$USERNAME:changeme" | chpasswd || log_warn "Failed to set password for '$USERNAME'."
+    if ! adduser -D "$USERNAME"; then
+      log_warn "Failed to create user '$USERNAME'."
+    fi
+    if ! echo "$USERNAME:changeme" | chpasswd; then
+      log_warn "Failed to set password for '$USERNAME'."
+    fi
     if ! grep -q "^$USERNAME" /etc/sudoers; then
       echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers
     fi
@@ -152,9 +172,12 @@ copy_shell_configs() {
     local dest="/home/${USERNAME}/$file"
     if [ -f "$src" ]; then
       [ -f "$dest" ] && cp "$dest" "${dest}.bak"
-      cp -f "$src" "$dest" || log_warn "Failed to copy $src to $dest."
-      chown "${USERNAME}:${USERNAME}" "$dest"
-      log_info "Copied $src to $dest."
+      if ! cp -f "$src" "$dest"; then
+        log_warn "Failed to copy $src to $dest."
+      else
+        chown "${USERNAME}:${USERNAME}" "$dest"
+        log_info "Copied $src to $dest."
+      fi
     else
       log_warn "Source file $src not found."
     fi
@@ -164,7 +187,9 @@ copy_shell_configs() {
 configure_ssh() {
   log_info "Configuring SSH..."
   if ! command -v rc-service &>/dev/null; then
-    apk add --no-cache openrc || log_warn "Failed to install openrc."
+    if ! apk add --no-cache openrc; then
+      log_warn "Failed to install openrc."
+    fi
   fi
   rc-update add sshd default || log_warn "Failed to add sshd to default runlevel."
   rc-service sshd restart || log_warn "Failed to restart sshd."
@@ -189,13 +214,16 @@ secure_ssh_config() {
 
 install_zig_binary() {
   log_info "Installing Zig binary..."
-  apk add --no-cache curl tar || log_warn "Failed to install curl and tar."
+  if ! apk add --no-cache curl tar; then
+    log_warn "Failed to install curl and tar."
+  fi
   rm -rf "$ZIG_DIR"
   mkdir -p "$ZIG_DIR"
-  if curl -L -o /tmp/zig.tar.xz "$ZIG_URL"; then
-    if tar -xf /tmp/zig.tar.xz -C "$ZIG_DIR" --strip-components=1; then
+  tmp_tar="/tmp/zig.tar.xz"
+  if curl -L -o "$tmp_tar" "$ZIG_URL"; then
+    if tar -xf "$tmp_tar" -C "$ZIG_DIR" --strip-components=1; then
       ln -sf "$ZIG_DIR/zig" "$ZIG_BIN"
-      rm -f /tmp/zig.tar.xz
+      rm -f "$tmp_tar"
       if ! "$ZIG_BIN" version &>/dev/null; then
         log_error "Zig installation failed."
       else
@@ -203,6 +231,7 @@ install_zig_binary() {
       fi
     else
       log_warn "Failed to extract Zig tarball."
+      rm -f "$tmp_tar"
     fi
   else
     log_error "Failed to download Zig."
@@ -226,8 +255,11 @@ persist_firewall() {
   log_info "Saving current iptables rules for persistence..."
   if command -v iptables-save &>/dev/null; then
     mkdir -p /etc/iptables
-    iptables-save > /etc/iptables/rules.v4 || log_warn "Failed to save iptables rules."
-    log_info "Firewall rules saved to /etc/iptables/rules.v4."
+    if iptables-save > /etc/iptables/rules.v4; then
+      log_info "Firewall rules saved to /etc/iptables/rules.v4."
+    else
+      log_warn "Failed to save iptables rules."
+    fi
   else
     log_warn "iptables-save not found; skipping firewall persistence."
   fi
@@ -254,12 +286,20 @@ EOF
 configure_busybox_services() {
   log_info "Ensuring BusyBox services are enabled..."
   if ! rc-update show | grep -q '^syslog'; then
-    rc-update add syslog default && log_info "Syslog service added to default runlevel." || log_warn "Failed to add syslog service."
+    if rc-update add syslog default; then
+      log_info "Syslog service added to default runlevel."
+    else
+      log_warn "Failed to add syslog service."
+    fi
   else
     log_info "Syslog service already enabled."
   fi
   if ! rc-update show | grep -q '^crond'; then
-    rc-update add crond default && log_info "Crond service added to default runlevel." || log_warn "Failed to add crond service."
+    if rc-update add crond default; then
+      log_info "Crond service added to default runlevel."
+    else
+      log_warn "Failed to add crond service."
+    fi
   else
     log_info "Crond service already enabled."
   fi
@@ -301,7 +341,11 @@ net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.icmp_ignore_bogus_error_responses = 1
 net.ipv4.tcp_rfc1337 = 1
 EOF
-  sysctl -p &>/dev/null && log_info "sysctl settings applied." || log_warn "Failed to apply sysctl settings."
+  if sysctl -p &>/dev/null; then
+    log_info "sysctl settings applied."
+  else
+    log_warn "Failed to apply sysctl settings."
+  fi
 }
 
 final_checks() {
@@ -334,9 +378,10 @@ dotfiles_load() {
 
 build_ly() {
   log_info "Building and installing Ly display manager..."
-  apk add --no-cache linux-pam-dev libxcb-dev xcb-util-dev xcb-util-keysyms-dev \
-    xcb-util-wm-dev xcb-util-cursor-dev libxkbcommon-dev libxkbcommon-x11-dev || \
+  if ! apk add --no-cache linux-pam-dev libxcb-dev xcb-util-dev xcb-util-keysyms-dev \
+    xcb-util-wm-dev xcb-util-cursor-dev libxkbcommon-dev libxkbcommon-x11-dev; then
     log_warn "One or more Ly build dependencies failed to install."
+  fi
 
   local LY_DIR="/opt/ly"
   rm -rf "$LY_DIR"
