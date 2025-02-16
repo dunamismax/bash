@@ -202,7 +202,7 @@ secure_ssh_config() {
     cp "$sshd_config" "$backup_file"
     log_info "Backed up SSH config to $backup_file."
     sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config"
-    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' "$sshd_config"
+    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config"
     sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config"
     sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config"
     log_info "SSH configuration hardened."
