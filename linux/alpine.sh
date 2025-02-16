@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Alpine Linux System Setup Script
+# Fully configures a clean install of Alpine with all needed tools and configurations for hardening and security and dev.
 set -Eeuo pipefail
 IFS=$'\n\t'
 
