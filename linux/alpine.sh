@@ -1,104 +1,251 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+###############################################################################
+# Color Definitions (Nord Theme Colors)
+###############################################################################
+NORD9='\033[38;2;129;161;193m'    # Debug messages
+NORD10='\033[38;2;94;129;172m'
+NORD11='\033[38;2;191;97;106m'    # Error messages
+NORD13='\033[38;2;235;203;139m'   # Warning messages
+NORD14='\033[38;2;163;190;140m'   # Info messages
+NC='\033[0m'                     # Reset to No Color
+
+###############################################################################
+# Log File & Logging Functions
+###############################################################################
+LOG_FILE="/var/log/alpine_setup.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
+
+log() {
+  local level="${1:-INFO}"
+  shift
+  local message="$*"
+  local timestamp
+  timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
+  local entry="[$timestamp] [${level^^}] $message"
+
+  echo "$entry" >> "$LOG_FILE"
+  if [ -t 2 ]; then
+    case "${level^^}" in
+      INFO)  printf "%b%s%b\n" "$NORD14" "$entry" "$NC" ;;
+      WARN)  printf "%b%s%b\n" "$NORD13" "$entry" "$NC" ;;
+      ERROR) printf "%b%s%b\n" "$NORD11" "$entry" "$NC" ;;
+      DEBUG) printf "%b%s%b\n" "$NORD9"  "$entry" "$NC" ;;
+      *)     printf "%s\n" "$entry" ;;
+    esac
+  else
+    echo "$entry" >&2
+  fi
+}
+log_info()  { log INFO "$@"; }
+log_warn()  { log WARN "$@"; }
+log_error() { log ERROR "$@"; }
+log_debug() { log DEBUG "$@"; }
+
+###############################################################################
+# Error Handling & Cleanup
+###############################################################################
+handle_error() {
+  local msg="${1:-An unknown error occurred.}"
+  local code="${2:-1}"
+  log_error "$msg (Exit Code: $code)"
+  log_error "Error encountered at line $LINENO in function ${FUNCNAME[1]:-main}."
+  echo -e "${NORD11}ERROR: $msg (Exit Code: $code)${NC}" >&2
+  exit "$code"
+}
+
+cleanup() {
+  log_info "Cleanup tasks complete."
+}
+trap cleanup EXIT
+trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
+
+###############################################################################
+# Configuration Variables
+###############################################################################
 USERNAME="sawyer"
+TIMEZONE="America/New_York"
+# Change the following URL as needed based on your CPU architecture.
+# For example, on ARM use the appropriate binary (this one is for ARMv7a).
+ZIG_URL="https://ziglang.org/download/0.12.1/zig-linux-armv7a-0.12.1.tar.xz"
+ZIG_DIR="/opt/zig"
+ZIG_BIN="/usr/local/bin/zig"
+
+# Packages to install via apk. Note that many Alpine packages use slightly different
+# names compared to Ubuntu. The following list includes essential tools plus those
+# required for X11, i3wm, and a lightweight GUI environment.
+PACKAGES=(
+  bash vim nano screen tmux mc
+  build-base cmake ninja meson gettext git
+  openssh curl wget rsync htop sudo python3 py3-pip tzdata
+  iptables ca-certificates bash-completion openrc
+
+  # X11 and GUI environment packages
+  xorg-server xinit dmenu xterm feh ttf-dejavu
+
+  # i3 and related tools
+  i3wm i3blocks picom alacritty
+)
+
+###############################################################################
+# Functions
+###############################################################################
 
 check_root() {
-  [ "$(id -u)" -eq 0 ] || { echo "Run as root"; exit 1; }
+  if [ "$(id -u)" -ne 0 ]; then
+    log_error "Script must be run as root. Exiting."
+    exit 1
+  fi
 }
 
 check_network() {
-  ping -c1 -W5 google.com >/dev/null || { echo "No network connectivity"; }
+  log_info "Checking network connectivity..."
+  if ! ping -c1 -W5 google.com &>/dev/null; then
+    log_warn "No network connectivity detected."
+  else
+    log_info "Network connectivity OK."
+  fi
 }
 
 update_system() {
-  apk update || true
-  apk upgrade || true
+  log_info "Updating package repositories..."
+  apk update && apk upgrade || log_warn "System update/upgrade encountered issues."
 }
 
 install_packages() {
-  apk add --no-cache \
-    bash vim nano screen tmux mc build-base cmake ninja meson gettext git \
-    openssh curl wget rsync htop sudo python3 py3-pip tzdata \
-    iptables ca-certificates bash-completion openrc || true
+  log_info "Installing essential packages..."
+  if ! apk add --no-cache "${PACKAGES[@]}"; then
+    log_warn "One or more packages failed to install."
+  else
+    log_info "Package installation complete."
+  fi
 }
 
 create_user() {
-  if ! id -u "$USERNAME" >/dev/null 2>&1; then
-    adduser "$USERNAME" || true
-    passwd "$USERNAME" || true
+  if ! id "$USERNAME" &>/dev/null; then
+    log_info "Creating user '$USERNAME'..."
+    adduser "$USERNAME" || log_warn "Failed to create user '$USERNAME'."
+    passwd "$USERNAME" || log_warn "Failed to set password for '$USERNAME'."
     echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers
+  else
+    log_info "User '$USERNAME' already exists."
   fi
 }
 
 configure_timezone() {
-  cp /usr/share/zoneinfo/America/New_York /etc/localtime 2>/dev/null || true
-  echo "America/New_York" > /etc/timezone
+  log_info "Setting timezone to $TIMEZONE..."
+  if [ -f "/usr/share/zoneinfo/${TIMEZONE}" ]; then
+    cp "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
+    echo "$TIMEZONE" > /etc/timezone
+  else
+    log_warn "Timezone file for $TIMEZONE not found."
+  fi
 }
 
 setup_repos() {
-  mkdir -p /home/${USERNAME}/github
+  local repo_dir="/home/${USERNAME}/github"
+  log_info "Cloning repositories into $repo_dir..."
+  mkdir -p "$repo_dir"
   for repo in bash windows web python go misc; do
-    rm -rf /home/${USERNAME}/github/$repo
-    git clone "https://github.com/dunamismax/$repo.git" "/home/${USERNAME}/github/$repo" || true
+    local target_dir="$repo_dir/$repo"
+    rm -rf "$target_dir"
+    if ! git clone "https://github.com/dunamismax/$repo.git" "$target_dir"; then
+      log_warn "Failed to clone repository: $repo"
+    else
+      log_info "Cloned repository: $repo"
+    fi
   done
-  chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}/github" || true
+  chown -R "${USERNAME}:${USERNAME}" "$repo_dir"
 }
 
 copy_shell_configs() {
+  log_info "Copying shell configuration files..."
   for file in .bashrc .profile; do
-    cp -f "/home/${USERNAME}/github/bash/linux/dotfiles/$file" "/home/${USERNAME}/" 2>/dev/null || true
+    local src="/home/${USERNAME}/github/bash/linux/dotfiles/$file"
+    local dest="/home/${USERNAME}/$file"
+    if [ -f "$src" ]; then
+      cp -f "$src" "$dest" || log_warn "Failed to copy $src to $dest."
+      chown "${USERNAME}:${USERNAME}" "$dest"
+      log_info "Copied $src to $dest."
+    else
+      log_warn "Source file $src not found."
+    fi
   done
 }
 
 configure_ssh() {
-  if [ ! -f /sbin/openrc-run ]; then
-    apk add --no-cache openrc || true
+  log_info "Configuring SSH..."
+  # Ensure openrc is installed and manage sshd via OpenRC.
+  if ! command -v rc-service &>/dev/null; then
+    apk add --no-cache openrc || log_warn "Failed to install openrc."
   fi
-  rc-update add sshd default || true
-  rc-service sshd stop 2>/dev/null || true
-  rc-service sshd start || true
+  rc-update add sshd default || log_warn "Failed to add sshd to default runlevel."
+  rc-service sshd restart || log_warn "Failed to restart sshd."
 }
 
 install_zig_binary() {
-  apk add --no-cache curl tar || true
-  rm -rf /opt/zig
-  mkdir -p /opt/zig
-  curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/0.12.1/zig-linux-armv7a-0.12.1.tar.xz" || true
-  tar -xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1 || true
-  ln -sf /opt/zig/zig /usr/local/bin/zig || true
-  rm -f /tmp/zig.tar.xz
-  if ! zig version >/dev/null 2>&1; then
-    echo "Zig installation failed"
+  log_info "Installing Zig binary..."
+  apk add --no-cache curl tar || log_warn "Failed to install curl and tar."
+  rm -rf "$ZIG_DIR"
+  mkdir -p "$ZIG_DIR"
+  if curl -L -o /tmp/zig.tar.xz "$ZIG_URL"; then
+    if tar -xf /tmp/zig.tar.xz -C "$ZIG_DIR" --strip-components=1; then
+      ln -sf "$ZIG_DIR/zig" "$ZIG_BIN"
+      rm -f /tmp/zig.tar.xz
+      if ! "$ZIG_BIN" version &>/dev/null; then
+        log_error "Zig installation failed."
+      else
+        log_info "Zig installed successfully."
+      fi
+    else
+      log_warn "Failed to extract Zig tarball."
+    fi
+  else
+    log_error "Failed to download Zig."
   fi
 }
 
 configure_firewall() {
-  iptables -P INPUT DROP || true
-  iptables -P FORWARD DROP || true
-  iptables -P OUTPUT ACCEPT || true
-  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || true
-  iptables -A INPUT -i lo -j ACCEPT || true
-  iptables -A INPUT -p icmp -j ACCEPT || true
-  iptables -A INPUT -p tcp --dport 22 -j ACCEPT || true
-  iptables -A INPUT -p tcp --dport 80 -j ACCEPT || true
-  iptables -A INPUT -p tcp --dport 443 -j ACCEPT || true
-  iptables -A INPUT -p tcp --dport 32400 -j ACCEPT || true
+  log_info "Configuring firewall (iptables)..."
+  iptables -P INPUT DROP || log_warn "Could not set default INPUT policy."
+  iptables -P FORWARD DROP || log_warn "Could not set default FORWARD policy."
+  iptables -P OUTPUT ACCEPT || log_warn "Could not set default OUTPUT policy."
+  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || log_warn "Failed to allow established connections."
+  iptables -A INPUT -i lo -j ACCEPT || log_warn "Failed to allow loopback."
+  iptables -A INPUT -p icmp -j ACCEPT || log_warn "Failed to allow ICMP."
+  for port in 22 80 443 32400; do
+    iptables -A INPUT -p tcp --dport "$port" -j ACCEPT || log_warn "Failed to allow TCP port $port."
+  done
 }
 
 deploy_user_scripts() {
-  mkdir -p "/home/${USERNAME}/bin"
-  rsync -ah --delete "/home/${USERNAME}/github/bash/linux/_scripts/" "/home/${USERNAME}/bin/" 2>/dev/null || true
-  find "/home/${USERNAME}/bin" -type f -exec chmod 755 {} \; || true
+  local bin_dir="/home/${USERNAME}/bin"
+  local scripts_src="/home/${USERNAME}/github/bash/linux/_scripts/"
+  log_info "Deploying user scripts from $scripts_src to $bin_dir..."
+  mkdir -p "$bin_dir"
+  if rsync -ah --delete "$scripts_src" "$bin_dir"; then
+    find "$bin_dir" -type f -exec chmod 755 {} \;
+    log_info "User scripts deployed successfully."
+  else
+    log_warn "Failed to deploy user scripts."
+  fi
 }
 
 setup_cron() {
-  # Removed cronie installation
-  if command -v crond >/dev/null 2>&1; then
-    rc-service crond start || true
+  log_info "Starting crond service..."
+  if command -v crond &>/dev/null; then
+    rc-service crond start || log_warn "Failed to start crond."
+  else
+    log_warn "crond not found; skipping cron setup."
   fi
 }
 
 final_checks() {
+  log_info "Performing final system checks:"
   echo "Kernel: $(uname -r)"
   echo "Uptime: $(uptime -p)"
   df -h /
@@ -106,32 +253,98 @@ final_checks() {
 }
 
 home_permissions() {
-  chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}" || true
-  find "/home/${USERNAME}" -type d -exec chmod g+s {} \; 2>/dev/null || true
+  local home_dir="/home/${USERNAME}"
+  log_info "Setting ownership and permissions for $home_dir..."
+  chown -R "${USERNAME}:${USERNAME}" "$home_dir"
+  find "$home_dir" -type d -exec chmod g+s {} \;
 }
 
 dotfiles_load() {
-  mkdir -p \
-    "/home/${USERNAME}/.config/alacritty" \
-    "/home/${USERNAME}/.config/i3" \
-    "/home/${USERNAME}/.config/i3blocks" \
-    "/home/${USERNAME}/.config/picom"
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/alacritty/" "/home/${USERNAME}/.config/alacritty/" 2>/dev/null || true
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3/" "/home/${USERNAME}/.config/i3/" 2>/dev/null || true
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks/" "/home/${USERNAME}/.config/i3blocks/" 2>/dev/null || true
-  chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" 2>/dev/null || true
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/" 2>/dev/null || true
+  log_info "Loading dotfiles configuration..."
+  local config_dirs=( "alacritty" "i3" "i3blocks" "picom" )
+  for dir in "${config_dirs[@]}"; do
+    mkdir -p "/home/${USERNAME}/.config/$dir"
+  done
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/alacritty/" "/home/${USERNAME}/.config/alacritty/" || log_warn "Failed to sync alacritty config."
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3/" "/home/${USERNAME}/.config/i3/" || log_warn "Failed to sync i3 config."
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks/" "/home/${USERNAME}/.config/i3blocks/" || log_warn "Failed to sync i3blocks config."
+  chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" 2>/dev/null || log_warn "Failed to set execute permissions on i3blocks scripts."
+  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/" || log_warn "Failed to sync picom config."
 }
 
-cleanup() {
-  echo "Cleanup tasks complete."
+###############################################################################
+# New Function: Build and Install Ly Display Manager
+###############################################################################
+build_ly() {
+  log_info "Building and installing Ly display manager..."
+  # Install Ly build dependencies (Alpine names may vary)
+  apk add --no-cache linux-pam-dev libxcb-dev xcb-util-dev xcb-util-keysyms-dev \
+    xcb-util-wm-dev xcb-util-cursor-dev libxkbcommon-dev libxkbcommon-x11-dev || \
+    log_warn "One or more Ly build dependencies failed to install."
+
+  # Clone (or update) the Ly repository
+  local LY_DIR="/opt/ly"
+  rm -rf "$LY_DIR"
+  if ! git clone https://github.com/fairyglade/ly.git "$LY_DIR"; then
+    log_error "Failed to clone Ly repository."
+    return 1
+  fi
+
+  cd "$LY_DIR" || { log_error "Failed to change directory to $LY_DIR."; return 1; }
+
+  # Build Ly using Zig (assumes Zig was installed earlier)
+  log_info "Compiling Ly with Zig..."
+  if ! zig build; then
+    log_error "Compilation of Ly failed."
+    return 1
+  fi
+
+  # Install the Ly binary (assumes the binary is built as “ly” in the current directory)
+  if cp ./ly /usr/local/bin/ly; then
+    chmod +x /usr/local/bin/ly
+    log_info "Ly installed to /usr/local/bin/ly."
+  else
+    log_warn "Failed to copy the Ly binary."
+  fi
+
+  # Create an OpenRC service script for Ly
+  cat << 'EOF' > /etc/init.d/ly
+#!/sbin/openrc-run
+description="Ly Display Manager"
+command="/usr/local/bin/ly"
+command_background=true
+pidfile="/run/ly.pid"
+depend() {
+    need localmount
+    before login
+}
+EOF
+  chmod +x /etc/init.d/ly
+  if rc-update add ly default; then
+    log_info "Ly service added to default runlevel."
+  else
+    log_warn "Failed to add ly to default runlevel."
+  fi
+
+  log_info "Ly display manager has been built and configured. (You may need to disable conflicting gettys manually.)"
 }
 
+###############################################################################
+# Prompt for Reboot
+###############################################################################
 prompt_reboot() {
-  read -p "Reboot now? [y/N]: " ans
-  echo "$ans" | grep -qi "^y" && reboot
+  read -rp "Reboot now? [y/N]: " answer
+  if [[ "$answer" =~ ^[Yy]$ ]]; then
+    log_info "Rebooting system..."
+    reboot
+  else
+    log_info "Reboot canceled. Please reboot later to apply all changes."
+  fi
 }
 
+###############################################################################
+# Main Execution Flow
+###############################################################################
 main() {
   check_root
   check_network
@@ -149,7 +362,7 @@ main() {
   final_checks
   home_permissions
   dotfiles_load
-  cleanup
+  build_ly
   prompt_reboot
 }
 
