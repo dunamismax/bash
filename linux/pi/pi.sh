@@ -683,34 +683,72 @@ copy_shell_configs() {
 
 install_zig_binary() {
     print_section "Zig Installation"
-    log_info "Installing Zig binary from the official release..."
 
-    # Specify the desired Zig version.
-    local ZIG_TARBALL_URL="https://ziglang.org/builds/zig-linux-aarch64-0.21.1-dev.3223+13ad984b1.tar.xz"
+    # Define desired Zig version.
+    local DESIRED_ZIG_VERSION="0.21.1-dev.3223+13ad984b1"
+
+    # Determine system architecture.
+    local ARCH
+    case "$(uname -m)" in
+        aarch64) ARCH="aarch64" ;;
+        armv7l)  ARCH="armv7" ;;
+        x86_64)  ARCH="amd64" ;;
+        *)
+            handle_error "Unsupported architecture: $(uname -m)"
+            ;;
+    esac
+
+    # Construct download URL.
+    local ZIG_TARBALL_URL="https://ziglang.org/builds/zig-linux-${ARCH}-${DESIRED_ZIG_VERSION}.tar.xz"
     local ZIG_INSTALL_DIR="/opt/zig"
     local TEMP_DOWNLOAD="/tmp/zig.tar.xz"
 
+    log_info "Preparing to install Zig version ${DESIRED_ZIG_VERSION} for ${ARCH}."
+
+    # Ensure required dependencies are installed.
     log_info "Ensuring required dependencies (curl, tar) are installed..."
     apt install -y curl tar || handle_error "Failed to install required dependencies."
 
-    log_info "Downloading Zig ${ZIG_VERSION} binary from ${ZIG_TARBALL_URL}..."
+    # Check if Zig is already installed with the desired version.
+    if command -v zig >/dev/null 2>&1; then
+        local CURRENT_VERSION
+        CURRENT_VERSION=$(zig version 2>/dev/null || echo "unknown")
+        if [ "$CURRENT_VERSION" = "$DESIRED_ZIG_VERSION" ]; then
+            log_info "Zig version ${DESIRED_ZIG_VERSION} is already installed. Skipping installation."
+            return 0
+        else
+            log_info "A different Zig version (${CURRENT_VERSION}) is installed. Proceeding with update."
+        fi
+    fi
+
+    # Download Zig tarball.
+    log_info "Downloading Zig binary from ${ZIG_TARBALL_URL}..."
     curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}" || handle_error "Failed to download Zig binary."
 
-    log_info "Extracting Zig to ${ZIG_INSTALL_DIR}..."
-    rm -rf "${ZIG_INSTALL_DIR}"  # Clean any previous installation.
-    mkdir -p "${ZIG_INSTALL_DIR}" || handle_error "Failed to create ${ZIG_INSTALL_DIR}."
+    # Prepare installation directory.
+    log_info "Preparing installation directory at ${ZIG_INSTALL_DIR}..."
+    rm -rf "${ZIG_INSTALL_DIR}"  # Remove any previous installation.
+    mkdir -p "${ZIG_INSTALL_DIR}" || handle_error "Failed to create installation directory."
+
+    # Extract the tarball.
+    log_info "Extracting Zig binary to ${ZIG_INSTALL_DIR}..."
     tar -xf "${TEMP_DOWNLOAD}" -C "${ZIG_INSTALL_DIR}" --strip-components=1 || handle_error "Failed to extract Zig binary."
 
+    # Create symlink for easy access.
     log_info "Creating symlink for Zig in /usr/local/bin..."
     ln -sf "${ZIG_INSTALL_DIR}/zig" /usr/local/bin/zig || handle_error "Failed to create symlink for Zig."
 
+    # Clean up the temporary download.
     log_info "Cleaning up temporary files..."
     rm -f "${TEMP_DOWNLOAD}"
 
-    if command -v zig &>/dev/null; then
-        log_info "Zig installation completed successfully! Version: $(zig version)"
+    # Verify installation.
+    if command -v zig >/dev/null 2>&1; then
+        local INSTALLED_VERSION
+        INSTALLED_VERSION=$(zig version)
+        log_info "Zig installation completed successfully! Installed version: ${INSTALLED_VERSION}"
     else
-        handle_error "Zig is not accessible from the command line."
+        handle_error "Zig is not accessible from the command line after installation."
     fi
 }
 
