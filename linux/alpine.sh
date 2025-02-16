@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-# Color Definitions (Nord Theme Colors)
 NORD9='\033[38;2;129;161;193m'    # Debug messages
 NORD10='\033[38;2;94;129;172m'
 NORD11='\033[38;2;191;97;106m'    # Error messages
@@ -10,7 +9,6 @@ NORD13='\033[38;2;235;203;139m'   # Warning messages
 NORD14='\033[38;2;163;190;140m'   # Info messages
 NC='\033[0m'                     # Reset to No Color
 
-# Log File & Logging Functions
 LOG_FILE="/var/log/alpine_setup.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
@@ -42,7 +40,6 @@ log_warn()  { log WARN "$@"; }
 log_error() { log ERROR "$@"; }
 log_debug() { log DEBUG "$@"; }
 
-# Error Handling & Cleanup
 handle_error() {
   local msg="${1:-An unknown error occurred.}"
   local code="${2:-1}"
@@ -67,22 +64,16 @@ ZIG_URL="https://ziglang.org/download/0.12.1/zig-linux-armv7a-0.12.1.tar.xz"
 ZIG_DIR="/opt/zig"
 ZIG_BIN="/usr/local/bin/zig"
 
-# Packages to install via apk.
 PACKAGES=(
   bash vim nano screen tmux mc
   build-base cmake ninja meson gettext git
   openssh curl wget rsync htop sudo python3 py3-pip tzdata
   iptables ca-certificates bash-completion openrc
   go gdb strace man
-
-  # X11 and GUI environment packages (if needed)
   xorg-server xinit dmenu xterm feh ttf-dejavu
-
-  # i3 and related tools
   i3wm i3blocks picom alacritty
 )
 
-# Functions
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
     log_error "Script must be run as root. Exiting."
@@ -240,7 +231,6 @@ persist_firewall() {
   fi
 }
 
-# OpenRC & BusyBox Service Configurations
 configure_openrc_local() {
   log_info "Configuring OpenRC local service for firewall persistence..."
   local local_script="/etc/local.d/firewall.start"
@@ -340,7 +330,6 @@ dotfiles_load() {
   rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/" || log_warn "Failed to sync picom config."
 }
 
-# Build and Install Ly Display Manager
 build_ly() {
   log_info "Building and installing Ly display manager..."
   apk add --no-cache linux-pam-dev libxcb-dev xcb-util-dev xcb-util-keysyms-dev \
@@ -390,7 +379,6 @@ EOF
   log_info "Ly display manager has been built and configured. (Disable conflicting gettys manually if necessary.)"
 }
 
-# Prompt for Reboot
 prompt_reboot() {
   read -rp "Reboot now? [y/N]: " answer
   if [[ "$answer" =~ ^[Yy]$ ]]; then
@@ -401,7 +389,6 @@ prompt_reboot() {
   fi
 }
 
-# Main Execution Flow
 main() {
   check_root
   check_network
