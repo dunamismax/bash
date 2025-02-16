@@ -5,7 +5,7 @@ USERNAME="sawyer"
 check_root() { [ "$(id -u)" -eq 0 ] || { echo "Run as root"; exit 1; } }
 check_network() { ping -c1 -W5 google.com >/dev/null || { echo "No network connectivity"; exit 1; } }
 update_system() { apk update && apk upgrade; }
-install_packages() { apk add --no-cache bash vim nano screen tmux mc build-base cmake ninja meson gettext git openssh curl wget rsync htop sudo python3 py3-pip py3-venv; }
+install_packages() { apk add --no-cache bash vim nano screen tmux mc build-base cmake ninja meson gettext git openssh curl wget rsync htop sudo python3 py3-pip; }
 create_user() {
   if ! id -u "$USERNAME" >/dev/null 2>&1; then
     adduser "$USERNAME" && passwd "$USERNAME" && echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers
