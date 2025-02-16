@@ -69,22 +69,22 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 ###############################################################################
 USERNAME="sawyer"
 TIMEZONE="America/New_York"
-# Change the following URL as needed based on your CPU architecture.
-# For example, on ARM use the appropriate binary (this one is for ARMv7a).
+
+# Zig installation (adjust URL/architecture as needed)
 ZIG_URL="https://ziglang.org/download/0.12.1/zig-linux-armv7a-0.12.1.tar.xz"
 ZIG_DIR="/opt/zig"
 ZIG_BIN="/usr/local/bin/zig"
 
-# Packages to install via apk. Note that many Alpine packages use slightly different
-# names compared to Ubuntu. The following list includes essential tools plus those
-# required for X11, i3wm, and a lightweight GUI environment.
+# Packages to install via apk.
+# Added Go, gdb, strace, and man to cover full dev needs.
 PACKAGES=(
   bash vim nano screen tmux mc
   build-base cmake ninja meson gettext git
   openssh curl wget rsync htop sudo python3 py3-pip tzdata
   iptables ca-certificates bash-completion openrc
+  go gdb strace man
 
-  # X11 and GUI environment packages
+  # X11 and GUI environment packages (if needed)
   xorg-server xinit dmenu xterm feh ttf-dejavu
 
   # i3 and related tools
@@ -128,9 +128,11 @@ install_packages() {
 create_user() {
   if ! id "$USERNAME" &>/dev/null; then
     log_info "Creating user '$USERNAME'..."
-    adduser "$USERNAME" || log_warn "Failed to create user '$USERNAME'."
-    passwd "$USERNAME" || log_warn "Failed to set password for '$USERNAME'."
-    echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers
+    adduser -D "$USERNAME" || log_warn "Failed to create user '$USERNAME'."
+    echo "$USERNAME:changeme" | chpasswd || log_warn "Failed to set password for '$USERNAME'."
+    if ! grep -q "^$USERNAME" /etc/sudoers; then
+      echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers
+    fi
   else
     log_info "User '$USERNAME' already exists."
   fi
@@ -168,6 +170,7 @@ copy_shell_configs() {
     local src="/home/${USERNAME}/github/bash/linux/dotfiles/$file"
     local dest="/home/${USERNAME}/$file"
     if [ -f "$src" ]; then
+      [ -f "$dest" ] && cp "$dest" "${dest}.bak"
       cp -f "$src" "$dest" || log_warn "Failed to copy $src to $dest."
       chown "${USERNAME}:${USERNAME}" "$dest"
       log_info "Copied $src to $dest."
@@ -179,12 +182,28 @@ copy_shell_configs() {
 
 configure_ssh() {
   log_info "Configuring SSH..."
-  # Ensure openrc is installed and manage sshd via OpenRC.
   if ! command -v rc-service &>/dev/null; then
     apk add --no-cache openrc || log_warn "Failed to install openrc."
   fi
   rc-update add sshd default || log_warn "Failed to add sshd to default runlevel."
   rc-service sshd restart || log_warn "Failed to restart sshd."
+}
+
+secure_ssh_config() {
+  local sshd_config="/etc/ssh/sshd_config"
+  local backup_file="/etc/ssh/sshd_config.bak"
+  if [ -f "$sshd_config" ]; then
+    cp "$sshd_config" "$backup_file"
+    log_info "Backed up SSH config to $backup_file."
+    sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config"
+    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' "$sshd_config"
+    sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config"
+    sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config"
+    log_info "SSH configuration hardened."
+    rc-service sshd restart || log_warn "Failed to restart sshd after hardening."
+  else
+    log_warn "SSHD configuration file not found."
+  fi
 }
 
 install_zig_binary() {
@@ -222,6 +241,52 @@ configure_firewall() {
   done
 }
 
+persist_firewall() {
+  log_info "Saving current iptables rules for persistence..."
+  if command -v iptables-save &>/dev/null; then
+    mkdir -p /etc/iptables
+    iptables-save > /etc/iptables/rules.v4 || log_warn "Failed to save iptables rules."
+    log_info "Firewall rules saved to /etc/iptables/rules.v4."
+  else
+    log_warn "iptables-save not found; skipping firewall persistence."
+  fi
+}
+
+###############################################################################
+# OpenRC & BusyBox Service Configurations
+###############################################################################
+configure_openrc_local() {
+  log_info "Configuring OpenRC local service for firewall persistence..."
+  local local_script="/etc/local.d/firewall.start"
+  cat << 'EOF' > "$local_script"
+#!/bin/sh
+# Restore saved iptables rules if they exist
+if [ -f /etc/iptables/rules.v4 ]; then
+  iptables-restore < /etc/iptables/rules.v4
+fi
+EOF
+  chmod +x "$local_script" || log_warn "Failed to make $local_script executable."
+  if rc-update add local default; then
+    log_info "Local OpenRC service added to default runlevel."
+  else
+    log_warn "Failed to add local service to default runlevel."
+  fi
+}
+
+configure_busybox_services() {
+  log_info "Ensuring BusyBox services are enabled..."
+  if ! rc-update show | grep -q '^syslog'; then
+    rc-update add syslog default && log_info "Syslog service added to default runlevel." || log_warn "Failed to add syslog service."
+  else
+    log_info "Syslog service already enabled."
+  fi
+  if ! rc-update show | grep -q '^crond'; then
+    rc-update add crond default && log_info "Crond service added to default runlevel." || log_warn "Failed to add crond service."
+  else
+    log_info "Crond service already enabled."
+  fi
+}
+
 deploy_user_scripts() {
   local bin_dir="/home/${USERNAME}/bin"
   local scripts_src="/home/${USERNAME}/github/bash/linux/_scripts/"
@@ -242,6 +307,23 @@ setup_cron() {
   else
     log_warn "crond not found; skipping cron setup."
   fi
+}
+
+secure_sysctl() {
+  log_info "Applying sysctl kernel hardening settings..."
+  local sysctl_conf="/etc/sysctl.conf"
+  [ -f "$sysctl_conf" ] && cp "$sysctl_conf" "${sysctl_conf}.bak"
+  cat << 'EOF' >> "$sysctl_conf"
+# Harden network parameters
+net.ipv4.tcp_syncookies = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.tcp_rfc1337 = 1
+EOF
+  sysctl -p &>/dev/null && log_info "sysctl settings applied." || log_warn "Failed to apply sysctl settings."
 }
 
 final_checks() {
@@ -273,16 +355,14 @@ dotfiles_load() {
 }
 
 ###############################################################################
-# New Function: Build and Install Ly Display Manager
+# Build and Install Ly Display Manager
 ###############################################################################
 build_ly() {
   log_info "Building and installing Ly display manager..."
-  # Install Ly build dependencies (Alpine names may vary)
   apk add --no-cache linux-pam-dev libxcb-dev xcb-util-dev xcb-util-keysyms-dev \
     xcb-util-wm-dev xcb-util-cursor-dev libxkbcommon-dev libxkbcommon-x11-dev || \
     log_warn "One or more Ly build dependencies failed to install."
 
-  # Clone (or update) the Ly repository
   local LY_DIR="/opt/ly"
   rm -rf "$LY_DIR"
   if ! git clone https://github.com/fairyglade/ly.git "$LY_DIR"; then
@@ -292,14 +372,12 @@ build_ly() {
 
   cd "$LY_DIR" || { log_error "Failed to change directory to $LY_DIR."; return 1; }
 
-  # Build Ly using Zig (assumes Zig was installed earlier)
   log_info "Compiling Ly with Zig..."
   if ! zig build; then
     log_error "Compilation of Ly failed."
     return 1
   fi
 
-  # Install the Ly binary (assumes the binary is built as “ly” in the current directory)
   if cp ./ly /usr/local/bin/ly; then
     chmod +x /usr/local/bin/ly
     log_info "Ly installed to /usr/local/bin/ly."
@@ -307,7 +385,6 @@ build_ly() {
     log_warn "Failed to copy the Ly binary."
   fi
 
-  # Create an OpenRC service script for Ly
   cat << 'EOF' > /etc/init.d/ly
 #!/sbin/openrc-run
 description="Ly Display Manager"
@@ -326,7 +403,7 @@ EOF
     log_warn "Failed to add ly to default runlevel."
   fi
 
-  log_info "Ly display manager has been built and configured. (You may need to disable conflicting gettys manually.)"
+  log_info "Ly display manager has been built and configured. (Disable conflicting gettys manually if necessary.)"
 }
 
 ###############################################################################
@@ -355,10 +432,15 @@ main() {
   setup_repos
   copy_shell_configs
   configure_ssh
+  secure_ssh_config
   install_zig_binary
   configure_firewall
+  persist_firewall
+  secure_sysctl
   deploy_user_scripts
   setup_cron
+  configure_openrc_local
+  configure_busybox_services
   final_checks
   home_permissions
   dotfiles_load
