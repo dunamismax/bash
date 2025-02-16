@@ -686,8 +686,7 @@ install_zig_binary() {
     log_info "Installing Zig binary from the official release..."
 
     # Specify the desired Zig version.
-    local ZIG_VERSION="0.12.1"
-    local ZIG_TARBALL_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+    local ZIG_TARBALL_URL="https://ziglang.org/builds/zig-linux-aarch64-0.21.1-dev.3223+13ad984b1.tar.xz"
     local ZIG_INSTALL_DIR="/opt/zig"
     local TEMP_DOWNLOAD="/tmp/zig.tar.xz"
 
