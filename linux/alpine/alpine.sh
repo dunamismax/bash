@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Alpine Linux System Setup Script
-# Fully configures a clean install of Alpine with all needed tools and configurations for hardening and security and dev.
+# Fully configures a clean install of Alpine with all needed
+# tools and configurations for hardening and security and dev.
 set -Eeuo pipefail
 IFS=$'\n\t'
 
 NORD9='\033[38;2;129;161;193m'    # Debug messages
-NORD10='\033[38;2;94;129;172m'
 NORD11='\033[38;2;191;97;106m'    # Error messages
 NORD13='\033[38;2;235;203;139m'   # Warning messages
 NORD14='\033[38;2;163;190;140m'   # Info messages
