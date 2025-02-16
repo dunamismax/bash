@@ -277,54 +277,11 @@ configure_firewall() {
     "$ufw_cmd" allow 22/tcp || log_warn "Failed to allow SSH"
     "$ufw_cmd" allow 80/tcp || log_warn "Failed to allow HTTP"
     "$ufw_cmd" allow 443/tcp || log_warn "Failed to allow HTTPS"
-    "$ufw_cmd" allow 32400/tcp || log_warn "Failed to allow Plex Media Server port"
     "$ufw_cmd" --force enable || handle_error "Failed to enable ufw firewall"
 
     systemctl enable ufw || log_warn "Failed to enable ufw service"
     systemctl start ufw || log_warn "Failed to start ufw service"
     log_info "Firewall configured and enabled."
-}
-
-install_plex() {
-    print_section "Plex Media Server Installation"
-    log_info "Installing Plex Media Server from downloaded .deb file..."
-
-    # Ensure curl is available.
-    if ! command -v curl >/dev/null; then
-        handle_error "curl is required but not installed. Please install curl."
-    fi
-
-    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
-    local temp_deb="/tmp/plexmediaserver.deb"
-
-    log_info "Downloading Plex Media Server package from ${plex_url}..."
-    if ! curl -L -o "$temp_deb" "$plex_url"; then
-        handle_error "Failed to download Plex Media Server .deb file."
-    fi
-
-    log_info "Installing Plex Media Server package..."
-    if ! dpkg -i "$temp_deb"; then
-        log_warn "dpkg encountered issues. Attempting to fix missing dependencies..."
-        apt install -f -y || handle_error "Failed to install dependencies for Plex Media Server."
-    fi
-
-    # Configure Plex to run as the specified user.
-    local PLEX_CONF="/etc/default/plexmediaserver"
-    if [ -f "$PLEX_CONF" ]; then
-        log_info "Configuring Plex to run as ${USERNAME}..."
-        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$PLEX_CONF" || \
-            log_warn "Failed to set Plex user in $PLEX_CONF"
-    else
-        log_warn "$PLEX_CONF not found; skipping user configuration."
-    fi
-
-    # Enable and restart Plex service.
-    log_info "Enabling Plex Media Server service..."
-    systemctl enable plexmediaserver || log_warn "Failed to enable Plex Media Server service."
-
-    # Clean up the temporary .deb file.
-    rm -f "$temp_deb"
-    log_info "Plex Media Server installed successfully."
 }
 
 caddy_config() {
@@ -390,65 +347,6 @@ caddy_config() {
     log_info "Caddy configuration completed successfully."
 }
 
-install_configure_zfs() {
-    print_section "ZFS Installation and Configuration"
-
-    # Define variables for the pool and its desired mount point.
-    local ZPOOL_NAME="WD_BLACK"
-    local MOUNT_POINT="/media/${ZPOOL_NAME}"
-
-    # -- Update Package Lists and Install Prerequisites --
-    log_info "Updating package lists..."
-    if ! apt update; then
-        log_error "Failed to update package lists."
-        return 1
-    fi
-
-    log_info "Installing prerequisites for ZFS..."
-    if ! apt install -y dpkg-dev linux-headers-generic linux-image-generic; then
-        log_error "Failed to install prerequisites."
-        return 1
-    fi
-
-    # -- Install ZFS Packages from Ubuntu's Official Repositories --
-    log_info "Installing ZFS packages..."
-    if ! DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux; then
-        log_error "Failed to install ZFS packages."
-        return 1
-    fi
-    log_info "ZFS packages installed successfully."
-
-    # -- Enable ZFS Services --
-    log_info "Enabling ZFS auto-import and mount services..."
-    if ! systemctl enable zfs-import-cache.service; then
-        log_warn "Could not enable zfs-import-cache.service."
-    fi
-    if ! systemctl enable zfs-mount.service; then
-        log_warn "Could not enable zfs-mount.service."
-    fi
-
-    # -- Import the ZFS Pool if Not Already Imported --
-    if ! zpool list "$ZPOOL_NAME" >/dev/null 2>&1; then
-        log_info "Importing ZFS pool '$ZPOOL_NAME'..."
-        if ! zpool import -f "$ZPOOL_NAME"; then
-            log_error "Failed to import ZFS pool '$ZPOOL_NAME'."
-            return 1
-        fi
-    else
-        log_info "ZFS pool '$ZPOOL_NAME' is already imported."
-    fi
-
-    # -- Set the Mountpoint for the ZFS Pool --
-    log_info "Setting mountpoint for ZFS pool '$ZPOOL_NAME' to '$MOUNT_POINT'..."
-    if ! zfs set mountpoint="${MOUNT_POINT}" "$ZPOOL_NAME"; then
-        log_warn "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
-    else
-        log_info "Mountpoint for pool '$ZPOOL_NAME' successfully set to '$MOUNT_POINT'."
-    fi
-
-    log_info "ZFS installation and configuration finished successfully."
-}
-
 setup_repos() {
     print_section "GitHub Repositories Setup"
     log_info "Setting up GitHub repositories for user '$USERNAME'..."
@@ -484,166 +382,6 @@ setup_repos() {
         log_warn "Failed to set ownership for '$GH_DIR'."
     else
         log_info "Ownership for '$GH_DIR' has been set to '$USERNAME'."
-    fi
-}
-
-enable_dunamismax_services() {
-    print_section "DunamisMax Services Setup"
-    log_info "Enabling DunamisMax website services..."
-
-    # DunamisMax AI Agents Service
-    cat <<EOF >/etc/systemd/system/dunamismax-ai-agents.service
-[Unit]
-Description=DunamisMax AI Agents Service
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/ai_agents
-Environment="PATH=/home/${USERNAME}/github/web/ai_agents/.venv/bin"
-EnvironmentFile=/home/${USERNAME}/github/web/ai_agents/.env
-ExecStart=/home/${USERNAME}/github/web/ai_agents/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8200
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # DunamisMax File Converter Service
-    cat <<EOF >/etc/systemd/system/dunamismax-files.service
-[Unit]
-Description=DunamisMax File Converter Service
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/converter_service
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/home/${USERNAME}/github/web/converter_service/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8300
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # DunamisMax Messenger Service
-    cat <<EOF >/etc/systemd/system/dunamismax-messenger.service
-[Unit]
-Description=DunamisMax Messenger
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/messenger
-Environment="PATH=/home/${USERNAME}/github/web/messenger/.venv/bin"
-ExecStart=/home/${USERNAME}/github/web/messenger/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8100
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # DunamisMax Notes Service
-    cat <<EOF >/etc/systemd/system/dunamismax-notes.service
-[Unit]
-Description=DunamisMax Notes Page
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/notes
-Environment="PATH=/home/${USERNAME}/github/web/notes/.venv/bin"
-ExecStart=/home/${USERNAME}/github/web/notes/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8500
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # DunamisMax Main Website Service
-    cat <<EOF >/etc/systemd/system/dunamismax.service
-[Unit]
-Description=DunamisMax Main Website
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/dunamismax
-Environment="PATH=/home/${USERNAME}/github/web/dunamismax/.venv/bin"
-ExecStart=/home/${USERNAME}/github/web/dunamismax/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Reload systemd configuration and enable the services
-    systemctl daemon-reload
-    systemctl enable dunamismax-ai-agents.service
-    systemctl enable dunamismax-files.service
-    systemctl enable dunamismax-messenger.service
-    systemctl enable dunamismax-notes.service
-    systemctl enable dunamismax.service
-
-    log_info "DunamisMax services enabled."
-}
-
-docker_config() {
-    print_section "Docker Configuration"
-    log_info "Starting Docker installation and configuration..."
-
-    # Install Docker if not already installed.
-    if command -v docker &>/dev/null; then
-        log_info "Docker is already installed."
-    else
-        log_info "Docker not found; updating package lists and installing Docker..."
-        apt install -y docker.io || handle_error "Failed to install Docker."
-        log_info "Docker installed successfully."
-    fi
-
-    # Add target user to the docker group if not already a member.
-    if ! id -nG "$USERNAME" | grep -qw docker; then
-        log_info "Adding user '$USERNAME' to the docker group..."
-        usermod -aG docker "$USERNAME" || log_warn "Failed to add $USERNAME to the docker group."
-    else
-        log_info "User '$USERNAME' is already in the docker group."
-    fi
-
-    # Configure Docker daemon.
-    mkdir -p /etc/docker || handle_error "Failed to create /etc/docker directory."
-    cat <<EOF >/etc/docker/daemon.json
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  },
-  "exec-opts": ["native.cgroupdriver=systemd"]
-}
-EOF
-    log_info "Docker daemon configuration updated."
-
-    # Enable and restart Docker service.
-    systemctl enable docker || log_warn "Could not enable Docker service."
-    systemctl restart docker || handle_error "Failed to restart Docker."
-    log_info "Docker service is enabled and running."
-
-    # Install Docker Compose if not installed.
-    log_info "Starting Docker Compose installation..."
-    if ! command -v docker-compose &>/dev/null; then
-        local version="2.20.2"
-        log_info "Docker Compose not found; downloading version ${version}..."
-        curl -L "https://github.com/docker/compose/releases/download/v${version}/docker-compose-$(uname -s)-$(uname -m)" \
-            -o /usr/local/bin/docker-compose || handle_error "Failed to download Docker Compose."
-        chmod +x /usr/local/bin/docker-compose || handle_error "Failed to set executable permission on Docker Compose."
-        log_info "Docker Compose installed successfully."
-    else
-        log_info "Docker Compose is already installed."
     fi
 }
 
@@ -1047,13 +785,9 @@ main() {
     install_packages
     configure_ssh
     configure_firewall
-    #install_plex
-    #install_configure_zfs
     caddy_config
-    #docker_config
     install_zig_binary
     deploy_user_scripts
-    #enable_dunamismax_services
     configure_periodic
     final_checks
     home_permissions
