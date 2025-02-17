@@ -73,7 +73,6 @@ done
 
 # Configuration Variables
 USERNAME="sawyer"
-TIMEZONE="America/New_York"
 
 # Zig installation configuration (x86_64 build)
 ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.3224+5ab511307.tar.xz"
@@ -140,12 +139,22 @@ create_user() {
 }
 
 configure_timezone() {
-  log_info "Setting timezone to $TIMEZONE..."
-  if [ -f "/usr/share/zoneinfo/${TIMEZONE}" ]; then
-    cp "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
-    echo "$TIMEZONE" > /etc/timezone
+  log_info "Installing and enabling chrony for automatic time synchronization..."
+
+  if ! apk add --no-cache chrony; then
+    log_warn "Failed to install chrony."
+    return 1
+  fi
+
+  # Add chronyd service to default runlevel and start it
+  if ! rc-update add chronyd default; then
+    log_warn "Failed to add chronyd to the default runlevel."
+  fi
+
+  if ! rc-service chronyd start; then
+    log_warn "Failed to start chronyd service."
   else
-    log_warn "Timezone file for $TIMEZONE not found."
+    log_info "Chrony has been installed, enabled, and started successfully."
   fi
 }
 
