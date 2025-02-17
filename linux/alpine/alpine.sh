@@ -519,7 +519,7 @@ home_permissions() {
 dotfiles_load() {
   log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
 
-  local source_dir="/home/${USERNAME}/github/linux/alpine/dotfiles"
+  local source_dir="/home/${USERNAME}/github/bash/linux/alpine/dotfiles"
   local files=( ".bashrc" ".profile" )
   local targets=( "/home/${USERNAME}" "/root" )
 
