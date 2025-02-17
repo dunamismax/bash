@@ -71,12 +71,23 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 #------------------------------------------------------------
 USERNAME="sawyer"
 PACKAGES=(
-  bash vim nano screen tmux mc apt-transport-https
-  build-essential cmake ninja-build meson gettext git nmap
-  openssh-server curl wget rsync htop python3 tzdata
-  iptables ca-certificates bash-completion
-  gdb strace iftop tcpdump lsof jq iproute2 less
-  dnsutils ncdu zip unzip gawk ethtool
+  # Editors and Terminal Utilities
+  vim nano screen tmux mc
+
+  # Development tools and build systems
+  build-essential cmake ninja-build meson gettext git pkg-config libssl-dev
+
+  # Networking and system exploration
+  nmap openssh-server curl wget rsync htop iptables ca-certificates bash-completion
+  gdb strace iftop tcpdump lsof jq iproute2 less dnsutils ncdu
+
+  # Compression, text processing, and miscellaneous utilities
+  zip unzip gawk ethtool tree exuberant-ctags silversearcher-ag ltrace iperf3
+
+  # Python development tools
+  python3 python3-pip python3-venv tzdata
+
+  # System services and logging
   chrony rsyslog cron sudo software-properties-common
 )
 
@@ -174,7 +185,7 @@ create_or_update_user() {
     log_info "User '$USERNAME' is already in the sudo group. Skipping group addition."
   else
     log_info "Adding user '$USERNAME' to sudo group..."
-    if ! usermod -aG sudo "$USERNAME"; then
+    if ! /usr/sbin/usermod -aG sudo "$USERNAME"; then
       handle_error "Failed to add user '$USERNAME' to sudo group." 1
     fi
     log_info "User '$USERNAME' added to sudo group successfully."
