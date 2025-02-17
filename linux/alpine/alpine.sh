@@ -346,27 +346,49 @@ secure_ssh_config() {
 
 #------------------------------------------------------------
 # configure_firewall
-#    Configures iptables with a secure default policy and adds necessary rules.
-#    Skips configuration if already applied.
+#    Configures iptables with secure default policies and adds
+#    necessary rules. If the INPUT chain default policy is already
+#    set to DROP, the function skips further configuration.
 #------------------------------------------------------------
 configure_firewall() {
   log_info "Configuring firewall (iptables)..."
+
+  # Get the current default policy for the INPUT chain.
+  # The output of "iptables -L INPUT" starts with a line like:
+  # "Chain INPUT (policy ACCEPT)"
+  # We extract the 4th field (e.g. "ACCEPT" or "DROP").
   local current_input_policy
-  current_input_policy=$(iptables -L INPUT --policy | awk '{print $4}')
-  if [ "$current_input_policy" == "DROP" ]; then
+  current_input_policy=$(iptables -L INPUT | head -n 1 | awk '{print $4}')
+
+  if [ "$current_input_policy" = "DROP" ]; then
     log_info "Firewall already configured (INPUT policy is DROP). Skipping rule configuration."
-  else
-    iptables -P INPUT DROP || handle_error "Could not set default INPUT policy." 1
-    iptables -P FORWARD DROP || handle_error "Could not set default FORWARD policy." 1
-    iptables -P OUTPUT ACCEPT || handle_error "Could not set default OUTPUT policy." 1
-    iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || handle_error "Failed to allow established connections." 1
-    iptables -A INPUT -i lo -j ACCEPT || handle_error "Failed to allow loopback." 1
-    iptables -A INPUT -p icmp -j ACCEPT || handle_error "Failed to allow ICMP." 1
-    for port in 22 80 443 32400; do
-      iptables -A INPUT -p tcp --dport "$port" -j ACCEPT || handle_error "Failed to allow TCP port $port." 1
-    done
-    log_info "Firewall rules configured successfully."
+    return 0
   fi
+
+  # Set default chain policies.
+  iptables -P INPUT DROP || handle_error "Could not set default INPUT policy." 1
+  iptables -P FORWARD DROP || handle_error "Could not set default FORWARD policy." 1
+  iptables -P OUTPUT ACCEPT || handle_error "Could not set default OUTPUT policy." 1
+
+  # Allow established and related incoming connections.
+  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || \
+    handle_error "Failed to allow established connections." 1
+
+  # Allow all loopback (lo) traffic.
+  iptables -A INPUT -i lo -j ACCEPT || \
+    handle_error "Failed to allow loopback traffic." 1
+
+  # Allow incoming ICMP (ping) packets.
+  iptables -A INPUT -p icmp -j ACCEPT || \
+    handle_error "Failed to allow ICMP traffic." 1
+
+  # Allow incoming TCP connections on selected ports.
+  for port in 22 80 443 32400; do
+    iptables -A INPUT -p tcp --dport "$port" -j ACCEPT || \
+      handle_error "Failed to allow TCP port $port." 1
+  done
+
+  log_info "Firewall rules configured successfully."
 }
 
 #------------------------------------------------------------
