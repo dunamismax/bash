@@ -11,7 +11,7 @@ NORD9='\033[38;2;129;161;193m'    # Debug messages
 NORD11='\033[38;2;191;97;106m'    # Error messages
 NORD13='\033[38;2;235;203;139m'   # Warning messages
 NORD14='\033[38;2;163;190;140m'   # Info messages
-NC='\033[0m'                     # Reset to No Color
+NC='\033[0m'                      # Reset to No Color
 
 LOG_FILE="/var/log/alpine_setup.log"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -81,12 +81,11 @@ ZIG_BIN="/usr/local/bin/zig"
 
 PACKAGES=(
   bash vim nano screen tmux mc
-  build-base cmake ninja meson gettext git
+  build-base cmake ninja meson gettext git nmap docker
   openssh curl wget rsync htop sudo python3 py3-pip tzdata
   iptables ca-certificates bash-completion openrc
-  go gdb strace man
-  xorg-server xinit dmenu xterm feh ttf-dejavu
-  i3wm i3blocks picom alacritty
+  gdb strace man iftop tcpdump traceroute lsof jq
+  bind-tools ncdu zip unzip gawk ethtool iproute2 less
 )
 
 check_root() {
