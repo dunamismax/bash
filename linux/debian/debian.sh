@@ -131,6 +131,17 @@ install_packages() {
 }
 
 #------------------------------------------------------------
+# apt_cleanup
+#    Removes unnecessary packages and cleans up the apt cache.
+#------------------------------------------------------------
+apt_cleanup() {
+  log_info "Cleaning up unnecessary packages and cache..."
+  apt-get autoremove -y || log_warn "apt-get autoremove failed."
+  apt-get clean || log_warn "apt-get clean failed."
+  log_info "Apt cleanup complete."
+}
+
+#------------------------------------------------------------
 # prompt_for_password
 #    Prompts the administrator to enter a password twice for user $USERNAME.
 #------------------------------------------------------------
@@ -176,10 +187,10 @@ create_user() {
 }
 
 #------------------------------------------------------------
-# configure_timezone
-#    Installs chrony, enables and starts its systemd service.
+# configure_time_sync
+#    Configures time synchronization using chrony.
 #------------------------------------------------------------
-configure_timezone() {
+configure_time_sync() {
   log_info "Configuring time synchronization with chrony..."
   if ! systemctl is-active --quiet chrony; then
     systemctl enable chrony || handle_error "Failed to enable chrony service." 1
@@ -249,9 +260,14 @@ secure_ssh_config() {
   cp "$sshd_config" "$backup_file" || handle_error "Failed to backup SSH config." 1
   log_info "Backed up SSH config to $backup_file."
   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config" || handle_error "Failed to set PermitRootLogin." 1
+  # Disable password authentication in favor of key-based auth
   sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config" || handle_error "Failed to set PasswordAuthentication." 1
   sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config" || handle_error "Failed to set ChallengeResponseAuthentication." 1
   sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config" || handle_error "Failed to set X11Forwarding." 1
+  # Ensure empty passwords are not allowed
+  if ! grep -q "^PermitEmptyPasswords no" "$sshd_config"; then
+    echo "PermitEmptyPasswords no" >> "$sshd_config" || handle_error "Failed to set PermitEmptyPasswords." 1
+  fi
   if ! systemctl restart ssh; then
     handle_error "Failed to restart SSH after hardening." 1
   fi
@@ -259,75 +275,57 @@ secure_ssh_config() {
 }
 
 #------------------------------------------------------------
-# configure_firewall
-#    Configures iptables with secure default policies.
+# configure_nftables_firewall
+#    Enables and sets the Firewall configuration using nftables.
 #------------------------------------------------------------
-configure_firewall() {
-  log_info "Configuring firewall (iptables)..."
-  iptables -P INPUT DROP || handle_error "Could not set default INPUT policy." 1
-  iptables -P FORWARD DROP || handle_error "Could not set default FORWARD policy." 1
-  iptables -P OUTPUT ACCEPT || handle_error "Could not set default OUTPUT policy." 1
+configure_nftables_firewall() {
+  log_info "Configuring firewall using nftables..."
 
-  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || \
-    handle_error "Failed to allow established connections." 1
-
-  iptables -A INPUT -i lo -j ACCEPT || \
-    handle_error "Failed to allow loopback traffic." 1
-
-  iptables -A INPUT -p icmp -j ACCEPT || \
-    handle_error "Failed to allow ICMP traffic." 1
-
-  for port in 22 80 443 32400; do
-    iptables -A INPUT -p tcp --dport "$port" -j ACCEPT || \
-      handle_error "Failed to allow TCP port $port." 1
-  done
-
-  log_info "Firewall rules configured successfully."
-}
-
-#------------------------------------------------------------
-# persist_firewall
-#    Saves current iptables rules to a persistent file.
-#------------------------------------------------------------
-persist_firewall() {
-  log_info "Persisting firewall rules..."
-  mkdir -p /etc/iptables || handle_error "Failed to create /etc/iptables directory." 1
-  if iptables-save > /etc/iptables/rules.v4; then
-    log_info "Firewall rules saved to /etc/iptables/rules.v4."
-  else
-    handle_error "Failed to save iptables rules." 1
+  # Backup existing configuration if present
+  if [ -f /etc/nftables.conf ]; then
+    cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
+    log_info "Existing /etc/nftables.conf backed up to /etc/nftables.conf.bak."
   fi
+
+  # Flush any current ruleset
+  nft flush ruleset || handle_error "Failed to flush current nftables ruleset." 1
+
+  # Write new nftables configuration (persisted to /etc/nftables.conf)
+  cat << 'EOF' > /etc/nftables.conf
+#!/usr/sbin/nft -f
+table inet filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        # Allow established and related connections
+        ct state established,related accept
+        # Allow loopback traffic
+        iif "lo" accept
+        # Allow ICMP (ping)
+        ip protocol icmp accept
+        # Allow TCP connections on essential ports
+        tcp dport { 22, 80, 443, 32400 } accept
+    }
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
 }
-
-#------------------------------------------------------------
-# configure_systemd_firewall_restore
-#    Creates a systemd unit to restore firewall rules at boot.
-#------------------------------------------------------------
-configure_systemd_firewall_restore() {
-  log_info "Configuring systemd service for firewall restoration..."
-  local unit_file="/etc/systemd/system/iptables-restore.service"
-  if [ -f "$unit_file" ]; then
-    log_info "Systemd firewall restore service already exists. Skipping."
-  else
-    cat << 'EOF' > "$unit_file"
-[Unit]
-Description=Restore iptables rules
-Before=network-pre.target
-Wants=network-pre.target
-
-[Service]
-Type=oneshot
-ExecStart=/sbin/iptables-restore /etc/iptables/rules.v4
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
 EOF
-    chmod 644 "$unit_file" || handle_error "Failed to set permissions for $unit_file." 1
-    systemctl daemon-reload || handle_error "Failed to reload systemd daemon." 1
-    systemctl enable iptables-restore.service || handle_error "Failed to enable iptables restore service." 1
-    log_info "Systemd firewall restore service configured successfully."
+  if [ $? -ne 0 ]; then
+    handle_error "Failed to write /etc/nftables.conf." 1
   fi
+  log_info "New nftables configuration written to /etc/nftables.conf."
+
+  # Load the new nftables rules
+  nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
+  log_info "nftables rules loaded successfully."
+
+  # Enable and restart the nftables service so that rules persist across reboots
+  systemctl enable nftables.service || handle_error "Failed to enable nftables service." 1
+  systemctl restart nftables.service || handle_error "Failed to restart nftables service." 1
+  log_info "nftables service enabled and restarted; firewall configuration persisted."
 }
 
 #------------------------------------------------------------
@@ -371,53 +369,6 @@ deploy_user_scripts() {
 }
 
 #------------------------------------------------------------
-# setup_cron
-#    Starts the cron service (redundant if already started by system services).
-#------------------------------------------------------------
-setup_cron() {
-  log_info "Starting cron service..."
-  if systemctl restart cron; then
-    log_info "Cron service restarted successfully."
-  else
-    handle_error "Failed to restart cron service." 1
-  fi
-}
-
-#------------------------------------------------------------
-# secure_sysctl
-#    Applies kernel hardening settings via sysctl.
-#------------------------------------------------------------
-secure_sysctl() {
-  log_info "Applying sysctl kernel hardening settings..."
-  local sysctl_conf="/etc/sysctl.conf"
-  if grep -q "net.ipv4.tcp_syncookies" "$sysctl_conf" 2>/dev/null; then
-    log_info "Sysctl settings already applied. Skipping."
-    return 0
-  fi
-  if [ -f "$sysctl_conf" ]; then
-    cp "$sysctl_conf" "${sysctl_conf}.bak" || handle_error "Failed to backup $sysctl_conf" 1
-    log_info "Backed up existing sysctl.conf to ${sysctl_conf}.bak."
-  else
-    log_info "No existing sysctl.conf found; creating a new one."
-  fi
-  cat << 'EOF' >> "$sysctl_conf"
-# Harden network parameters
-net.ipv4.tcp_syncookies = 1
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.icmp_echo_ignore_broadcasts = 1
-net.ipv4.icmp_ignore_bogus_error_responses = 1
-net.ipv4.tcp_rfc1337 = 1
-EOF
-  if sysctl -p; then
-    log_info "Sysctl settings applied successfully."
-  else
-    handle_error "Failed to apply sysctl settings." 1
-  fi
-}
-
-#------------------------------------------------------------
 # home_permissions
 #    Ensures that the user’s home directory has the correct ownership and permissions.
 #------------------------------------------------------------
@@ -436,6 +387,10 @@ home_permissions() {
 dotfiles_load() {
   log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
   local source_dir="/home/${USERNAME}/github/bash/linux/debian/dotfiles"
+  if [ ! -d "$source_dir" ]; then
+    log_warn "Dotfiles source directory $source_dir does not exist. Skipping dotfiles copy."
+    return 0
+  fi
   local files=( ".bashrc" ".profile" )
   local targets=( "/home/${USERNAME}" "/root" )
   for file in "${files[@]}"; do
@@ -453,7 +408,7 @@ dotfiles_load() {
 
 #------------------------------------------------------------
 # set_default_shell
-#    Sets /bin/bash as the default shell for user $USERNAME and root.
+#    Sets /bin/bash as the default shell for user $USERNAME and root using chsh.
 #------------------------------------------------------------
 set_default_shell() {
   local target_shell="/bin/bash"
@@ -462,23 +417,17 @@ set_default_shell() {
     return 1
   fi
   log_info "Setting default shell to $target_shell for user '$USERNAME' and root."
-  if grep -q "^$USERNAME:.*$target_shell\$" /etc/passwd; then
-    log_info "User '$USERNAME' already has $target_shell as default shell. Skipping."
-  elif grep -q "^$USERNAME:" /etc/passwd; then
-    sed -i -E "s|^($USERNAME:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*):[^:]*\$|\1:$target_shell|" /etc/passwd && \
-      log_info "Set default shell for user '$USERNAME' to $target_shell." || \
-      { log_error "Failed to set shell for user '$USERNAME'."; return 1; }
+  if chsh -s "$target_shell" "$USERNAME"; then
+    log_info "Set default shell for user '$USERNAME' to $target_shell."
   else
-    log_warn "User '$USERNAME' not found in /etc/passwd. Skipping user shell update."
+    log_error "Failed to set shell for user '$USERNAME'."
+    return 1
   fi
-  if grep -q "^root:.*$target_shell\$" /etc/passwd; then
-    log_info "Root already uses $target_shell as default shell. Skipping."
-  elif grep -q "^root:" /etc/passwd; then
-    sed -i -E "s|^(root:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*):[^:]*\$|\1:$target_shell|" /etc/passwd && \
-      log_info "Set default shell for root to $target_shell." || \
-      { log_error "Failed to set shell for root."; return 1; }
+  if chsh -s "$target_shell" root; then
+    log_info "Set default shell for root to $target_shell."
   else
-    log_warn "Root entry not found in /etc/passwd. Skipping root shell update."
+    log_error "Failed to set shell for root."
+    return 1
   fi
   log_info "Default shell configuration complete."
 }
@@ -493,20 +442,17 @@ main() {
   update_system
   install_packages
   create_user
-  configure_timezone
+  configure_time_sync
   setup_repos
   configure_ssh
   secure_ssh_config
-  configure_firewall
-  persist_firewall
-  configure_systemd_firewall_restore
-  secure_sysctl
+  configure_nftables_firewall
   deploy_user_scripts
-  setup_cron
   configure_system_services
   home_permissions
   dotfiles_load
   set_default_shell
+  apt_cleanup
   log_info "Debian system setup completed successfully."
 }
 
