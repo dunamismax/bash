@@ -153,42 +153,22 @@ apt_cleanup() {
 }
 
 #------------------------------------------------------------
-# create_or_update_user
-#    Creates the user (if not already present) and prompts for a
-#    password, then ensures the user is added to the sudo group.
+# configure_sudo
+#    Ensures the user (assumed to already exist as $USERNAME)
+#    is granted sudo privileges by being added to the sudo group.
 #------------------------------------------------------------
-create_or_update_user() {
-  if id "$USERNAME" &>/dev/null; then
-    log_info "User '$USERNAME' already exists. Skipping creation and proceeding to sudo group addition."
-  else
-    log_info "Creating user '$USERNAME' with home directory..."
-    if ! useradd -m -s /bin/bash "$USERNAME"; then
-      handle_error "Failed to create user '$USERNAME'." 1
-    fi
-    # Prompt for password
-    local pass1 pass2
-    read -s -p "Enter password for user $USERNAME: " pass1 || handle_error "Failed to read password" 1
-    echo
-    read -s -p "Retype password for user $USERNAME: " pass2 || handle_error "Failed to read password confirmation" 1
-    echo
-    if [ "$pass1" != "$pass2" ]; then
-      handle_error "Passwords do not match." 1
-    fi
-    if ! echo "$USERNAME:$pass1" | chpasswd; then
-      handle_error "Failed to set password for '$USERNAME'." 1
-    fi
-    log_info "User '$USERNAME' created successfully."
-  fi
+configure_sudo() {
+  log_info "Configuring sudo privileges for user '$USERNAME'..."
 
-  # Add the user to the sudo group if not already a member
+  # Check if user is already in the sudo group
   if id -nG "$USERNAME" | grep -qw "sudo"; then
-    log_info "User '$USERNAME' is already in the sudo group. Skipping group addition."
+    log_info "User '$USERNAME' is already in the sudo group. No changes needed."
   else
-    log_info "Adding user '$USERNAME' to sudo group..."
+    log_info "Adding user '$USERNAME' to the sudo group..."
     if ! /usr/sbin/usermod -aG sudo "$USERNAME"; then
-      handle_error "Failed to add user '$USERNAME' to sudo group." 1
+      handle_error "Failed to add user '$USERNAME' to the sudo group." 1
     fi
-    log_info "User '$USERNAME' added to sudo group successfully."
+    log_info "User '$USERNAME' added to the sudo group successfully."
   fi
 }
 
@@ -454,7 +434,7 @@ main() {
   check_network
   update_system
   install_packages
-  create_or_update_user
+  configure_sudo
   configure_time_sync
   setup_repos
   configure_ssh
