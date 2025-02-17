@@ -136,25 +136,47 @@ install_packages() {
 }
 
 #------------------------------------------------------------
+# prompt_for_password
+#    Prompts the administrator to enter a password twice for user $USERNAME.
+#    If the two entries match, sets the password using chpasswd.
+#    Exits immediately if the passwords do not match or if setting the password fails.
+#------------------------------------------------------------
+prompt_for_password() {
+  local pass1 pass2
+  read -s -p "Enter password for user $USERNAME: " pass1 || handle_error "Failed to read password" 1
+  echo
+  read -s -p "Retype password for user $USERNAME: " pass2 || handle_error "Failed to read password confirmation" 1
+  echo
+  if [ "$pass1" != "$pass2" ]; then
+    handle_error "Passwords do not match." 1
+  fi
+  if ! echo "$USERNAME:$pass1" | chpasswd; then
+    handle_error "Failed to set password for '$USERNAME'." 1
+  fi
+}
+
+#------------------------------------------------------------
 # create_user
-#    Creates the user (if not already present), sets a default password,
-#    and configures doas for administrative privileges by adding the user
-#    to the wheel group and setting up /etc/doas.d/doas.conf.
+#    Creates the user (if not already present) without a password,
+#    then prompts for a password to set (with confirmation),
+#    adds the user to the wheel group for administrative privileges,
+#    and configures doas (instead of sudo) accordingly.
+#
+#    The function is idempotent; it skips any step already done.
+#    On any failure, it immediately logs an error and exits.
 #------------------------------------------------------------
 create_user() {
   # Check if the user already exists.
   if id "$USERNAME" &>/dev/null; then
     log_info "User '$USERNAME' already exists. Skipping user creation."
   else
-    log_info "Creating user '$USERNAME'..."
-    # Create a new user with the default home directory and ash as shell.
+    log_info "Creating user '$USERNAME' without a password..."
+    # Create a new user non-interactively (with -D, meaning disabled password)
     if ! adduser -D "$USERNAME"; then
       handle_error "Failed to create user '$USERNAME'." 1
     fi
-    # Set a default password (change 'changeme' as needed).
-    if ! echo "$USERNAME:changeme" | chpasswd; then
-      handle_error "Failed to set password for '$USERNAME'." 1
-    fi
+    # Prompt for and set the password interactively.
+    prompt_for_password
     log_info "User '$USERNAME' created successfully."
   fi
 
@@ -188,13 +210,12 @@ create_user() {
     fi
   fi
 
-  # If doas.conf exists and already contains a permit rule for wheel, skip.
+  # If doas.conf already contains a permit rule for wheel, skip.
   if [ -f "$doas_conf_file" ] && grep -q -E '^permit( +nopass)?( +persist)? +:wheel' "$doas_conf_file"; then
     log_info "doas configuration for wheel group already exists. Skipping doas configuration."
   else
     log_info "Configuring doas for wheel group..."
     echo "permit persist :wheel" > "$doas_conf_file" || handle_error "Failed to write doas configuration to $doas_conf_file." 1
-    # Ensure proper permissions for doas.conf.
     chmod 0400 "$doas_conf_file" || handle_error "Failed to set permissions for $doas_conf_file." 1
     log_info "doas configured successfully."
   fi
