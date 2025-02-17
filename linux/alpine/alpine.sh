@@ -276,31 +276,6 @@ setup_repos() {
 }
 
 #------------------------------------------------------------
-# copy_shell_configs
-#    Copies shell configuration files from the dotfiles repo to the user’s home,
-#    backing up any existing files.
-#------------------------------------------------------------
-copy_shell_configs() {
-  log_info "Copying shell configuration files..."
-  for file in .bashrc .profile; do
-    local src="/home/${USERNAME}/github/bash/linux/dotfiles/$file"
-    local dest="/home/${USERNAME}/$file"
-    if [ ! -f "$src" ]; then
-      handle_error "Source file $src not found." 1
-    fi
-    if [ -f "$dest" ]; then
-      cp "$dest" "${dest}.bak" || handle_error "Failed to backup $dest" 1
-      log_info "Backed up existing $dest to ${dest}.bak."
-    fi
-    if ! cp -f "$src" "$dest"; then
-      handle_error "Failed to copy $src to $dest." 1
-    fi
-    chown "${USERNAME}:${USERNAME}" "$dest" || handle_error "Failed to set ownership for $dest." 1
-    log_info "Copied $src to $dest."
-  done
-}
-
-#------------------------------------------------------------
 # configure_ssh
 #    Ensures OpenRC is installed, adds the SSH daemon to runlevel,
 #    and restarts the SSH service.
@@ -619,7 +594,6 @@ main() {
   create_user
   configure_timezone
   setup_repos
-  copy_shell_configs
   configure_ssh
   secure_ssh_config
   configure_firewall
