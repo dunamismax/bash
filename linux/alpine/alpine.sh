@@ -73,20 +73,6 @@ trap cleanup EXIT
 trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 
 #------------------------------------------------------------
-# Helper: command_exists
-#------------------------------------------------------------
-# command_exists CMD
-#    Verifies that a required command is available in the PATH.
-command_exists() {
-  if ! command -v "$1" &>/dev/null; then
-    handle_error "Required command '$1' not found. Exiting." 1
-  fi
-}
-for cmd in curl tar git rsync; do
-  command_exists "$cmd"
-done
-
-#------------------------------------------------------------
 # Global Configuration Variables
 #------------------------------------------------------------
 USERNAME="sawyer"
