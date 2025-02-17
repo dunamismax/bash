@@ -142,39 +142,34 @@ apt_cleanup() {
 }
 
 #------------------------------------------------------------
-# prompt_for_password
-#    Prompts the administrator to enter a password twice for user $USERNAME.
+# create_or_update_user
+#    Creates the user (if not already present) and prompts for a
+#    password, then ensures the user is added to the sudo group.
 #------------------------------------------------------------
-prompt_for_password() {
-  local pass1 pass2
-  read -s -p "Enter password for user $USERNAME: " pass1 || handle_error "Failed to read password" 1
-  echo
-  read -s -p "Retype password for user $USERNAME: " pass2 || handle_error "Failed to read password confirmation" 1
-  echo
-  if [ "$pass1" != "$pass2" ]; then
-    handle_error "Passwords do not match." 1
-  fi
-  if ! echo "$USERNAME:$pass1" | chpasswd; then
-    handle_error "Failed to set password for '$USERNAME'." 1
-  fi
-}
-
-#------------------------------------------------------------
-# create_user
-#    Creates the user (if not already present) and adds them to the sudo group.
-#------------------------------------------------------------
-create_user() {
+create_or_update_user() {
   if id "$USERNAME" &>/dev/null; then
-    log_info "User '$USERNAME' already exists. Skipping user creation."
+    log_info "User '$USERNAME' already exists. Skipping creation and proceeding to sudo group addition."
   else
     log_info "Creating user '$USERNAME' with home directory..."
     if ! useradd -m -s /bin/bash "$USERNAME"; then
       handle_error "Failed to create user '$USERNAME'." 1
     fi
-    prompt_for_password
+    # Prompt for password
+    local pass1 pass2
+    read -s -p "Enter password for user $USERNAME: " pass1 || handle_error "Failed to read password" 1
+    echo
+    read -s -p "Retype password for user $USERNAME: " pass2 || handle_error "Failed to read password confirmation" 1
+    echo
+    if [ "$pass1" != "$pass2" ]; then
+      handle_error "Passwords do not match." 1
+    fi
+    if ! echo "$USERNAME:$pass1" | chpasswd; then
+      handle_error "Failed to set password for '$USERNAME'." 1
+    fi
     log_info "User '$USERNAME' created successfully."
   fi
 
+  # Add the user to the sudo group if not already a member
   if id -nG "$USERNAME" | grep -qw "sudo"; then
     log_info "User '$USERNAME' is already in the sudo group. Skipping group addition."
   else
@@ -418,7 +413,7 @@ main() {
   check_network
   update_system
   install_packages
-  create_user
+  create_or_update_user
   configure_time_sync
   setup_repos
   configure_ssh
