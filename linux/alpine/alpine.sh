@@ -530,18 +530,6 @@ EOF
 }
 
 #------------------------------------------------------------
-# final_checks
-#    Outputs basic system status information.
-#------------------------------------------------------------
-final_checks() {
-  log_info "Performing final system checks:"
-  echo "Kernel: $(uname -r)"
-  echo "Uptime: $(uptime -p)"
-  df -h / || handle_error "Failed to get disk usage." 1
-  free -h || true
-}
-
-#------------------------------------------------------------
 # home_permissions
 #    Ensures that the user’s home directory has the correct ownership and permissions.
 #------------------------------------------------------------
@@ -601,7 +589,6 @@ main() {
   setup_cron
   configure_openrc_local
   configure_busybox_services
-  final_checks
   home_permissions
   dotfiles_load
   log_info "Alpine Linux system setup completed successfully."
