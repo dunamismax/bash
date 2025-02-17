@@ -538,28 +538,32 @@ home_permissions() {
 
 #------------------------------------------------------------
 # dotfiles_load
-#    Synchronizes configuration directories from the dotfiles repository.
+#    Copies .bashrc and .profile from the dotfiles repository into both
+#    the regular user's home directory and the root user's home directory.
 #------------------------------------------------------------
 dotfiles_load() {
-  log_info "Loading dotfiles configuration..."
-  local config_dirs=( "alacritty" "i3" "i3blocks" "picom" )
-  for dir in "${config_dirs[@]}"; do
-    mkdir -p "/home/${USERNAME}/.config/$dir" || handle_error "Failed to create /home/${USERNAME}/.config/$dir" 1
+  log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
+
+  local source_dir="/home/${USERNAME}/github/linux/alpine/dotfiles"
+  local files=( ".bashrc" ".profile" )
+  local targets=( "/home/${USERNAME}" "/root" )
+
+  for file in "${files[@]}"; do
+    for target in "${targets[@]}"; do
+      # If the target file exists, create a backup.
+      if [ -f "${target}/${file}" ]; then
+        cp "${target}/${file}" "${target}/${file}.bak" \
+          || handle_error "Failed to backup ${target}/${file}" 1
+        log_info "Backed up ${target}/${file} to ${target}/${file}.bak."
+      fi
+      # Copy the file from the repository.
+      cp -f "${source_dir}/${file}" "${target}/${file}" \
+        || handle_error "Failed to copy ${source_dir}/${file} to ${target}/${file}" 1
+      log_info "Copied ${file} to ${target}."
+    done
   done
-  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/alacritty/" "/home/${USERNAME}/.config/alacritty/"; then
-    handle_error "Failed to sync alacritty config." 1
-  fi
-  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3/" "/home/${USERNAME}/.config/i3/"; then
-    handle_error "Failed to sync i3 config." 1
-  fi
-  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks/" "/home/${USERNAME}/.config/i3blocks/"; then
-    handle_error "Failed to sync i3blocks config." 1
-  fi
-  chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" 2>/dev/null || handle_error "Failed to set execute permissions on i3blocks scripts." 1
-  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/"; then
-    handle_error "Failed to sync picom config." 1
-  fi
-  log_info "Dotfiles loaded successfully."
+
+  log_info "Dotfiles copy complete."
 }
 
 #------------------------------------------------------------
