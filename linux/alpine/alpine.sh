@@ -220,32 +220,6 @@ secure_ssh_config() {
   fi
 }
 
-install_zig_binary() {
-  log_info "Installing Zig binary..."
-  if ! apk add --no-cache curl tar; then
-    log_warn "Failed to install curl and tar."
-  fi
-  rm -rf "$ZIG_DIR"
-  mkdir -p "$ZIG_DIR"
-  tmp_tar="/tmp/zig.tar.xz"
-  if curl -L -o "$tmp_tar" "$ZIG_URL"; then
-    if tar -xf "$tmp_tar" -C "$ZIG_DIR" --strip-components=1; then
-      ln -sf "$ZIG_DIR/zig" "$ZIG_BIN"
-      rm -f "$tmp_tar"
-      if ! "$ZIG_BIN" version &>/dev/null; then
-        log_error "Zig installation failed."
-      else
-        log_info "Zig installed successfully."
-      fi
-    else
-      log_warn "Failed to extract Zig tarball."
-      rm -f "$tmp_tar"
-    fi
-  else
-    log_error "Failed to download Zig."
-  fi
-}
-
 configure_firewall() {
   log_info "Configuring firewall (iptables)..."
   iptables -P INPUT DROP || log_warn "Could not set default INPUT policy."
@@ -384,66 +358,6 @@ dotfiles_load() {
   rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/" || log_warn "Failed to sync picom config."
 }
 
-build_ly() {
-  log_info "Building and installing Ly display manager..."
-  if ! apk add --no-cache linux-pam-dev libxcb-dev xcb-util-dev xcb-util-keysyms-dev \
-    xcb-util-wm-dev xcb-util-cursor-dev libxkbcommon-dev libxkbcommon-x11-dev; then
-    log_warn "One or more Ly build dependencies failed to install."
-  fi
-
-  local LY_DIR="/opt/ly"
-  rm -rf "$LY_DIR"
-  if ! git clone https://github.com/fairyglade/ly.git "$LY_DIR"; then
-    log_error "Failed to clone Ly repository."
-    return 1
-  fi
-
-  cd "$LY_DIR" || { log_error "Failed to change directory to $LY_DIR."; return 1; }
-
-  log_info "Compiling Ly with Zig..."
-  if ! zig build; then
-    log_error "Compilation of Ly failed."
-    return 1
-  fi
-
-  if cp ./ly /usr/local/bin/ly; then
-    chmod +x /usr/local/bin/ly
-    log_info "Ly installed to /usr/local/bin/ly."
-  else
-    log_warn "Failed to copy the Ly binary."
-  fi
-
-  cat << 'EOF' > /etc/init.d/ly
-#!/sbin/openrc-run
-description="Ly Display Manager"
-command="/usr/local/bin/ly"
-command_background=true
-pidfile="/run/ly.pid"
-depend() {
-    need localmount
-    before login
-}
-EOF
-  chmod +x /etc/init.d/ly
-  if rc-update add ly default; then
-    log_info "Ly service added to default runlevel."
-  else
-    log_warn "Failed to add ly to default runlevel."
-  fi
-
-  log_info "Ly display manager has been built and configured. (Disable conflicting gettys manually if necessary.)"
-}
-
-prompt_reboot() {
-  read -rp "Reboot now? [y/N]: " answer
-  if [[ "$answer" =~ ^[Yy]$ ]]; then
-    log_info "Rebooting system..."
-    reboot
-  else
-    log_info "Reboot canceled. Please reboot later to apply all changes."
-  fi
-}
-
 main() {
   check_root
   check_network
@@ -455,7 +369,6 @@ main() {
   copy_shell_configs
   configure_ssh
   secure_ssh_config
-  install_zig_binary
   configure_firewall
   persist_firewall
   secure_sysctl
@@ -466,7 +379,6 @@ main() {
   final_checks
   home_permissions
   dotfiles_load
-  build_ly
   prompt_reboot
 }
 
