@@ -329,29 +329,6 @@ EOF
 }
 
 #------------------------------------------------------------
-# configure_system_services
-#    Ensures that system services like rsyslog and cron are enabled and running.
-#------------------------------------------------------------
-configure_system_services() {
-  log_info "Ensuring system services are enabled..."
-  if ! systemctl is-enabled --quiet rsyslog; then
-    systemctl enable rsyslog || handle_error "Failed to enable rsyslog." 1
-    systemctl start rsyslog || handle_error "Failed to start rsyslog." 1
-    log_info "Rsyslog service enabled and started."
-  else
-    log_info "Rsyslog service already enabled."
-  fi
-
-  if ! systemctl is-enabled --quiet cron; then
-    systemctl enable cron || handle_error "Failed to enable cron." 1
-    systemctl start cron || handle_error "Failed to start cron." 1
-    log_info "Cron service enabled and started."
-  else
-    log_info "Cron service already enabled."
-  fi
-}
-
-#------------------------------------------------------------
 # deploy_user_scripts
 #    Deploys user scripts from the repository to the user’s bin directory.
 #------------------------------------------------------------
@@ -448,7 +425,6 @@ main() {
   secure_ssh_config
   configure_nftables_firewall
   deploy_user_scripts
-  configure_system_services
   home_permissions
   dotfiles_load
   set_default_shell
