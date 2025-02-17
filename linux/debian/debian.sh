@@ -287,14 +287,21 @@ secure_ssh_config() {
 configure_nftables_firewall() {
   log_info "Configuring firewall using nftables..."
 
+  # Check if nft command exists; if not, install nftables package.
+  if ! command -v nft >/dev/null 2>&1; then
+    log_info "nft command not found. Installing nftables package..."
+    apt-get update || handle_error "Failed to update APT package index." 1
+    apt-get install -y nftables || handle_error "Failed to install nftables." 1
+  fi
+
   # Backup existing configuration if present
   if [ -f /etc/nftables.conf ]; then
     cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
     log_info "Existing /etc/nftables.conf backed up to /etc/nftables.conf.bak."
   fi
 
-  # Flush any current ruleset
-  nft flush ruleset || handle_error "Failed to flush current nftables ruleset." 1
+  # Flush any current ruleset using full path to nft
+  /usr/sbin/nft flush ruleset || handle_error "Failed to flush current nftables ruleset." 1
 
   # Write new nftables configuration (persisted to /etc/nftables.conf)
   cat << 'EOF' > /etc/nftables.conf
@@ -324,8 +331,8 @@ EOF
   fi
   log_info "New nftables configuration written to /etc/nftables.conf."
 
-  # Load the new nftables rules
-  nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
+  # Load the new nftables rules using full path to nft
+  /usr/sbin/nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
   log_info "nftables rules loaded successfully."
 
   # Enable and restart the nftables service so that rules persist across reboots
