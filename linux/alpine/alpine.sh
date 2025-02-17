@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Alpine Linux System Setup Script
-# Fully configures a clean install of Alpine with all needed tools and configurations for hardening,
-# security, and development.
+# Fully configures a clean install of Alpine with all needed tools and configurations
+# for hardening, security, and development.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-# Color definitions for logging
+#------------------------------------------------------------
+# Color definitions for logging output
+#------------------------------------------------------------
 NORD9='\033[38;2;129;161;193m'    # Debug messages
 NORD11='\033[38;2;191;97;106m'    # Error messages
 NORD13='\033[38;2;235;203;139m'   # Warning messages
@@ -14,10 +16,15 @@ NORD14='\033[38;2;163;190;140m'   # Info messages
 NC='\033[0m'                      # Reset to No Color
 
 LOG_FILE="/var/log/alpine_setup.log"
-mkdir -p "$(dirname "$LOG_FILE")"
-touch "$LOG_FILE"
-chmod 600 "$LOG_FILE"
+mkdir -p "$(dirname "$LOG_FILE")" || { echo "Cannot create log directory"; exit 1; }
+touch "$LOG_FILE" || { echo "Cannot create log file"; exit 1; }
+chmod 600 "$LOG_FILE" || { echo "Cannot set log file permissions"; exit 1; }
 
+#------------------------------------------------------------
+# Logging Functions
+#------------------------------------------------------------
+# log LEVEL MESSAGE
+#    Writes a timestamped, colored log message to the log file and to stderr (if interactive).
 log() {
   local level="${1:-INFO}"
   shift
@@ -25,7 +32,6 @@ log() {
   local timestamp
   timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
   local entry="[$timestamp] [${level^^}] $message"
-
   echo "$entry" >> "$LOG_FILE"
   if [ -t 2 ]; then
     case "${level^^}" in
@@ -44,6 +50,11 @@ log_warn()  { log WARN "$@"; }
 log_error() { log ERROR "$@"; }
 log_debug() { log DEBUG "$@"; }
 
+#------------------------------------------------------------
+# Error Handling & Cleanup
+#------------------------------------------------------------
+# handle_error MESSAGE EXIT_CODE
+#    Logs the error with line number and function context and exits immediately.
 handle_error() {
   local msg="${1:-An unknown error occurred.}"
   local code="${2:-1}"
@@ -53,27 +64,32 @@ handle_error() {
   exit "$code"
 }
 
+# cleanup
+#    Performs cleanup tasks (if any). Runs on EXIT.
 cleanup() {
   log_info "Cleanup tasks complete."
 }
 trap cleanup EXIT
 trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 
-# Check for required commands
+#------------------------------------------------------------
+# Helper: command_exists
+#------------------------------------------------------------
+# command_exists CMD
+#    Verifies that a required command is available in the PATH.
 command_exists() {
   if ! command -v "$1" &>/dev/null; then
-    log_error "Required command '$1' not found. Exiting."
-    exit 1
+    handle_error "Required command '$1' not found. Exiting." 1
   fi
 }
-
 for cmd in curl tar git rsync; do
   command_exists "$cmd"
 done
 
-# Configuration Variables
+#------------------------------------------------------------
+# Global Configuration Variables
+#------------------------------------------------------------
 USERNAME="sawyer"
-
 PACKAGES=(
   bash vim nano screen tmux mc
   build-base cmake ninja meson gettext git nmap docker
@@ -83,231 +99,355 @@ PACKAGES=(
   bind-tools ncdu zip unzip gawk ethtool iproute2 less
 )
 
+#------------------------------------------------------------
+# check_root
+#    Ensures the script is run as root.
+#------------------------------------------------------------
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
-    log_error "Script must be run as root. Exiting."
-    exit 1
+    handle_error "Script must be run as root. Exiting." 1
   fi
+  log_info "Running as root."
 }
 
+#------------------------------------------------------------
+# check_network
+#    Verifies network connectivity by pinging google.com.
+#------------------------------------------------------------
 check_network() {
   log_info "Checking network connectivity..."
   if ! ping -c1 -W5 google.com &>/dev/null; then
-    log_warn "No network connectivity detected."
-  else
-    log_info "Network connectivity OK."
+    handle_error "No network connectivity detected." 1
   fi
+  log_info "Network connectivity OK."
 }
 
+#------------------------------------------------------------
+# update_system
+#    Updates package repositories and upgrades the system.
+#------------------------------------------------------------
 update_system() {
   log_info "Updating package repositories..."
-  if ! apk update || ! apk upgrade; then
-    log_warn "System update/upgrade encountered issues."
+  if ! apk update; then
+    handle_error "Failed to update package repositories." 1
   fi
+  if ! apk upgrade; then
+    handle_error "Failed to upgrade system." 1
+  fi
+  log_info "System update and upgrade complete."
 }
 
+#------------------------------------------------------------
+# install_packages
+#    Installs essential packages via apk.
+#------------------------------------------------------------
 install_packages() {
   log_info "Installing essential packages..."
   if ! apk add --no-cache "${PACKAGES[@]}"; then
-    log_warn "One or more packages failed to install."
-  else
-    log_info "Package installation complete."
+    handle_error "Package installation failed." 1
   fi
+  log_info "Package installation complete."
 }
 
+#------------------------------------------------------------
+# create_user
+#    Creates the user (if not already present), sets a default password,
+#    and adds the user to sudoers if not already configured.
+#------------------------------------------------------------
 create_user() {
-  if ! id "$USERNAME" &>/dev/null; then
-    log_info "Creating user '$USERNAME'..."
-    if ! adduser -D "$USERNAME"; then
-      log_warn "Failed to create user '$USERNAME'."
-    fi
-    if ! echo "$USERNAME:changeme" | chpasswd; then
-      log_warn "Failed to set password for '$USERNAME'."
-    fi
-    if ! grep -q "^$USERNAME" /etc/sudoers; then
-      echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers
-    fi
-  else
-    log_info "User '$USERNAME' already exists."
+  if id "$USERNAME" &>/dev/null; then
+    log_info "User '$USERNAME' already exists. Skipping user creation."
+    return 0
   fi
+  log_info "Creating user '$USERNAME'..."
+  if ! adduser -D "$USERNAME"; then
+    handle_error "Failed to create user '$USERNAME'." 1
+  fi
+  if ! echo "$USERNAME:changeme" | chpasswd; then
+    handle_error "Failed to set password for '$USERNAME'." 1
+  fi
+  if ! grep -q "^$USERNAME" /etc/sudoers; then
+    echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers || handle_error "Failed to add user '$USERNAME' to sudoers." 1
+  fi
+  log_info "User '$USERNAME' created successfully."
 }
 
+#------------------------------------------------------------
+# configure_timezone
+#    Installs chrony (if not already installed), adds it to runlevel,
+#    and starts the service for time synchronization.
+#------------------------------------------------------------
 configure_timezone() {
-  log_info "Installing and enabling chrony for automatic time synchronization..."
-
-  if ! apk add --no-cache chrony; then
-    log_warn "Failed to install chrony."
-    return 1
-  fi
-
-  # Add chronyd service to default runlevel and start it
-  if ! rc-update add chronyd default; then
-    log_warn "Failed to add chronyd to the default runlevel."
-  fi
-
-  if ! rc-service chronyd start; then
-    log_warn "Failed to start chronyd service."
+  log_info "Configuring time synchronization with chrony..."
+  if command -v chronyd &>/dev/null; then
+    log_info "Chrony is already installed. Skipping installation."
   else
-    log_info "Chrony has been installed, enabled, and started successfully."
+    if ! apk add --no-cache chrony; then
+      handle_error "Failed to install chrony." 1
+    fi
   fi
+  if ! rc-update show | grep -q '^chronyd'; then
+    if ! rc-update add chronyd default; then
+      handle_error "Failed to add chronyd to default runlevel." 1
+    fi
+  fi
+  if ! rc-service chronyd status &>/dev/null; then
+    if ! rc-service chronyd start; then
+      handle_error "Failed to start chronyd service." 1
+    fi
+  fi
+  log_info "Chrony configured successfully."
 }
 
+#------------------------------------------------------------
+# setup_repos
+#    Clones required Git repositories into the user’s Git directory,
+#    skipping cloning if the directory already exists.
+#------------------------------------------------------------
 setup_repos() {
   local repo_dir="/home/${USERNAME}/github"
-  log_info "Cloning repositories into $repo_dir..."
-  mkdir -p "$repo_dir"
-  for repo in bash windows web python go misc; do
-    local target_dir="$repo_dir/$repo"
-    rm -rf "$target_dir"
-    if ! git clone "https://github.com/dunamismax/$repo.git" "$target_dir"; then
-      log_warn "Failed to clone repository: $repo"
-    else
-      log_info "Cloned repository: $repo"
-    fi
-  done
-  chown -R "${USERNAME}:${USERNAME}" "$repo_dir"
+  log_info "Setting up Git repositories in $repo_dir..."
+  if [ -d "$repo_dir" ]; then
+    log_info "Repository directory $repo_dir already exists. Skipping cloning."
+  else
+    mkdir -p "$repo_dir" || handle_error "Failed to create repository directory $repo_dir." 1
+    for repo in bash windows web python go misc; do
+      local target_dir="$repo_dir/$repo"
+      if [ -d "$target_dir" ]; then
+        log_info "Repository $repo already cloned. Skipping."
+      else
+        if ! git clone "https://github.com/dunamismax/$repo.git" "$target_dir"; then
+          handle_error "Failed to clone repository: $repo" 1
+        fi
+        log_info "Cloned repository: $repo"
+      fi
+    done
+    chown -R "${USERNAME}:${USERNAME}" "$repo_dir" || handle_error "Failed to set ownership for $repo_dir" 1
+  fi
 }
 
+#------------------------------------------------------------
+# copy_shell_configs
+#    Copies shell configuration files from the dotfiles repo to the user’s home,
+#    backing up any existing files.
+#------------------------------------------------------------
 copy_shell_configs() {
   log_info "Copying shell configuration files..."
   for file in .bashrc .profile; do
     local src="/home/${USERNAME}/github/bash/linux/dotfiles/$file"
     local dest="/home/${USERNAME}/$file"
-    if [ -f "$src" ]; then
-      [ -f "$dest" ] && cp "$dest" "${dest}.bak"
-      if ! cp -f "$src" "$dest"; then
-        log_warn "Failed to copy $src to $dest."
-      else
-        chown "${USERNAME}:${USERNAME}" "$dest"
-        log_info "Copied $src to $dest."
-      fi
-    else
-      log_warn "Source file $src not found."
+    if [ ! -f "$src" ]; then
+      handle_error "Source file $src not found." 1
     fi
+    if [ -f "$dest" ]; then
+      cp "$dest" "${dest}.bak" || handle_error "Failed to backup $dest" 1
+      log_info "Backed up existing $dest to ${dest}.bak."
+    fi
+    if ! cp -f "$src" "$dest"; then
+      handle_error "Failed to copy $src to $dest." 1
+    fi
+    chown "${USERNAME}:${USERNAME}" "$dest" || handle_error "Failed to set ownership for $dest." 1
+    log_info "Copied $src to $dest."
   done
 }
 
+#------------------------------------------------------------
+# configure_ssh
+#    Ensures OpenRC is installed, adds the SSH daemon to runlevel,
+#    and restarts the SSH service.
+#------------------------------------------------------------
 configure_ssh() {
-  log_info "Configuring SSH..."
+  log_info "Configuring SSH service..."
   if ! command -v rc-service &>/dev/null; then
     if ! apk add --no-cache openrc; then
-      log_warn "Failed to install openrc."
+      handle_error "Failed to install openrc." 1
     fi
   fi
-  rc-update add sshd default || log_warn "Failed to add sshd to default runlevel."
-  rc-service sshd restart || log_warn "Failed to restart sshd."
+  if ! rc-update show | grep -q '^sshd'; then
+    if ! rc-update add sshd default; then
+      handle_error "Failed to add sshd to default runlevel." 1
+    fi
+  fi
+  if ! rc-service sshd restart; then
+    handle_error "Failed to restart sshd." 1
+  fi
+  log_info "SSH service configured successfully."
 }
 
+#------------------------------------------------------------
+# secure_ssh_config
+#    Backs up and hardens the SSH daemon configuration.
+#    If already hardened, the function skips further changes.
+#------------------------------------------------------------
 secure_ssh_config() {
+  log_info "Hardening SSH configuration..."
   local sshd_config="/etc/ssh/sshd_config"
   local backup_file="/etc/ssh/sshd_config.bak"
-  if [ -f "$sshd_config" ]; then
-    cp "$sshd_config" "$backup_file"
-    log_info "Backed up SSH config to $backup_file."
-    sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config"
-    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config"
-    sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config"
-    sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config"
-    log_info "SSH configuration hardened."
-    rc-service sshd restart || log_warn "Failed to restart sshd after hardening."
+  if [ ! -f "$sshd_config" ]; then
+    handle_error "SSHD configuration file not found at $sshd_config." 1
+  fi
+  if grep -q "^PermitRootLogin no" "$sshd_config"; then
+    log_info "SSH configuration already hardened. Skipping."
+    return 0
+  fi
+  cp "$sshd_config" "$backup_file" || handle_error "Failed to backup SSH config." 1
+  log_info "Backed up SSH config to $backup_file."
+  sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config" || handle_error "Failed to set PermitRootLogin." 1
+  sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config" || handle_error "Failed to set PasswordAuthentication." 1
+  sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config" || handle_error "Failed to set ChallengeResponseAuthentication." 1
+  sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config" || handle_error "Failed to set X11Forwarding." 1
+  if ! rc-service sshd restart; then
+    handle_error "Failed to restart sshd after hardening." 1
+  fi
+  log_info "SSH configuration hardened successfully."
+}
+
+#------------------------------------------------------------
+# configure_firewall
+#    Configures iptables with a secure default policy and adds necessary rules.
+#    Skips configuration if already applied.
+#------------------------------------------------------------
+configure_firewall() {
+  log_info "Configuring firewall (iptables)..."
+  local current_input_policy
+  current_input_policy=$(iptables -L INPUT --policy | awk '{print $4}')
+  if [ "$current_input_policy" == "DROP" ]; then
+    log_info "Firewall already configured (INPUT policy is DROP). Skipping rule configuration."
   else
-    log_warn "SSHD configuration file not found."
+    iptables -P INPUT DROP || handle_error "Could not set default INPUT policy." 1
+    iptables -P FORWARD DROP || handle_error "Could not set default FORWARD policy." 1
+    iptables -P OUTPUT ACCEPT || handle_error "Could not set default OUTPUT policy." 1
+    iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || handle_error "Failed to allow established connections." 1
+    iptables -A INPUT -i lo -j ACCEPT || handle_error "Failed to allow loopback." 1
+    iptables -A INPUT -p icmp -j ACCEPT || handle_error "Failed to allow ICMP." 1
+    for port in 22 80 443 32400; do
+      iptables -A INPUT -p tcp --dport "$port" -j ACCEPT || handle_error "Failed to allow TCP port $port." 1
+    done
+    log_info "Firewall rules configured successfully."
   fi
 }
 
-configure_firewall() {
-  log_info "Configuring firewall (iptables)..."
-  iptables -P INPUT DROP || log_warn "Could not set default INPUT policy."
-  iptables -P FORWARD DROP || log_warn "Could not set default FORWARD policy."
-  iptables -P OUTPUT ACCEPT || log_warn "Could not set default OUTPUT policy."
-  iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT || log_warn "Failed to allow established connections."
-  iptables -A INPUT -i lo -j ACCEPT || log_warn "Failed to allow loopback."
-  iptables -A INPUT -p icmp -j ACCEPT || log_warn "Failed to allow ICMP."
-  for port in 22 80 443 32400; do
-    iptables -A INPUT -p tcp --dport "$port" -j ACCEPT || log_warn "Failed to allow TCP port $port."
-  done
-}
-
+#------------------------------------------------------------
+# persist_firewall
+#    Saves current iptables rules to a persistent file.
+#------------------------------------------------------------
 persist_firewall() {
-  log_info "Saving current iptables rules for persistence..."
+  log_info "Persisting firewall rules..."
   if command -v iptables-save &>/dev/null; then
-    mkdir -p /etc/iptables
+    mkdir -p /etc/iptables || handle_error "Failed to create /etc/iptables directory." 1
     if iptables-save > /etc/iptables/rules.v4; then
       log_info "Firewall rules saved to /etc/iptables/rules.v4."
     else
-      log_warn "Failed to save iptables rules."
+      handle_error "Failed to save iptables rules." 1
     fi
   else
-    log_warn "iptables-save not found; skipping firewall persistence."
+    handle_error "iptables-save not found; cannot persist firewall rules." 1
   fi
 }
 
+#------------------------------------------------------------
+# configure_openrc_local
+#    Sets up the local OpenRC script to restore firewall rules at boot.
+#    Skips creation if already present.
+#------------------------------------------------------------
 configure_openrc_local() {
   log_info "Configuring OpenRC local service for firewall persistence..."
   local local_script="/etc/local.d/firewall.start"
-  cat << 'EOF' > "$local_script"
+  if [ -f "$local_script" ]; then
+    log_info "Local OpenRC script $local_script already exists. Skipping."
+  else
+    cat << 'EOF' > "$local_script"
 #!/bin/sh
 # Restore saved iptables rules if they exist
 if [ -f /etc/iptables/rules.v4 ]; then
   iptables-restore < /etc/iptables/rules.v4
 fi
 EOF
-  chmod +x "$local_script" || log_warn "Failed to make $local_script executable."
-  if rc-update add local default; then
-    log_info "Local OpenRC service added to default runlevel."
-  else
-    log_warn "Failed to add local service to default runlevel."
+    chmod +x "$local_script" || handle_error "Failed to make $local_script executable." 1
   fi
+  if ! rc-update show | grep -q '^local'; then
+    if ! rc-update add local default; then
+      handle_error "Failed to add local service to default runlevel." 1
+    fi
+  fi
+  log_info "Local OpenRC service configured successfully."
 }
 
+#------------------------------------------------------------
+# configure_busybox_services
+#    Ensures that essential BusyBox services (syslog and crond) are enabled.
+#------------------------------------------------------------
 configure_busybox_services() {
   log_info "Ensuring BusyBox services are enabled..."
   if ! rc-update show | grep -q '^syslog'; then
-    if rc-update add syslog default; then
-      log_info "Syslog service added to default runlevel."
-    else
-      log_warn "Failed to add syslog service."
+    if ! rc-update add syslog default; then
+      handle_error "Failed to add syslog service." 1
     fi
+    log_info "Syslog service added to default runlevel."
   else
     log_info "Syslog service already enabled."
   fi
   if ! rc-update show | grep -q '^crond'; then
-    if rc-update add crond default; then
-      log_info "Crond service added to default runlevel."
-    else
-      log_warn "Failed to add crond service."
+    if ! rc-update add crond default; then
+      handle_error "Failed to add crond service." 1
     fi
+    log_info "Crond service added to default runlevel."
   else
     log_info "Crond service already enabled."
   fi
 }
 
+#------------------------------------------------------------
+# deploy_user_scripts
+#    Deploys user scripts from the repository to the user’s bin directory.
+#------------------------------------------------------------
 deploy_user_scripts() {
   local bin_dir="/home/${USERNAME}/bin"
   local scripts_src="/home/${USERNAME}/github/bash/linux/_scripts/"
   log_info "Deploying user scripts from $scripts_src to $bin_dir..."
-  mkdir -p "$bin_dir"
+  mkdir -p "$bin_dir" || handle_error "Failed to create directory $bin_dir." 1
   if rsync -ah --delete "$scripts_src" "$bin_dir"; then
-    find "$bin_dir" -type f -exec chmod 755 {} \;
+    find "$bin_dir" -type f -exec chmod 755 {} \; || handle_error "Failed to set execute permissions in $bin_dir." 1
     log_info "User scripts deployed successfully."
   else
-    log_warn "Failed to deploy user scripts."
+    handle_error "Failed to deploy user scripts from $scripts_src to $bin_dir." 1
   fi
 }
 
+#------------------------------------------------------------
+# setup_cron
+#    Starts the crond service (exits if crond is not found).
+#------------------------------------------------------------
 setup_cron() {
   log_info "Starting crond service..."
   if command -v crond &>/dev/null; then
-    rc-service crond start || log_warn "Failed to start crond."
+    if ! rc-service crond start; then
+      handle_error "Failed to start crond service." 1
+    fi
+    log_info "Crond service started successfully."
   else
-    log_warn "crond not found; skipping cron setup."
+    handle_error "crond not found; cannot set up cron." 1
   fi
 }
 
+#------------------------------------------------------------
+# secure_sysctl
+#    Applies kernel hardening settings via sysctl.
+#    Checks if the settings are already present to ensure idempotence.
+#------------------------------------------------------------
 secure_sysctl() {
   log_info "Applying sysctl kernel hardening settings..."
   local sysctl_conf="/etc/sysctl.conf"
-  [ -f "$sysctl_conf" ] && cp "$sysctl_conf" "${sysctl_conf}.bak"
+  if grep -q "net.ipv4.tcp_syncookies" "$sysctl_conf" 2>/dev/null; then
+    log_info "Sysctl settings already applied. Skipping."
+    return 0
+  fi
+  if [ -f "$sysctl_conf" ]; then
+    cp "$sysctl_conf" "${sysctl_conf}.bak" || handle_error "Failed to backup $sysctl_conf" 1
+    log_info "Backed up existing sysctl.conf to ${sysctl_conf}.bak."
+  else
+    log_info "No existing sysctl.conf found; creating a new one."
+  fi
   cat << 'EOF' >> "$sysctl_conf"
 # Harden network parameters
 net.ipv4.tcp_syncookies = 1
@@ -318,41 +458,67 @@ net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.icmp_ignore_bogus_error_responses = 1
 net.ipv4.tcp_rfc1337 = 1
 EOF
-  if sysctl -p &>/dev/null; then
-    log_info "sysctl settings applied."
+  if sysctl -p; then
+    log_info "Sysctl settings applied successfully."
   else
-    log_warn "Failed to apply sysctl settings."
+    handle_error "Failed to apply sysctl settings." 1
   fi
 }
 
+#------------------------------------------------------------
+# final_checks
+#    Outputs basic system status information.
+#------------------------------------------------------------
 final_checks() {
   log_info "Performing final system checks:"
   echo "Kernel: $(uname -r)"
   echo "Uptime: $(uptime -p)"
-  df -h /
+  df -h / || handle_error "Failed to get disk usage." 1
   free -h || true
 }
 
+#------------------------------------------------------------
+# home_permissions
+#    Ensures that the user’s home directory has the correct ownership and permissions.
+#------------------------------------------------------------
 home_permissions() {
   local home_dir="/home/${USERNAME}"
   log_info "Setting ownership and permissions for $home_dir..."
-  chown -R "${USERNAME}:${USERNAME}" "$home_dir"
-  find "$home_dir" -type d -exec chmod g+s {} \;
+  chown -R "${USERNAME}:${USERNAME}" "$home_dir" || handle_error "Failed to set ownership for $home_dir." 1
+  find "$home_dir" -type d -exec chmod g+s {} \; || handle_error "Failed to set group sticky bit on directories in $home_dir." 1
+  log_info "Ownership and permissions set successfully."
 }
 
+#------------------------------------------------------------
+# dotfiles_load
+#    Synchronizes configuration directories from the dotfiles repository.
+#------------------------------------------------------------
 dotfiles_load() {
   log_info "Loading dotfiles configuration..."
   local config_dirs=( "alacritty" "i3" "i3blocks" "picom" )
   for dir in "${config_dirs[@]}"; do
-    mkdir -p "/home/${USERNAME}/.config/$dir"
+    mkdir -p "/home/${USERNAME}/.config/$dir" || handle_error "Failed to create /home/${USERNAME}/.config/$dir" 1
   done
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/alacritty/" "/home/${USERNAME}/.config/alacritty/" || log_warn "Failed to sync alacritty config."
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3/" "/home/${USERNAME}/.config/i3/" || log_warn "Failed to sync i3 config."
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks/" "/home/${USERNAME}/.config/i3blocks/" || log_warn "Failed to sync i3blocks config."
-  chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" 2>/dev/null || log_warn "Failed to set execute permissions on i3blocks scripts."
-  rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/" || log_warn "Failed to sync picom config."
+  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/alacritty/" "/home/${USERNAME}/.config/alacritty/"; then
+    handle_error "Failed to sync alacritty config." 1
+  fi
+  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3/" "/home/${USERNAME}/.config/i3/"; then
+    handle_error "Failed to sync i3 config." 1
+  fi
+  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks/" "/home/${USERNAME}/.config/i3blocks/"; then
+    handle_error "Failed to sync i3blocks config." 1
+  fi
+  chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" 2>/dev/null || handle_error "Failed to set execute permissions on i3blocks scripts." 1
+  if ! rsync -a --delete "/home/${USERNAME}/github/bash/linux/dotfiles/picom/" "/home/${USERNAME}/.config/picom/"; then
+    handle_error "Failed to sync picom config." 1
+  fi
+  log_info "Dotfiles loaded successfully."
 }
 
+#------------------------------------------------------------
+# main
+#    Calls all setup functions in the required order.
+#------------------------------------------------------------
 main() {
   check_root
   check_network
@@ -374,7 +540,7 @@ main() {
   final_checks
   home_permissions
   dotfiles_load
-  prompt_reboot
+  log_info "Alpine Linux system setup completed successfully."
 }
 
 main "$@"
