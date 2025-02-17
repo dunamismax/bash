@@ -71,13 +71,13 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 #------------------------------------------------------------
 USERNAME="sawyer"
 PACKAGES=(
-  bash vim nano screen tmux mc
+  bash vim nano screen tmux mc apt-transport-https
   build-essential cmake ninja-build meson gettext git nmap
   openssh-server curl wget rsync htop python3 tzdata
   iptables ca-certificates bash-completion
   gdb strace iftop tcpdump lsof jq iproute2 less
   dnsutils ncdu zip unzip gawk ethtool
-  chrony rsyslog cron sudo
+  chrony rsyslog cron sudo software-properties-common
 )
 
 #------------------------------------------------------------
@@ -406,8 +406,8 @@ set_default_shell() {
 
 #------------------------------------------------------------
 # install_and_configure_nala
-#    Downloads, installs, and configures Nala on Debian using
-#    the provided deb file link.
+#    Installs Nala on Debian using the Volian Scar repo installation
+#    script. This command sets up the repository and installs Nala.
 #------------------------------------------------------------
 install_and_configure_nala() {
   if command -v nala >/dev/null 2>&1; then
@@ -415,31 +415,16 @@ install_and_configure_nala() {
     return 0
   fi
 
-  log_info "Downloading Nala deb package..."
-  local deb_file="/tmp/nala_0.15.4_all.deb"
-  if ! curl -L -o "$deb_file" "https://gitlab.com/-/project/31927362/uploads/1164b1c240e4cdacc652b3dd5953c3d1/nala_0.15.4_all.deb"; then
-    handle_error "Failed to download Nala deb file." 1
+  log_info "Installing Nala using the Volian Scar repository installation script..."
+  if ! curl -fsSL https://gitlab.com/volian/volian-archive/-/raw/main/install-nala.sh | bash; then
+    handle_error "Failed to install Nala using the Volian Scar installation script." 1
   fi
 
-  log_info "Installing Nala package..."
-  if ! dpkg -i "$deb_file"; then
-    log_warn "dpkg installation failed. Attempting to fix dependencies..."
-    apt-get install -f -y || handle_error "Failed to fix dependencies for Nala." 1
-    if ! dpkg -i "$deb_file"; then
-      handle_error "Failed to install Nala deb file after fixing dependencies." 1
-    fi
+  if ! command -v nala >/dev/null 2>&1; then
+    handle_error "Nala installation did not complete successfully." 1
   fi
 
   log_info "Nala installed successfully."
-
-  log_info "Updating package cache using Nala..."
-  if ! nala update; then
-    log_warn "Nala update failed. Please check your network connection or configuration."
-  else
-    log_info "Nala package cache updated successfully."
-  fi
-
-  rm -f "$deb_file"
 }
 
 #------------------------------------------------------------
