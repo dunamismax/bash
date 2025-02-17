@@ -405,6 +405,44 @@ set_default_shell() {
 }
 
 #------------------------------------------------------------
+# install_and_configure_nala
+#    Downloads, installs, and configures Nala on Debian using
+#    the provided deb file link.
+#------------------------------------------------------------
+install_and_configure_nala() {
+  if command -v nala >/dev/null 2>&1; then
+    log_info "Nala is already installed. Skipping installation."
+    return 0
+  fi
+
+  log_info "Downloading Nala deb package..."
+  local deb_file="/tmp/nala_0.15.4_all.deb"
+  if ! curl -L -o "$deb_file" "https://gitlab.com/-/project/31927362/uploads/1164b1c240e4cdacc652b3dd5953c3d1/nala_0.15.4_all.deb"; then
+    handle_error "Failed to download Nala deb file." 1
+  fi
+
+  log_info "Installing Nala package..."
+  if ! dpkg -i "$deb_file"; then
+    log_warn "dpkg installation failed. Attempting to fix dependencies..."
+    apt-get install -f -y || handle_error "Failed to fix dependencies for Nala." 1
+    if ! dpkg -i "$deb_file"; then
+      handle_error "Failed to install Nala deb file after fixing dependencies." 1
+    fi
+  fi
+
+  log_info "Nala installed successfully."
+
+  log_info "Updating package cache using Nala..."
+  if ! nala update; then
+    log_warn "Nala update failed. Please check your network connection or configuration."
+  else
+    log_info "Nala package cache updated successfully."
+  fi
+
+  rm -f "$deb_file"
+}
+
+#------------------------------------------------------------
 # main
 #    Calls all setup functions in the required order.
 #------------------------------------------------------------
@@ -423,6 +461,7 @@ main() {
   home_permissions
   dotfiles_load
   set_default_shell
+  install_and_configure_nala
   apt_cleanup
   log_info "Debian system setup completed successfully."
 }
