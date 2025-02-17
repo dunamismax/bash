@@ -563,6 +563,47 @@ dotfiles_load() {
 }
 
 #------------------------------------------------------------
+# set_default_shell
+#    Sets bash (/bin/bash) as the default shell for both the created
+#    user ($USERNAME) and root by modifying /etc/passwd.
+#------------------------------------------------------------
+set_default_shell() {
+  local target_shell="/bin/bash"
+
+  # Verify that bash is installed and executable.
+  if [ ! -x "$target_shell" ]; then
+    log_error "Bash not found or not executable at $target_shell. Cannot set default shell."
+    return 1
+  fi
+
+  log_info "Setting default shell to $target_shell for user '$USERNAME' and root."
+
+  # Update the shell for the target user if not already set.
+  if grep -q "^$USERNAME:.*$target_shell\$" /etc/passwd; then
+    log_info "User '$USERNAME' already has $target_shell as default shell. Skipping."
+  elif grep -q "^$USERNAME:" /etc/passwd; then
+    sed -i -E "s|^($USERNAME:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*):[^:]*\$|\1:$target_shell|" /etc/passwd \
+      && log_info "Set default shell for user '$USERNAME' to $target_shell." \
+      || { log_error "Failed to set shell for user '$USERNAME'."; return 1; }
+  else
+    log_warn "User '$USERNAME' not found in /etc/passwd. Skipping user shell update."
+  fi
+
+  # Update the shell for root if not already set.
+  if grep -q "^root:.*$target_shell\$" /etc/passwd; then
+    log_info "Root already uses $target_shell as default shell. Skipping."
+  elif grep -q "^root:" /etc/passwd; then
+    sed -i -E "s|^(root:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*):[^:]*\$|\1:$target_shell|" /etc/passwd \
+      && log_info "Set default shell for root to $target_shell." \
+      || { log_error "Failed to set shell for root."; return 1; }
+  else
+    log_warn "Root entry not found in /etc/passwd. Skipping root shell update."
+  fi
+
+  log_info "Default shell configuration complete."
+}
+
+#------------------------------------------------------------
 # main
 #    Calls all setup functions in the required order.
 #------------------------------------------------------------
@@ -586,6 +627,7 @@ main() {
   configure_busybox_services
   home_permissions
   dotfiles_load
+  set_default_shell
   log_info "Alpine Linux system setup completed successfully."
 }
 

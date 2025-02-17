@@ -1,21 +1,26 @@
 #!/bin/bash
-# ~/.bashrc for Alpine Linux – Enhanced Version
+# ~/.bashrc – Enhanced Bash configuration for Alpine Linux
 
-# ------------------------------------------------------------------------------
-# 0. Exit if not running interactively
-# ------------------------------------------------------------------------------
-case "$-" in
-    *i*) ;;  # Interactive shell
-      *) return;;
-esac
+# =============================================================================
+# Guard: Only run if using Bash.
+# =============================================================================
+if [ -z "$BASH_VERSION" ]; then
+    # Not Bash – do nothing.
+    return
+fi
 
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Exit if not running interactively
+# =============================================================================
+[[ $- != *i* ]] && return
+
+# =============================================================================
 # 1. Environment Variables & Shell Options
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Prepend essential directories to PATH
 export PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
-# Enable useful Bash options
+# Enable useful Bash options (these are Bash built-ins)
 shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify
 
 # XDG Base Directories
@@ -42,13 +47,13 @@ export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
 export TZ="America/New_York"
 
-# Force 256-color mode for xterm
+# Force 256-color mode for xterm if needed
 [[ "$TERM" == "xterm" ]] && export TERM="xterm-256color"
 
-# ------------------------------------------------------------------------------
-# 2. Nord Color Scheme (Lighter Palette Only)
-# ------------------------------------------------------------------------------
-# (Nord0–Nord3 omitted for improved contrast)
+# =============================================================================
+# 2. Nord Color Scheme for Prompt and LESS Customization
+# =============================================================================
+# Nord palette variables
 NORD4="\[\033[38;2;216;222;233m\]"   # Snow Storm: #D8DEE9
 NORD5="\[\033[38;2;229;233;240m\]"   # Snow Storm: #E5E9F0
 NORD6="\[\033[38;2;236;239;244m\]"   # Snow Storm: #ECEFF4
@@ -63,35 +68,35 @@ NORD14="\[\033[38;2;163;190;140m\]"   # Aurora: #A3BE8C
 NORD15="\[\033[38;2;180;142;173m\]"   # Aurora: #B48EAD
 RESET="\[\e[0m\]"
 
-# Customize LESS (pager) colors with the Nord palette
+# Customize LESS colors with Nord palette
 export LESS="-R -X -F -i -J --mouse"
-export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'     # Nord11 for blink
-export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'     # Nord8 for emphasis
+export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'
+export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'
 export LESS_TERMCAP_me=$'\e[0m'
-export LESS_TERMCAP_so=$'\e[38;2;235;203;139m'     # Nord13 for standout
+export LESS_TERMCAP_so=$'\e[38;2;235;203;139m'
 export LESS_TERMCAP_se=$'\e[0m'
-export LESS_TERMCAP_us=$'\e[38;2;163;190;140m'     # Nord14 for underline
+export LESS_TERMCAP_us=$'\e[38;2;163;190;140m'
 export LESS_TERMCAP_ue=$'\e[0m'
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # 3. Enhanced History Settings
-# ------------------------------------------------------------------------------
+# =============================================================================
 export HISTSIZE=1000000
 export HISTFILESIZE=2000000
 export HISTFILE="$HOME/.bash_history"
 export HISTCONTROL="ignoreboth:erasedups"
 export HISTTIMEFORMAT="%F %T "
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # 4. System Information & Greeting
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Display system info if fastfetch is installed
 command -v fastfetch >/dev/null 2>&1 && fastfetch
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # 5. Development Environment Setup
-# ------------------------------------------------------------------------------
-# Initialize Pyenv if installed (leave this block untouched)
+# =============================================================================
+# Initialize Pyenv if installed
 if [ -d "$HOME/.pyenv" ]; then
     export PYENV_ROOT="$HOME/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
@@ -99,30 +104,30 @@ if [ -d "$HOME/.pyenv" ]; then
     eval "$(pyenv init -)"
 fi
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # 6. LESS (Pager) Setup
-# ------------------------------------------------------------------------------
+# =============================================================================
 if [ -x /usr/bin/lesspipe ]; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
-# ------------------------------------------------------------------------------
-# 7. Prompt Customization – Clean, Nord-Themed Single-Line Prompt
-# ------------------------------------------------------------------------------
-USERNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost (turquoise)
-HOSTNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost (turquoise)
-DIR_COLOR="\[\033[38;2;129;161;193m\]"  # Nord9 – Frost (blue)
+# =============================================================================
+# 7. Prompt Customization – Nord-Themed Single-Line Prompt
+# =============================================================================
+USERNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost
+HOSTNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost
+DIR_COLOR="\[\033[38;2;129;161;193m\]"  # Nord9 – Frost
 PROMPT_ICON="\[\033[38;2;94;129;172m\]>"  # Nord10 – Darker blue
 
 # Build the prompt: [username@hostname] [working_directory] >
-PS1="[${USERNAME}\u${RESET}@${HOSTNAME}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
+export PS1="[${USERNAME}\u${RESET}@${HOSTNAME}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # 8. Colorized Output for Common Commands
-# ------------------------------------------------------------------------------
+# =============================================================================
 if command -v dircolors >/dev/null 2>&1; then
-    if [ -r ~/.dircolors ]; then
-        eval "$(dircolors -b ~/.dircolors)"
+    if [ -r "$HOME/.dircolors" ]; then
+        eval "$(dircolors -b "$HOME/.dircolors")"
     else
         eval "$(dircolors -b)"
     fi
@@ -136,9 +141,9 @@ if command -v dircolors >/dev/null 2>&1; then
     alias ip='ip --color=auto'
 fi
 
-# ------------------------------------------------------------------------------
-# 9. Aliases & Shortcuts (Alpine Package Management)
-# ------------------------------------------------------------------------------
+# =============================================================================
+# 9. Aliases & Shortcuts (including Alpine Package Management)
+# =============================================================================
 # Directory navigation
 alias ll='ls -lah'
 alias la='ls -A'
@@ -148,14 +153,13 @@ alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 
-# Alpine system management using apk
+# Alpine package management using apk
 alias update='sudo apk update && sudo apk upgrade'
 alias install='sudo apk add'
 alias remove='sudo apk del'
 alias search='apk search'
-# Note: Alpine Linux does not have a direct autoremove command
 
-# Safety aliases for file operations
+# Safety aliases
 alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
@@ -190,13 +194,13 @@ alias di='docker images'
 alias sudo='sudo '   # Ensure aliases work with sudo
 alias watch='watch '
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # 10. Enhanced Functions
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Create and activate a Python virtual environment
 setup_venv() {
     local venv_name="${1:-.venv}"
-    # Deactivate any current virtual environment, if active
+    # Deactivate any active virtual environment
     type deactivate &>/dev/null && deactivate
     if [ ! -d "$venv_name" ]; then
         echo "Creating virtual environment in $venv_name..."
@@ -208,7 +212,7 @@ setup_venv() {
 }
 alias venv='setup_venv'
 
-# Universal archive extraction
+# Universal archive extraction function
 extract() {
     if [ -z "$1" ]; then
         echo "Usage: extract <archive>"
@@ -233,29 +237,21 @@ extract() {
         *.xz)        unxz "$1" ;;
         *.tar.xz)    tar xf "$1" ;;
         *.tar.zst)   tar --zstd -xf "$1" ;;
-         *) echo "Cannot extract '$1' with extract()"; return 1 ;;
+         *) echo "Cannot extract '$1'"; return 1 ;;
     esac
 }
 
-# Create a directory and immediately cd into it
+# Create a directory and change into it
 mkcd() {
     mkdir -p "$1" && cd "$1" || return 1
 }
 
-# Search for files by pattern
-ff() {
-    find . -type f -iname "*$1*"
-}
-
-# Search for directories by pattern
-fd() {
-    find . -type d -iname "*$1*"
-}
+# Search for files and directories by pattern
+ff() { find . -type f -iname "*$1*"; }
+fd() { find . -type d -iname "*$1*"; }
 
 # Quickly back up a file with a timestamped .bak extension
-bak() {
-    cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"
-}
+bak() { cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"; }
 
 # Create and switch to a temporary directory
 mktempdir() {
@@ -272,9 +268,10 @@ serve() {
     python3 -m http.server "$port"
 }
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # 11. Bash Completion
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Load bash-completion only if not in POSIX mode (bash-only features)
 if ! shopt -oq posix; then
     if [ -f /usr/share/bash-completion/bash_completion ]; then
         . /usr/share/bash-completion/bash_completion
@@ -283,29 +280,27 @@ if ! shopt -oq posix; then
     fi
 fi
 
-# ------------------------------------------------------------------------------
-# 12. Local Customizations
-# ------------------------------------------------------------------------------
+# =============================================================================
+# 12. Local Customizations & Additional Settings
+# =============================================================================
 # Source a local bashrc file if it exists
-[ -f ~/.bashrc.local ] && source ~/.bashrc.local
+[ -f "$HOME/.bashrc.local" ] && . "$HOME/.bashrc.local"
 
-# Auto-load all shell scripts in ~/.bashrc.d/
+# Auto-load additional shell scripts from ~/.bashrc.d/
 if [ -d "$HOME/.bashrc.d" ]; then
-  for file in "$HOME"/.bashrc.d/*.sh; do
-    [ -r "$file" ] && source "$file"
-  done
+    for file in "$HOME"/.bashrc.d/*.sh; do
+        [ -r "$file" ] && . "$file"
+    done
 fi
 
-# ------------------------------------------------------------------------------
-# 13. Source Additional Environment Settings
-# ------------------------------------------------------------------------------
-[ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
+# Source additional environment settings if available
+[ -f "$HOME/.local/bin/env" ] && . "$HOME/.local/bin/env"
 
-# ------------------------------------------------------------------------------
-# Final PROMPT_COMMAND Consolidation
-# ------------------------------------------------------------------------------
+# =============================================================================
+# 13. Final PROMPT_COMMAND Consolidation
+# =============================================================================
 export PROMPT_COMMAND='history -a; echo "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # End of ~/.bashrc
-# ------------------------------------------------------------------------------
+# =============================================================================
