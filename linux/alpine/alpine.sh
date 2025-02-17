@@ -92,11 +92,11 @@ done
 USERNAME="sawyer"
 PACKAGES=(
   bash vim nano screen tmux mc
-  build-base cmake ninja meson gettext git nmap docker
-  openssh curl wget rsync htop sudo python3 py3-pip tzdata
+  build-base cmake ninja meson gettext git nmap
+  openssh curl wget rsync htop python3 tzdata
   iptables ca-certificates bash-completion openrc
-  gdb strace man iftop tcpdump traceroute lsof jq
-  bind-tools ncdu zip unzip gawk ethtool iproute2 less
+  gdb strace iftop tcpdump lsof jq iproute2 less
+  bind-tools ncdu zip unzip gawk ethtool
 )
 
 #------------------------------------------------------------
@@ -152,24 +152,66 @@ install_packages() {
 #------------------------------------------------------------
 # create_user
 #    Creates the user (if not already present), sets a default password,
-#    and adds the user to sudoers if not already configured.
+#    and configures doas for administrative privileges by adding the user
+#    to the wheel group and setting up /etc/doas.d/doas.conf.
 #------------------------------------------------------------
 create_user() {
+  # Check if the user already exists.
   if id "$USERNAME" &>/dev/null; then
     log_info "User '$USERNAME' already exists. Skipping user creation."
-    return 0
+  else
+    log_info "Creating user '$USERNAME'..."
+    # Create a new user with the default home directory and ash as shell.
+    if ! adduser -D "$USERNAME"; then
+      handle_error "Failed to create user '$USERNAME'." 1
+    fi
+    # Set a default password (change 'changeme' as needed).
+    if ! echo "$USERNAME:changeme" | chpasswd; then
+      handle_error "Failed to set password for '$USERNAME'." 1
+    fi
+    log_info "User '$USERNAME' created successfully."
   fi
-  log_info "Creating user '$USERNAME'..."
-  if ! adduser -D "$USERNAME"; then
-    handle_error "Failed to create user '$USERNAME'." 1
+
+  # Ensure the user is in the 'wheel' group for admin privileges.
+  if id -nG "$USERNAME" | grep -qw "wheel"; then
+    log_info "User '$USERNAME' is already in the wheel group. Skipping group addition."
+  else
+    log_info "Adding user '$USERNAME' to wheel group..."
+    if ! adduser "$USERNAME" wheel; then
+      handle_error "Failed to add user '$USERNAME' to wheel group." 1
+    fi
+    log_info "User '$USERNAME' added to wheel group successfully."
   fi
-  if ! echo "$USERNAME:changeme" | chpasswd; then
-    handle_error "Failed to set password for '$USERNAME'." 1
+
+  # Install doas if not already installed.
+  if ! command -v doas &>/dev/null; then
+    log_info "Installing doas..."
+    if ! apk add --no-cache doas; then
+      handle_error "Failed to install doas." 1
+    fi
+    log_info "doas installed successfully."
   fi
-  if ! grep -q "^$USERNAME" /etc/sudoers; then
-    echo "$USERNAME ALL=(ALL) ALL" >> /etc/sudoers || handle_error "Failed to add user '$USERNAME' to sudoers." 1
+
+  # Configure doas for the wheel group.
+  local doas_conf_dir="/etc/doas.d"
+  local doas_conf_file="${doas_conf_dir}/doas.conf"
+  if [ ! -d "$doas_conf_dir" ]; then
+    log_info "Creating directory $doas_conf_dir..."
+    if ! mkdir -p "$doas_conf_dir"; then
+      handle_error "Failed to create directory $doas_conf_dir." 1
+    fi
   fi
-  log_info "User '$USERNAME' created successfully."
+
+  # If doas.conf exists and already contains a permit rule for wheel, skip.
+  if [ -f "$doas_conf_file" ] && grep -q -E '^permit( +nopass)?( +persist)? +:wheel' "$doas_conf_file"; then
+    log_info "doas configuration for wheel group already exists. Skipping doas configuration."
+  else
+    log_info "Configuring doas for wheel group..."
+    echo "permit persist :wheel" > "$doas_conf_file" || handle_error "Failed to write doas configuration to $doas_conf_file." 1
+    # Ensure proper permissions for doas.conf.
+    chmod 0400 "$doas_conf_file" || handle_error "Failed to set permissions for $doas_conf_file." 1
+    log_info "doas configured successfully."
+  fi
 }
 
 #------------------------------------------------------------
