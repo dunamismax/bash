@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-# ~/.bashrc – Enhanced Bash configuration for Void Linux
+#!/bin/bash
+# ~/.bashrc – Enhanced Bash configuration for Debian
 
 # =============================================================================
 # Guard: Only run if using Bash.
@@ -20,7 +20,7 @@ fi
 # Prepend essential directories to PATH
 export PATH="/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
-# Enable useful Bash options (these are Bash built-ins)
+# Enable useful Bash options
 shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify
 
 # XDG Base Directories
@@ -114,13 +114,12 @@ fi
 # =============================================================================
 # 7. Prompt Customization – Nord-Themed Single-Line Prompt
 # =============================================================================
-USERNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost
-HOSTNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost
-DIR_COLOR="\[\033[38;2;129;161;193m\]"  # Nord9 – Frost
-PROMPT_ICON="\[\033[38;2;94;129;172m\]>"  # Nord10 – Darker blue
+USERNAME_COLOR="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost
+HOSTNAME_COLOR="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost
+DIR_COLOR="\[\033[38;2;129;161;193m\]"          # Nord9 – Frost
+PROMPT_ICON="\[\033[38;2;94;129;172m\]>"         # Nord10 – Darker blue
 
-# Build the prompt: [username@hostname] [working_directory] >
-export PS1="[${USERNAME}\u${RESET}@${HOSTNAME}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
+export PS1="[${USERNAME_COLOR}\u${RESET}@${HOSTNAME_COLOR}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
 
 # =============================================================================
 # 8. Colorized Output for Common Commands
@@ -142,7 +141,7 @@ if command -v dircolors >/dev/null 2>&1; then
 fi
 
 # =============================================================================
-# 9. Aliases & Shortcuts (including Void Package Management)
+# 9. Aliases & Shortcuts (including Debian Package Management)
 # =============================================================================
 # Directory navigation
 alias ll='ls -lah'
@@ -153,11 +152,11 @@ alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 
-# Void Linux package management using xbps
-alias update='sudo xbps-install -Syu'
-alias install='sudo xbps-install -Sy'
-alias remove='sudo xbps-remove'
-alias search='xbps-query -Rs'
+# Debian package management using apt
+alias update='sudo apt update && sudo apt upgrade -y'
+alias install='sudo apt install -y'
+alias remove='sudo apt remove -y'
+alias search='apt search'
 
 # Safety aliases
 alias rm='rm -i'
@@ -271,7 +270,6 @@ serve() {
 # =============================================================================
 # 11. Bash Completion
 # =============================================================================
-# Load bash-completion only if not in POSIX mode (bash-only features)
 if ! shopt -oq posix; then
     if [ -f /usr/share/bash-completion/bash_completion ]; then
         . /usr/share/bash-completion/bash_completion
