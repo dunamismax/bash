@@ -74,11 +74,6 @@ done
 # Configuration Variables
 USERNAME="sawyer"
 
-# Zig installation configuration (x86_64 build)
-ZIG_URL="https://ziglang.org/builds/zig-linux-x86_64-0.14.0-dev.3224+5ab511307.tar.xz"
-ZIG_DIR="/opt/zig"
-ZIG_BIN="/usr/local/bin/zig"
-
 PACKAGES=(
   bash vim nano screen tmux mc
   build-base cmake ninja meson gettext git nmap docker
