@@ -82,7 +82,7 @@ PACKAGES=(
   gdb strace iftop tcpdump lsof jq iproute2 less dnsutils ncdu
 
   # Compression, text processing, and miscellaneous utilities
-  zip unzip gawk ethtool tree exuberant-ctags silversearcher-ag ltrace iperf3
+  zip unzip gawk ethtool tree exuberant-ctags silversearcher-ag ltrace
 
   # Python development tools
   python3 python3-pip python3-venv tzdata
