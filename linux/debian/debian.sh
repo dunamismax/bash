@@ -431,14 +431,20 @@ home_permissions() {
   # Set the home directory permissions to 700 (rwx------)
   chmod 700 "$home_dir" || handle_error "Failed to set permissions for $home_dir." 1
 
-  # Set the group sticky bit on all subdirectories.
+  # For all subdirectories, set the group sticky bit.
   find "$home_dir" -mindepth 1 -type d -exec chmod g+s {} \; || handle_error "Failed to set group sticky bit on directories in $home_dir." 1
 
-  # Forcefully create (or update) the nano history file in the user's home directory.
+  # Forcefully create the nano history file.
   local nano_hist="${home_dir}/.nano_history"
   touch "$nano_hist" || log_warn "Failed to create $nano_hist."
   chown "${USERNAME}:$(id -gn "$home_dir")" "$nano_hist" || log_warn "Failed to set ownership for $nano_hist."
   chmod 600 "$nano_hist" || log_warn "Failed to set permissions for $nano_hist."
+
+  # Forcefully create the nano data directory used for saving search history/cursor positions.
+  local nano_data_dir="${home_dir}/.local/share/nano"
+  mkdir -p "$nano_data_dir" || log_warn "Failed to create directory $nano_data_dir."
+  chown "${USERNAME}:$(id -gn "$home_dir")" "$nano_data_dir" || log_warn "Failed to set ownership for $nano_data_dir."
+  chmod 700 "$nano_data_dir" || log_warn "Failed to set permissions for $nano_data_dir."
 
   log_info "Ownership and permissions set successfully."
 }
