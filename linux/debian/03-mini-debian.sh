@@ -5,6 +5,8 @@
 
 set -Eeuo pipefail
 IFS=$'\n\t'
+export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C.UTF-8
 
 #------------------------------------------------------------
 # Color definitions for logging output
@@ -116,14 +118,37 @@ check_network() {
   log_info "Network connectivity OK."
 }
 
-#------------------------------------------------------------
+#------------------------------------------------------------------
+# check_distribution
+#    Ensures we are running on a Debian-based distribution.
+#------------------------------------------------------------------
+check_distribution() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "${ID:-}" != "debian" ] && [[ ! "${ID_LIKE:-}" =~ debian ]]; then
+      handle_error "This script is intended for Debian systems. Detected: ${NAME:-Unknown}." 1
+    fi
+    log_info "Distribution confirmed: ${PRETTY_NAME:-Debian-based}."
+  else
+    log_warn "/etc/os-release not found. Assuming Debian-based distro."
+  fi
+}
+
+#------------------------------------------------------------------
 # update_system
-# Updates package repositories and upgrades the system.
-#------------------------------------------------------------
+#    Updates package repositories and upgrades the system using dist-upgrade.
+#------------------------------------------------------------------
 update_system() {
   log_info "Updating package repositories..."
-  apt-get update || handle_error "Failed to update package repositories." 1
-  apt-get upgrade -y || handle_error "Failed to upgrade system." 1
+  if ! apt-get update; then
+    handle_error "Failed to update package repositories." 1
+  fi
+
+  log_info "Upgrading system packages (dist-upgrade)..."
+  if ! apt-get dist-upgrade -y; then
+    handle_error "Failed to upgrade system." 1
+  fi
+
   log_info "System update and upgrade complete."
 }
 
@@ -277,7 +302,6 @@ secure_ssh_config() {
   cp "$sshd_config" "$backup_file" || handle_error "Failed to backup SSH config." 1
   log_info "Backed up SSH config to $backup_file."
   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config" || handle_error "Failed to set PermitRootLogin." 1
-  # Disable password authentication in favor of key-based auth
   sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config" || handle_error "Failed to set PasswordAuthentication." 1
   sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config" || handle_error "Failed to set ChallengeResponseAuthentication." 1
   sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config" || handle_error "Failed to set X11Forwarding." 1
@@ -353,10 +377,10 @@ EOF
   log_info "IPv6 disabled via $ipv6_conf."
 }
 
-#------------------------------------------------------------
+#------------------------------------------------------------------
 # configure_fail2ban
-# Installs and configures Fail2Ban to protect SSH.
-#------------------------------------------------------------
+#    Installs and configures Fail2ban for SSH brute-force protection.
+#------------------------------------------------------------------
 configure_fail2ban() {
   if command -v fail2ban-server >/dev/null 2>&1; then
     log_info "Fail2ban is already installed. Skipping installation."
@@ -371,10 +395,10 @@ configure_fail2ban() {
   # Backup existing configuration if it exists
   if [ -f /etc/fail2ban/jail.local ]; then
     cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak || log_warn "Failed to backup existing jail.local"
-    log_info "Backed up existing /etc/fail2ban/jail.local to /etc/fail2ban/jail.local.bak."
+    log_info "Backed up /etc/fail2ban/jail.local to /etc/fail2ban/jail.local.bak."
   fi
 
-  # Minimal configuration example
+  # Minimal configuration example for SSH protection
   cat <<EOF >/etc/fail2ban/jail.local
 [sshd]
 enabled  = true
@@ -524,6 +548,7 @@ prompt_reboot() {
 main() {
   check_root
   check_network
+  check_distribution
   update_system
   ensure_user
   configure_locale
