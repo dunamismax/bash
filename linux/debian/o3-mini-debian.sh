@@ -498,6 +498,27 @@ install_and_configure_nala() {
   log_info "Nala installed successfully."
 }
 
+install_fastfetch() {
+  local url="https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-linux-amd64.deb"
+  local deb_file="/tmp/fastfetch-linux-amd64.deb"
+
+  log_info "Downloading fastfetch from $url..."
+  if ! curl -fsSL -o "$deb_file" "$url"; then
+    handle_error "Failed to download fastfetch from $url." 1
+  fi
+
+  log_info "Installing fastfetch..."
+  if ! dpkg -i "$deb_file"; then
+    log_warn "dpkg installation failed. Attempting to fix dependencies..."
+    if ! apt-get update && apt-get -f install -y; then
+      handle_error "Failed to install fastfetch and fix dependencies." 1
+    fi
+  fi
+
+  rm -f "$deb_file"
+  log_info "fastfetch installed successfully."
+}
+
 #------------------------------------------------------------
 # configure_unattended_upgrades
 # Installs and configures unattended-upgrades for automatic security updates.
@@ -551,6 +572,7 @@ main() {
   dotfiles_load
   set_default_shell
   install_and_configure_nala
+  install_fastfetch
   configure_unattended_upgrades
   apt_cleanup
   log_info "Debian system setup completed successfully."
