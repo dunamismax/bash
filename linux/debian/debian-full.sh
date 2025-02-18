@@ -369,7 +369,7 @@ home_permissions() {
   log_info "Ownership and permissions set successfully."
 }
 
-dotfiles_load() {
+bash_dotfiles_load() {
   log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
   local source_dir="/home/${USERNAME}/github/bash/linux/debian/dotfiles"
   if [ ! -d "$source_dir" ]; then
@@ -470,10 +470,6 @@ prompt_reboot() {
       ;;
   esac
 }
-
-#------------------------------------------------------------
-# Additional Functions (from Ubuntu script)
-#------------------------------------------------------------
 
 install_plex() {
   log_info "Installing Plex Media Server from downloaded .deb file..."
@@ -815,38 +811,45 @@ install_ly() {
 }
 
 dotfiles_load() {
-    log_info "Copying dot files..."
+    log_info "Copying dotfiles configuration..."
+    local source_dir="/home/${USERNAME}/bash/linux/debian/dotfiles"  # Updated path
+
+    if [ ! -d "$source_dir" ]; then
+        log_warn "Dotfiles source directory $source_dir does not exist. Skipping dotfiles copy."
+        return 0
+    fi
+
     # Copy the Alacritty configuration folder.
     log_info "Copying Alacritty configuration to ~/.config/alacritty..."
-    mkdir -p "/home/$USERNAME/.config/alacritty"
-    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/alacritty/" "/home/$USERNAME/.config/alacritty/"; then
+    mkdir -p "/home/${USERNAME}/.config/alacritty"
+    if ! rsync -a --delete "${source_dir}/alacritty/" "/home/${USERNAME}/.config/alacritty/"; then
         handle_error "Failed to copy Alacritty configuration."
     fi
 
     # Copy the i3 configuration folder.
     log_info "Copying i3 configuration to ~/.config/i3..."
-    mkdir -p "/home/$USERNAME/.config/i3"
-    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/i3/" "/home/$USERNAME/.config/i3/"; then
+    mkdir -p "/home/${USERNAME}/.config/i3"
+    if ! rsync -a --delete "${source_dir}/i3/" "/home/${USERNAME}/.config/i3/"; then
         handle_error "Failed to copy i3 configuration."
     fi
 
     # Copy the i3blocks configuration folder.
     log_info "Copying i3blocks configuration to ~/.config/i3blocks..."
-    mkdir -p "/home/$USERNAME/.config/i3blocks"
-    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/i3blocks/" "/home/$USERNAME/.config/i3blocks/"; then
+    mkdir -p "/home/${USERNAME}/.config/i3blocks"
+    if ! rsync -a --delete "${source_dir}/i3blocks/" "/home/${USERNAME}/.config/i3blocks/"; then
         handle_error "Failed to copy i3blocks configuration."
     fi
 
     # Set execute permissions on all scripts within the i3blocks/scripts directory.
     log_info "Setting execute permissions for i3blocks scripts..."
-    if ! chmod -R +x "/home/$USERNAME/.config/i3blocks/scripts"; then
+    if ! chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts"; then
         log_warn "Failed to set execute permissions on i3blocks scripts."
     fi
 
     # Copy the picom configuration folder.
     log_info "Copying picom configuration to ~/.config/picom..."
-    mkdir -p "/home/$USERNAME/.config/picom"
-    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/picom/" "/home/$USERNAME/.config/picom/"; then
+    mkdir -p "/home/${USERNAME}/.config/picom"
+    if ! rsync -a --delete "${source_dir}/picom/" "/home/${USERNAME}/.config/picom/"; then
         handle_error "Failed to copy picom configuration."
     fi
 
@@ -885,6 +888,7 @@ main() {
   enable_dunamismax_services
   install_ly
   install_fastfetch
+  bash_dotfiles_load
   dotfiles_load
   configure_unattended_upgrades
   apt_cleanup
