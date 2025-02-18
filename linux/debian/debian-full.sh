@@ -815,8 +815,7 @@ install_ly() {
 }
 
 dotfiles_load() {
-    print_section "Loading Dotfiles"
-
+    log_info "Copying dot files..."
     # Copy the Alacritty configuration folder.
     log_info "Copying Alacritty configuration to ~/.config/alacritty..."
     mkdir -p "/home/$USERNAME/.config/alacritty"
