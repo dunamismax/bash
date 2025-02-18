@@ -72,8 +72,7 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 # Global Configuration Variables
 #------------------------------------------------------------
 USERNAME="sawyer"
-# Optionally set TIMEZONE, for example: TIMEZONE="America/New_York"
-TIMEZONE="${TIMEZONE:-}"
+TIMEZONE="America/New_York"
 PACKAGES=(
   # Editors and Terminal Utilities
   vim nano screen tmux mc
@@ -165,21 +164,6 @@ ensure_user() {
     adduser --disabled-password --gecos "" "$USERNAME" || handle_error "Failed to create user '$USERNAME'." 1
     log_info "User '$USERNAME' created successfully."
   fi
-}
-
-#------------------------------------------------------------
-# configure_locale
-# Ensures the system locale is set to en_US.UTF-8.
-#------------------------------------------------------------
-configure_locale() {
-  log_info "Configuring system locale to en_US.UTF-8..."
-  if grep -q '^en_US.UTF-8 UTF-8' /etc/locale.gen; then
-    log_info "Locale en_US.UTF-8 is already enabled."
-  else
-    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen || handle_error "Failed to add locale to /etc/locale.gen." 1
-  fi
-  locale-gen || handle_error "Failed to generate locales." 1
-  log_info "System locale configured."
 }
 
 #------------------------------------------------------------
@@ -551,7 +535,6 @@ main() {
   check_distribution
   update_system
   ensure_user
-  configure_locale
   configure_timezone
   install_packages
   configure_sudo
