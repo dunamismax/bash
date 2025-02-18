@@ -814,6 +814,46 @@ install_ly() {
   log_info "Ly will take effect on next reboot, or start it now with: systemctl start ly.service"
 }
 
+dotfiles_load() {
+    print_section "Loading Dotfiles"
+
+    # Copy the Alacritty configuration folder.
+    log_info "Copying Alacritty configuration to ~/.config/alacritty..."
+    mkdir -p "/home/$USERNAME/.config/alacritty"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/alacritty/" "/home/$USERNAME/.config/alacritty/"; then
+        handle_error "Failed to copy Alacritty configuration."
+    fi
+
+    # Copy the i3 configuration folder.
+    log_info "Copying i3 configuration to ~/.config/i3..."
+    mkdir -p "/home/$USERNAME/.config/i3"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/i3/" "/home/$USERNAME/.config/i3/"; then
+        handle_error "Failed to copy i3 configuration."
+    fi
+
+    # Copy the i3blocks configuration folder.
+    log_info "Copying i3blocks configuration to ~/.config/i3blocks..."
+    mkdir -p "/home/$USERNAME/.config/i3blocks"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/i3blocks/" "/home/$USERNAME/.config/i3blocks/"; then
+        handle_error "Failed to copy i3blocks configuration."
+    fi
+
+    # Set execute permissions on all scripts within the i3blocks/scripts directory.
+    log_info "Setting execute permissions for i3blocks scripts..."
+    if ! chmod -R +x "/home/$USERNAME/.config/i3blocks/scripts"; then
+        log_warn "Failed to set execute permissions on i3blocks scripts."
+    fi
+
+    # Copy the picom configuration folder.
+    log_info "Copying picom configuration to ~/.config/picom..."
+    mkdir -p "/home/$USERNAME/.config/picom"
+    if ! rsync -a --delete "/home/$USERNAME/github/bash/linux/debian/dotfiles/picom/" "/home/$USERNAME/.config/picom/"; then
+        handle_error "Failed to copy picom configuration."
+    fi
+
+    log_info "Dotfiles loaded successfully."
+}
+
 #------------------------------------------------------------
 # Main Function: Execute Setup Steps in Order
 #------------------------------------------------------------
@@ -846,6 +886,7 @@ main() {
   enable_dunamismax_services
   install_ly
   install_fastfetch
+  dotfiles_load
   configure_unattended_upgrades
   apt_cleanup
   log_info "Debian system setup completed successfully."
