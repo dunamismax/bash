@@ -425,25 +425,27 @@ home_permissions() {
   local home_dir="/home/${USERNAME}"
   log_info "Setting ownership and permissions for $home_dir..."
 
-  # Set ownership for all files/directories in the home directory.
+  # Set ownership for all files and directories
   chown -R "${USERNAME}:${USERNAME}" "$home_dir" || handle_error "Failed to set ownership for $home_dir." 1
 
-  # Set the home directory itself to 700 (rwx------)
+  # Set the home directory permissions to 700 (rwx------)
   chmod 700 "$home_dir" || handle_error "Failed to set permissions for $home_dir." 1
 
-  # For all subdirectories inside the home directory, set the group sticky bit.
+  # For all subdirectories, set the group sticky bit (g+s)
   find "$home_dir" -mindepth 1 -type d -exec chmod g+s {} \; || handle_error "Failed to set group sticky bit on directories in $home_dir." 1
 
-  # Ensure the nano history file is owned by the user and has proper permissions.
+  # Ensure the nano history file exists, and if not, create it.
   local nano_hist="$HOME/.nano_history"
-  if [ -f "$nano_hist" ]; then
-    chown "${USERNAME}:$(id -gn)" "$nano_hist" || log_warn "Failed to correct ownership of $nano_hist."
-    chmod 600 "$nano_hist" || log_warn "Failed to set permissions for $nano_hist."
-  else
-    touch "$nano_hist" || log_warn "Failed to create $nano_hist."
-    chown "${USERNAME}:$(id -gn)" "$nano_hist" || log_warn "Failed to set ownership for $nano_hist."
-    chmod 600 "$nano_hist" || log_warn "Failed to set permissions for $nano_hist."
+  if ! [ -e "$nano_hist" ]; then
+    log_info "Creating nano history file at $nano_hist..."
+    if ! touch "$nano_hist"; then
+      log_warn "Failed to create $nano_hist."
+    fi
   fi
+
+  # Set correct ownership and permissions on the nano history file
+  chown "${USERNAME}:$(id -gn)" "$nano_hist" || log_warn "Failed to set ownership for $nano_hist."
+  chmod 600 "$nano_hist" || log_warn "Failed to set permissions for $nano_hist."
 
   log_info "Ownership and permissions set successfully."
 }
