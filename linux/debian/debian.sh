@@ -424,8 +424,17 @@ deploy_user_scripts() {
 home_permissions() {
   local home_dir="/home/${USERNAME}"
   log_info "Setting ownership and permissions for $home_dir..."
+
+  # Set ownership for all files/directories in the home directory.
   chown -R "${USERNAME}:${USERNAME}" "$home_dir" || handle_error "Failed to set ownership for $home_dir." 1
-  find "$home_dir" -type d -exec chmod g+s {} \; || handle_error "Failed to set group sticky bit on directories in $home_dir." 1
+
+  # Set the home directory itself to 700 (rwx------)
+  chmod 700 "$home_dir" || handle_error "Failed to set home directory permissions for $home_dir." 1
+
+  # For all subdirectories inside the home directory, set the group sticky bit.
+  # This avoids modifying the top-level home directory permissions.
+  find "$home_dir" -mindepth 1 -type d -exec chmod g+s {} \; || handle_error "Failed to set group sticky bit on directories in $home_dir." 1
+
   log_info "Ownership and permissions set successfully."
 }
 

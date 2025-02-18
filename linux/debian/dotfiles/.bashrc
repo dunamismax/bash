@@ -92,6 +92,8 @@ export HISTTIMEFORMAT="%F %T "
 # =============================================================================
 # Display system info if fastfetch is installed
 command -v fastfetch >/dev/null 2>&1 && fastfetch
+echo
+echo
 
 # =============================================================================
 # 5. Development Environment Setup
