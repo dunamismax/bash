@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Debian System Setup Script
-# Fully configures a clean install of Debian with all needed tools and configurations
-# for hardening, security, and development.
+# Fully configures a clean install of Debian with custom settings,
+# essential applications, hardening, and development tools.
 
 set -Eeuo pipefail
 IFS=$'\n\t'
+export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C.UTF-8
+export PATH="$PATH:/sbin:/usr/sbin"
 
 #------------------------------------------------------------
 # Color definitions for logging output
@@ -70,6 +73,7 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 # Global Configuration Variables
 #------------------------------------------------------------
 USERNAME="sawyer"
+TIMEZONE="America/New_York"
 PACKAGES=(
   # Editors and Terminal Utilities
   vim nano screen tmux mc
@@ -93,7 +97,7 @@ PACKAGES=(
 
 #------------------------------------------------------------
 # check_root
-#    Ensures the script is run as root.
+# Ensures the script is run as root.
 #------------------------------------------------------------
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -104,7 +108,7 @@ check_root() {
 
 #------------------------------------------------------------
 # check_network
-#    Verifies network connectivity by pinging google.com.
+# Verifies network connectivity by pinging google.com.
 #------------------------------------------------------------
 check_network() {
   log_info "Checking network connectivity..."
@@ -114,36 +118,82 @@ check_network() {
   log_info "Network connectivity OK."
 }
 
-#------------------------------------------------------------
+#------------------------------------------------------------------
+# check_distribution
+#    Ensures we are running on a Debian-based distribution.
+#------------------------------------------------------------------
+check_distribution() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "${ID:-}" != "debian" ] && [[ ! "${ID_LIKE:-}" =~ debian ]]; then
+      handle_error "This script is intended for Debian systems. Detected: ${NAME:-Unknown}." 1
+    fi
+    log_info "Distribution confirmed: ${PRETTY_NAME:-Debian-based}."
+  else
+    log_warn "/etc/os-release not found. Assuming Debian-based distro."
+  fi
+}
+
+#------------------------------------------------------------------
 # update_system
-#    Updates package repositories and upgrades the system.
-#------------------------------------------------------------
+#    Updates package repositories and upgrades the system using dist-upgrade.
+#------------------------------------------------------------------
 update_system() {
   log_info "Updating package repositories..."
   if ! apt-get update; then
     handle_error "Failed to update package repositories." 1
   fi
-  if ! apt-get upgrade -y; then
+
+  log_info "Upgrading system packages (dist-upgrade)..."
+  if ! apt-get dist-upgrade -y; then
     handle_error "Failed to upgrade system." 1
   fi
+
   log_info "System update and upgrade complete."
 }
 
 #------------------------------------------------------------
+# ensure_user
+# Checks if the user exists; if not, creates the user.
+#------------------------------------------------------------
+ensure_user() {
+  log_info "Ensuring user '$USERNAME' exists..."
+  if id "$USERNAME" &>/dev/null; then
+    log_info "User '$USERNAME' already exists."
+  else
+    log_info "User '$USERNAME' does not exist. Creating..."
+    adduser --disabled-password --gecos "" "$USERNAME" || handle_error "Failed to create user '$USERNAME'." 1
+    log_info "User '$USERNAME' created successfully."
+  fi
+}
+
+#------------------------------------------------------------
+# configure_timezone
+# Sets the system timezone if TIMEZONE is provided.
+#------------------------------------------------------------
+configure_timezone() {
+  if [ -n "$TIMEZONE" ]; then
+    log_info "Setting system timezone to $TIMEZONE..."
+    timedatectl set-timezone "$TIMEZONE" || handle_error "Failed to set timezone to $TIMEZONE." 1
+    log_info "Timezone set to $TIMEZONE."
+  else
+    log_info "TIMEZONE variable not set; skipping timezone configuration."
+  fi
+}
+
+#------------------------------------------------------------
 # install_packages
-#    Installs essential packages via apt.
+# Installs essential packages via apt.
 #------------------------------------------------------------
 install_packages() {
   log_info "Installing essential packages..."
-  if ! apt-get install -y "${PACKAGES[@]}"; then
-    handle_error "Package installation failed." 1
-  fi
+  apt-get install -y "${PACKAGES[@]}" || handle_error "Package installation failed." 1
   log_info "Package installation complete."
 }
 
 #------------------------------------------------------------
 # apt_cleanup
-#    Removes unnecessary packages and cleans up the apt cache.
+# Removes unnecessary packages and cleans up the apt cache.
 #------------------------------------------------------------
 apt_cleanup() {
   log_info "Cleaning up unnecessary packages and cache..."
@@ -154,27 +204,22 @@ apt_cleanup() {
 
 #------------------------------------------------------------
 # configure_sudo
-#    Ensures the user (assumed to already exist as $USERNAME)
-#    is granted sudo privileges by being added to the sudo group.
+# Adds the user to the sudo group if not already a member.
 #------------------------------------------------------------
 configure_sudo() {
   log_info "Configuring sudo privileges for user '$USERNAME'..."
-
-  # Check if user is already in the sudo group
   if id -nG "$USERNAME" | grep -qw "sudo"; then
     log_info "User '$USERNAME' is already in the sudo group. No changes needed."
   else
     log_info "Adding user '$USERNAME' to the sudo group..."
-    if ! /usr/sbin/usermod -aG sudo "$USERNAME"; then
-      handle_error "Failed to add user '$USERNAME' to the sudo group." 1
-    fi
+    /usr/sbin/usermod -aG sudo "$USERNAME" || handle_error "Failed to add user '$USERNAME' to the sudo group." 1
     log_info "User '$USERNAME' added to the sudo group successfully."
   fi
 }
 
 #------------------------------------------------------------
 # configure_time_sync
-#    Configures time synchronization using chrony.
+# Configures time synchronization using chrony.
 #------------------------------------------------------------
 configure_time_sync() {
   log_info "Configuring time synchronization with chrony..."
@@ -189,7 +234,7 @@ configure_time_sync() {
 
 #------------------------------------------------------------
 # setup_repos
-#    Clones required Git repositories into the user’s Git directory.
+# Clones required Git repositories into the user's Git directory.
 #------------------------------------------------------------
 setup_repos() {
   local repo_dir="/home/${USERNAME}/github"
@@ -203,9 +248,7 @@ setup_repos() {
       if [ -d "$target_dir" ]; then
         log_info "Repository $repo already cloned. Skipping."
       else
-        if ! git clone "https://github.com/dunamismax/$repo.git" "$target_dir"; then
-          handle_error "Failed to clone repository: $repo" 1
-        fi
+        git clone "https://github.com/dunamismax/$repo.git" "$target_dir" || handle_error "Failed to clone repository: $repo" 1
         log_info "Cloned repository: $repo"
       fi
     done
@@ -215,22 +258,20 @@ setup_repos() {
 
 #------------------------------------------------------------
 # configure_ssh
-#    Enables and restarts the OpenSSH service.
+# Enables and restarts the OpenSSH service.
 #------------------------------------------------------------
 configure_ssh() {
   log_info "Configuring SSH service..."
   if ! systemctl is-enabled --quiet ssh; then
     systemctl enable ssh || handle_error "Failed to enable SSH service." 1
   fi
-  if ! systemctl restart ssh; then
-    handle_error "Failed to restart SSH service." 1
-  fi
+  systemctl restart ssh || handle_error "Failed to restart SSH service." 1
   log_info "SSH service configured successfully."
 }
 
 #------------------------------------------------------------
 # secure_ssh_config
-#    Backs up and hardens the SSH daemon configuration.
+# Backs up and hardens the SSH daemon configuration.
 #------------------------------------------------------------
 secure_ssh_config() {
   log_info "Hardening SSH configuration..."
@@ -246,7 +287,6 @@ secure_ssh_config() {
   cp "$sshd_config" "$backup_file" || handle_error "Failed to backup SSH config." 1
   log_info "Backed up SSH config to $backup_file."
   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config" || handle_error "Failed to set PermitRootLogin." 1
-  # Disable password authentication in favor of key-based auth
   sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config" || handle_error "Failed to set PasswordAuthentication." 1
   sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config" || handle_error "Failed to set ChallengeResponseAuthentication." 1
   sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config" || handle_error "Failed to set X11Forwarding." 1
@@ -254,36 +294,26 @@ secure_ssh_config() {
   if ! grep -q "^PermitEmptyPasswords no" "$sshd_config"; then
     echo "PermitEmptyPasswords no" >> "$sshd_config" || handle_error "Failed to set PermitEmptyPasswords." 1
   fi
-  if ! systemctl restart ssh; then
-    handle_error "Failed to restart SSH after hardening." 1
-  fi
+  systemctl restart ssh || handle_error "Failed to restart SSH after hardening." 1
   log_info "SSH configuration hardened successfully."
 }
 
 #------------------------------------------------------------
 # configure_nftables_firewall
-#    Enables and sets the Firewall configuration using nftables.
+# Enables and sets up the firewall configuration using nftables.
 #------------------------------------------------------------
 configure_nftables_firewall() {
   log_info "Configuring firewall using nftables..."
-
-  # Check if nft command exists; if not, install nftables package.
   if ! command -v nft >/dev/null 2>&1; then
     log_info "nft command not found. Installing nftables package..."
     apt-get update || handle_error "Failed to update APT package index." 1
     apt-get install -y nftables || handle_error "Failed to install nftables." 1
   fi
-
-  # Backup existing configuration if present
   if [ -f /etc/nftables.conf ]; then
     cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
     log_info "Existing /etc/nftables.conf backed up to /etc/nftables.conf.bak."
   fi
-
-  # Flush any current ruleset using full path to nft
   /usr/sbin/nft flush ruleset || handle_error "Failed to flush current nftables ruleset." 1
-
-  # Write new nftables configuration (persisted to /etc/nftables.conf)
   cat << 'EOF' > /etc/nftables.conf
 #!/usr/sbin/nft -f
 table inet filter {
@@ -310,20 +340,69 @@ EOF
     handle_error "Failed to write /etc/nftables.conf." 1
   fi
   log_info "New nftables configuration written to /etc/nftables.conf."
-
-  # Load the new nftables rules using full path to nft
   /usr/sbin/nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
   log_info "nftables rules loaded successfully."
-
-  # Enable and restart the nftables service so that rules persist across reboots
   systemctl enable nftables.service || handle_error "Failed to enable nftables service." 1
   systemctl restart nftables.service || handle_error "Failed to restart nftables service." 1
   log_info "nftables service enabled and restarted; firewall configuration persisted."
 }
 
 #------------------------------------------------------------
+# disable_ipv6
+# Disables IPv6 by writing sysctl configuration.
+#------------------------------------------------------------
+disable_ipv6() {
+  log_info "Disabling IPv6 for enhanced security..."
+  local ipv6_conf="/etc/sysctl.d/99-disable-ipv6.conf"
+  cat <<EOF > "$ipv6_conf"
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+EOF
+  sysctl --system || handle_error "Failed to reload sysctl settings." 1
+  log_info "IPv6 disabled via $ipv6_conf."
+}
+
+#------------------------------------------------------------------
+# configure_fail2ban
+#    Installs and configures Fail2ban for SSH brute-force protection.
+#------------------------------------------------------------------
+configure_fail2ban() {
+  if command -v fail2ban-server >/dev/null 2>&1; then
+    log_info "Fail2ban is already installed. Skipping installation."
+    return 0
+  fi
+
+  log_info "Installing Fail2ban..."
+  if ! apt-get install -y fail2ban; then
+    handle_error "Failed to install Fail2ban." 1
+  fi
+
+  # Backup existing configuration if it exists
+  if [ -f /etc/fail2ban/jail.local ]; then
+    cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak || log_warn "Failed to backup existing jail.local"
+    log_info "Backed up /etc/fail2ban/jail.local to /etc/fail2ban/jail.local.bak."
+  fi
+
+  # Minimal configuration example for SSH protection
+  cat <<EOF >/etc/fail2ban/jail.local
+[sshd]
+enabled  = true
+port     = 22
+filter   = sshd
+logpath  = /var/log/auth.log
+maxretry = 5
+findtime = 600
+bantime  = 3600
+EOF
+
+  systemctl enable fail2ban || log_warn "Failed to enable Fail2ban service."
+  systemctl start fail2ban || log_warn "Failed to start Fail2ban service."
+  log_info "Fail2ban installed and configured successfully."
+}
+
+#------------------------------------------------------------
 # deploy_user_scripts
-#    Deploys user scripts from the repository to the user’s bin directory.
+# Deploys user scripts from the repository to the user's bin directory.
 #------------------------------------------------------------
 deploy_user_scripts() {
   local bin_dir="/home/${USERNAME}/bin"
@@ -340,7 +419,7 @@ deploy_user_scripts() {
 
 #------------------------------------------------------------
 # home_permissions
-#    Ensures that the user’s home directory has the correct ownership and permissions.
+# Ensures that the user's home directory has the correct ownership and permissions.
 #------------------------------------------------------------
 home_permissions() {
   local home_dir="/home/${USERNAME}"
@@ -352,7 +431,7 @@ home_permissions() {
 
 #------------------------------------------------------------
 # dotfiles_load
-#    Copies .bashrc and .profile from the dotfiles repository into the user’s and root’s home directories.
+# Copies dotfiles (.bashrc and .profile) from the repository into the user's and root's home directories.
 #------------------------------------------------------------
 dotfiles_load() {
   log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
@@ -378,7 +457,7 @@ dotfiles_load() {
 
 #------------------------------------------------------------
 # set_default_shell
-#    Sets /bin/bash as the default shell for user $USERNAME and root using chsh.
+# Sets /bin/bash as the default shell for user $USERNAME and root.
 #------------------------------------------------------------
 set_default_shell() {
   local target_shell="/bin/bash"
@@ -404,35 +483,81 @@ set_default_shell() {
 
 #------------------------------------------------------------
 # install_and_configure_nala
-#    Installs Nala on Debian using the Volian Scar repo installation
-#    script. This command sets up the repository and installs Nala.
+# Installs Nala using the Volian Scar repository installation script.
 #------------------------------------------------------------
 install_and_configure_nala() {
   if command -v nala >/dev/null 2>&1; then
     log_info "Nala is already installed. Skipping installation."
     return 0
   fi
-
   log_info "Installing Nala using the Volian Scar repository installation script..."
-  if ! curl -fsSL https://gitlab.com/volian/volian-archive/-/raw/main/install-nala.sh | bash; then
-    handle_error "Failed to install Nala using the Volian Scar installation script." 1
-  fi
-
+  curl -fsSL https://gitlab.com/volian/volian-archive/-/raw/main/install-nala.sh | bash || handle_error "Failed to install Nala using the Volian Scar installation script." 1
   if ! command -v nala >/dev/null 2>&1; then
     handle_error "Nala installation did not complete successfully." 1
   fi
-
   log_info "Nala installed successfully."
+}
+
+install_fastfetch() {
+  local url="https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-linux-amd64.deb"
+  local deb_file="/tmp/fastfetch-linux-amd64.deb"
+
+  log_info "Downloading fastfetch from $url..."
+  if ! curl -fsSL -o "$deb_file" "$url"; then
+    handle_error "Failed to download fastfetch from $url." 1
+  fi
+
+  log_info "Installing fastfetch..."
+  if ! dpkg -i "$deb_file"; then
+    log_warn "dpkg installation failed. Attempting to fix dependencies..."
+    if ! apt-get update && apt-get -f install -y; then
+      handle_error "Failed to install fastfetch and fix dependencies." 1
+    fi
+  fi
+
+  rm -f "$deb_file"
+  log_info "fastfetch installed successfully."
+}
+
+#------------------------------------------------------------
+# configure_unattended_upgrades
+# Installs and configures unattended-upgrades for automatic security updates.
+#------------------------------------------------------------
+configure_unattended_upgrades() {
+  log_info "Installing and configuring unattended-upgrades..."
+  apt-get install -y unattended-upgrades || handle_error "Failed to install unattended-upgrades." 1
+  dpkg-reconfigure -plow unattended-upgrades || log_warn "Failed to reconfigure unattended-upgrades."
+  log_info "Unattended-upgrades configured successfully."
+}
+
+#------------------------------------------------------------
+# prompt_reboot
+# Prompts the user to reboot the system after configuration is complete.
+#------------------------------------------------------------
+prompt_reboot() {
+  read -rp "System setup is complete. Would you like to reboot now? (y/n): " answer
+  case "$answer" in
+    [Yy]* )
+      log_info "Rebooting system as per user request."
+      reboot
+      ;;
+    * )
+      log_info "Reboot skipped. Please reboot manually to finalize changes."
+      ;;
+  esac
 }
 
 #------------------------------------------------------------
 # main
-#    Calls all setup functions in the required order.
+# Calls all setup functions in the required order.
 #------------------------------------------------------------
 main() {
   check_root
   check_network
+  check_distribution
   update_system
+  ensure_user
+  configure_timezone
   install_packages
   configure_sudo
   configure_time_sync
@@ -440,13 +565,18 @@ main() {
   configure_ssh
   secure_ssh_config
   configure_nftables_firewall
+  disable_ipv6
+  configure_fail2ban
   deploy_user_scripts
   home_permissions
   dotfiles_load
   set_default_shell
   install_and_configure_nala
+  install_fastfetch
+  configure_unattended_upgrades
   apt_cleanup
   log_info "Debian system setup completed successfully."
+  prompt_reboot
 }
 
 main "$@"
