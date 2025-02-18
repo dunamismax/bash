@@ -429,11 +429,21 @@ home_permissions() {
   chown -R "${USERNAME}:${USERNAME}" "$home_dir" || handle_error "Failed to set ownership for $home_dir." 1
 
   # Set the home directory itself to 700 (rwx------)
-  chmod 700 "$home_dir" || handle_error "Failed to set home directory permissions for $home_dir." 1
+  chmod 700 "$home_dir" || handle_error "Failed to set permissions for $home_dir." 1
 
   # For all subdirectories inside the home directory, set the group sticky bit.
-  # This avoids modifying the top-level home directory permissions.
   find "$home_dir" -mindepth 1 -type d -exec chmod g+s {} \; || handle_error "Failed to set group sticky bit on directories in $home_dir." 1
+
+  # Ensure the nano history file is owned by the user and has proper permissions.
+  local nano_hist="$HOME/.nano_history"
+  if [ -f "$nano_hist" ]; then
+    chown "${USERNAME}:$(id -gn)" "$nano_hist" || log_warn "Failed to correct ownership of $nano_hist."
+    chmod 600 "$nano_hist" || log_warn "Failed to set permissions for $nano_hist."
+  else
+    touch "$nano_hist" || log_warn "Failed to create $nano_hist."
+    chown "${USERNAME}:$(id -gn)" "$nano_hist" || log_warn "Failed to set ownership for $nano_hist."
+    chmod 600 "$nano_hist" || log_warn "Failed to set permissions for $nano_hist."
+  fi
 
   log_info "Ownership and permissions set successfully."
 }
