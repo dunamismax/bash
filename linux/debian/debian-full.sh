@@ -814,25 +814,6 @@ install_ly() {
   log_info "Ly will take effect on next reboot, or start it now with: systemctl start ly.service"
 }
 
-final_checks() {
-  log_info "Kernel version: $(uname -r)"
-  log_info "System uptime: $(uptime -p)"
-  log_info "Disk usage (root partition): $(df -h / | awk 'NR==2 {print $0}')"
-  local mem_total mem_used mem_free
-  read -r mem_total mem_used mem_free < <(free -h | awk '/^Mem:/{print $2, $3, $4}')
-  log_info "Memory usage: Total: ${mem_total}, Used: ${mem_used}, Free: ${mem_free}"
-  local cpu_model
-  cpu_model=$(lscpu | grep 'Model name' | sed 's/Model name:[[:space:]]*//')
-  log_info "CPU: ${cpu_model}"
-  log_info "Active network interfaces:"
-  ip -brief address | while read -r iface; do
-    log_info "  $iface"
-  done
-  local load_avg
-  load_avg=$(awk '{print $1", "$2", "$3}' /proc/loadavg)
-  log_info "Load averages (1, 5, 15 min): ${load_avg}"
-}
-
 #------------------------------------------------------------
 # Main Function: Execute Setup Steps in Order
 #------------------------------------------------------------
@@ -866,7 +847,6 @@ main() {
   install_ly
   install_fastfetch
   configure_unattended_upgrades
-  final_checks
   apt_cleanup
   log_info "Debian system setup completed successfully."
   prompt_reboot
