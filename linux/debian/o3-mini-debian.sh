@@ -7,6 +7,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C.UTF-8
+export PATH="$PATH:/sbin:/usr/sbin"
 
 #------------------------------------------------------------
 # Color definitions for logging output
