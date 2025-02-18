@@ -18,7 +18,6 @@ export PATH="$PATH:/sbin:/usr/sbin"
 # Color definitions for logging output
 #------------------------------------------------------------
 NORD9='\033[38;2;129;161;193m'    # Debug messages
-NORD10='\033[38;2;94;129;172m'     # Extra (e.g., section headers)
 NORD11='\033[38;2;191;97;106m'     # Error messages
 NORD13='\033[38;2;235;203;139m'    # Warning messages
 NORD14='\033[38;2;163;190;140m'    # Info messages
