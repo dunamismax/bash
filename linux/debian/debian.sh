@@ -574,7 +574,6 @@ main() {
   configure_fail2ban
   deploy_user_scripts
   home_permissions
-  dotfiles_load
   set_default_shell
   install_and_configure_nala
   docker_config
