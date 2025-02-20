@@ -49,12 +49,37 @@ update_system() {
 
 install_packages() {
   PACKAGES=(
+    # Shells and Terminal Utilities
     bash vim nano zsh screen tmux mc htop tree ncdu neofetch
-    git curl wget rsync sudo python3 py38-pip tzdata gcc cmake
-    ninja meson gettext openssh go gdb strace man
+
+    # Networking and Version Control
+    git curl wget rsync sudo openssh
+
+    # Programming Languages and Tools
+    python3 py38-pip gcc cmake ninja meson go gdb strace
+
+    # Documentation and Timezone
+    man tzdata
+
+    # X11 and Window Managers
     xorg i3 sddm alacritty dmenu i3blocks
+
+    # System Administration Tools
+    nmap lsof sysstat iftop iperf3 netcat tcpdump lynis
+
+    # Penetration Testing and Security Tools
+    metasploit-framework john hydra aircrack-ng nikto
+
+    # Database Management Systems
+    postgresql14-client postgresql14-server mysql80-client mysql80-server redis
+
+    # Additional Development Tools
+    node npm ruby perl php7.4 rust cargo
+
+    # Miscellaneous Utilities
+    jq shellcheck
   )
-  
+
   log_info "Installing essential packages..."
   if ! pkg install -y "${PACKAGES[@]}"; then
     log_warn "One or more packages failed to install."
@@ -65,10 +90,16 @@ install_packages() {
   # Enable necessary services
   sysrc dbus_enable="YES"
   sysrc sddm_enable="YES"
+  sysrc postgresql_enable="YES"
+  sysrc mysql_enable="YES"
+  sysrc redis_enable="YES"
 
   # Start services
   service dbus start
   service sddm start
+  service postgresql start
+  service mysql-server start
+  service redis start
 }
 
 create_user() {
