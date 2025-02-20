@@ -1,76 +1,34 @@
 #!/usr/local/bin/bash
-# ------------------------------------------------------------------------------
-# Script Name: freebsd_setup.sh
-# Description: Master FreeBSD setup script that installs essential packages,
-#              configures system services, creates a user account, installs
-#              a minimal GUI environment, deploys dotfiles, and performs various
-#              system configurations.
-# Author: Your Name | License: MIT | Version: 1.2.0
-# ------------------------------------------------------------------------------
-#
-# Usage:
-#   sudo ./freebsd_setup.sh [OPTIONS]
-#
-# Options:
-#   -h, --help    Show this help message and exit.
-#
-# ------------------------------------------------------------------------------
-
-# Enable strict mode and error trapping
 set -Eeuo pipefail
 IFS=$'\n\t'
 trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
-# ------------------------------------------------------------------------------
-# CONFIGURATION
-# ------------------------------------------------------------------------------
 LOG_FILE="/var/log/freebsd_setup.log"
 USERNAME="sawyer"
 USER_HOME="/home/${USERNAME}"
 
-# Ensure log directory and file exist with proper permissions
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 
-# ------------------------------------------------------------------------------
-# LOGGING AND ERROR HANDLING FUNCTIONS
-# ------------------------------------------------------------------------------
 log() {
     local level="${1:-INFO}"
     shift
     local message="$*"
     local timestamp
     timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-
-    # Define color codes
     local RED='\033[0;31m'
     local YELLOW='\033[0;33m'
     local GREEN='\033[0;32m'
     local BLUE='\033[0;34m'
-    local NC='\033[0m'  # No Color
-
-    # Set color based on log level
+    local NC='\033[0m'
     case "${level^^}" in
-        INFO)
-            local color="${GREEN}"
-            ;;
-        WARN|WARNING)
-            local color="${YELLOW}"
-            level="WARN"
-            ;;
-        ERROR)
-            local color="${RED}"
-            ;;
-        DEBUG)
-            local color="${BLUE}"
-            ;;
-        *)
-            local color="${NC}"
-            level="INFO"
-            ;;
+        INFO) local color="${GREEN}" ;;
+        WARN|WARNING) local color="${YELLOW}"; level="WARN" ;;
+        ERROR) local color="${RED}" ;;
+        DEBUG) local color="${BLUE}" ;;
+        *) local color="${NC}"; level="INFO" ;;
     esac
-
     local log_entry="[$timestamp] [${level^^}] $message"
     echo "$log_entry" >> "$LOG_FILE"
     printf "${color}%s${NC}\n" "$log_entry" >&2
@@ -88,19 +46,14 @@ handle_error() {
 usage() {
     cat <<EOF
 Usage: sudo $(basename "$0") [OPTIONS]
-
 This script installs and configures a FreeBSD system with essential packages,
 a minimal GUI environment, and dotfiles.
-
 Options:
   -h, --help    Show this help message and exit.
 EOF
     exit 0
 }
 
-# ------------------------------------------------------------------------------
-# HELPER FUNCTIONS
-# ------------------------------------------------------------------------------
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         handle_error "Script must be run as root."
@@ -130,34 +83,16 @@ update_system() {
 install_packages() {
     log INFO "Installing essential packages..."
     PACKAGES=(
-        # Shells and Terminal Utilities
         bash vim nano zsh screen tmux mc htop tree ncdu neofetch
-
-        # Networking and Version Control
         git curl wget rsync
-
-        # Programming Languages and Tools
         python3 gcc cmake ninja meson go gdb
-
-        # X11 and Desktop Environments (base packages)
         xorg gnome gdm alacritty
-
-        # System Administration Tools
         nmap lsof iftop iperf3 netcat tcpdump lynis
-
-        # Penetration Testing and Security Tools
         john hydra aircrack-ng nikto
-
-        # Database Management Systems
         postgresql14-client postgresql14-server mysql80-client mysql80-server redis
-
-        # Additional Development Tools
         ruby rust
-
-        # Miscellaneous Utilities
         jq doas
     )
-
     for pkg in "${PACKAGES[@]}"; do
         if ! pkg install -y "$pkg"; then
             log WARN "Package $pkg failed to install."
@@ -368,10 +303,6 @@ enable_gdm() {
     fi
 }
 
-# ------------------------------------------------------------------------------
-# FUNCTIONS FROM GUI SETUP SCRIPT
-# ------------------------------------------------------------------------------
-
 install_gui() {
     log INFO "--------------------------------------"
     log INFO "Starting minimal GUI installation..."
@@ -395,27 +326,20 @@ setup_dotfiles() {
     log INFO "Starting dotfiles setup..."
     local dotfiles_dir="${USER_HOME}/github/bash/freebsd/dotfiles"
     local config_dir="${USER_HOME}/.config"
-
     if [[ ! -d "$dotfiles_dir" ]]; then
         handle_error "Dotfiles directory not found: $dotfiles_dir"
     fi
-
     log INFO "Ensuring configuration directory exists at: $config_dir"
     mkdir -p "$config_dir" || handle_error "Failed to create config directory at $config_dir."
-
-    # Copy files (source:destination)
     local files=(
         "${dotfiles_dir}/.xinitrc:${USER_HOME}/"
     )
-
-    # Copy directories (source:destination)
     local dirs=(
         "${dotfiles_dir}/alacritty:${config_dir}"
         "${dotfiles_dir}/i3:${config_dir}"
         "${dotfiles_dir}/picom:${config_dir}"
         "${dotfiles_dir}/i3status:${config_dir}"
     )
-
     log INFO "Copying dotfiles (files)..."
     for mapping in "${files[@]}"; do
         local src="${mapping%%:*}"
@@ -427,7 +351,6 @@ setup_dotfiles() {
             log WARN "Source file not found, skipping: $src"
         fi
     done
-
     log INFO "Copying dotfiles (directories)..."
     for mapping in "${dirs[@]}"; do
         local src="${mapping%%:*}"
@@ -439,7 +362,6 @@ setup_dotfiles() {
             log WARN "Source directory not found, skipping: $src"
         fi
     done
-
     log INFO "Setting ownership for all files under ${USER_HOME}..."
     chown -R "${USERNAME}:${USERNAME}" "${USER_HOME}" || handle_error "Failed to set ownership for ${USER_HOME}."
     log INFO "Dotfiles setup completed successfully."
@@ -456,24 +378,14 @@ prompt_reboot() {
     fi
 }
 
-# ------------------------------------------------------------------------------
-# MAIN FUNCTION
-# ------------------------------------------------------------------------------
 main() {
-    # Parse input arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help)
-                usage
-                ;;
-            *)
-                log WARN "Unknown option: $1"
-                usage
-                ;;
+            -h|--help) usage ;;
+            *) log WARN "Unknown option: $1"; usage ;;
         esac
         shift
     done
-
     check_root
     check_network
     update_system
@@ -499,9 +411,6 @@ main() {
     prompt_reboot
 }
 
-# ------------------------------------------------------------------------------
-# SCRIPT INVOCATION CHECK
-# ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi
