@@ -2,7 +2,7 @@
 # ------------------------------------------------------------------------------
 # Script Name: example_script.sh
 # Description: [Brief description of what the script does]
-# Author: Your Name | License: MIT
+# Author: dunamismax | License: MIT
 # Version: 1.0.0
 # ------------------------------------------------------------------------------
 #
