@@ -1,26 +1,12 @@
 #!/usr/bin/env bash
-# FreeBSD System Setup Script
-# Fully configures a clean install of FreeBSD with tools, hardening, and development configurations.
-# Note:
-#   - Must be run as root.
-#   - Log output is saved to /var/log/freebsd_setup.log.
-
 set -Eeuo pipefail
 IFS=$'\n\t'
-
-# Color definitions for logging
-NORD9='\033[38;2;129;161;193m'    # Debug messages
-NORD11='\033[38;2;191;97;106m'    # Error messages
-NORD13='\033[38;2;235;203;139m'   # Warning messages
-NORD14='\033[38;2;163;190;140m'   # Info messages
-NC='\033[0m'                     # Reset to No Color
 
 LOG_FILE="/var/log/freebsd_setup.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 
-# Logging functions
 log() {
   local level="${1:-INFO}"
   shift
@@ -29,71 +15,19 @@ log() {
   timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
   local entry="[$timestamp] [${level^^}] $message"
   echo "$entry" >> "$LOG_FILE"
-  if [ -t 2 ]; then
-    case "${level^^}" in
-      INFO)  printf "%b%s%b\n" "$NORD14" "$entry" "$NC" ;;
-      WARN)  printf "%b%s%b\n" "$NORD13" "$entry" "$NC" ;;
-      ERROR) printf "%b%s%b\n" "$NORD11" "$entry" "$NC" ;;
-      DEBUG) printf "%b%s%b\n" "$NORD9"  "$entry" "$NC" ;;
-      *)     printf "%s\n" "$entry" ;;
-    esac
-  else
-    echo "$entry" >&2
-  fi
+  echo "$entry"
 }
 log_info()  { log INFO "$@"; }
 log_warn()  { log WARN "$@"; }
-log_error() { log ERROR "$@"; }
-log_debug() { log DEBUG "$@"; }
-
-handle_error() {
-  local msg="${1:-An unknown error occurred.}"
-  local code="${2:-1}"
-  log_error "$msg (Exit Code: $code)"
-  log_error "Error encountered at line $LINENO in function ${FUNCNAME[1]:-main}."
-  echo -e "${NORD11}ERROR: $msg (Exit Code: $code)${NC}" >&2
-  exit "$code"
-}
-
-cleanup() {
-  log_info "Cleanup tasks complete."
-}
-trap cleanup EXIT
-trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
-
-# Utility function to print section headers
-print_section() {
-  local title="$1"
-  local border
-  border=$(printf '─%.0s' {1..60})
-  log_info "${NORD14}${border}${NC}"
-  log_info "${NORD14}  $title${NC}"
-  log_info "${NORD14}${border}${NC}"
-}
-
-# Configuration Variables
-USERNAME="sawyer"
-TIMEZONE="America/New_York"
-
-# Zig installation configuration (FreeBSD build)
-ZIG_URL="https://ziglang.org/builds/zig-freebsd-x86_64-0.14.0-dev.3224+5ab511307.tar.xz"
-ZIG_DIR="/opt/zig"
-ZIG_BIN="/usr/local/bin/zig"
-
-# List of packages (adjust package names as available in pkg)
-PACKAGES=(bash vim nano zsh screen tmux mc htop tree ncdu neofetch
-          git curl wget rsync sudo python3 py38-pip tzdata gcc cmake
-          ninja meson gettext openssh go gdb strace man)
 
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
-    log_error "Script must be run as root. Exiting."
+    log_warn "Script must be run as root. Exiting."
     exit 1
   fi
 }
 
 check_network() {
-  print_section "Network Connectivity Check"
   log_info "Checking network connectivity..."
   if ! ping -c1 -t5 google.com &>/dev/null; then
     log_warn "No network connectivity detected."
@@ -103,7 +37,6 @@ check_network() {
 }
 
 update_system() {
-  print_section "System Update & Upgrade"
   log_info "Updating pkg repository..."
   if ! pkg update; then
     log_warn "pkg update encountered issues."
@@ -115,7 +48,9 @@ update_system() {
 }
 
 install_packages() {
-  print_section "Essential Package Installation"
+  PACKAGES=(bash vim nano zsh screen tmux mc htop tree ncdu neofetch
+            git curl wget rsync sudo python3 py38-pip tzdata gcc cmake
+            ninja meson gettext openssh go gdb strace man)
   log_info "Installing essential packages..."
   if ! pkg install -y "${PACKAGES[@]}"; then
     log_warn "One or more packages failed to install."
@@ -125,7 +60,7 @@ install_packages() {
 }
 
 create_user() {
-  print_section "User Creation"
+  USERNAME="sawyer"
   if ! id "$USERNAME" &>/dev/null; then
     log_info "Creating user '$USERNAME'..."
     if ! pw useradd "$USERNAME" -m -s /usr/local/bin/bash -G wheel; then
@@ -140,7 +75,7 @@ create_user() {
 }
 
 configure_timezone() {
-  print_section "Timezone Configuration"
+  TIMEZONE="America/New_York"
   log_info "Setting timezone to $TIMEZONE..."
   if [ -f "/usr/share/zoneinfo/${TIMEZONE}" ]; then
     cp "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
@@ -152,7 +87,7 @@ configure_timezone() {
 }
 
 setup_repos() {
-  print_section "GitHub Repositories Setup"
+  USERNAME="sawyer"
   local repo_dir="/home/${USERNAME}/github"
   log_info "Cloning repositories into $repo_dir..."
   mkdir -p "$repo_dir"
@@ -169,7 +104,7 @@ setup_repos() {
 }
 
 copy_shell_configs() {
-  print_section "Shell Configuration Files"
+  USERNAME="sawyer"
   log_info "Copying shell configuration files..."
   for file in .bashrc .profile; do
     local src="/home/${USERNAME}/github/bash/freebsd/dotfiles/$file"
@@ -189,7 +124,6 @@ copy_shell_configs() {
 }
 
 configure_ssh() {
-  print_section "SSH Configuration"
   log_info "Configuring SSH..."
   if sysrc sshd_enable >/dev/null 2>&1; then
     log_info "sshd_enable already set."
@@ -201,7 +135,6 @@ configure_ssh() {
 }
 
 secure_ssh_config() {
-  print_section "SSH Hardening"
   local sshd_config="/etc/ssh/sshd_config"
   local backup_file="/etc/ssh/sshd_config.bak"
   if [ -f "$sshd_config" ]; then
@@ -219,7 +152,6 @@ secure_ssh_config() {
 }
 
 install_plex() {
-  print_section "Plex Media Server Installation"
   log_info "Installing Plex Media Server..."
   if pkg install -y plexmediaserver; then
     log_info "Plex Media Server installed successfully."
@@ -229,10 +161,9 @@ install_plex() {
 }
 
 configure_zfs() {
-  print_section "ZFS Configuration"
-  log_info "Configuring ZFS pool..."
   local ZPOOL_NAME="WD_BLACK"
   local MOUNT_POINT="/mnt/${ZPOOL_NAME}"
+  log_info "Configuring ZFS pool..."
   if ! zpool list "$ZPOOL_NAME" &>/dev/null; then
     log_info "ZFS pool '$ZPOOL_NAME' not found. Skipping import."
   else
@@ -246,7 +177,7 @@ configure_zfs() {
 }
 
 deploy_user_scripts() {
-  print_section "Deploying User Scripts"
+  USERNAME="sawyer"
   local bin_dir="/home/${USERNAME}/bin"
   local scripts_src="/home/${USERNAME}/github/bash/freebsd/_scripts/"
   log_info "Deploying user scripts from $scripts_src to $bin_dir..."
@@ -260,15 +191,13 @@ deploy_user_scripts() {
 }
 
 setup_cron() {
-  print_section "Cron Service Setup"
   log_info "Starting cron service..."
   service cron start || log_warn "Failed to start cron."
 }
 
 configure_periodic() {
-  print_section "Periodic Maintenance Setup"
-  log_info "Configuring daily system maintenance tasks..."
   local cron_file="/etc/periodic/daily/freebsd_maintenance"
+  log_info "Configuring daily system maintenance tasks..."
   if [ -f "$cron_file" ]; then
     mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" && \
       log_info "Existing periodic script backed up." || \
@@ -276,7 +205,6 @@ configure_periodic() {
   fi
   cat << 'EOF' > "$cron_file"
 #!/bin/sh
-# FreeBSD maintenance script
 pkg update -q && pkg upgrade -y && pkg autoremove -y && pkg clean -y
 EOF
   if chmod +x "$cron_file"; then
@@ -287,14 +215,11 @@ EOF
 }
 
 install_fastfetch() {
-  print_section "Fastfetch Installation"
   log_info "Installing Fastfetch..."
-  pkg install fastfetch
-  log_info "fastfetch installed..."
+  pkg install fastfetch && log_info "fastfetch installed." || log_warn "Failed to install fastfetch."
 }
 
 final_checks() {
-  print_section "Final System Checks"
   log_info "Performing final system checks:"
   echo "Kernel: $(uname -r)"
   echo "Uptime: $(uptime)"
@@ -303,7 +228,7 @@ final_checks() {
 }
 
 home_permissions() {
-  print_section "Home Directory Permissions"
+  USERNAME="sawyer"
   local home_dir="/home/${USERNAME}"
   log_info "Setting ownership and permissions for $home_dir..."
   chown -R "${USERNAME}:${USERNAME}" "$home_dir"
@@ -311,36 +236,24 @@ home_permissions() {
 }
 
 set_bash_shell() {
-  local target_user="${1:-$USER}"
-
-  # Must run as root to modify /etc/shells and change user shell
+  local target_user="sawyer"
   if [ "$(id -u)" -ne 0 ]; then
-    echo "This function requires root privileges. Please run as root."
+    log_warn "This function requires root privileges."
     return 1
   fi
-
-  # Check if Bash is installed; if not, install it
   if [ ! -x /usr/local/bin/bash ]; then
-    echo "Bash not found. Installing via pkg..."
-    pkg install -y bash || {
-      echo "Failed to install Bash."
-      return 1
-    }
+    log_info "Bash not found. Installing via pkg..."
+    pkg install -y bash || { log_warn "Failed to install Bash."; return 1; }
   fi
-
-  # Ensure /usr/local/bin/bash is listed in /etc/shells
   if ! grep -Fxq "/usr/local/bin/bash" /etc/shells; then
     echo "/usr/local/bin/bash" >> /etc/shells
-    echo "Added /usr/local/bin/bash to /etc/shells."
+    log_info "Added /usr/local/bin/bash to /etc/shells."
   fi
-
-  # Set the user’s default shell to Bash
   chsh -s /usr/local/bin/bash "$target_user"
-  echo "Default shell for $target_user changed to /usr/local/bin/bash."
+  log_info "Default shell for $target_user changed to /usr/local/bin/bash."
 }
 
 prompt_reboot() {
-  print_section "Reboot Prompt"
   read -rp "Reboot now? [y/N]: " answer
   if [[ "$answer" =~ ^[Yy]$ ]]; then
     log_info "Rebooting system..."
