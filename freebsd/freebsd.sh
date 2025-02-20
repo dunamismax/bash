@@ -250,76 +250,6 @@ install_plex() {
   fi
 }
 
-install_zig_binary() {
-  print_section "Zig Installation"
-  log_info "Installing Zig binary..."
-  if ! pkg install -y curl tar; then
-    log_warn "Failed to install curl and tar."
-  fi
-  rm -rf "$ZIG_DIR"
-  mkdir -p "$ZIG_DIR"
-  local tmp_tar="/tmp/zig.tar.xz"
-  if curl -L -o "$tmp_tar" "$ZIG_URL"; then
-    if tar -xf "$tmp_tar" -C "$ZIG_DIR" --strip-components=1; then
-      ln -sf "$ZIG_DIR/zig" "$ZIG_BIN"
-      rm -f "$tmp_tar"
-      if ! "$ZIG_BIN" version &>/dev/null; then
-        log_error "Zig installation failed."
-      else
-        log_info "Zig installed successfully."
-      fi
-    else
-      log_warn "Failed to extract Zig tarball."
-      rm -f "$tmp_tar"
-    fi
-  else
-    log_error "Failed to download Zig."
-  fi
-}
-
-configure_firewall() {
-  print_section "PF Firewall Configuration"
-  log_info "Configuring PF firewall..."
-  local pf_conf="/etc/pf.conf"
-  if [ -f "$pf_conf" ]; then
-    cp "$pf_conf" "${pf_conf}.bak"
-    log_info "Backed up existing pf.conf to ${pf_conf}.bak."
-  fi
-  cat << 'EOF' > "$pf_conf"
-# Minimal PF configuration for FreeBSD
-set block-policy drop
-set loginterface egress
-block in all
-pass out all keep state
-pass quick on lo
-EOF
-  log_info "New pf.conf written."
-  sysrc pf_enable="YES"
-  if pfctl -f "$pf_conf"; then
-    log_info "PF rules loaded."
-  else
-    log_warn "Failed to load PF rules."
-  fi
-  service pf start || log_warn "Failed to start PF."
-}
-
-secure_sysctl() {
-  print_section "Kernel Hardening via sysctl"
-  log_info "Applying sysctl kernel hardening settings..."
-  local sysctl_conf="/etc/sysctl.conf"
-  [ -f "$sysctl_conf" ] && cp "$sysctl_conf" "${sysctl_conf}.bak"
-  cat << 'EOF' >> "$sysctl_conf"
-# Harden kernel parameters for FreeBSD
-net.inet.tcp.blackhole=2
-security.bsd.see_other_uids=0
-EOF
-  if sysctl -p; then
-    log_info "sysctl settings applied."
-  else
-    log_warn "Failed to apply sysctl settings."
-  fi
-}
-
 # On FreeBSD, ZFS is integrated. This function checks for a pool named "WD_BLACK" and sets its mountpoint.
 configure_zfs() {
   print_section "ZFS Configuration"
@@ -402,115 +332,6 @@ install_fastfetch() {
   fi
 }
 
-build_ly() {
-  print_section "Ly Display Manager Installation"
-  log_info "Building and installing Ly display manager..."
-  if ! pkg install -y libxcb xcb-util xcb-util-keysyms xcb-util-wm xcb-util-cursor libxkbcommon libxkbcommon-x11; then
-    log_warn "One or more Ly build dependencies failed to install."
-  fi
-  local LY_DIR="/opt/ly"
-  rm -rf "$LY_DIR"
-  if ! git clone https://github.com/fairyglade/ly.git "$LY_DIR"; then
-    log_error "Failed to clone Ly repository."
-    return 1
-  fi
-  cd "$LY_DIR" || { log_error "Failed to change directory to $LY_DIR."; return 1; }
-  log_info "Compiling Ly with Zig..."
-  if ! zig build; then
-    log_error "Compilation of Ly failed."
-    return 1
-  fi
-  if cp ./ly /usr/local/bin/ly; then
-    chmod +x /usr/local/bin/ly
-    log_info "Ly installed to /usr/local/bin/ly."
-  else
-    log_warn "Failed to copy the Ly binary."
-  fi
-  local ly_rc="/usr/local/etc/rc.d/ly"
-  cat << 'EOF' > "$ly_rc"
-#!/bin/sh
-#
-# PROVIDE: ly
-# REQUIRE: LOGIN
-# KEYWORD: shutdown
-. /etc/rc.subr
-name="ly"
-rcvar="ly_enable"
-command="/usr/local/bin/ly"
-start_cmd="ly_start"
-ly_start() {
-    echo "Starting Ly display manager..."
-    ${command} &
-}
-load_rc_config ${name}
-run_rc_command "$1"
-EOF
-  chmod +x "$ly_rc" || log_warn "Failed to make $ly_rc executable."
-  if sysrc ly_enable="YES" >/dev/null 2>&1; then
-    log_info "Ly service enabled in rc.conf."
-  else
-    log_warn "Failed to enable Ly service in rc.conf."
-  fi
-  log_info "Ly display manager built and configured."
-}
-
-# Create rc.d scripts for DunamisMax services (adapted from the Ubuntu systemd units)
-enable_dunamismax_services() {
-  print_section "DunamisMax Services Setup"
-  log_info "Setting up DunamisMax services..."
-  # Define arrays with service details.
-  local service_names=("dunamismax_ai_agents" "dunamismax_files" "dunamismax_messenger" "dunamismax_notes" "dunamismax")
-  local ports=(8200 8300 8100 8500 8000)
-  local directories=(
-    "/usr/home/${USERNAME}/github/web/ai_agents"
-    "/usr/home/${USERNAME}/github/web/converter_service"
-    "/usr/home/${USERNAME}/github/web/messenger"
-    "/usr/home/${USERNAME}/github/web/notes"
-    "/usr/home/${USERNAME}/github/web/dunamismax"
-  )
-  local commands=(
-    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8200"
-    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8300"
-    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8100"
-    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8500"
-    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000"
-  )
-  for i in "${!service_names[@]}"; do
-    local svc="${service_names[i]}"
-    local workdir="${directories[i]}"
-    local cmd="${commands[i]}"
-    local rc_file="/usr/local/etc/rc.d/${svc}"
-    log_info "Creating rc.d script for ${svc}..."
-    cat <<EOF > "$rc_file"
-#!/bin/sh
-#
-# PROVIDE: ${svc}
-# REQUIRE: NETWORKING
-# KEYWORD: shutdown
-. /etc/rc.subr
-name="${svc}"
-rcvar=${svc}_enable
-command="/bin/sh"
-command_args="-c 'cd ${workdir} && su - ${USERNAME} -c \"${cmd}\"'"
-start_cmd="${svc}_start"
-${svc}_start() {
-    echo "Starting ${svc}..."
-    cd ${workdir} && su - ${USERNAME} -c "${cmd}" &
-}
-stop_cmd="${svc}_stop"
-${svc}_stop() {
-    echo "Stopping ${svc}..."
-    pkill -f '${cmd}'
-}
-load_rc_config \$name
-: \${${svc}_enable:=no}
-EOF
-    chmod +x "$rc_file"
-    sysrc ${svc}_enable="YES"
-    log_info "Enabled ${svc} service."
-  done
-}
-
 final_checks() {
   print_section "Final System Checks"
   log_info "Performing final system checks:"
@@ -551,18 +372,13 @@ main() {
   configure_ssh
   secure_ssh_config
   install_plex
-  install_zig_binary
-  configure_firewall
-  secure_sysctl
   configure_zfs
   deploy_user_scripts
   setup_cron
   configure_periodic
   final_checks
   home_permissions
-  enable_dunamismax_services
   install_fastfetch
-  build_ly
   prompt_reboot
 }
 
