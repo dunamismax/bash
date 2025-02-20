@@ -95,13 +95,16 @@ ZIG_DIR="/opt/zig"
 ZIG_BIN="/usr/local/bin/zig"
 
 # List of packages (adjust package names as available in pkg)
+# Core shells and editors
 PACKAGES=(
-  bash vim nano screen tmux mc
-  git curl wget rsync htop sudo python3 py38-pip tzdata
-  gcc cmake ninja meson gettext
-  openssh go gdb strace man
-  xorg xinit dmenu xterm feh ttf-dejavu
-  i3 i3blocks picom alacritty
+  bash vim nano zsh
+
+  # Terminal utilities and file managers
+  screen tmux mc htop tree ncdu neofetch
+
+  # Development tools and libraries
+  git curl wget rsync sudo python3 py38-pip tzdata
+  gcc cmake ninja meson gettext openssh go gdb strace man
 )
 
 check_root() {
@@ -399,21 +402,6 @@ install_fastfetch() {
   fi
 }
 
-dotfiles_load() {
-  print_section "Loading Dotfiles"
-  log_info "Loading dotfiles configuration..."
-  local config_dirs=( "alacritty" "i3" "i3blocks" "picom" )
-  for dir in "${config_dirs[@]}"; do
-    mkdir -p "/usr/home/${USERNAME}/.config/$dir"
-  done
-  rsync -a --delete "/usr/home/${USERNAME}/github/bash/freebsd/dotfiles/alacritty/" "/usr/home/${USERNAME}/.config/alacritty/" || log_warn "Failed to sync alacritty config."
-  rsync -a --delete "/usr/home/${USERNAME}/github/bash/freebsd/dotfiles/i3/" "/usr/home/${USERNAME}/.config/i3/" || log_warn "Failed to sync i3 config."
-  rsync -a --delete "/usr/home/${USERNAME}/github/bash/freebsd/dotfiles/i3blocks/" "/usr/home/${USERNAME}/.config/i3blocks/" || log_warn "Failed to sync i3blocks config."
-  chmod -R +x "/usr/home/${USERNAME}/.config/i3blocks/scripts" 2>/dev/null || log_warn "Failed to set execute permissions on i3blocks scripts."
-  rsync -a --delete "/usr/home/${USERNAME}/github/bash/freebsd/dotfiles/picom/" "/usr/home/${USERNAME}/.config/picom/" || log_warn "Failed to sync picom config."
-  log_info "Dotfiles loaded successfully."
-}
-
 build_ly() {
   print_section "Ly Display Manager Installation"
   log_info "Building and installing Ly display manager..."
@@ -572,7 +560,6 @@ main() {
   configure_periodic
   final_checks
   home_permissions
-  dotfiles_load
   enable_dunamismax_services
   install_fastfetch
   build_ly

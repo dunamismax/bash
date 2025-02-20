@@ -1,90 +1,47 @@
-#!/usr/local/bin/bash
-# ------------------------------------------------------------------------------
-# FreeBSD Automated System Configuration Script (Improved)
-# ------------------------------------------------------------------------------
-# Description:
-#   This script automates the configuration of a fresh FreeBSD installation
-#   to create a secure, optimized, and personalized environment. It performs:
-#     • System updates/upgrades and full backups
-#     • Installation of essential packages, development tools, and utilities
-#     • SSH hardening and PF firewall configuration
-#     • Fail2ban setup for intrusion prevention
-#     • GitHub repository cloning and dotfiles deployment
-#     • Deployment of user scripts and directory permission fixes
-#     • Installation of Plex Media Server, VS Code CLI, minimal GUI, and FiraCode
-#       Nerd Font
-#     • Caddy web server installation and configuration
-#     • Final system information logging, cache cleanup, and an optional reboot
+#!/usr/local/bin/env bash
+# FreeBSD System Setup Script
+# Fully configures a clean install of FreeBSD with tools, hardening and development configurations.
+# Additional functions from the Ubuntu setup script have been added where applicable.
 #
-# Usage:
-#   Run as root (e.g., sudo ./freebsd_setup.sh). Adjust variables as needed.
-#   All actions are logged to /var/log/freebsd_setup.log.
-#
-# Author: dunamismax | License: MIT
-# Repository: https://github.com/dunamismax/bash
-# ------------------------------------------------------------------------------
+# Note:
+#   - Must be run as root.
+#   - Log output is saved to /var/log/freebsd_setup.log.
 
-# ------------------------------------------------------------------------------
-# Shell settings & error handling
-# ------------------------------------------------------------------------------
 set -Eeuo pipefail
+IFS=$'\n\t'
 
-trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
-trap 'handle_error "Script interrupted at line $LINENO."' SIGINT SIGTERM
+# Color definitions for logging
+NORD9='\033[38;2;129;161;193m'    # Debug messages
+NORD11='\033[38;2;191;97;106m'    # Error messages
+NORD13='\033[38;2;235;203;139m'   # Warning messages
+NORD14='\033[38;2;163;190;140m'   # Info messages
+NC='\033[0m'                     # Reset to No Color
 
-cleanup() {
-    log_info "Cleanup tasks complete."
-}
-trap cleanup EXIT
-
-# ------------------------------------------------------------------------------
-# CONFIGURATION
-# ------------------------------------------------------------------------------
 LOG_FILE="/var/log/freebsd_setup.log"
-USERNAME="sawyer"
-USER_HOME="/usr/home/${USERNAME}"
-GITHUB_BASE="https://github.com/dunamismax"
+mkdir -p "$(dirname "$LOG_FILE")"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
 
-# Packages to install (make sure these are available via pkg)
-PACKAGES=(
-  bash vim nano screen tmux mc rsync curl wget htop tree unzip zip
-  gmake cmake ninja meson gettext git pkgconf openssl libffi nmap fail2ban
-  python39 python39-pip python39-virtualenv less bind-tools ncdu gawk tcpdump
-  lsof jq tzdata zlib readline bzip2 tk xz ncurses gdbm libxml2 clang llvm
-)
-
-# ------------------------------------------------------------------------------
-# Logging Functions
-# ------------------------------------------------------------------------------
-# Color codes for log levels
-NORD_DEBUG='\033[38;2;129;161;193m'
-NORD_ERROR='\033[38;2;191;97;106m'
-NORD_WARN='\033[38;2;235;203;139m'
-NORD_INFO='\033[38;2;163;190;140m'
-NC='\033[0m'
-
+# Logging functions
 log() {
-    local level="${1:-INFO}"
-    shift
-    local message="$*"
-    local timestamp
-    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-    local upper_level="${level^^}"
-    local color="$NC"
-    case "$upper_level" in
-        INFO)  color="${NORD_INFO}" ;;
-        WARN|WARNING) color="${NORD_WARN}"; upper_level="WARN" ;;
-        ERROR) color="${NORD_ERROR}" ;;
-        DEBUG) color="${NORD_DEBUG}" ;;
-        *)     color="$NC" ;;
+  local level="${1:-INFO}"
+  shift
+  local message="$*"
+  local timestamp
+  timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
+  local entry="[$timestamp] [${level^^}] $message"
+  echo "$entry" >> "$LOG_FILE"
+  if [ -t 2 ]; then
+    case "${level^^}" in
+      INFO)  printf "%b%s%b\n" "$NORD14" "$entry" "$NC" ;;
+      WARN)  printf "%b%s%b\n" "$NORD13" "$entry" "$NC" ;;
+      ERROR) printf "%b%s%b\n" "$NORD11" "$entry" "$NC" ;;
+      DEBUG) printf "%b%s%b\n" "$NORD9"  "$entry" "$NC" ;;
+      *)     printf "%s\n" "$entry" ;;
     esac
-    local log_entry="[$timestamp] [$upper_level] $message"
-    echo "$log_entry" >> "$LOG_FILE"
-    if [ -t 2 ]; then
-        printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
-    else
-        echo "$log_entry" >&2
-    fi
+  else
+    echo "$entry" >&2
+  fi
 }
 log_info()  { log INFO "$@"; }
 log_warn()  { log WARN "$@"; }
@@ -92,516 +49,521 @@ log_error() { log ERROR "$@"; }
 log_debug() { log DEBUG "$@"; }
 
 handle_error() {
-    local err_msg="${1:-An unknown error occurred.}"
-    local exit_code="${2:-1}"
-    log_error "$err_msg (Exit Code: $exit_code)"
-    log_error "Script failed at line $LINENO in function ${FUNCNAME[1]:-main}."
-    echo -e "${NORD_ERROR}ERROR: $err_msg (Exit Code: $exit_code)${NC}" >&2
-    exit "$exit_code"
+  local msg="${1:-An unknown error occurred.}"
+  local code="${2:-1}"
+  log_error "$msg (Exit Code: $code)"
+  log_error "Error encountered at line $LINENO in function ${FUNCNAME[1]:-main}."
+  echo -e "${NORD11}ERROR: $msg (Exit Code: $code)${NC}" >&2
+  exit "$code"
 }
 
-# ------------------------------------------------------------------------------
-# XDG Base Directory Setup
-# ------------------------------------------------------------------------------
-export XDG_CONFIG_HOME="${USER_HOME}/.config"
-export XDG_DATA_HOME="${USER_HOME}/.local/share"
-export XDG_CACHE_HOME="${USER_HOME}/.cache"
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" || handle_error "Failed to create XDG directories."
-log_info "XDG directories set: XDG_CONFIG_HOME=$XDG_CONFIG_HOME, XDG_DATA_HOME=$XDG_DATA_HOME, XDG_CACHE_HOME=$XDG_CACHE_HOME"
+cleanup() {
+  log_info "Cleanup tasks complete."
+}
+trap cleanup EXIT
+trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 
-# ------------------------------------------------------------------------------
-# Helper Functions
-# ------------------------------------------------------------------------------
+# Utility function to print section headers
+print_section() {
+  local title="$1"
+  local border
+  border=$(printf '─%.0s' {1..60})
+  log_info "${NORD14}${border}${NC}"
+  log_info "${NORD14}  $title${NC}"
+  log_info "${NORD14}${border}${NC}"
+}
+
+# Check for required commands
+command_exists() {
+  if ! command -v "$1" &>/dev/null; then
+    log_error "Required command '$1' not found. Exiting."
+    exit 1
+  fi
+}
+
+for cmd in pkg git rsync curl tar; do
+  command_exists "$cmd"
+done
+
+# Configuration Variables
+USERNAME="sawyer"
+TIMEZONE="America/New_York"
+
+# Zig installation configuration (FreeBSD build)
+ZIG_URL="https://ziglang.org/builds/zig-freebsd-x86_64-0.14.0-dev.3224+5ab511307.tar.xz"
+ZIG_DIR="/opt/zig"
+ZIG_BIN="/usr/local/bin/zig"
+
+# List of packages (adjust package names as available in pkg)
+# Core shells and editors
+PACKAGES=(
+  bash vim nano zsh
+
+  # Terminal utilities and file managers
+  screen tmux mc htop tree ncdu neofetch
+
+  # Development tools and libraries
+  git curl wget rsync sudo python3 py38-pip tzdata
+  gcc cmake ninja meson gettext openssh go gdb strace man
+)
+
 check_root() {
-    if [ "$(id -u)" -ne 0 ]; then
-        handle_error "This script must be run as root."
-    fi
-    log_info "Running as root."
+  if [ "$(id -u)" -ne 0 ]; then
+    log_error "Script must be run as root. Exiting."
+    exit 1
+  fi
 }
 
-# ------------------------------------------------------------------------------
-# System Update & Backup
-# ------------------------------------------------------------------------------
-initial_system_update() {
-    log_info "Starting system update and upgrade..."
-    pkg update -f || handle_error "Failed to update pkg repositories."
-    pkg upgrade -y || handle_error "System upgrade failed."
-    log_info "System update complete."
+check_network() {
+  print_section "Network Connectivity Check"
+  log_info "Checking network connectivity..."
+  if ! ping -c1 -t5 google.com &>/dev/null; then
+    log_warn "No network connectivity detected."
+  else
+    log_info "Network connectivity OK."
+  fi
 }
 
-backup_system() {
-    log_info "Starting system backup..."
-    if ! command -v rsync &>/dev/null; then
-        log_info "Installing rsync..."
-        pkg install -y rsync || handle_error "Failed to install rsync."
-    fi
-
-    local SOURCE="/"
-    local DESTINATION="${USER_HOME}/BACKUPS"
-    local TIMESTAMP
-    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-    local BACKUP_FOLDER="${DESTINATION}/backup-${TIMESTAMP}"
-    local RETENTION_DAYS=7
-
-    # List of directories to exclude from backup
-    local EXCLUDES=(
-      "/dev/*" "/proc/*" "/tmp/*" "/var/tmp/*" "/var/run/*"
-      "/var/log/*" "/var/cache/*" "/var/db/pkg/*" "/var/db/ports/*"
-      "/var/db/portsnap/*" "/var/db/freebsd-update/*" "/mnt/*"
-      "/media/*" "/swapfile" "/lost+found" "/root/.cache/*" "${DESTINATION}"
-    )
-    local EXCLUDES_ARGS=()
-    for ex in "${EXCLUDES[@]}"; do
-        EXCLUDES_ARGS+=(--exclude="$ex")
-    done
-
-    mkdir -p "$BACKUP_FOLDER" || handle_error "Failed to create backup folder: $BACKUP_FOLDER"
-    log_info "Performing backup with rsync..."
-    rsync -aAXv --stats "${EXCLUDES_ARGS[@]}" "$SOURCE" "$BACKUP_FOLDER" || handle_error "Backup failed."
-    log_info "Backup completed: $BACKUP_FOLDER"
-
-    log_info "Removing backups older than ${RETENTION_DAYS} days..."
-    find "$DESTINATION" -type d -name "backup-*" -mtime +"$RETENTION_DAYS" -exec rm -rf {} + \
-      && log_info "Old backups removed." || log_warn "Some old backups could not be removed."
+update_system() {
+  print_section "System Update & Upgrade"
+  log_info "Updating pkg repository..."
+  if ! pkg update; then
+    log_warn "pkg update encountered issues."
+  fi
+  log_info "Upgrading installed packages..."
+  if ! pkg upgrade -y; then
+    log_warn "pkg upgrade encountered issues."
+  fi
 }
 
-# ------------------------------------------------------------------------------
-# doas Configuration
-# ------------------------------------------------------------------------------
-configure_doas() {
-    log_info "Installing and configuring doas..."
-
-    # Install doas
-    pkg install -y doas || handle_error "Failed to install doas."
-
-    # Create the 'doas' group if it doesn't exist
-    if ! pw groupshow doas &>/dev/null; then
-        pw groupadd doas || handle_error "Failed to create doas group."
-        log_info "Created doas group."
-    else
-        log_info "doas group already exists."
-    fi
-
-    # Add user to the doas group
-    pw usermod "$USERNAME" -G doas || handle_error "Failed to add $USERNAME to doas group."
-    log_info "User $USERNAME added to doas group."
-
-    # Configure doas by creating or backing up the configuration file
-    local DOAS_CONF="/usr/local/etc/doas.conf"
-    if [ -f "$DOAS_CONF" ]; then
-        cp "$DOAS_CONF" "${DOAS_CONF}.bak.$(date +%Y%m%d%H%M%S)" || log_warn "Could not backup existing doas.conf."
-        log_info "Backed up existing doas.conf."
-    fi
-
-    cat <<EOF > "$DOAS_CONF"
-# Doas configuration generated on $(date)
-permit persist :doas
-EOF
-
-    chown root:wheel "$DOAS_CONF" || handle_error "Failed to set ownership on doas.conf."
-    chmod 440 "$DOAS_CONF" || handle_error "Failed to set permissions on doas.conf."
-    log_info "doas configuration written to $DOAS_CONF."
-
-    # Optionally, enable doas in rc.conf if required
-    if ! grep -q '^doas_enable="YES"' /etc/rc.conf; then
-        echo 'doas_enable="YES"' >> /etc/rc.conf || handle_error "Failed to enable doas in rc.conf."
-        log_info "doas enabled in rc.conf."
-    else
-        log_info "doas already enabled in rc.conf."
-    fi
-
-    log_info "doas installation and configuration completed successfully."
-}
-
-# ------------------------------------------------------------------------------
-# Package Installation
-# ------------------------------------------------------------------------------
 install_packages() {
-    log_info "Starting package installation..."
-    pkg upgrade -y || handle_error "Package upgrade failed."
-    log_info "Installing packages: ${PACKAGES[*]}"
-    pkg install -y "${PACKAGES[@]}" || handle_error "Package installation failed."
-    for pkg in bash sudo openssl python39 git; do
-        pkg info -q "$pkg" || handle_error "Critical package $pkg is missing."
-    done
-    log_info "All packages installed successfully."
+  print_section "Essential Package Installation"
+  log_info "Installing essential packages..."
+  if ! pkg install -y "${PACKAGES[@]}"; then
+    log_warn "One or more packages failed to install."
+  else
+    log_info "Package installation complete."
+  fi
 }
 
-# ------------------------------------------------------------------------------
-# SSH Configuration & Hardening
-# ------------------------------------------------------------------------------
-configure_ssh() {
-    log_info "Configuring SSH service..."
-    if ! grep -q '^sshd_enable="YES"' /etc/rc.conf; then
-        echo 'sshd_enable="YES"' >> /etc/rc.conf || handle_error "Failed to enable sshd in rc.conf."
-        log_info "Enabled sshd in rc.conf."
+create_user() {
+  print_section "User Creation"
+  if ! id "$USERNAME" &>/dev/null; then
+    log_info "Creating user '$USERNAME'..."
+    if ! pw useradd "$USERNAME" -m -s /usr/local/bin/bash -G wheel; then
+      log_warn "Failed to create user '$USERNAME'."
+    else
+      echo "changeme" | pw usermod "$USERNAME" -h 0
+      log_info "User '$USERNAME' created with default password 'changeme'."
     fi
-    service sshd restart 2>/dev/null || service sshd start || handle_error "Failed to start sshd."
-    log_info "SSH service configured."
+  else
+    log_info "User '$USERNAME' already exists."
+  fi
+}
+
+configure_timezone() {
+  print_section "Timezone Configuration"
+  log_info "Setting timezone to $TIMEZONE..."
+  if [ -f "/usr/share/zoneinfo/${TIMEZONE}" ]; then
+    cp "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
+    echo "$TIMEZONE" > /etc/timezone
+    log_info "Timezone set to $TIMEZONE."
+  else
+    log_warn "Timezone file for $TIMEZONE not found."
+  fi
+}
+
+setup_repos() {
+  print_section "GitHub Repositories Setup"
+  local repo_dir="/usr/home/${USERNAME}/github"
+  log_info "Cloning repositories into $repo_dir..."
+  mkdir -p "$repo_dir"
+  for repo in bash windows web python go misc; do
+    local target_dir="$repo_dir/$repo"
+    rm -rf "$target_dir"
+    if ! git clone "https://github.com/dunamismax/$repo.git" "$target_dir"; then
+      log_warn "Failed to clone repository: $repo"
+    else
+      log_info "Cloned repository: $repo"
+    fi
+  done
+  chown -R "${USERNAME}:${USERNAME}" "$repo_dir"
+}
+
+copy_shell_configs() {
+  print_section "Shell Configuration Files"
+  log_info "Copying shell configuration files..."
+  for file in .bashrc .profile; do
+    local src="/usr/home/${USERNAME}/github/bash/freebsd/dotfiles/$file"
+    local dest="/usr/home/${USERNAME}/$file"
+    if [ -f "$src" ]; then
+      [ -f "$dest" ] && cp "$dest" "${dest}.bak"
+      if ! cp -f "$src" "$dest"; then
+        log_warn "Failed to copy $src to $dest."
+      else
+        chown "${USERNAME}:${USERNAME}" "$dest"
+        log_info "Copied $src to $dest."
+      fi
+    else
+      log_warn "Source file $src not found."
+    fi
+  done
+}
+
+configure_ssh() {
+  print_section "SSH Configuration"
+  log_info "Configuring SSH..."
+  if sysrc sshd_enable >/dev/null 2>&1; then
+    log_info "sshd_enable already set."
+  else
+    sysrc sshd_enable="YES"
+    log_info "sshd_enable set to YES."
+  fi
+  service sshd restart || log_warn "Failed to restart sshd."
 }
 
 secure_ssh_config() {
-    log_info "Hardening SSH configuration..."
-    local sshd_config="/etc/ssh/sshd_config"
-    if [ ! -f "$sshd_config" ]; then
-        handle_error "sshd_config not found at $sshd_config."
-    fi
-    cp "$sshd_config" "${sshd_config}.bak.$(date +%Y%m%d%H%M%S)" || handle_error "Failed to backup sshd_config."
-    log_info "Backed up sshd_config."
-    sed -i '' 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$sshd_config" || handle_error "Failed to set PermitRootLogin."
-    sed -i '' 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config" || handle_error "Failed to set PasswordAuthentication."
-    sed -i '' 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config" || handle_error "Failed to set ChallengeResponseAuthentication."
-    sed -i '' 's/^#\?X11Forwarding.*/X11Forwarding no/' "$sshd_config" || handle_error "Failed to set X11Forwarding."
-    grep -q "^PermitEmptyPasswords no" "$sshd_config" || echo "PermitEmptyPasswords no" >> "$sshd_config" || handle_error "Failed to set PermitEmptyPasswords."
-    service sshd restart || handle_error "Failed to restart sshd after hardening."
+  print_section "SSH Hardening"
+  local sshd_config="/etc/ssh/sshd_config"
+  local backup_file="/etc/ssh/sshd_config.bak"
+  if [ -f "$sshd_config" ]; then
+    cp "$sshd_config" "$backup_file"
+    log_info "Backed up SSH config to $backup_file."
+    sed -i '' 's/^#*PermitRootLogin.*/PermitRootLogin no/' "$sshd_config"
+    sed -i '' 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config"
+    sed -i '' 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config"
+    sed -i '' 's/^#*X11Forwarding.*/X11Forwarding no/' "$sshd_config"
     log_info "SSH configuration hardened."
+    service sshd restart || log_warn "Failed to restart sshd after hardening."
+  else
+    log_warn "SSHD configuration file not found."
+  fi
 }
 
-# ------------------------------------------------------------------------------
-# PF Firewall Configuration
-# ------------------------------------------------------------------------------
+install_plex() {
+  print_section "Plex Media Server Installation"
+  log_info "Installing Plex Media Server..."
+  if pkg install -y plexmediaserver; then
+    log_info "Plex Media Server installed successfully."
+  else
+    log_warn "Failed to install Plex Media Server."
+  fi
+}
+
+install_zig_binary() {
+  print_section "Zig Installation"
+  log_info "Installing Zig binary..."
+  if ! pkg install -y curl tar; then
+    log_warn "Failed to install curl and tar."
+  fi
+  rm -rf "$ZIG_DIR"
+  mkdir -p "$ZIG_DIR"
+  local tmp_tar="/tmp/zig.tar.xz"
+  if curl -L -o "$tmp_tar" "$ZIG_URL"; then
+    if tar -xf "$tmp_tar" -C "$ZIG_DIR" --strip-components=1; then
+      ln -sf "$ZIG_DIR/zig" "$ZIG_BIN"
+      rm -f "$tmp_tar"
+      if ! "$ZIG_BIN" version &>/dev/null; then
+        log_error "Zig installation failed."
+      else
+        log_info "Zig installed successfully."
+      fi
+    else
+      log_warn "Failed to extract Zig tarball."
+      rm -f "$tmp_tar"
+    fi
+  else
+    log_error "Failed to download Zig."
+  fi
+}
+
 configure_firewall() {
-    log_info "Configuring PF firewall..."
-    if ! grep -q '^pf_enable="YES"' /etc/rc.conf; then
-        echo 'pf_enable="YES"' >> /etc/rc.conf || handle_error "Failed to enable PF in rc.conf."
-        log_info "Enabled PF in rc.conf."
-    fi
-    local PF_CONF="/etc/pf.conf"
-    local PF_BACKUP="/etc/pf.conf.bak.$(date +%Y%m%d%H%M%S)"
-    if [ -f "$PF_CONF" ]; then
-        cp "$PF_CONF" "$PF_BACKUP" || log_warn "Could not backup existing PF config."
-        log_info "PF configuration backed up to $PF_BACKUP."
-    else
-        log_warn "No existing PF config to backup."
-    fi
-
-    log_info "Detecting active network interface..."
-    local INTERFACE
-    INTERFACE=$(route -n get default | awk '/interface:/ {print $2}')
-    [ -z "$INTERFACE" ] && handle_error "Active network interface not found."
-    log_info "Active interface: $INTERFACE"
-
-    cat <<EOF > "$PF_CONF"
-# PF configuration generated on $(date)
-ext_if = "$INTERFACE"
+  print_section "PF Firewall Configuration"
+  log_info "Configuring PF firewall..."
+  local pf_conf="/etc/pf.conf"
+  if [ -f "$pf_conf" ]; then
+    cp "$pf_conf" "${pf_conf}.bak"
+    log_info "Backed up existing pf.conf to ${pf_conf}.bak."
+  fi
+  cat << 'EOF' > "$pf_conf"
+# Minimal PF configuration for FreeBSD
 set block-policy drop
-block all
-pass quick on lo0 all
-pass out quick inet proto { tcp udp } from any to any keep state
-pass in quick on \$ext_if proto tcp to (\$ext_if) port {22,80,443,32400} keep state
+set loginterface egress
+block in all
 pass out all keep state
+pass quick on lo
 EOF
-
-    pfctl -nf "$PF_CONF" || handle_error "PF configuration validation failed."
-    pfctl -f "$PF_CONF" || handle_error "Failed to load PF configuration."
-    if ! pfctl -s info | grep -q "Status: Enabled"; then
-        pfctl -e || handle_error "Failed to enable PF."
-    fi
-    log_info "PF firewall configured."
+  log_info "New pf.conf written."
+  sysrc pf_enable="YES"
+  if pfctl -f "$pf_conf"; then
+    log_info "PF rules loaded."
+  else
+    log_warn "Failed to load PF rules."
+  fi
+  service pf start || log_warn "Failed to start PF."
 }
 
-# ------------------------------------------------------------------------------
-# Fail2ban Configuration
-# ------------------------------------------------------------------------------
-configure_fail2ban() {
-    if command -v fail2ban-client &>/dev/null; then
-        log_info "Fail2ban is already installed. Skipping installation."
-        return 0
-    fi
-    log_info "Installing Fail2ban..."
-    pkg install -y fail2ban || handle_error "Failed to install Fail2ban."
-    local jail_conf="/usr/local/etc/fail2ban/jail.local"
-    if [ -f "$jail_conf" ]; then
-        cp "$jail_conf" "${jail_conf}.bak" || log_warn "Could not backup existing jail.local."
-        log_info "Backed up existing jail.local."
-    else
-        log_warn "No existing jail.local to backup."
-    fi
-    cat <<EOF > "$jail_conf"
-[sshd]
-enabled  = true
-port     = 22
-filter   = sshd
-logpath  = /var/log/auth.log
-maxretry = 5
-findtime = 600
-bantime  = 3600
+secure_sysctl() {
+  print_section "Kernel Hardening via sysctl"
+  log_info "Applying sysctl kernel hardening settings..."
+  local sysctl_conf="/etc/sysctl.conf"
+  [ -f "$sysctl_conf" ] && cp "$sysctl_conf" "${sysctl_conf}.bak"
+  cat << 'EOF' >> "$sysctl_conf"
+# Harden kernel parameters for FreeBSD
+net.inet.tcp.blackhole=2
+security.bsd.see_other_uids=0
 EOF
-    if ! grep -q '^fail2ban_enable="YES"' /etc/rc.conf; then
-        echo 'fail2ban_enable="YES"' >> /etc/rc.conf || log_warn "Failed to add fail2ban_enable to rc.conf."
-    fi
-    service fail2ban start || log_warn "Failed to start Fail2ban service."
-    log_info "Fail2ban configured."
+  if sysctl -p; then
+    log_info "sysctl settings applied."
+  else
+    log_warn "Failed to apply sysctl settings."
+  fi
 }
 
-# ------------------------------------------------------------------------------
-# GitHub Repositories Setup
-# ------------------------------------------------------------------------------
-setup_repos() {
-    local repo_dir="${USER_HOME}/github"
-    log_info "Setting up Git repositories in $repo_dir..."
-    if [ -d "$repo_dir" ]; then
-        log_info "Repository directory exists. Skipping cloning."
+# On FreeBSD, ZFS is integrated. This function checks for a pool named "WD_BLACK" and sets its mountpoint.
+configure_zfs() {
+  print_section "ZFS Configuration"
+  log_info "Configuring ZFS pool..."
+  local ZPOOL_NAME="WD_BLACK"
+  local MOUNT_POINT="/mnt/${ZPOOL_NAME}"
+  if ! zpool list "$ZPOOL_NAME" &>/dev/null; then
+    log_info "ZFS pool '$ZPOOL_NAME' not found. Skipping import."
+  else
+    log_info "ZFS pool '$ZPOOL_NAME' found."
+    if zfs set mountpoint="${MOUNT_POINT}" "$ZPOOL_NAME"; then
+      log_info "Mountpoint for pool '$ZPOOL_NAME' set to '$MOUNT_POINT'."
     else
-        mkdir -p "$repo_dir" || handle_error "Failed to create directory: $repo_dir"
-        for repo in bash windows web python go misc; do
-            local target_dir="${repo_dir}/${repo}"
-            if [ -d "$target_dir" ]; then
-                log_info "Repository '$repo' already exists. Skipping."
-            else
-                git clone "${GITHUB_BASE}/${repo}.git" "$target_dir" || handle_error "Failed to clone repository '$repo'."
-                log_info "Cloned repository: $repo"
-            fi
-        done
-        chown -R "${USERNAME}:${USERNAME}" "$repo_dir" || handle_error "Failed to set ownership for $repo_dir."
+      log_warn "Failed to set mountpoint for $ZPOOL_NAME."
     fi
-}
-
-# ------------------------------------------------------------------------------
-# Directory Permissions & User Script Deployment
-# ------------------------------------------------------------------------------
-set_directory_permissions() {
-    local github_dir="${USER_HOME}/github"
-    log_info "Setting ownership and permissions in $github_dir and $USER_HOME..."
-    chown -R "${USERNAME}:${USERNAME}" "$github_dir" "$USER_HOME" || handle_error "Failed to set ownership."
-    find "$github_dir" -type f -name "*.sh" -exec chmod +x {} + || handle_error "Failed to set execute permission for .sh files."
-    log_info "Directory permissions updated."
+  fi
 }
 
 deploy_user_scripts() {
-    local bin_dir="${USER_HOME}/bin"
-    local scripts_src="${USER_HOME}/github/bash/freebsd/_scripts/"
-    log_info "Deploying user scripts from $scripts_src to $bin_dir..."
-    mkdir -p "$bin_dir" || handle_error "Failed to create directory: $bin_dir"
-    if rsync -ah --delete "$scripts_src" "$bin_dir"; then
-        find "$bin_dir" -type f -exec chmod 755 {} \; || handle_error "Failed to set execute permissions in $bin_dir."
-        log_info "User scripts deployed successfully."
+  print_section "Deploying User Scripts"
+  local bin_dir="/usr/home/${USERNAME}/bin"
+  local scripts_src="/usr/home/${USERNAME}/github/bash/freebsd/_scripts/"
+  log_info "Deploying user scripts from $scripts_src to $bin_dir..."
+  mkdir -p "$bin_dir"
+  if rsync -ah --delete "$scripts_src" "$bin_dir"; then
+    find "$bin_dir" -type f -exec chmod 755 {} \;
+    log_info "User scripts deployed successfully."
+  else
+    log_warn "Failed to deploy user scripts."
+  fi
+}
+
+setup_cron() {
+  print_section "Cron Service Setup"
+  log_info "Starting cron service..."
+  service cron start || log_warn "Failed to start cron."
+}
+
+configure_periodic() {
+  print_section "Periodic Maintenance Setup"
+  log_info "Configuring daily system maintenance tasks..."
+  local cron_file="/etc/periodic/daily/freebsd_maintenance"
+  if [ -f "$cron_file" ]; then
+    mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" && \
+      log_info "Existing periodic script backed up." || \
+      log_warn "Failed to backup existing periodic script."
+  fi
+  cat << 'EOF' > "$cron_file"
+#!/bin/sh
+# FreeBSD maintenance script
+pkg update -q && pkg upgrade -y && pkg autoremove -y && pkg clean -y
+EOF
+  if chmod +x "$cron_file"; then
+    log_info "Daily maintenance script created at $cron_file."
+  else
+    log_warn "Failed to set execute permission on $cron_file."
+  fi
+}
+
+install_fastfetch() {
+  print_section "Fastfetch Installation"
+  log_info "Installing Fastfetch..."
+  local FASTFETCH_URL="https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-freebsd-amd64.tar.xz"
+  local tmp_tar="/tmp/fastfetch.tar.xz"
+  if curl -L -o "$tmp_tar" "$FASTFETCH_URL"; then
+    if tar -xf "$tmp_tar" -C /usr/local/bin; then
+      chmod +x /usr/local/bin/fastfetch
+      rm -f "$tmp_tar"
+      if command -v fastfetch &>/dev/null; then
+        log_info "Fastfetch installed successfully."
+      else
+        log_error "Fastfetch is not accessible."
+      fi
     else
-        handle_error "Failed to deploy user scripts."
+      log_error "Failed to extract fastfetch."
+      rm -f "$tmp_tar"
     fi
+  else
+    log_error "Failed to download Fastfetch."
+  fi
 }
 
-# ------------------------------------------------------------------------------
-# Dotfiles Deployment (Unified)
-# ------------------------------------------------------------------------------
-setup_dotfiles() {
-    log_info "Deploying dotfiles..."
-    local dotfiles_source="${USER_HOME}/github/bash/freebsd/dotfiles"
-    if [ ! -d "$dotfiles_source" ]; then
-        log_warn "Dotfiles directory not found: $dotfiles_source. Skipping dotfiles deployment."
-        return 0
-    fi
-
-    # Files to deploy (will be copied to both user and root home)
-    local files=( ".bashrc" ".profile" ".xinitrc" )
-    local targets=( "$USER_HOME" "/root" )
-
-    for file in "${files[@]}"; do
-        for target in "${targets[@]}"; do
-            if [ -f "${target}/${file}" ]; then
-                cp "${target}/${file}" "${target}/${file}.bak" && log_info "Backed up ${target}/${file}."
-            fi
-            cp -f "${dotfiles_source}/${file}" "${target}/${file}" || handle_error "Failed to copy ${file} to ${target}."
-            log_info "Copied ${file} to ${target}."
-        done
-    done
-
-    # Deploy configuration directories (e.g. i3, alacritty, picom, etc.)
-    local config_dir="${USER_HOME}/.config"
-    mkdir -p "$config_dir" || handle_error "Failed to create configuration directory: $config_dir"
-    local dirs=( "alacritty" "i3" "picom" "i3status" )
-    for dir in "${dirs[@]}"; do
-        if [ -d "${dotfiles_source}/${dir}" ]; then
-            cp -r "${dotfiles_source}/${dir}" "$config_dir" || handle_error "Failed to copy directory ${dir}."
-            log_info "Copied directory ${dir} to ${config_dir}."
-        else
-            log_warn "Source directory ${dotfiles_source}/${dir} not found. Skipping."
-        fi
-    done
-
-    chown -R "${USERNAME}:${USERNAME}" "$USER_HOME" || handle_error "Failed to set ownership for $USER_HOME."
-    log_info "Dotfiles deployment completed."
+build_ly() {
+  print_section "Ly Display Manager Installation"
+  log_info "Building and installing Ly display manager..."
+  if ! pkg install -y libxcb xcb-util xcb-util-keysyms xcb-util-wm xcb-util-cursor libxkbcommon libxkbcommon-x11; then
+    log_warn "One or more Ly build dependencies failed to install."
+  fi
+  local LY_DIR="/opt/ly"
+  rm -rf "$LY_DIR"
+  if ! git clone https://github.com/fairyglade/ly.git "$LY_DIR"; then
+    log_error "Failed to clone Ly repository."
+    return 1
+  fi
+  cd "$LY_DIR" || { log_error "Failed to change directory to $LY_DIR."; return 1; }
+  log_info "Compiling Ly with Zig..."
+  if ! zig build; then
+    log_error "Compilation of Ly failed."
+    return 1
+  fi
+  if cp ./ly /usr/local/bin/ly; then
+    chmod +x /usr/local/bin/ly
+    log_info "Ly installed to /usr/local/bin/ly."
+  else
+    log_warn "Failed to copy the Ly binary."
+  fi
+  local ly_rc="/usr/local/etc/rc.d/ly"
+  cat << 'EOF' > "$ly_rc"
+#!/bin/sh
+#
+# PROVIDE: ly
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+. /etc/rc.subr
+name="ly"
+rcvar="ly_enable"
+command="/usr/local/bin/ly"
+start_cmd="ly_start"
+ly_start() {
+    echo "Starting Ly display manager..."
+    ${command} &
+}
+load_rc_config ${name}
+run_rc_command "$1"
+EOF
+  chmod +x "$ly_rc" || log_warn "Failed to make $ly_rc executable."
+  if sysrc ly_enable="YES" >/dev/null 2>&1; then
+    log_info "Ly service enabled in rc.conf."
+  else
+    log_warn "Failed to enable Ly service in rc.conf."
+  fi
+  log_info "Ly display manager built and configured."
 }
 
-# ------------------------------------------------------------------------------
-# Set Default Shell for User and Root
-# ------------------------------------------------------------------------------
-set_default_shell() {
-    local target_shell="/usr/local/bin/bash"
-    if [ ! -x "$target_shell" ]; then
-        log_error "Bash not found or not executable at $target_shell."
-        return 1
-    fi
-    log_info "Setting default shell to $target_shell for $USERNAME and root."
-    chsh -s "$target_shell" "$USERNAME" || handle_error "Failed to set default shell for $USERNAME."
-    chsh -s "$target_shell" root || handle_error "Failed to set default shell for root."
-    log_info "Default shell set to $target_shell."
+# Create rc.d scripts for DunamisMax services (adapted from the Ubuntu systemd units)
+enable_dunamismax_services() {
+  print_section "DunamisMax Services Setup"
+  log_info "Setting up DunamisMax services..."
+  # Define arrays with service details.
+  local service_names=("dunamismax_ai_agents" "dunamismax_files" "dunamismax_messenger" "dunamismax_notes" "dunamismax")
+  local ports=(8200 8300 8100 8500 8000)
+  local directories=(
+    "/usr/home/${USERNAME}/github/web/ai_agents"
+    "/usr/home/${USERNAME}/github/web/converter_service"
+    "/usr/home/${USERNAME}/github/web/messenger"
+    "/usr/home/${USERNAME}/github/web/notes"
+    "/usr/home/${USERNAME}/github/web/dunamismax"
+  )
+  local commands=(
+    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8200"
+    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8300"
+    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8100"
+    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8500"
+    ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  )
+  for i in "${!service_names[@]}"; do
+    local svc="${service_names[i]}"
+    local workdir="${directories[i]}"
+    local cmd="${commands[i]}"
+    local rc_file="/usr/local/etc/rc.d/${svc}"
+    log_info "Creating rc.d script for ${svc}..."
+    cat <<EOF > "$rc_file"
+#!/bin/sh
+#
+# PROVIDE: ${svc}
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+. /etc/rc.subr
+name="${svc}"
+rcvar=${svc}_enable
+command="/bin/sh"
+command_args="-c 'cd ${workdir} && su - ${USERNAME} -c \"${cmd}\"'"
+start_cmd="${svc}_start"
+${svc}_start() {
+    echo "Starting ${svc}..."
+    cd ${workdir} && su - ${USERNAME} -c "${cmd}" &
+}
+stop_cmd="${svc}_stop"
+${svc}_stop() {
+    echo "Stopping ${svc}..."
+    pkill -f '${cmd}'
+}
+load_rc_config \$name
+: \${${svc}_enable:=no}
+EOF
+    chmod +x "$rc_file"
+    sysrc ${svc}_enable="YES"
+    log_info "Enabled ${svc} service."
+  done
 }
 
-# ------------------------------------------------------------------------------
-# Plex Media Server Installation
-# ------------------------------------------------------------------------------
-install_plex_media_server() {
-    log_info "Installing Plex Media Server..."
-    pkg install -y plexmediaserver-plexpass || handle_error "Failed to install Plex Media Server."
-    sysrc plexmediaserver_plexpass_enable="YES" || handle_error "Failed to enable Plex on boot."
-    service plexmediaserver-plexpass start || handle_error "Failed to start Plex service."
-    log_info "Plex Media Server installed and started. Access via http://localhost:32400/web"
+final_checks() {
+  print_section "Final System Checks"
+  log_info "Performing final system checks:"
+  echo "Kernel: $(uname -r)"
+  echo "Uptime: $(uptime)"
+  df -h /
+  swapinfo -h || true
 }
 
-# ------------------------------------------------------------------------------
-# VS Code CLI Installation
-# ------------------------------------------------------------------------------
-install_vscode_cli() {
-    log_info "Installing Visual Studio Code CLI..."
-    if ! command -v node &>/dev/null; then
-        handle_error "Node.js is not installed. Please install Node.js first."
-    fi
-    local node_bin
-    node_bin=$(which node) || handle_error "Node.js binary not found."
-    [ -e "/usr/local/node" ] && rm -f "/usr/local/node"
-    ln -s "$node_bin" /usr/local/node || handle_error "Failed to create Node.js symlink."
-    log_info "Node.js symlink created at /usr/local/node."
-
-    local vscode_cli_url="https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64"
-    local vscode_cli_tarball="vscode_cli.tar.gz"
-    curl -Lk "$vscode_cli_url" --output "$vscode_cli_tarball" || handle_error "Failed to download VS Code CLI."
-    log_info "Downloaded VS Code CLI tarball."
-    tar -xf "$vscode_cli_tarball" || handle_error "Failed to extract VS Code CLI."
-    rm -f "$vscode_cli_tarball" || log_warn "Failed to remove VS Code CLI tarball."
-    if [ ! -f "./code" ]; then
-        handle_error "VS Code CLI binary not found after extraction."
-    fi
-    chmod +x ./code || handle_error "Failed to set executable permissions for VS Code CLI."
-    log_info "VS Code CLI installed successfully. Run './code tunnel --name freebsd-server' to start."
-}
-
-# ------------------------------------------------------------------------------
-# Minimal GUI Installation
-# ------------------------------------------------------------------------------
-install_gui() {
-    log_info "Starting minimal GUI installation..."
-    if pkg install -y \
-        xorg xinit xauth xrandr xset xsetroot \
-        i3 i3status i3lock \
-        drm-kmod dmenu feh picom alacritty \
-        pulseaudio pavucontrol flameshot clipmenu \
-        vlc dunst thunar firefox; then
-        log_info "GUI packages installed successfully."
-    else
-        handle_error "Failed to install one or more GUI packages."
-    fi
-    log_info "Minimal GUI installation completed."
-}
-
-# ------------------------------------------------------------------------------
-# FiraCode Nerd Font Installation
-# ------------------------------------------------------------------------------
-install_font() {
-    log_info "Installing FiraCode Nerd Font..."
-    local font_url="https://github.com/ryanoasis/nerd-fonts/raw/master/patched-fonts/FiraCode/Regular/FiraCodeNerdFont-Regular.ttf"
-    local font_dir="/usr/local/share/fonts/nerd-fonts"
-    local font_file="FiraCodeNerdFont-Regular.ttf"
-    mkdir -p "$font_dir" || handle_error "Failed to create font directory: $font_dir"
-    chmod 755 "$font_dir" || handle_error "Failed to set permissions on $font_dir."
-    curl -L -o "$font_dir/$font_file" "$font_url" || handle_error "Failed to download FiraCode Nerd Font."
-    log_info "Font downloaded to $font_dir/$font_file."
-    chmod 644 "$font_dir/$font_file" || handle_error "Failed to set permissions on font file."
-    chown root:wheel "$font_dir/$font_file" || handle_error "Failed to set ownership on font file."
-    fc-cache -fv >/dev/null 2>&1 || handle_error "Failed to refresh font cache."
-    if ! fc-list | grep -qi "FiraCode"; then
-        log_error "Font verification failed. FiraCode Nerd Font not available."
-        handle_error "FiraCode Nerd Font verification failed."
-    fi
-    log_info "FiraCode Nerd Font installed successfully."
-}
-
-# ------------------------------------------------------------------------------
-# Caddy Web Server Installation & Configuration
-# ------------------------------------------------------------------------------
-install_and_configure_caddy() {
-    log_info "Installing Caddy..."
-    pkg install -y www/caddy || handle_error "Failed to install Caddy."
-    mkdir -p /usr/local/etc/caddy || handle_error "Failed to create Caddy config directory."
-    local caddyfile_src="${USER_HOME}/github/bash/freebsd/dotfiles/caddy/Caddyfile"
-    local caddyfile_dst="/usr/local/etc/caddy/Caddyfile"
-    cp "$caddyfile_src" "$caddyfile_dst" || handle_error "Failed to copy Caddyfile."
-    chown root:wheel "$caddyfile_dst" || handle_error "Failed to set ownership on Caddyfile."
-    chmod 644 "$caddyfile_dst" || handle_error "Failed to set permissions on Caddyfile."
-    sysrc caddy_enable="YES" || handle_error "Failed to enable Caddy in rc.conf."
-    service caddy start || handle_error "Failed to start Caddy service."
-    service caddy status || handle_error "Caddy service is not running."
-    log_info "Caddy installed and configured."
-}
-
-# ------------------------------------------------------------------------------
-# Final System Configuration & Cleanup
-# ------------------------------------------------------------------------------
-finalize_configuration() {
-    log_info "Finalizing system configuration..."
-    cd "$USER_HOME" || handle_error "Cannot change to home directory: $USER_HOME"
-    pkg upgrade -y && log_info "Packages upgraded." || handle_error "Package upgrade failed."
-    log_info "System Uptime: $(uptime)"
-    log_info "Disk Usage (root): $(df -h / | tail -1)"
-    log_info "Memory and Swap Usage:"
-    vmstat -s
-    log_info "CPU Model: $(sysctl -n hw.model 2>/dev/null || echo 'Unknown')"
-    log_info "Kernel Version: $(uname -r)"
-    log_info "Network Configuration:"
-    ifconfig -a
-    log_info "System configuration finalized."
-}
-
-cleanup_packages() {
-    log_info "Cleaning up unused packages and cache..."
-    pkg autoremove -y || log_warn "Orphan package removal failed."
-    pkg clean -a -y || log_warn "Pkg cache cleanup failed."
-    log_info "Cleanup complete."
+home_permissions() {
+  print_section "Home Directory Permissions"
+  local home_dir="/usr/home/${USERNAME}"
+  log_info "Setting ownership and permissions for $home_dir..."
+  chown -R "${USERNAME}:${USERNAME}" "$home_dir"
+  find "$home_dir" -type d -exec chmod g+s {} \;
 }
 
 prompt_reboot() {
-    read -rp "Setup complete. Reboot now? (y/n): " answer
-    if [[ "$answer" =~ ^[Yy]$ ]]; then
-        log_info "Rebooting system..."
-        reboot
-    else
-        log_info "Reboot skipped. Please reboot manually later."
-    fi
+  print_section "Reboot Prompt"
+  read -rp "Reboot now? [y/N]: " answer
+  if [[ "$answer" =~ ^[Yy]$ ]]; then
+    log_info "Rebooting system..."
+    reboot
+  else
+    log_info "Reboot canceled. Please reboot later to apply all changes."
+  fi
 }
 
-# ------------------------------------------------------------------------------
-# MAIN FUNCTION
-# ------------------------------------------------------------------------------
 main() {
-    log_info "Starting FreeBSD system setup."
-    check_root
-    initial_system_update
-    backup_system
-    configure_doas
-    install_packages
-    configure_ssh
-    secure_ssh_config
-    configure_firewall
-    configure_fail2ban
-    setup_repos
-    set_directory_permissions
-    deploy_user_scripts
-    setup_dotfiles
-    set_default_shell
-    install_plex_media_server
-    install_vscode_cli
-    install_gui
-    install_font
-    install_and_configure_caddy
-    finalize_configuration
-    cleanup_packages
-    log_info "FreeBSD system setup completed successfully. Enjoy FreeBSD!"
+  check_root
+  check_network
+  update_system
+  install_packages
+  create_user
+  configure_timezone
+  setup_repos
+  copy_shell_configs
+  configure_ssh
+  secure_ssh_config
+  install_plex
+  install_zig_binary
+  configure_firewall
+  secure_sysctl
+  configure_zfs
+  deploy_user_scripts
+  setup_cron
+  configure_periodic
+  final_checks
+  home_permissions
+  enable_dunamismax_services
+  install_fastfetch
+  build_ly
+  prompt_reboot
 }
 
-# ------------------------------------------------------------------------------
-# Entrypoint
-# ------------------------------------------------------------------------------
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    main "$@"
-    prompt_reboot
-fi
+main "$@"
