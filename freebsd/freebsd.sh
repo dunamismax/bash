@@ -1,39 +1,50 @@
 #!/usr/local/bin/bash
 #
-# FreeBSD system setup bash script (improved version)
+# FreeBSD Server Setup Script (Enhanced Version)
 #
-# This script performs system setup including package installation,
-# user creation, firewall configuration, backups, GUI installation, etc.
+# This script automates the initial configuration of a FreeBSD server.
+# It performs system updates, installs essential CLI packages, sets up a new
+# user, configures SSH and the firewall, manages backups, configures a reverse
+# proxy (Caddy), and applies various system maintenance tasks.
 #
-# Best practices applied:
-#   - Strict error handling with set -Eeuo pipefail
-#   - Read-only globals and logging configuration
-#   - Consistent function style (using local variables)
-#   - Clear comments and modular structure
+# Key Features:
+#   - Strict error handling (set -Eeuo pipefail)
+#   - Modular, well-commented functions for ease of maintenance
+#   - Structured logging with timestamps and color-coded output
+#   - Comprehensive pre-checks and final system verification
 #
- 
+# Usage:
+#   Run this script as root (e.g., with sudo) to configure your FreeBSD server.
+#
+# NOTE:
+#   This version is tailored for server environments only.
+#   All GUI-related functions and packages have been removed.
+#
+
 set -Eeuo pipefail
 IFS=$'\n\t'
- 
-# Global constants (read-only)
+
+#--------------------------------------------------
+# Global Constants and Variables
+#--------------------------------------------------
 readonly LOG_FILE="/var/log/freebsd_setup.log"
 readonly USERNAME="sawyer"
 readonly USER_HOME="/home/${USERNAME}"
- 
-# Global color definitions (for log output)
+
+# Color definitions for logging output
 readonly RED='\033[0;31m'
 readonly YELLOW='\033[0;33m'
 readonly GREEN='\033[0;32m'
 readonly BLUE='\033[0;34m'
-readonly NC='\033[0m'
- 
-# Create and secure the log file
+readonly NC='\033[0m'  # No Color
+
+# Ensure the log directory exists with proper permissions
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
- 
+
 #--------------------------------------------------
-# Error Handling
+# Error Handling Function
 #--------------------------------------------------
 handle_error() {
     local error_message="${1:-An error occurred. Check the log for details.}"
@@ -43,9 +54,10 @@ handle_error() {
     echo "ERROR: ${error_message} (Exit Code: ${exit_code})" >&2
     exit "${exit_code}"
 }
- 
+
+# Trap any error and call handle_error
 trap 'handle_error "Script failed at line ${LINENO} with exit code $?"' ERR
- 
+
 #--------------------------------------------------
 # Logging Function
 #--------------------------------------------------
@@ -55,44 +67,45 @@ log() {
     local message="$*"
     local timestamp
     timestamp=$(date +"%Y-%m-%d %H:%M:%S")
- 
-    # Choose color based on log level (convert to uppercase)
+
+    # Set log color based on the log level (converted to uppercase)
     case "${level^^}" in
         INFO)   local color="${GREEN}" ;;
         WARN|WARNING) local color="${YELLOW}"; level="WARN" ;;
         ERROR)  local color="${RED}" ;;
         DEBUG)  local color="${BLUE}" ;;
-        *)      local color="${NC}"; level="INFO" ;;
+        *)      local color="${NC}" ; level="INFO" ;;
     esac
- 
+
     local log_entry="[$timestamp] [${level^^}] $message"
     echo "$log_entry" >> "$LOG_FILE"
     printf "${color}%s${NC}\n" "$log_entry" >&2
 }
- 
+
 #--------------------------------------------------
-# Usage Information
+# Display Script Usage Information
 #--------------------------------------------------
 usage() {
     cat <<EOF
 Usage: sudo $(basename "$0") [OPTIONS]
-This script installs and configures a FreeBSD system with essential packages,
-a minimal GUI environment, dotfiles, and additional setup tasks.
+This script automates the setup and configuration of a FreeBSD server.
 Options:
   -h, --help    Show this help message and exit.
 EOF
     exit 0
 }
- 
+
 #--------------------------------------------------
-# Basic Checks
+# Pre-Execution Checks
 #--------------------------------------------------
+# Ensure the script is executed as root
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         handle_error "Script must be run as root."
     fi
 }
- 
+
+# Verify basic network connectivity by pinging an external host
 check_network() {
     log INFO "Checking network connectivity..."
     if ! ping -c1 -t5 google.com &>/dev/null; then
@@ -101,9 +114,9 @@ check_network() {
         log INFO "Network connectivity OK."
     fi
 }
- 
+
 #--------------------------------------------------
-# System Update Functions
+# System Update and Package Installation
 #--------------------------------------------------
 update_system() {
     log INFO "Updating pkg repository..."
@@ -115,14 +128,13 @@ update_system() {
         log WARN "pkg upgrade encountered issues."
     fi
 }
- 
+
 install_packages() {
-    log INFO "Installing essential packages..."
+    log INFO "Installing essential CLI packages..."
     local PACKAGES=(
         bash vim nano zsh screen tmux mc htop tree ncdu neofetch
         git curl wget rsync
         python3 gcc cmake ninja meson go gdb
-        xorg gnome gdm alacritty
         nmap lsof iftop iperf3 netcat tcpdump lynis
         john hydra aircrack-ng nikto
         postgresql14-client postgresql14-server mysql80-client mysql80-server redis
@@ -137,16 +149,18 @@ install_packages() {
         fi
     done
 }
- 
+
 #--------------------------------------------------
-# User and Timezone Setup
+# User and Timezone Configuration
 #--------------------------------------------------
 create_user() {
+    # Create a new user if it does not already exist
     if ! id "$USERNAME" &>/dev/null; then
         log INFO "Creating user '$USERNAME'..."
         if ! pw useradd "$USERNAME" -m -s /usr/local/bin/bash -G wheel; then
             log WARN "Failed to create user '$USERNAME'."
         else
+            # Set default password (should be changed immediately)
             echo "changeme" | pw usermod "$USERNAME" -h 0
             log INFO "User '$USERNAME' created with default password 'changeme'."
         fi
@@ -154,7 +168,7 @@ create_user() {
         log INFO "User '$USERNAME' already exists."
     fi
 }
- 
+
 configure_timezone() {
     local TIMEZONE="America/New_York"
     log INFO "Setting timezone to ${TIMEZONE}..."
@@ -166,11 +180,12 @@ configure_timezone() {
         log WARN "Timezone file for ${TIMEZONE} not found."
     fi
 }
- 
+
 #--------------------------------------------------
-# Repository and Dotfiles Setup
+# Repository and Shell Configuration
 #--------------------------------------------------
 setup_repos() {
+    # Clone repositories to the user's github directory
     local repo_dir="${USER_HOME}/github"
     log INFO "Cloning repositories into ${repo_dir}..."
     mkdir -p "$repo_dir"
@@ -185,16 +200,15 @@ setup_repos() {
     done
     chown -R "${USERNAME}:${USERNAME}" "$repo_dir"
 }
- 
+
 copy_shell_configs() {
+    # Copy basic shell configuration files (.bashrc, .profile)
     log INFO "Copying shell configuration files..."
     for file in .bashrc .profile; do
         local src="${USER_HOME}/github/bash/freebsd/dotfiles/${file}"
         local dest="${USER_HOME}/${file}"
         if [ -f "$src" ]; then
-            if [ -f "$dest" ]; then
-                cp "$dest" "${dest}.bak"
-            fi
+            [ -f "$dest" ] && cp "$dest" "${dest}.bak"
             if ! cp -f "$src" "$dest"; then
                 log WARN "Failed to copy ${src} to ${dest}."
             else
@@ -206,11 +220,12 @@ copy_shell_configs() {
         fi
     done
 }
- 
+
 #--------------------------------------------------
 # SSH and Security Configuration
 #--------------------------------------------------
 configure_ssh() {
+    # Enable SSH daemon via rc.conf if not already enabled
     log INFO "Configuring SSH..."
     if sysrc sshd_enable >/dev/null 2>&1; then
         log INFO "sshd_enable already set."
@@ -222,8 +237,9 @@ configure_ssh() {
         log WARN "Failed to restart sshd."
     fi
 }
- 
+
 secure_ssh_config() {
+    # Harden SSH configuration settings
     local sshd_config="/etc/ssh/sshd_config"
     local backup_file="/etc/ssh/sshd_config.bak"
     if [ -f "$sshd_config" ]; then
@@ -241,7 +257,10 @@ secure_ssh_config() {
         log WARN "SSHD configuration file not found."
     fi
 }
- 
+
+#--------------------------------------------------
+# Plex Media Server Installation
+#--------------------------------------------------
 install_plex() {
     log INFO "Installing Plex Media Server..."
     if pkg install -y plexmediaserver; then
@@ -250,9 +269,9 @@ install_plex() {
         log WARN "Failed to install Plex Media Server."
     fi
 }
- 
+
 #--------------------------------------------------
-# Backup Functions
+# Backup Functions for System and Plex Data
 #--------------------------------------------------
 freebsd_perform_backup() {
     log INFO "Starting backup and compression to ${DESTINATION}/${BACKUP_NAME}"
@@ -262,7 +281,7 @@ freebsd_perform_backup() {
         handle_error "Backup process failed."
     fi
 }
- 
+
 freebsd_cleanup_backups() {
     log INFO "Removing backups in ${DESTINATION} older than ${RETENTION_DAYS} days"
     if find "$DESTINATION" -mindepth 1 -maxdepth 1 -type f -mtime +"${RETENTION_DAYS}" -delete; then
@@ -271,27 +290,26 @@ freebsd_cleanup_backups() {
         log WARN "Failed to remove some old backups."
     fi
 }
- 
+
 backup_freebsd_system() {
-    # Define backup parameters (customize as needed)
     local SOURCE="/"
     local DESTINATION="/mnt/WD_BLACK/BACKUP/freebsd-backups"
     local RETENTION_DAYS=7
     local TIMESTAMP
     TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
     local BACKUP_NAME="backup-${TIMESTAMP}.tar.gz"
- 
-    # Build exclusion args
+
+    # Build exclusion arguments to omit directories that should not be backed up
     local EXCLUDES=( "./proc/*" "./sys/*" "./dev/*" "./run/*" "./tmp/*" "./mnt/*" "./media/*" "./swapfile" "./lost+found" "./var/tmp/*" "./var/cache/*" "./var/log/*" "*.iso" "*.tmp" "*.swap.img" )
     local EXCLUDES_ARGS=()
     for EXCLUDE in "${EXCLUDES[@]}"; do
         EXCLUDES_ARGS+=(--exclude="${EXCLUDE}")
     done
- 
+
     freebsd_perform_backup
     freebsd_cleanup_backups
 }
- 
+
 plex_perform_backup() {
     log INFO "Starting on-the-fly Plex backup and compression to ${DESTINATION}/${BACKUP_NAME}"
     if tar -I pigz --one-file-system -cf "${DESTINATION}/${BACKUP_NAME}" -C "$SOURCE" .; then
@@ -300,7 +318,7 @@ plex_perform_backup() {
         handle_error "Plex backup process failed."
     fi
 }
- 
+
 plex_cleanup_backups() {
     log INFO "Removing Plex backups older than ${RETENTION_DAYS} days from ${DESTINATION}"
     if find "$DESTINATION" -mindepth 1 -maxdepth 1 -type f -mtime +"${RETENTION_DAYS}" -delete; then
@@ -309,17 +327,15 @@ plex_cleanup_backups() {
         log WARN "Failed to remove some old Plex backups."
     fi
 }
- 
+
 backup_plex_data() {
-    # Define Plex backup parameters (customize as needed)
     local SOURCE="/usr/local/plexdata/Library/Application Support/Plex Media Server/"
     local DESTINATION="/mnt/WD_BLACK/BACKUP/plex-backups"
     local RETENTION_DAYS=7
     local TIMESTAMP
     TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
     local BACKUP_NAME="plex-backup-${TIMESTAMP}.tar.gz"
- 
-    # Ensure source exists and destination is mounted
+
     if [[ ! -d "$SOURCE" ]]; then
         handle_error "Plex source directory '${SOURCE}' does not exist."
     fi
@@ -327,39 +343,13 @@ backup_plex_data() {
     if ! mount | grep -q "$DESTINATION"; then
         handle_error "Destination mount point for '${DESTINATION}' is not available."
     fi
- 
+
     plex_perform_backup
     plex_cleanup_backups
 }
- 
+
 #--------------------------------------------------
-# Font Installer Function
-#--------------------------------------------------
-install_firacode_nerd_font() {
-    local font_url="https://github.com/ryanoasis/nerd-fonts/raw/master/patched-fonts/FiraCode/Regular/FiraCodeNerdFont-Regular.ttf"
-    local font_dir="/usr/local/share/fonts/nerd-fonts"
-    local font_file="FiraCodeNerdFont-Regular.ttf"
- 
-    log INFO "Starting FiraCode Nerd Font installation..."
-    if [[ ! -d "$font_dir" ]]; then
-        log INFO "Creating font directory: ${font_dir}"
-        mkdir -p "$font_dir" || handle_error "Failed to create font directory: ${font_dir}"
-    fi
-    chmod 755 "$font_dir" || handle_error "Failed to set permissions for the font directory."
-    log INFO "Downloading font from ${font_url}..."
-    curl -L -o "${font_dir}/${font_file}" "$font_url" || handle_error "Failed to download font from ${font_url}."
-    log INFO "Font downloaded successfully."
-    if [[ ! -f "${font_dir}/${font_file}" ]]; then
-        handle_error "Font file not found after download: ${font_dir}/${font_file}"
-    fi
-    chmod 644 "${font_dir}/${font_file}" || handle_error "Failed to set permissions for the font file."
-    chown root:wheel "${font_dir}/${font_file}" || handle_error "Failed to set ownership for the font file."
-    fc-cache -fv >/dev/null 2>&1 || handle_error "Failed to refresh font cache."
-    log INFO "FiraCode Nerd Font installation completed successfully."
-}
- 
-#--------------------------------------------------
-# Firewall Setup Functions
+# Firewall Setup Functions using PF
 #--------------------------------------------------
 backup_pf_conf() {
     local pf_conf="/etc/pf.conf"
@@ -371,8 +361,9 @@ backup_pf_conf() {
         log INFO "No existing /etc/pf.conf found. Continuing."
     fi
 }
- 
+
 detect_ext_if() {
+    # Detect the external network interface by checking the default route
     local iface
     iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
     if [ -z "$iface" ]; then
@@ -381,14 +372,14 @@ detect_ext_if() {
     fi
     echo "$iface"
 }
- 
+
 generate_pf_conf() {
     local ext_if="$1"
     local pf_conf="/etc/pf.conf"
     log INFO "Generating new ${pf_conf} with external interface: ${ext_if}"
     cat <<EOF > "$pf_conf"
 #
-# pf.conf generated by firewall_setup.sh on $(date)
+# pf.conf generated on $(date)
 #
 ext_if = "${ext_if}"
 set skip on lo
@@ -401,7 +392,7 @@ pass in on \$ext_if proto udp from any to (\$ext_if) port { 1900, 32410, 32412, 
 EOF
     log INFO "New pf.conf generated."
 }
- 
+
 enable_and_reload_pf() {
     if ! sysrc -n pf_enable 2>/dev/null | grep -q "YES"; then
         sysrc pf_enable="YES"
@@ -414,7 +405,7 @@ enable_and_reload_pf() {
         pfctl -f /etc/pf.conf && log INFO "PF configuration reloaded successfully."
     fi
 }
- 
+
 configure_firewall() {
     check_root
     backup_pf_conf
@@ -424,11 +415,12 @@ configure_firewall() {
     enable_and_reload_pf
     log INFO "Firewall configuration complete."
 }
- 
+
 #--------------------------------------------------
-# Additional Setup Functions
+# Additional Server Setup Functions
 #--------------------------------------------------
 deploy_user_scripts() {
+    # Copy custom user scripts into the user's bin directory
     local bin_dir="${USER_HOME}/bin"
     local scripts_src="${USER_HOME}/github/bash/freebsd/_scripts/"
     log INFO "Deploying user scripts from ${scripts_src} to ${bin_dir}..."
@@ -440,15 +432,17 @@ deploy_user_scripts() {
         log WARN "Failed to deploy user scripts."
     fi
 }
- 
+
 setup_cron() {
+    # Start the cron service for scheduled tasks
     log INFO "Starting cron service..."
     if ! service cron start; then
         log WARN "Failed to start cron."
     fi
 }
- 
+
 configure_periodic() {
+    # Create or update a daily maintenance script in /etc/periodic/daily/
     local cron_file="/etc/periodic/daily/freebsd_maintenance"
     log INFO "Configuring daily system maintenance tasks..."
     if [ -f "$cron_file" ]; then
@@ -466,31 +460,34 @@ EOF
         log WARN "Failed to set execute permission on ${cron_file}."
     fi
 }
- 
+
 final_checks() {
+    # Output final system details for verification
     log INFO "Performing final system checks:"
     echo "Kernel: $(uname -r)"
     echo "Uptime: $(uptime)"
     df -h /
     swapinfo -h || true
 }
- 
+
 home_permissions() {
+    # Ensure proper ownership and group settings for the user's home directory
     log INFO "Setting ownership and permissions for ${USER_HOME}..."
     chown -R "${USERNAME}:${USERNAME}" "${USER_HOME}"
     find "${USER_HOME}" -type d -exec chmod g+s {} \;
 }
- 
+
 install_fastfetch() {
-    log INFO "Installing Fastfetch..."
+    log INFO "Installing Fastfetch (system information tool)..."
     if pkg install -y fastfetch; then
         log INFO "Fastfetch installed successfully."
     else
         log WARN "Failed to install Fastfetch."
     fi
 }
- 
+
 set_bash_shell() {
+    # Ensure bash is installed and set as the default shell for the new user
     if [ "$(id -u)" -ne 0 ]; then
         log WARN "set_bash_shell requires root privileges."
         return 1
@@ -509,179 +506,63 @@ set_bash_shell() {
     chsh -s /usr/local/bin/bash "$USERNAME"
     log INFO "Default shell for ${USERNAME} changed to /usr/local/bin/bash."
 }
- 
-enable_gdm() {
-    log INFO "Enabling GDM display/login manager service..."
-    sysrc gdm_enable="YES"
-    if service gdm start; then
-        log INFO "GDM service started successfully."
-    else
-        log WARN "Failed to start GDM service."
+
+install_and_configure_caddy_proxy() {
+    # Install and configure Caddy as a reverse proxy service
+    log INFO "Installing Caddy reverse proxy..."
+    if ! pkg install -y caddy; then
+        handle_error "Failed to install Caddy."
     fi
+
+    local caddyfile="/usr/local/etc/caddy/Caddyfile"
+    if [ -f "$caddyfile" ]; then
+        cp "$caddyfile" "${caddyfile}.backup.$(date +%Y%m%d%H%M%S)"
+        log INFO "Backed up existing Caddyfile."
+    fi
+
+    log INFO "Writing new Caddyfile configuration for reverse proxy..."
+    cat <<'EOF' > "$caddyfile"
+{
+    # Global options block (customize as needed)
+    # Uncomment and set your email for automatic HTTPS certificates:
+    # email your-email@example.com
 }
- 
-install_gui() {
-    log INFO "--------------------------------------"
-    log INFO "Starting minimal GUI installation..."
-    log INFO "Installing required GUI packages..."
-    if pkg install -y \
-        xorg xinit xauth xrandr xset xsetroot \
-        i3 i3status i3lock \
-        drm-kmod dmenu feh picom alacritty \
-        pulseaudio pavucontrol flameshot clipmenu \
-        vlc dunst thunar firefox; then
-        log INFO "GUI packages installed successfully."
-    else
-        handle_error "Failed to install one or more GUI packages."
-    fi
-    log INFO "Minimal GUI installation completed."
-    log INFO "--------------------------------------"
+
+# Redirect all HTTP traffic to HTTPS
+http:// {
+    redir https://{host}{uri} permanent
 }
- 
-setup_dotfiles() {
-    log INFO "--------------------------------------"
-    log INFO "Starting dotfiles setup..."
-    local dotfiles_dir="${USER_HOME}/github/bash/freebsd/dotfiles"
-    local config_dir="${USER_HOME}/.config"
-    if [[ ! -d "$dotfiles_dir" ]]; then
-        handle_error "Dotfiles directory not found: ${dotfiles_dir}"
-    fi
-    log INFO "Ensuring configuration directory exists at: ${config_dir}"
-    mkdir -p "$config_dir" || handle_error "Failed to create config directory at ${config_dir}."
-    local files=( "${dotfiles_dir}/.xinitrc:${USER_HOME}/" )
-    local dirs=( "${dotfiles_dir}/alacritty:${config_dir}" "${dotfiles_dir}/i3:${config_dir}" "${dotfiles_dir}/picom:${config_dir}" "${dotfiles_dir}/i3status:${config_dir}" )
-    log INFO "Copying dotfiles (files)..."
-    for mapping in "${files[@]}"; do
-        local src="${mapping%%:*}"
-        local dst="${mapping#*:}"
-        if [[ -f "$src" ]]; then
-            if [ -f "$dst" ]; then
-                cp "$dst" "${dst}.bak"
-            fi
-            if ! cp "$src" "$dst"; then
-                handle_error "Failed to copy file: ${src} to ${dst}"
-            else
-                log INFO "Copied file: ${src} -> ${dst}"
-            fi
-        else
-            log WARN "Source file not found, skipping: ${src}"
-        fi
-    done
-    log INFO "Copying dotfiles (directories)..."
-    for mapping in "${dirs[@]}"; do
-        local src="${mapping%%:*}"
-        local dst="${mapping#*:}"
-        if [[ -d "$src" ]]; then
-            if ! cp -r "$src" "$dst"; then
-                handle_error "Failed to copy directory: ${src} to ${dst}"
-            else
-                log INFO "Copied directory: ${src} -> ${dst}"
-            fi
-        else
-            log WARN "Source directory not found, skipping: ${src}"
-        fi
-    done
-    log INFO "Setting ownership for all files under ${USER_HOME}..."
-    chown -R "${USERNAME}:${USERNAME}" "${USER_HOME}" || handle_error "Failed to set ownership for ${USER_HOME}."
-    log INFO "Dotfiles setup completed successfully."
-    log INFO "--------------------------------------"
-}
- 
-install_and_configure_nginx_proxy() {
-    log INFO "Installing Nginx..."
-    if ! pkg install -y nginx; then
-        handle_error "Failed to install Nginx."
-    fi
- 
-    # Set up SSL directory and certificate paths
-    local ssl_dir="/usr/local/etc/nginx/ssl"
-    mkdir -p "$ssl_dir"
-    local crt_file="${ssl_dir}/dunamismax.crt"
-    local key_file="${ssl_dir}/dunamismax.key"
-    if [ ! -f "$crt_file" ] || [ ! -f "$key_file" ]; then
-        log WARN "SSL certificate or key not found in ${ssl_dir}. Generating a self-signed certificate..."
-        if ! openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-             -subj "/C=US/ST=State/L=City/O=Organization/OU=Department/CN=dunamismax.com" \
-             -keyout "$key_file" -out "$crt_file"; then
-            handle_error "Failed to generate self-signed SSL certificate."
-        fi
-        log INFO "Self-signed SSL certificate generated."
-    fi
- 
-    # Backup existing Nginx configuration
-    local nginx_conf="/usr/local/etc/nginx/nginx.conf"
-    if [ -f "$nginx_conf" ]; then
-        cp "$nginx_conf" "${nginx_conf}.backup.$(date +%Y%m%d%H%M%S)"
-        log INFO "Backed up existing Nginx configuration."
-    fi
- 
-    log INFO "Writing new Nginx configuration with HTTPS and SSH reverse proxy settings..."
-    cat <<'EOF' > "$nginx_conf"
-worker_processes  1;
-error_log  /var/log/nginx/error.log;
-pid        /var/run/nginx.pid;
- 
-events {
-    worker_connections  1024;
-}
- 
-http {
-    include       mime.types;
-    default_type  application/octet-stream;
-    sendfile      on;
-    keepalive_timeout  65;
- 
-    server {
-        listen 80;
-        server_name dunamismax.com www.dunamismax.com;
-        return 301 https://$host$request_uri;
-    }
- 
-    server {
-        listen 443 ssl;
-        server_name dunamismax.com www.dunamismax.com;
- 
-        ssl_certificate     /usr/local/etc/nginx/ssl/dunamismax.crt;
-        ssl_certificate_key /usr/local/etc/nginx/ssl/dunamismax.key;
-        ssl_protocols       TLSv1.2 TLSv1.3;
-        ssl_ciphers         HIGH:!aNULL:!MD5;
- 
-        location / {
-            proxy_pass http://127.0.0.1:80;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-        }
-    }
-}
- 
-stream {
-    server {
-        listen 22;
-        proxy_pass 127.0.0.1:2222;
-    }
+
+# Reverse proxy configuration for HTTPS
+https://dunamismax.com, https://www.dunamismax.com {
+    reverse_proxy 127.0.0.1:80
 }
 EOF
- 
-    log INFO "Enabling Nginx service..."
-    sysrc nginx_enable="YES"
- 
-    if service nginx status >/dev/null 2>&1; then
-        if service nginx reload; then
-            log INFO "Nginx reloaded successfully."
+
+    log INFO "Enabling Caddy service..."
+    sysrc caddy_enable="YES"
+
+    if service caddy status >/dev/null 2>&1; then
+        if service caddy reload; then
+            log INFO "Caddy reloaded successfully."
         else
-            log WARN "Failed to reload Nginx."
+            log WARN "Failed to reload Caddy. Attempting to start Caddy..."
+            if ! service caddy start; then
+                handle_error "Failed to start Caddy service."
+            fi
         fi
     else
-        if service nginx start; then
-            log INFO "Nginx started successfully."
+        if service caddy start; then
+            log INFO "Caddy started successfully."
         else
-            handle_error "Failed to start Nginx."
+            handle_error "Failed to start Caddy service."
         fi
     fi
 }
- 
+
+#--------------------------------------------------
+# Prompt for Reboot
+#--------------------------------------------------
 prompt_reboot() {
     read -rp "Reboot now? [y/N]: " answer
     if [[ "$answer" =~ ^[Yy]$ ]]; then
@@ -691,9 +572,9 @@ prompt_reboot() {
         log INFO "Reboot canceled. Please reboot later to apply all changes."
     fi
 }
- 
+
 #--------------------------------------------------
-# Main Entry Point
+# Main Execution Flow
 #--------------------------------------------------
 main() {
     while [[ $# -gt 0 ]]; do
@@ -703,7 +584,7 @@ main() {
         esac
         shift
     done
- 
+
     check_root
     check_network
     update_system
@@ -715,24 +596,20 @@ main() {
     configure_ssh
     secure_ssh_config
     install_plex
-    install_and_configure_nginx_proxy
+    install_and_configure_caddy_proxy
     configure_firewall
-    install_firacode_nerd_font
     backup_freebsd_system
     backup_plex_data
-    setup_dotfiles
     deploy_user_scripts
     setup_cron
     configure_periodic
     install_fastfetch
     set_bash_shell
-    enable_gdm
-    install_gui
     final_checks
     home_permissions
     prompt_reboot
 }
- 
+
 # Execute main if script is run directly
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
