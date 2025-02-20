@@ -73,12 +73,6 @@ print_section() {
 
 # Configuration Variables
 USERNAME="sawyer"
-TIMEZONE="America/New_York"
-
-# Zig installation configuration (FreeBSD build)
-ZIG_URL="https://ziglang.org/builds/zig-freebsd-x86_64-0.14.0-dev.3224+5ab511307.tar.xz"
-ZIG_DIR="/opt/zig"
-ZIG_BIN="/usr/local/bin/zig"
 
 # List of packages (adjust package names as available in pkg)
 PACKAGES=(bash vim nano zsh screen tmux mc htop tree ncdu neofetch
