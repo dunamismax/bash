@@ -84,7 +84,7 @@ PACKAGES=(
   iproute2 less bind-tools ncdu
   zip unzip p7zip gawk ethtool tree universal-ctags the_silver_searcher ltrace
   python python-pip python-virtualenv tzdata
-  zlib readline bzip2 tk xz ncurses gdbm nss liblzma libxml2 xmlsec1
+  zlib readline bzip2 tk xz ncurses gdbm nss libxml2
   clang llvm
 )
 
@@ -207,7 +207,7 @@ configure_fail2ban() {
     return 0
   fi
   log_info "Installing Fail2ban..."
-  yay -S --noconfirm fail2ban || handle_error "Failed to install Fail2ban." 1
+  pacman -S --noconfirm fail2ban || handle_error "Failed to install Fail2ban." 1
   if [ -f /etc/fail2ban/jail.local ]; then
     cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak || log_warn "Failed to backup existing jail.local."
     log_info "Backed up /etc/fail2ban/jail.local."
@@ -304,7 +304,7 @@ set_default_shell() {
 cleanup_packages() {
   log_info "Cleaning up orphan packages and cache..."
   pacman -Rns $(pacman -Qtdq 2>/dev/null) --noconfirm || log_warn "No orphan packages to remove."
-  yay -Sc --noconfirm || log_warn "Yay cache cleanup failed."
+  pacman -Sc --noconfirm || log_warn "pacman cache cleanup failed."
   log_info "Cleanup complete."
 }
 
