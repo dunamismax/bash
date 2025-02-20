@@ -299,6 +299,16 @@ set_bash_shell() {
   log_info "Default shell for $target_user changed to /usr/local/bin/bash."
 }
 
+enable_gdm() {
+  log_info "Enabling GDM display/login manager service..."
+  sysrc gdm_enable="YES"
+  if service gdm start; then
+    log_info "GDM service started successfully."
+  else
+    log_warn "Failed to start GDM service."
+  fi
+}
+
 prompt_reboot() {
   read -rp "Reboot now? [y/N]: " answer
   if [[ "$answer" =~ ^[Yy]$ ]]; then
@@ -329,6 +339,7 @@ main() {
   home_permissions
   install_fastfetch
   set_bash_shell
+  enable_gdm
   prompt_reboot
 }
 
