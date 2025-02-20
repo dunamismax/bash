@@ -1,9 +1,10 @@
-#!/usr/bin/env bash
+#!/usr/local/bin/bash
 # ------------------------------------------------------------------------------
 # Script Name: freebsd_gui_setup.sh
 # Description: Installs a minimal GUI environment on FreeBSD and sets up dotfiles.
-# Author: Your Name | License: MIT
-# Version: 1.0.0
+#              This script installs Xorg, a window manager (i3), and various
+#              essential tools, then deploys user dotfiles.
+# Author: Your Name | License: MIT | Version: 1.1.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -18,8 +19,10 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/freebsd_gui_setup.log"  # Path to the log file
-USERNAME="sawyer"  # Replace with the target username
+LOG_FILE="/var/log/freebsd_gui_setup.log"  # Log file path
+USERNAME="sawyer"                           # Target username
+# For FreeBSD, the home directory is typically located at /usr/home/USERNAME
+USER_HOME="/usr/home/${USERNAME}"
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
@@ -38,7 +41,7 @@ log() {
     local BLUE='\033[0;34m'
     local NC='\033[0m'  # No Color
 
-    # Validate log level and set color
+    # Set color based on log level
     case "${level^^}" in
         INFO)
             local color="${GREEN}"
@@ -59,13 +62,8 @@ log() {
             ;;
     esac
 
-    # Format the log entry
     local log_entry="[$timestamp] [$level] $message"
-
-    # Append to log file
     echo "$log_entry" >> "$LOG_FILE"
-
-    # Output to console
     printf "${color}%s${NC}\n" "$log_entry" >&2
 }
 
@@ -74,19 +72,10 @@ log() {
 # ------------------------------------------------------------------------------
 handle_error() {
     local error_message="${1:-An error occurred. Check the log for details.}"
-    local exit_code="${2:-1}"  # Default exit code is 1
-    local timestamp
-    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-
-    # Log the error with additional context
+    local exit_code="${2:-1}"
     log ERROR "$error_message (Exit Code: $exit_code)"
-    log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]}."
-
-    # Optionally, print the error to stderr for immediate visibility
+    log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]:-main}."
     echo "ERROR: $error_message (Exit Code: $exit_code)" >&2
-    echo "Script failed at line $LINENO in function ${FUNCNAME[1]}." >&2
-
-    # Exit with the specified exit code
     exit "$exit_code"
 }
 
@@ -94,55 +83,74 @@ handle_error() {
 # HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 check_root() {
-    if [[ "$EUID" -ne 0 ]]; then
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         handle_error "This script must be run as root."
     fi
 }
 
+usage() {
+    cat <<EOF
+Usage: sudo $(basename "$0") [OPTIONS]
+
+This script installs a minimal GUI environment on FreeBSD and deploys dotfiles.
+It will install Xorg, i3, and various utilities, then copy your dotfiles from
+your GitHub repository to your user configuration directories.
+
+Options:
+  -h, --help    Show this help message and exit.
+
+EOF
+    exit 0
+}
+
 # ------------------------------------------------------------------------------
-# FUNCTION: Install GUI
+# FUNCTION: Install Minimal GUI Environment
 # ------------------------------------------------------------------------------
 install_gui() {
     log INFO "--------------------------------------"
-    log INFO "Starting GUI installation..."
+    log INFO "Starting minimal GUI installation..."
 
-    # Install required packages
-    log INFO "Installing GUI packages..."
-    pkg install -y xorg xinit xauth xrandr xset xsetroot i3 i3status i3lock drm-kmod dmenu feh picom alacritty pulseaudio pavucontrol flameshot clipmenu vlc dunst thunar firefox || handle_error "Failed to install GUI packages."
+    log INFO "Installing required GUI packages..."
+    if pkg install -y \
+        xorg xinit xauth xrandr xset xsetroot \
+        i3 i3status i3lock \
+        drm-kmod dmenu feh picom alacritty \
+        pulseaudio pavucontrol flameshot clipmenu \
+        vlc dunst thunar firefox; then
+        log INFO "GUI packages installed successfully."
+    else
+        handle_error "Failed to install one or more GUI packages."
+    fi
 
-    log INFO "GUI installation completed successfully."
+    log INFO "Minimal GUI installation completed."
     log INFO "--------------------------------------"
 }
 
 # ------------------------------------------------------------------------------
-# FUNCTION: Load dotfiles
+# FUNCTION: Set Up Dotfiles
 # ------------------------------------------------------------------------------
 setup_dotfiles() {
     log INFO "--------------------------------------"
     log INFO "Starting dotfiles setup..."
 
-    # Base paths
-    local user_home="/home/${USERNAME}"
-    local dotfiles_dir="${user_home}/github/bash/freebsd/dotfiles"
-    local config_dir="${user_home}/.config"
+    # Define source and target directories
+    local dotfiles_dir="${USER_HOME}/github/bash/freebsd/dotfiles"
+    local config_dir="${USER_HOME}/.config"
 
-    # Verify source directories exist
+    # Verify dotfiles source exists
     if [[ ! -d "$dotfiles_dir" ]]; then
         handle_error "Dotfiles directory not found: $dotfiles_dir"
     fi
 
-    # Create necessary directories
-    log INFO "Creating required directories..."
-    if ! mkdir -p "$config_dir"; then
-        handle_error "Failed to create config directory."
-    fi
+    log INFO "Ensuring configuration directory exists at: $config_dir"
+    mkdir -p "$config_dir" || handle_error "Failed to create config directory at $config_dir."
 
-    # Define files to copy (source:destination)
+    # Define files to copy (format: source:destination)
     local files=(
-        "${dotfiles_dir}/.xinitrc:${user_home}/"
+        "${dotfiles_dir}/.xinitrc:${USER_HOME}/"
     )
 
-    # Define directories to copy (source:destination)
+    # Define directories to copy (format: source:destination)
     local dirs=(
         "${dotfiles_dir}/alacritty:${config_dir}"
         "${dotfiles_dir}/i3:${config_dir}"
@@ -150,45 +158,35 @@ setup_dotfiles() {
         "${dotfiles_dir}/i3status:${config_dir}"
     )
 
-    # Copy files
-    log INFO "Copying files..."
-    for item in "${files[@]}"; do
-        local src="${item%:*}"
-        local dst="${item#*:}"
+    log INFO "Copying dotfiles (files)..."
+    for mapping in "${files[@]}"; do
+        local src="${mapping%%:*}"
+        local dst="${mapping#*:}"
         if [[ -f "$src" ]]; then
-            if ! cp "$src" "$dst"; then
-                handle_error "Failed to copy file: $src"
-            fi
+            cp "$src" "$dst" || handle_error "Failed to copy file: $src to $dst"
             log INFO "Copied file: $src -> $dst"
         else
-            log WARN "Source file not found: $src"
+            log WARN "Source file not found, skipping: $src"
         fi
     done
 
-    # Copy directories
-    log INFO "Copying directories..."
-    for item in "${dirs[@]}"; do
-        local src="${item%:*}"
-        local dst="${item#*:}"
+    log INFO "Copying dotfiles (directories)..."
+    for mapping in "${dirs[@]}"; do
+        local src="${mapping%%:*}"
+        local dst="${mapping#*:}"
         if [[ -d "$src" ]]; then
-            if ! cp -r "$src" "$dst"; then
-                handle_error "Failed to copy directory: $src"
-            fi
+            cp -r "$src" "$dst" || handle_error "Failed to copy directory: $src to $dst"
             log INFO "Copied directory: $src -> $dst"
         else
-            log WARN "Source directory not found: $src"
+            log WARN "Source directory not found, skipping: $src"
         fi
     done
 
-    # Set ownership and permissions
-    log INFO "Setting ownership and permissions..."
-    if ! chown -R "${USERNAME}:${USERNAME}" "$user_home"; then
-        handle_error "Failed to set ownership for $user_home."
-    fi
+    log INFO "Setting ownership for all files under $USER_HOME..."
+    chown -R "${USERNAME}:${USERNAME}" "$USER_HOME" || handle_error "Failed to set ownership for $USER_HOME."
 
     log INFO "Dotfiles setup completed successfully."
     log INFO "--------------------------------------"
-    return 0
 }
 
 # ------------------------------------------------------------------------------
@@ -209,27 +207,26 @@ main() {
         shift
     done
 
-    # Ensure the script is run as root
     check_root
 
-    # Ensure the log directory exists and is writable
+    # Ensure log directory exists and is writable
+    local LOG_DIR
     LOG_DIR=$(dirname "$LOG_FILE")
     if [[ ! -d "$LOG_DIR" ]]; then
         mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
     fi
     touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
-    chmod 600 "$LOG_FILE"  # Restrict log file access to root only
+    chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
     log INFO "Script execution started."
-
-    # Call your main functions in order
     install_gui
     setup_dotfiles
-
     log INFO "Script execution finished."
 }
 
-# Execute main function if script is run directly
+# ------------------------------------------------------------------------------
+# SCRIPT INVOCATION CHECK
+# ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi
