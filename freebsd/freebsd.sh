@@ -53,32 +53,35 @@ install_packages() {
     bash vim nano zsh screen tmux mc htop tree ncdu neofetch
 
     # Networking and Version Control
-    git curl wget rsync sudo openssh
+    git curl wget rsync
 
     # Programming Languages and Tools
-    python3 py38-pip gcc cmake ninja meson go gdb strace
+    python3 gcc cmake ninja meson go gdb
 
-    # Documentation and Timezone
-    man tzdata
-
-    # X11 and Window Managers
-    xorg i3 sddm alacritty dmenu i3blocks
+    # X11 and Desktop Environments
+    xorg gnome gdm alacritty
 
     # System Administration Tools
-    nmap lsof sysstat iftop iperf3 netcat tcpdump lynis
+    nmap lsof iftop iperf3 netcat tcpdump lynis
 
     # Penetration Testing and Security Tools
-    metasploit-framework john hydra aircrack-ng nikto
+    john hydra aircrack-ng nikto
 
     # Database Management Systems
     postgresql14-client postgresql14-server mysql80-client mysql80-server redis
 
     # Additional Development Tools
-    node npm ruby perl php7.4 rust cargo
+    ruby rust
 
     # Miscellaneous Utilities
-    jq shellcheck
+    jq doas
   )
+
+  # Install packages
+  for pkg in "${PACKAGES[@]}"; do
+    pkg install -y "$pkg"
+  done
+}
 
   log_info "Installing essential packages..."
   if ! pkg install -y "${PACKAGES[@]}"; then
