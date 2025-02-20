@@ -131,6 +131,7 @@ install_from_aur() {
 # ------------------------------------------------------------------------------
 # MAIN LOGIC FUNCTION: Install and Configure ZFS on Arch Linux
 # ------------------------------------------------------------------------------
+
 install_configure_zfs() {
     print_section "Installing and Configuring ZFS on Arch Linux"
 
@@ -142,7 +143,7 @@ install_configure_zfs() {
         handle_error "Failed to update system packages."
     fi
 
-    log INFO "Installing prerequisites for ZFS (base-devel and linux-headers)..."
+    log INFO "Installing prerequisites: base-devel and linux-headers..."
     if ! pacman -S --needed --noconfirm base-devel linux-headers; then
         handle_error "Failed to install prerequisites."
     fi
@@ -164,7 +165,7 @@ install_configure_zfs() {
         log WARN "Could not enable zfs-mount.service."
     fi
 
-    # Check if the ZFS pool is already imported; if not, attempt an import.
+    # Import the ZFS pool if not already imported
     if ! zpool list "$ZPOOL_NAME" >/dev/null 2>&1; then
         log INFO "Importing ZFS pool '$ZPOOL_NAME'..."
         if ! zpool import -f "$ZPOOL_NAME"; then
