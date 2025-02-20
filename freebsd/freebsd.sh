@@ -48,15 +48,27 @@ update_system() {
 }
 
 install_packages() {
-  PACKAGES=(bash vim nano zsh screen tmux mc htop tree ncdu neofetch
-            git curl wget rsync sudo python3 py38-pip tzdata gcc cmake
-            ninja meson gettext openssh go gdb strace man)
+  PACKAGES=(
+    bash vim nano zsh screen tmux mc htop tree ncdu neofetch
+    git curl wget rsync sudo python3 py38-pip tzdata gcc cmake
+    ninja meson gettext openssh go gdb strace man
+    xorg i3 sddm alacritty dmenu i3blocks
+  )
+  
   log_info "Installing essential packages..."
   if ! pkg install -y "${PACKAGES[@]}"; then
     log_warn "One or more packages failed to install."
   else
     log_info "Package installation complete."
   fi
+
+  # Enable necessary services
+  sysrc dbus_enable="YES"
+  sysrc sddm_enable="YES"
+
+  # Start services
+  service dbus start
+  service sddm start
 }
 
 create_user() {
