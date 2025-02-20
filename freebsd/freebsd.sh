@@ -1,4 +1,8 @@
 #!/usr/local/bin/bash
+#
+# FreeBSD system setup bash script
+# :)
+#
 set -Eeuo pipefail
 IFS=$'\n\t'
 trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
