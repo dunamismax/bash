@@ -83,6 +83,8 @@ export HISTTIMEFORMAT="%F %T "
 # ------------------------------------------------------------------------------
 if command -v fastfetch >/dev/null 2>&1; then
     fastfetch
+    echo
+    echo
 fi
 
 # 5. Development Environment Setup
