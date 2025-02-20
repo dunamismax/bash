@@ -736,6 +736,98 @@ setup_dotfiles() {
     log INFO "--------------------------------------"
 }
 
+install_and_configure_nginx_proxy() {
+    log INFO "Installing Nginx..."
+    if ! pkg install -y nginx; then
+        handle_error "Failed to install Nginx."
+    fi
+
+    # Set up SSL directory and certificate paths
+    local ssl_dir="/usr/local/etc/nginx/ssl"
+    mkdir -p "$ssl_dir"
+    local crt_file="${ssl_dir}/dunamismax.crt"
+    local key_file="${ssl_dir}/dunamismax.key"
+    if [ ! -f "$crt_file" ] || [ ! -f "$key_file" ]; then
+        log WARN "SSL certificate or key not found in ${ssl_dir}. Generating a self-signed certificate..."
+        if ! openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+             -subj "/C=US/ST=State/L=City/O=Organization/OU=Department/CN=dunamismax.com" \
+             -keyout "$key_file" -out "$crt_file"; then
+            handle_error "Failed to generate self-signed SSL certificate."
+        fi
+        log INFO "Self-signed SSL certificate generated."
+    fi
+
+    # Backup existing Nginx configuration
+    local nginx_conf="/usr/local/etc/nginx/nginx.conf"
+    if [ -f "$nginx_conf" ]; then
+        cp "$nginx_conf" "${nginx_conf}.backup.$(date +%Y%m%d%H%M%S)"
+        log INFO "Backed up existing Nginx configuration."
+    fi
+
+    log INFO "Writing new Nginx configuration with HTTPS and SSH reverse proxy settings..."
+    cat <<'EOF' > "$nginx_conf"
+worker_processes  1;
+error_log  /var/log/nginx/error.log;
+pid        /var/run/nginx.pid;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout  65;
+
+    # Redirect HTTP traffic for the primary domains to HTTPS
+    server {
+        listen 80;
+        server_name dunamismax.com www.dunamismax.com;
+        return 301 https://$host$request_uri;
+    }
+
+    # HTTPS server block for web traffic
+    server {
+        listen 443 ssl;
+        server_name dunamismax.com www.dunamismax.com;
+
+        ssl_certificate     /usr/local/etc/nginx/ssl/dunamismax.crt;
+        ssl_certificate_key /usr/local/etc/nginx/ssl/dunamismax.key;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        ssl_ciphers         HIGH:!aNULL:!MD5;
+
+        location / {
+            proxy_pass http://127.0.0.1:80;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+
+# Stream context to handle non-HTTP (TCP) connections such as SSH.
+# NOTE: This configuration assumes that your SSH daemon is reconfigured to listen on port 2222.
+stream {
+    server {
+        listen 22;
+        proxy_pass 127.0.0.1:2222;
+    }
+}
+EOF
+
+    log INFO "Enabling Nginx service..."
+    sysrc nginx_enable="YES"
+
+    if service nginx status >/dev/null 2>&1; then
+        service nginx reload && log INFO "Nginx reloaded successfully."
+    else
+        service nginx start || handle_error "Failed to start Nginx."
+        log INFO "Nginx started successfully."
+    fi
+}
+
 prompt_reboot() {
     read -rp "Reboot now? [y/N]: " answer
     if [[ "$answer" =~ ^[Yy]$ ]]; then
@@ -769,8 +861,7 @@ main() {
     configure_ssh
     secure_ssh_config
     install_plex
-
-    # New steps from additional functions:
+    install_and_configure_nginx_proxy
     configure_firewall
     install_firacode_nerd_font
     backup_freebsd_system
@@ -778,7 +869,6 @@ main() {
     setup_python_dev
     setup_sudo
     configure_zfs_pool
-
     deploy_user_scripts
     setup_cron
     configure_periodic
