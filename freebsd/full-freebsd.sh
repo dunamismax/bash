@@ -528,7 +528,7 @@ final_checks() {
   log_info "Performing final system checks:"
   echo "Kernel: $(uname -r)"
   echo "Uptime: $(uptime)"
-  df -h / 
+  df -h /
   swapinfo -h || true
 }
 
