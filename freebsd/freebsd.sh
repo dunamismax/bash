@@ -19,6 +19,47 @@ log() {
 }
 log_info()  { log INFO "$@"; }
 log_warn()  { log WARN "$@"; }
+log_error() { log ERROR "$@"; }
+log_debug() { log DEBUG "$@"; }
+
+handle_error() {
+  local msg="${1:-An unknown error occurred.}"
+  local code="${2:-1}"
+  log_error "$msg (Exit Code: $code)"
+  log_error "Error encountered at line $LINENO in function ${FUNCNAME[1]:-main}."
+  echo -e "${NORD11}ERROR: $msg (Exit Code: $code)${NC}" >&2
+  exit "$code"
+}
+
+cleanup() {
+  log_info "Cleanup tasks complete."
+}
+trap cleanup EXIT
+trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
+
+# Utility function to print section headers
+print_section() {
+  local title="$1"
+  local border
+  border=$(printf '─%.0s' {1..60})
+  log_info "${NORD14}${border}${NC}"
+  log_info "${NORD14}  $title${NC}"
+  log_info "${NORD14}${border}${NC}"
+}
+
+# Configuration Variables
+USERNAME="sawyer"
+TIMEZONE="America/New_York"
+
+# Zig installation configuration (FreeBSD build)
+ZIG_URL="https://ziglang.org/builds/zig-freebsd-x86_64-0.14.0-dev.3224+5ab511307.tar.xz"
+ZIG_DIR="/opt/zig"
+ZIG_BIN="/usr/local/bin/zig"
+
+# List of packages (adjust package names as available in pkg)
+PACKAGES=(bash vim nano zsh screen tmux mc htop tree ncdu neofetch
+          git curl wget rsync sudo python3 py38-pip tzdata gcc cmake
+          ninja meson gettext openssh go gdb strace man)
 
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
