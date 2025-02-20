@@ -1,5 +1,5 @@
 #!/bin/bash
-# ~/.bashrc – Enhanced Bash configuration for Debian
+# ~/.bashrc – Enhanced Bash configuration for Arch Linux
 
 # =============================================================================
 # Guard: Only run if using Bash.
@@ -143,7 +143,7 @@ if command -v dircolors >/dev/null 2>&1; then
 fi
 
 # =============================================================================
-# 9. Aliases & Shortcuts (including Debian Package Management)
+# 9. Aliases & Shortcuts (including Arch Package Management)
 # =============================================================================
 # Directory navigation
 alias ll='ls -lah'
@@ -154,11 +154,11 @@ alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 
-# Debian package management using apt
-alias update='sudo apt update && sudo apt upgrade -y'
-alias install='sudo apt install -y'
-alias remove='sudo apt remove -y'
-alias search='apt search'
+# Arch package management using pacman
+alias update='sudo pacman -Syu'
+alias install='sudo pacman -S'
+alias remove='sudo pacman -Rns'
+alias search='pacman -Ss'
 
 # Safety aliases
 alias rm='rm -i'
@@ -300,7 +300,3 @@ fi
 # 13. Final PROMPT_COMMAND Consolidation
 # =============================================================================
 export PROMPT_COMMAND='history -a; echo "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
-
-# =============================================================================
-# End of ~/.bashrc
-# =============================================================================
