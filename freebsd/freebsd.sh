@@ -166,21 +166,51 @@ backup_system() {
 }
 
 # ------------------------------------------------------------------------------
-# User & Sudo Configuration
+# doas Configuration
 # ------------------------------------------------------------------------------
-configure_sudo_access() {
-    log_info "Configuring sudo access for user '$USERNAME'..."
-    if ! id "$USERNAME" &>/dev/null; then
-        handle_error "User $USERNAME does not exist."
-    fi
-    pw usermod "$USERNAME" -G wheel || handle_error "Failed to add $USERNAME to wheel group."
-    if ! grep -q '^%wheel ALL=(ALL) ALL' /usr/local/etc/sudoers; then
-        echo "%wheel ALL=(ALL) ALL" >> /usr/local/etc/sudoers || handle_error "Failed to update sudoers."
-        log_info "Added wheel group to sudoers."
+configure_doas() {
+    log_info "Installing and configuring doas..."
+
+    # Install doas
+    pkg install -y doas || handle_error "Failed to install doas."
+
+    # Create the 'doas' group if it doesn't exist
+    if ! pw groupshow doas &>/dev/null; then
+        pw groupadd doas || handle_error "Failed to create doas group."
+        log_info "Created doas group."
     else
-        log_info "Wheel group already present in sudoers."
+        log_info "doas group already exists."
     fi
-    log_info "Sudo access configured for $USERNAME."
+
+    # Add user to the doas group
+    pw usermod "$USERNAME" -G doas || handle_error "Failed to add $USERNAME to doas group."
+    log_info "User $USERNAME added to doas group."
+
+    # Configure doas by creating or backing up the configuration file
+    local DOAS_CONF="/usr/local/etc/doas.conf"
+    if [ -f "$DOAS_CONF" ]; then
+        cp "$DOAS_CONF" "${DOAS_CONF}.bak.$(date +%Y%m%d%H%M%S)" || log_warn "Could not backup existing doas.conf."
+        log_info "Backed up existing doas.conf."
+    fi
+
+    cat <<EOF > "$DOAS_CONF"
+# Doas configuration generated on $(date)
+permit persist :doas
+EOF
+
+    chown root:wheel "$DOAS_CONF" || handle_error "Failed to set ownership on doas.conf."
+    chmod 440 "$DOAS_CONF" || handle_error "Failed to set permissions on doas.conf."
+    log_info "doas configuration written to $DOAS_CONF."
+
+    # Optionally, enable doas in rc.conf if required
+    if ! grep -q '^doas_enable="YES"' /etc/rc.conf; then
+        echo 'doas_enable="YES"' >> /etc/rc.conf || handle_error "Failed to enable doas in rc.conf."
+        log_info "doas enabled in rc.conf."
+    else
+        log_info "doas already enabled in rc.conf."
+    fi
+
+    log_info "doas installation and configuration completed successfully."
 }
 
 # ------------------------------------------------------------------------------
@@ -547,7 +577,7 @@ main() {
     check_root
     initial_system_update
     backup_system
-    configure_sudo_access
+    configure_doas
     install_packages
     configure_ssh
     secure_ssh_config
