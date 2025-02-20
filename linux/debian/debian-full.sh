@@ -881,7 +881,7 @@ main() {
   set_default_shell
   install_and_configure_nala
   install_plex
-  #install_configure_zfs
+  install_configure_zfs
   caddy_config
   docker_config
   install_zig_binary
