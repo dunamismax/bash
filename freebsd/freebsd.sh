@@ -289,24 +289,8 @@ EOF
 install_fastfetch() {
   print_section "Fastfetch Installation"
   log_info "Installing Fastfetch..."
-  local FASTFETCH_URL="https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-freebsd-amd64.tar.xz"
-  local tmp_tar="/tmp/fastfetch.tar.xz"
-  if curl -L -o "$tmp_tar" "$FASTFETCH_URL"; then
-    if tar -xf "$tmp_tar" -C /usr/local/bin; then
-      chmod +x /usr/local/bin/fastfetch
-      rm -f "$tmp_tar"
-      if command -v fastfetch &>/dev/null; then
-        log_info "Fastfetch installed successfully."
-      else
-        log_error "Fastfetch is not accessible."
-      fi
-    else
-      log_error "Failed to extract fastfetch."
-      rm -f "$tmp_tar"
-    fi
-  else
-    log_error "Failed to download Fastfetch."
-  fi
+  pkg install fastfetch
+  log_info "fastfetch installed..."
 }
 
 final_checks() {
