@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
 # Arch Linux System Setup Script
 # Fully configures a clean Arch Linux install with custom settings,
-# essential applications, system hardening, development tools, and
-# additional functions for Plex, ZFS, Docker, Caddy, etc.
+# essential applications, system hardening, and development tools.
 #
 # Must be run as root.
 #
 # Author: dunamismax (rewritten for Arch) | License: MIT
 
 set -Eeuo pipefail
-IFS=$'\n\t'
-export LC_ALL=C.UTF-8
-export PATH="$PATH:/sbin:/usr/sbin"
 
 #------------------------------------------------------------
 # Color definitions for logging output
@@ -20,6 +16,7 @@ NORD9='\033[38;2;129;161;193m'    # Debug messages
 NORD11='\033[38;2;191;97;106m'     # Error messages
 NORD13='\033[38;2;235;203;139m'    # Warning messages
 NORD14='\033[38;2;163;190;140m'    # Info messages
+RED='\033[0;31m'                  # Red (for reminders)
 NC='\033[0m'                      # Reset
 
 #------------------------------------------------------------
@@ -78,84 +75,27 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 #------------------------------------------------------------
 USERNAME="sawyer"
 
-# Merged list of packages to install (using yay)
+# Merged list of packages to install (using pacman)
 PACKAGES=(
-  # Essential Shell, Editors, and Terminal Utilities
   bash vim nano screen tmux mc
-
-  # Development Tools and Build Systems
   base-devel cmake ninja meson gettext git pkgconf openssl libffi
-
-  # Networking, System Utilities, and Debugging Tools
-  nmap openssh ufw curl wget rsync htop iptables ca-certificates \
-    bash-completion openbsd-netcat gdb strace iftop tcpdump lsof jq \
-    iproute2 less bind-tools ncdu
-
-  # Compression, File Archiving, and Text Processing Utilities
+  nmap openssh ufw curl wget rsync htop iptables ca-certificates
+  bash-completion openbsd-netcat gdb strace iftop tcpdump lsof jq
+  iproute2 less bind-tools ncdu
   zip unzip p7zip gawk ethtool tree universal-ctags the_silver_searcher ltrace
-
-  # Python Development Tools
   python python-pip python-virtualenv tzdata
-
-  # Essential Libraries for Building Software
   zlib readline bzip2 tk xz ncurses gdbm nss liblzma libxml2 xmlsec1
-
-  # Additional Compilers and Toolchains
   clang llvm
 )
 
 #------------------------------------------------------------
-# Distribution & User Checks
-#------------------------------------------------------------
-check_distribution() {
-  if [ -f /etc/arch-release ]; then
-    log_info "Arch Linux distribution confirmed."
-  else
-    log_warn "This script is intended for Arch Linux. Proceed with caution."
-  fi
-}
-
-ensure_user() {
-  if id "$USERNAME" &>/dev/null; then
-    log_info "User '$USERNAME' exists."
-  else
-    log_info "User '$USERNAME' not found. Creating..."
-    useradd -m -s /bin/bash "$USERNAME" || handle_error "Failed to create user '$USERNAME'." 1
-    log_info "User '$USERNAME' created successfully."
-  fi
-}
-
-#------------------------------------------------------------
-# Function to install yay (AUR helper)
-#------------------------------------------------------------
-install_yay() {
-  if command -v yay &>/dev/null; then
-    log_info "yay is already installed."
-    return 0
-  fi
-  log_info "Installing yay..."
-  pacman -S --noconfirm --needed git base-devel || handle_error "Failed to install prerequisites." 1
-  git clone https://aur.archlinux.org/yay.git /tmp/yay || handle_error "Failed to clone yay repository." 1
-  (cd /tmp/yay && makepkg -si --noconfirm) || handle_error "Failed to build and install yay." 1
-  log_info "yay installed successfully."
-}
-
-#------------------------------------------------------------
-# Arch Linux Functions
+# Essential Functions Called in Main
 #------------------------------------------------------------
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
     handle_error "Script must be run as root. Exiting." 1
   fi
   log_info "Running as root."
-}
-
-check_network() {
-  log_info "Checking network connectivity..."
-  if ! ping -c1 -W5 google.com &>/dev/null; then
-    handle_error "No network connectivity detected." 1
-  fi
-  log_info "Network connectivity OK."
 }
 
 update_system() {
@@ -224,7 +164,7 @@ secure_ssh_config() {
 configure_nftables_firewall() {
   log_info "Configuring nftables firewall..."
   if ! command -v nft &>/dev/null; then
-    log_info "nft command not found. Installing nftables via yay..."
+    log_info "nft command not found. Installing nftables..."
     pacman -S --noconfirm nftables || handle_error "Failed to install nftables." 1
   fi
   if [ -f /etc/nftables.conf ]; then
@@ -361,137 +301,6 @@ set_default_shell() {
   log_info "Default shell configuration complete."
 }
 
-install_fastfetch() {
-  if command -v fastfetch &>/dev/null; then
-    log_info "fastfetch is already installed."
-    return 0
-  fi
-  log_info "Installing fastfetch..."
-  pacman -S --noconfirm fastfetch || handle_error "Failed to install fastfetch." 1
-  log_info "fastfetch installed successfully."
-}
-
-install_plex() {
-  if command -v plexmediaserver &>/dev/null; then
-    log_info "Plex Media Server is already installed."
-    return 0
-  fi
-  log_info "Installing Plex Media Server..."
-  yay -S --noconfirm plex-media-server || handle_error "Failed to install Plex Media Server." 1
-  local plex_conf="/etc/default/plexmediaserver"
-  if [ -f "$plex_conf" ]; then
-    log_info "Configuring Plex to run as ${USERNAME}..."
-    sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$plex_conf" || log_warn "Failed to set Plex user in $plex_conf."
-  else
-    log_warn "$plex_conf not found; skipping Plex user configuration."
-  fi
-  systemctl enable plexmediaserver || log_warn "Failed to enable Plex service."
-  log_info "Plex Media Server installed successfully."
-}
-
-caddy_config() {
-  log_info "Releasing occupied network ports..."
-  local tcp_ports=( "8080" "80" "443" "32400" "8324" "32469" )
-  local udp_ports=( "80" "443" "1900" "5353" "32410" "32411" "32412" "32413" "32414" "32415" )
-  for port in "${tcp_ports[@]}"; do
-    local pids
-    pids=$(lsof -t -i TCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
-    if [[ -n "$pids" ]]; then
-      log_info "Killing processes on TCP port $port: $pids"
-      kill -9 $pids || log_warn "Failed to kill processes on TCP port $port"
-    fi
-  done
-  for port in "${udp_ports[@]}"; do
-    local pids
-    pids=$(lsof -t -i UDP:"$port" 2>/dev/null || true)
-    if [[ -n "$pids" ]]; then
-      log_info "Killing processes on UDP port $port: $pids"
-      kill -9 $pids || log_warn "Failed to kill processes on UDP port $port"
-    fi
-  done
-  log_info "Port release process completed."
-  log_info "Installing Caddy..."
-  pacman -S --noconfirm caddy || handle_error "Failed to install Caddy." 1
-  local custom_caddyfile="/home/${USERNAME}/github/linux/dotfiles/Caddyfile"
-  local dest_caddyfile="/etc/caddy/Caddyfile"
-  if [ -f "$custom_caddyfile" ]; then
-    log_info "Copying custom Caddyfile from $custom_caddyfile to $dest_caddyfile..."
-    cp -f "$custom_caddyfile" "$dest_caddyfile" || log_warn "Failed to copy custom Caddyfile."
-  else
-    log_warn "Custom Caddyfile not found at $custom_caddyfile."
-  fi
-  systemctl enable caddy || log_warn "Failed to enable Caddy service."
-  systemctl restart caddy || log_warn "Failed to restart Caddy service."
-  log_info "Caddy configuration completed successfully."
-}
-
-install_configure_zfs() {
-  local zpool_name="WD_BLACK"
-  local mount_point="/media/${zpool_name}"
-  log_info "Installing prerequisites for ZFS..."
-  yay -S --noconfirm linux-headers || handle_error "Failed to install linux-headers." 1
-  log_info "Installing ZFS packages..."
-  pacman -S --noconfirm zfs-dkms zfs-utils || handle_error "Failed to install ZFS packages." 1
-  log_info "ZFS packages installed successfully."
-  systemctl enable zfs-import-cache.service || log_warn "Could not enable zfs-import-cache.service."
-  systemctl enable zfs-mount.service || log_warn "Could not enable zfs-mount.service."
-  if ! zpool list "$zpool_name" &>/dev/null; then
-    log_info "Importing ZFS pool '$zpool_name'..."
-    zpool import -f "$zpool_name" || { log_error "Failed to import ZFS pool '$zpool_name'."; return 1; }
-  else
-    log_info "ZFS pool '$zpool_name' is already imported."
-  fi
-  log_info "Setting mountpoint for ZFS pool '$zpool_name' to '$mount_point'..."
-  if ! zfs set mountpoint="${mount_point}" "$zpool_name"; then
-    log_warn "Failed to set mountpoint for ZFS pool '$zpool_name'."
-  else
-    log_info "Mountpoint for pool '$zpool_name' set to '$mount_point'."
-  fi
-  log_info "ZFS installation and configuration complete."
-}
-
-docker_config() {
-  log_info "Starting Docker installation and configuration..."
-  if command -v docker &>/dev/null; then
-    log_info "Docker is already installed."
-  else
-    log_info "Docker not found; installing..."
-    yay -S --noconfirm docker || handle_error "Failed to install Docker." 1
-    log_info "Docker installed successfully."
-  fi
-  if ! id -nG "$USERNAME" | grep -qw "docker"; then
-    log_info "Adding user '$USERNAME' to docker group..."
-    usermod -aG docker "$USERNAME" || log_warn "Failed to add $USERNAME to docker group."
-  else
-    log_info "User '$USERNAME' is already in docker group."
-  fi
-  mkdir -p /etc/docker || handle_error "Failed to create /etc/docker directory."
-  cat <<EOF >/etc/docker/daemon.json
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  },
-  "exec-opts": ["native.cgroupdriver=systemd"]
-}
-EOF
-  log_info "Docker daemon configuration updated."
-  systemctl enable docker || log_warn "Could not enable Docker service."
-  systemctl restart docker || handle_error "Failed to restart Docker." 1
-  log_info "Docker service is enabled and running."
-  if ! command -v docker-compose &>/dev/null; then
-    log_info "Docker Compose not found; installing..."
-    pacman -S --noconfirm docker-compose || handle_error "Failed to install Docker Compose." 1
-    log_info "Docker Compose installed successfully."
-  else
-    log_info "Docker Compose is already installed."
-  fi
-}
-
-#------------------------------------------------------------
-# Cleanup Packages Function
-#------------------------------------------------------------
 cleanup_packages() {
   log_info "Cleaning up orphan packages and cache..."
   pacman -Rns $(pacman -Qtdq 2>/dev/null) --noconfirm || log_warn "No orphan packages to remove."
@@ -517,10 +326,6 @@ prompt_reboot() {
 #------------------------------------------------------------
 main() {
   check_root
-  #check_distribution
-  #ensure_user
-  #install_yay
-  #check_network
   update_system
   install_packages
   setup_repos
@@ -532,12 +337,8 @@ main() {
   home_permissions
   bash_dotfiles_load
   set_default_shell
-  #install_fastfetch
-  #install_plex
-  #install_configure_zfs
-  #caddy_config
-  #docker_config
   cleanup_packages
+  echo -e "${RED}Reminder: Sawyer, please install Plex, Caddy, ZFS and run the ZFS bash script as needed.${NC}"
   prompt_reboot
   log_info "Arch Linux system setup completed successfully."
 }
