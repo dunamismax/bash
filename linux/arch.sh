@@ -80,26 +80,27 @@ USERNAME="sawyer"
 
 # Merged list of packages to install (using yay)
 PACKAGES=(
-  # Editors and Terminal Utilities
+  # Essential Shell, Editors, and Terminal Utilities
   bash vim nano screen tmux mc
 
-  # Development tools and build systems
+  # Development Tools and Build Systems
   base-devel cmake ninja meson gettext git pkgconf openssl libffi
 
-  # Networking, system utilities, and debugging tools
+  # Networking, System Utilities, and Debugging Tools
   nmap openssh ufw curl wget rsync htop iptables ca-certificates \
-    bash-completion openbsd-netcat gdb strace iftop tcpdump lsof jq iproute2 less bind-tools ncdu
+    bash-completion openbsd-netcat gdb strace iftop tcpdump lsof jq \
+    iproute2 less bind-tools ncdu
 
-  # Compression, text processing, and miscellaneous utilities
-  zip unzip gawk ethtool tree universal-ctags the_silver_searcher ltrace
+  # Compression, File Archiving, and Text Processing Utilities
+  zip unzip p7zip gawk ethtool tree universal-ctags the_silver_searcher ltrace
 
-  # Python development tools
+  # Python Development Tools
   python python-pip python-virtualenv tzdata
 
-  # Essential libraries for building software
+  # Essential Libraries for Building Software
   zlib readline bzip2 tk xz ncurses gdbm nss liblzma libxml2 xmlsec1
 
-  # Additional compilers and tools
+  # Additional Compilers and Toolchains
   clang llvm
 )
 
