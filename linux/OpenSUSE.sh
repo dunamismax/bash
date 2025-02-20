@@ -6,7 +6,8 @@
 #
 # Must be run as root.
 #
-# Author: dunamismax (adapted for OpenSUSE) | License: MIT
+# Author: dunamismax (adapted for OpenSUSE)
+# License: MIT
 
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -113,7 +114,7 @@ PACKAGES=(
 )
 
 #------------------------------------------------------------
-# Functions Adapted for OpenSUSE
+# Functions for OpenSUSE Setup
 #------------------------------------------------------------
 
 check_root() {
@@ -145,15 +146,9 @@ check_distribution() {
 
 update_system() {
   log_info "Refreshing repositories..."
-  if ! zypper refresh; then
-    handle_error "Failed to refresh repositories." 1
-  fi
-
+  zypper refresh || handle_error "Failed to refresh repositories." 1
   log_info "Upgrading system packages..."
-  if ! zypper update -y; then
-    handle_error "Failed to upgrade system." 1
-  fi
-
+  zypper update -y || handle_error "Failed to upgrade system." 1
   log_info "System update and upgrade complete."
 }
 
@@ -164,7 +159,6 @@ ensure_user() {
   else
     log_info "User '$USERNAME' does not exist. Creating..."
     useradd -m -c "" "$USERNAME" || handle_error "Failed to create user '$USERNAME'." 1
-    # Remove password to mimic a disabled-password account
     passwd -d "$USERNAME" || handle_error "Failed to disable password for user '$USERNAME'." 1
     log_info "User '$USERNAME' created successfully."
   fi
@@ -182,17 +176,14 @@ configure_timezone() {
 
 install_packages() {
   log_info "Installing essential packages..."
-  if ! zypper install -y "${PACKAGES[@]}"; then
-    handle_error "Package installation failed." 1
-  fi
+  zypper install -y "${PACKAGES[@]}" || handle_error "Package installation failed." 1
   log_info "Package installation complete."
 }
 
 configure_sudo() {
   log_info "Configuring sudo privileges for user '$USERNAME'..."
-  # On OpenSUSE, the 'wheel' group is often used for sudo privileges.
   if id -nG "$USERNAME" | grep -qw "wheel"; then
-    log_info "User '$USERNAME' is already in the wheel group. No changes needed."
+    log_info "User '$USERNAME' is already in the wheel group."
   else
     log_info "Adding user '$USERNAME' to the wheel group..."
     usermod -aG wheel "$USERNAME" || handle_error "Failed to add user '$USERNAME' to the wheel group." 1
@@ -206,7 +197,7 @@ configure_time_sync() {
     systemctl enable chronyd || handle_error "Failed to enable chronyd service." 1
     systemctl start chronyd || handle_error "Failed to start chronyd service." 1
   else
-    log_info "Chronyd is already active. Skipping."
+    log_info "Chronyd is already active."
   fi
   log_info "Chronyd configured successfully."
 }
@@ -244,9 +235,7 @@ secure_ssh_config() {
   log_info "Hardening SSH configuration..."
   local sshd_config="/etc/ssh/sshd_config"
   local backup_file="/etc/ssh/sshd_config.bak"
-  if [ ! -f "$sshd_config" ]; then
-    handle_error "SSHD configuration file not found at $sshd_config." 1
-  fi
+  [ -f "$sshd_config" ] || handle_error "SSHD configuration file not found at $sshd_config." 1
   if grep -q "^PermitRootLogin no" "$sshd_config"; then
     log_info "SSH configuration already hardened. Skipping."
     return 0
@@ -267,14 +256,11 @@ secure_ssh_config() {
 configure_nftables_firewall() {
   log_info "Configuring firewall using nftables..."
   if ! command -v nft >/dev/null 2>&1; then
-    log_info "nft command not found. Installing nftables package..."
+    log_info "nft command not found. Installing nftables..."
     zypper refresh || handle_error "Failed to refresh repositories." 1
     zypper install -y nftables || handle_error "Failed to install nftables." 1
   fi
-  if [ -f /etc/nftables.conf ]; then
-    cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
-    log_info "Existing /etc/nftables.conf backed up to /etc/nftables.conf.bak."
-  fi
+  [ -f /etc/nftables.conf ] && cp /etc/nftables.conf /etc/nftables.conf.bak && log_info "Backed up existing /etc/nftables.conf to /etc/nftables.conf.bak."
   nft flush ruleset || handle_error "Failed to flush current nftables ruleset." 1
   cat << 'EOF' > /etc/nftables.conf
 #!/usr/sbin/nft -f
@@ -294,15 +280,11 @@ table inet filter {
     }
 }
 EOF
-  if [ $? -ne 0 ]; then
-    handle_error "Failed to write /etc/nftables.conf." 1
-  fi
   log_info "New nftables configuration written to /etc/nftables.conf."
   nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
-  log_info "nftables rules loaded successfully."
   systemctl enable nftables || handle_error "Failed to enable nftables service." 1
   systemctl restart nftables || handle_error "Failed to restart nftables service." 1
-  log_info "nftables service enabled and restarted; firewall configuration persisted."
+  log_info "nftables service enabled and firewall configuration persisted."
 }
 
 disable_ipv6() {
@@ -323,10 +305,7 @@ configure_fail2ban() {
   fi
   log_info "Installing Fail2ban..."
   zypper install -y fail2ban || handle_error "Failed to install Fail2ban." 1
-  if [ -f /etc/fail2ban/jail.local ]; then
-    cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak || log_warn "Failed to backup existing jail.local"
-    log_info "Backed up /etc/fail2ban/jail.local to /etc/fail2ban/jail.local.bak."
-  fi
+  [ -f /etc/fail2ban/jail.local ] && { cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak && log_info "Backed up existing jail.local."; }
   cat <<EOF >/etc/fail2ban/jail.local
 [sshd]
 enabled  = true
@@ -372,26 +351,37 @@ home_permissions() {
   log_info "Ownership and permissions set successfully."
 }
 
-bash_dotfiles_load() {
-  log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
-  local source_dir="/home/${USERNAME}/github/bash/linux/debian/dotfiles"
+# Merged dotfiles loader for both shell and application configurations.
+load_dotfiles() {
+  local source_dir="/home/${USERNAME}/github/dotfiles"
   if [ ! -d "$source_dir" ]; then
     log_warn "Dotfiles source directory $source_dir does not exist. Skipping dotfiles copy."
     return 0
   fi
+
+  log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
   local files=( ".bashrc" ".profile" )
   local targets=( "/home/${USERNAME}" "/root" )
   for file in "${files[@]}"; do
     for target in "${targets[@]}"; do
-      if [ -f "${target}/${file}" ]; then
-        cp "${target}/${file}" "${target}/${file}.bak" || handle_error "Failed to backup ${target}/${file}" 1
-        log_info "Backed up ${target}/${file} to ${target}/${file}.bak."
-      fi
+      [ -f "${target}/${file}" ] && { cp "${target}/${file}" "${target}/${file}.bak" || handle_error "Failed to backup ${target}/${file}" 1; log_info "Backed up ${target}/${file} to ${target}/${file}.bak."; }
       cp -f "${source_dir}/${file}" "${target}/${file}" || handle_error "Failed to copy ${source_dir}/${file} to ${target}/${file}" 1
       log_info "Copied ${file} to ${target}."
     done
   done
-  log_info "Dotfiles copy complete."
+
+  log_info "Copying application configurations from dotfiles..."
+  local config_dirs=("alacritty" "i3" "i3blocks" "picom")
+  for cfg in "${config_dirs[@]}"; do
+    local dest_dir="/home/${USERNAME}/.config/${cfg}"
+    mkdir -p "$dest_dir"
+    if rsync -a --delete "${source_dir}/${cfg}/" "$dest_dir/"; then
+      log_info "Copied ${cfg} configuration to ${dest_dir}."
+    else
+      log_warn "Failed to copy ${cfg} configuration."
+    fi
+  done
+  log_info "Dotfiles loaded successfully."
 }
 
 set_default_shell() {
@@ -401,34 +391,21 @@ set_default_shell() {
     return 1
   fi
   log_info "Setting default shell to $target_shell for user '$USERNAME' and root."
-  if chsh -s "$target_shell" "$USERNAME"; then
-    log_info "Set default shell for user '$USERNAME' to $target_shell."
-  else
-    log_error "Failed to set shell for user '$USERNAME'."
-    return 1
-  fi
-  if chsh -s "$target_shell" root; then
-    log_info "Set default shell for root to $target_shell."
-  else
-    log_error "Failed to set shell for root."
-    return 1
-  fi
+  chsh -s "$target_shell" "$USERNAME" && log_info "Default shell set for user '$USERNAME'." || { log_error "Failed to set shell for user '$USERNAME'."; return 1; }
+  chsh -s "$target_shell" root && log_info "Default shell set for root." || { log_error "Failed to set shell for root."; return 1; }
   log_info "Default shell configuration complete."
 }
 
 install_and_configure_nala() {
-  # Nala is an APT frontend and is not available on OpenSUSE.
+  # Nala is an APT frontend and not applicable on OpenSUSE.
   log_info "Nala installation skipped (not applicable on OpenSUSE)."
 }
 
 install_fastfetch() {
-  # For OpenSUSE, download and extract the fastfetch tarball instead of a .deb package.
   local url="https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-linux-amd64.tar.xz"
   local temp_tar="/tmp/fastfetch.tar.xz"
   log_info "Downloading fastfetch from $url..."
-  if ! curl -fsSL -o "$temp_tar" "$url"; then
-    handle_error "Failed to download fastfetch from $url." 1
-  fi
+  curl -fsSL -o "$temp_tar" "$url" || handle_error "Failed to download fastfetch from $url." 1
   log_info "Extracting fastfetch..."
   mkdir -p /tmp/fastfetch_extracted || handle_error "Failed to create temporary extraction directory." 1
   tar -xf "$temp_tar" -C /tmp/fastfetch_extracted || handle_error "Failed to extract fastfetch." 1
@@ -443,14 +420,13 @@ install_fastfetch() {
 }
 
 configure_unattended_upgrades() {
-  # On OpenSUSE, use zypper-automatic for unattended upgrades.
   log_info "Installing and configuring zypper-automatic for unattended upgrades..."
   zypper install -y zypper-automatic || handle_error "Failed to install zypper-automatic." 1
   systemctl enable --now zypper-automatic.timer || log_warn "Failed to enable/start zypper-automatic timer."
   log_info "zypper-automatic configured successfully."
 }
 
-apt_cleanup() {
+cleanup_package_cache() {
   log_info "Cleaning up package cache..."
   zypper clean --all || log_warn "zypper clean failed."
   log_info "Package cleanup complete."
@@ -470,21 +446,14 @@ prompt_reboot() {
 }
 
 install_plex() {
-  log_info "Installing Plex Media Server from downloaded RPM file..."
-  if ! command -v curl >/dev/null; then
-    handle_error "curl is required but not installed. Please install curl."
-  fi
-  # Use the CentOS/RPM package for Plex
+  log_info "Installing Plex Media Server from RPM..."
+  command -v curl >/dev/null || handle_error "curl is required but not installed. Please install curl." 1
   local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/centos/plexmediaserver-1.41.3.9314-a0bfb8370.x86_64.rpm"
   local temp_rpm="/tmp/plexmediaserver.rpm"
-  log_info "Downloading Plex Media Server package from ${plex_url}..."
-  if ! curl -L -o "$temp_rpm" "$plex_url"; then
-    handle_error "Failed to download Plex Media Server RPM file." 1
-  fi
+  log_info "Downloading Plex Media Server package..."
+  curl -L -o "$temp_rpm" "$plex_url" || handle_error "Failed to download Plex Media Server RPM file." 1
   log_info "Installing Plex Media Server package..."
-  if ! zypper install -y "$temp_rpm"; then
-    handle_warn "RPM installation encountered issues. Please check for missing dependencies."
-  fi
+  zypper install -y "$temp_rpm" || log_warn "RPM installation encountered issues. Please check for missing dependencies."
   local PLEX_CONF="/etc/sysconfig/plexmediaserver"
   if [ -f "$PLEX_CONF" ]; then
     log_info "Configuring Plex to run as ${USERNAME}..."
@@ -499,7 +468,8 @@ install_plex() {
 }
 
 caddy_config() {
-  log_info "Releasing occupied network ports..."
+  log_info "Configuring Caddy..."
+  # Release occupied network ports (use with caution)
   local tcp_ports=( "8080" "80" "443" "32400" "8324" "32469" )
   local udp_ports=( "80" "443" "1900" "5353" "32410" "32411" "32412" "32413" "32414" "32415" )
   for port in "${tcp_ports[@]}"; do
@@ -518,26 +488,11 @@ caddy_config() {
       kill -9 $pids || log_warn "Failed to kill processes on UDP port $port"
     fi
   done
-  log_info "Port release process completed."
-  log_info "Installing dependencies for Caddy..."
-  zypper install -y curl || handle_error "Failed to install dependencies for Caddy."
-  log_info "Adding Caddy GPG key..."
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /etc/pki/rpm-gpg/caddy-stable-archive-keyring.gpg || handle_error "Failed to add Caddy GPG key."
-  log_info "Adding Caddy repository..."
-  cat <<EOF >/etc/zypp/repos.d/caddy-stable.repo
-[caddy-stable]
-name=Caddy Stable Repository
-baseurl=https://dl.cloudsmith.io/public/caddy/stable/rpm/el/8/\$basearch
-enabled=1
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/caddy-stable-archive-keyring.gpg
-EOF
-  log_info "Refreshing repositories..."
-  zypper refresh || handle_error "Failed to refresh repositories."
-  log_info "Installing Caddy..."
-  zypper install -y caddy || handle_error "Failed to install Caddy."
-  log_info "Caddy installed successfully."
-  local CUSTOM_CADDYFILE="/home/${USERNAME}/github/linux/dotfiles/Caddyfile"
+
+  log_info "Installing Caddy via zypper..."
+  zypper install -y caddy || handle_error "Failed to install Caddy via zypper." 1
+
+  local CUSTOM_CADDYFILE="/home/${USERNAME}/github/dotfiles/Caddyfile"
   local DEST_CADDYFILE="/etc/caddy/Caddyfile"
   if [ -f "$CUSTOM_CADDYFILE" ]; then
     log_info "Copying custom Caddyfile from $CUSTOM_CADDYFILE to $DEST_CADDYFILE..."
@@ -545,9 +500,9 @@ EOF
   else
     log_warn "Custom Caddyfile not found at $CUSTOM_CADDYFILE"
   fi
-  log_info "Enabling Caddy service..."
+
+  log_info "Enabling and restarting Caddy service..."
   systemctl enable caddy || log_warn "Failed to enable Caddy service."
-  log_info "Restarting Caddy service..."
   systemctl restart caddy || log_warn "Failed to restart Caddy service."
   log_info "Caddy configuration completed successfully."
 }
@@ -558,30 +513,19 @@ install_configure_zfs() {
   log_info "Refreshing repositories..."
   zypper refresh || { log_error "Failed to refresh repositories."; return 1; }
   log_info "Installing prerequisites for ZFS..."
-  # On OpenSUSE, install the ZFS packages (ensure you have the proper repository enabled)
-  if ! zypper install -y zfs; then
-    log_error "Failed to install ZFS packages."
-    return 1
-  fi
+  zypper install -y zfs || { log_error "Failed to install ZFS packages."; return 1; }
   log_info "ZFS packages installed successfully."
   log_info "Enabling ZFS auto-import and mount services..."
   systemctl enable zfs-import-cache.service || log_warn "Could not enable zfs-import-cache.service."
   systemctl enable zfs-mount.service || log_warn "Could not enable zfs-mount.service."
   if ! zpool list "$ZPOOL_NAME" >/dev/null 2>&1; then
     log_info "Importing ZFS pool '$ZPOOL_NAME'..."
-    if ! zpool import -f "$ZPOOL_NAME"; then
-      log_error "Failed to import ZFS pool '$ZPOOL_NAME'."
-      return 1
-    fi
+    zpool import -f "$ZPOOL_NAME" || { log_error "Failed to import ZFS pool '$ZPOOL_NAME'."; return 1; }
   else
     log_info "ZFS pool '$ZPOOL_NAME' is already imported."
   fi
   log_info "Setting mountpoint for ZFS pool '$ZPOOL_NAME' to '$MOUNT_POINT'..."
-  if ! zfs set mountpoint="${MOUNT_POINT}" "$ZPOOL_NAME"; then
-    log_warn "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
-  else
-    log_info "Mountpoint for pool '$ZPOOL_NAME' successfully set to '$MOUNT_POINT'."
-  fi
+  zfs set mountpoint="${MOUNT_POINT}" "$ZPOOL_NAME" || log_warn "Failed to set mountpoint for ZFS pool '$ZPOOL_NAME'."
   log_info "ZFS installation and configuration finished successfully."
 }
 
@@ -590,7 +534,7 @@ docker_config() {
   if command -v docker &>/dev/null; then
     log_info "Docker is already installed."
   else
-    log_info "Docker not found; installing Docker..."
+    log_info "Installing Docker..."
     zypper install -y docker || handle_error "Failed to install Docker." 1
     log_info "Docker installed successfully."
   fi
@@ -615,10 +559,9 @@ EOF
   systemctl enable docker || log_warn "Could not enable Docker service."
   systemctl restart docker || handle_error "Failed to restart Docker." 1
   log_info "Docker service is enabled and running."
-  log_info "Starting Docker Compose installation..."
+  log_info "Installing Docker Compose..."
   if ! command -v docker-compose &>/dev/null; then
     local version="2.20.2"
-    log_info "Docker Compose not found; downloading version ${version}..."
     curl -L "https://github.com/docker/compose/releases/download/v${version}/docker-compose-$(uname -s)-$(uname -m)" \
       -o /usr/local/bin/docker-compose || handle_error "Failed to download Docker Compose." 1
     chmod +x /usr/local/bin/docker-compose || handle_error "Failed to set executable permission on Docker Compose." 1
@@ -634,17 +577,15 @@ install_zig_binary() {
   local ZIG_TARBALL_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
   local ZIG_INSTALL_DIR="/opt/zig"
   local TEMP_DOWNLOAD="/tmp/zig.tar.xz"
-  log_info "Ensuring required dependencies (curl, tar) are installed..."
+  log_info "Installing dependencies (curl, tar)..."
   zypper install -y curl tar || handle_error "Failed to install required dependencies." 1
-  log_info "Downloading Zig ${ZIG_VERSION} binary from ${ZIG_TARBALL_URL}..."
+  log_info "Downloading Zig ${ZIG_VERSION} from ${ZIG_TARBALL_URL}..."
   curl -L -o "${TEMP_DOWNLOAD}" "${ZIG_TARBALL_URL}" || handle_error "Failed to download Zig binary." 1
   log_info "Extracting Zig to ${ZIG_INSTALL_DIR}..."
   rm -rf "${ZIG_INSTALL_DIR}"
   mkdir -p "${ZIG_INSTALL_DIR}" || handle_error "Failed to create ${ZIG_INSTALL_DIR}." 1
   tar -xf "${TEMP_DOWNLOAD}" -C "${ZIG_INSTALL_DIR}" --strip-components=1 || handle_error "Failed to extract Zig binary." 1
-  log_info "Creating symlink for Zig in /usr/local/bin..."
   ln -sf "${ZIG_INSTALL_DIR}/zig" /usr/local/bin/zig || handle_error "Failed to create symlink for Zig." 1
-  log_info "Cleaning up temporary files..."
   rm -f "${TEMP_DOWNLOAD}"
   if command -v zig &>/dev/null; then
     log_info "Zig installation completed successfully! Version: $(zig version)"
@@ -672,6 +613,7 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+
   cat <<EOF >/etc/systemd/system/dunamismax-files.service
 [Unit]
 Description=DunamisMax File Converter Service
@@ -688,6 +630,7 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+
   cat <<EOF >/etc/systemd/system/dunamismax-messenger.service
 [Unit]
 Description=DunamisMax Messenger
@@ -704,6 +647,7 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+
   cat <<EOF >/etc/systemd/system/dunamismax-notes.service
 [Unit]
 Description=DunamisMax Notes Page
@@ -720,6 +664,7 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+
   cat <<EOF >/etc/systemd/system/dunamismax.service
 [Unit]
 Description=DunamisMax Main Website
@@ -736,6 +681,7 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+
   systemctl daemon-reload
   systemctl enable dunamismax-ai-agents.service
   systemctl enable dunamismax-files.service
@@ -749,102 +695,39 @@ install_ly() {
   log_info "Installing Ly Display Manager..."
   local required_cmds=(git zig systemctl)
   for cmd in "${required_cmds[@]}"; do
-    if ! command -v "$cmd" &>/dev/null; then
-      handle_error "'$cmd' is not installed. Please install it and try again."
-    fi
+    command -v "$cmd" &>/dev/null || handle_error "'$cmd' is not installed. Please install it and try again." 1
   done
   log_info "Installing Ly build dependencies..."
-  zypper refresh || handle_error "Failed to refresh repositories before installing dependencies."
-  if ! zypper install -y gcc make libpam-devel libxcb-xkb-devel libxcb-randr-devel libxcb-xinerama-devel libxcb-xrm-devel libxkbcommon-devel libxkbcommon-x11-devel; then
-    handle_error "Failed to install Ly build dependencies."
-  fi
+  zypper refresh || handle_error "Failed to refresh repositories before installing dependencies." 1
+  zypper install -y gcc make libpam-devel libxcb-xkb-devel libxcb-randr-devel libxcb-xinerama-devel libxcb-xrm-devel libxkbcommon-devel libxkbcommon-x11-devel || handle_error "Failed to install Ly build dependencies." 1
   local LY_DIR="/opt/ly"
   if [ ! -d "$LY_DIR" ]; then
     log_info "Cloning Ly repository into $LY_DIR..."
-    if ! git clone https://github.com/fairyglade/ly "$LY_DIR"; then
-      handle_error "Failed to clone the Ly repository."
-    fi
+    git clone https://github.com/fairyglade/ly "$LY_DIR" || handle_error "Failed to clone the Ly repository." 1
   else
     log_info "Ly repository already exists in $LY_DIR. Updating..."
     cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
-    if ! git pull; then
-      handle_error "Failed to update the Ly repository."
-    fi
+    git pull || handle_error "Failed to update the Ly repository." 1
   fi
   cd "$LY_DIR" || handle_error "Failed to change directory to $LY_DIR."
   log_info "Compiling Ly with Zig..."
-  if ! zig build; then
-    handle_error "Compilation of Ly failed."
-  fi
+  zig build || handle_error "Compilation of Ly failed." 1
   log_info "Installing Ly systemd service..."
-  if ! zig build installsystemd; then
-    handle_error "Installation of Ly systemd service failed."
-  fi
+  zig build installsystemd || handle_error "Installation of Ly systemd service failed." 1
   log_info "Disabling conflicting display managers..."
-  local dm_list=(gdm sddm lightdm lxdm)
-  for dm in "${dm_list[@]}"; do
-    if systemctl is-enabled "${dm}.service" &>/dev/null; then
+  for dm in gdm sddm lightdm lxdm; do
+    systemctl is-enabled "${dm}.service" &>/dev/null && {
       log_info "Disabling ${dm}.service..."
-      if ! systemctl disable --now "${dm}.service"; then
-        handle_error "Failed to disable ${dm}.service."
-      fi
-    fi
+      systemctl disable --now "${dm}.service" || handle_error "Failed to disable ${dm}.service." 1
+    }
   done
-  if [ -L /etc/systemd/system/display-manager.service ]; then
-    log_info "Removing leftover /etc/systemd/system/display-manager.service symlink..."
-    if ! rm /etc/systemd/system/display-manager.service; then
-      log_warn "Failed to remove display-manager.service symlink."
-    fi
-  fi
+  [ -L /etc/systemd/system/display-manager.service ] && { log_info "Removing leftover display-manager.service symlink..."; rm /etc/systemd/system/display-manager.service || log_warn "Failed to remove display-manager.service symlink."; }
   log_info "Enabling ly.service for next boot..."
-  if ! systemctl enable ly.service; then
-    handle_error "Failed to enable ly.service."
-  fi
+  systemctl enable ly.service || handle_error "Failed to enable ly.service." 1
   log_info "Disabling getty@tty2.service..."
-  if ! systemctl disable getty@tty2.service; then
-    handle_error "Failed to disable getty@tty2.service."
-  fi
+  systemctl disable getty@tty2.service || handle_error "Failed to disable getty@tty2.service." 1
   log_info "Ly has been installed and configured as the default login manager."
   log_info "Ly will take effect on next reboot, or start it now with: systemctl start ly.service"
-}
-
-dotfiles_load() {
-    log_info "Copying dotfiles configuration..."
-    local source_dir="/home/${USERNAME}/bash/linux/debian/dotfiles"  # Updated path
-    if [ ! -d "$source_dir" ]; then
-        log_warn "Dotfiles source directory $source_dir does not exist. Skipping dotfiles copy."
-        return 0
-    fi
-    # Copy the Alacritty configuration folder.
-    log_info "Copying Alacritty configuration to ~/.config/alacritty..."
-    mkdir -p "/home/${USERNAME}/.config/alacritty"
-    if ! rsync -a --delete "${source_dir}/alacritty/" "/home/${USERNAME}/.config/alacritty/"; then
-        handle_error "Failed to copy Alacritty configuration."
-    fi
-    # Copy the i3 configuration folder.
-    log_info "Copying i3 configuration to ~/.config/i3..."
-    mkdir -p "/home/${USERNAME}/.config/i3"
-    if ! rsync -a --delete "${source_dir}/i3/" "/home/${USERNAME}/.config/i3/"; then
-        handle_error "Failed to copy i3 configuration."
-    fi
-    # Copy the i3blocks configuration folder.
-    log_info "Copying i3blocks configuration to ~/.config/i3blocks..."
-    mkdir -p "/home/${USERNAME}/.config/i3blocks"
-    if ! rsync -a --delete "${source_dir}/i3blocks/" "/home/${USERNAME}/.config/i3blocks/"; then
-        handle_error "Failed to copy i3blocks configuration."
-    fi
-    # Set execute permissions on all scripts within the i3blocks/scripts directory.
-    log_info "Setting execute permissions for i3blocks scripts..."
-    if ! chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts"; then
-        log_warn "Failed to set execute permissions on i3blocks scripts."
-    fi
-    # Copy the picom configuration folder.
-    log_info "Copying picom configuration to ~/.config/picom..."
-    mkdir -p "/home/${USERNAME}/.config/picom"
-    if ! rsync -a --delete "${source_dir}/picom/" "/home/${USERNAME}/.config/picom/"; then
-        handle_error "Failed to copy picom configuration."
-    fi
-    log_info "Dotfiles loaded successfully."
 }
 
 #------------------------------------------------------------
@@ -868,7 +751,7 @@ main() {
   configure_fail2ban
   deploy_user_scripts
   home_permissions
-  dotfiles_load
+  load_dotfiles
   set_default_shell
   install_and_configure_nala
   install_plex
@@ -879,10 +762,8 @@ main() {
   enable_dunamismax_services
   install_ly
   install_fastfetch
-  bash_dotfiles_load
-  dotfiles_load
   configure_unattended_upgrades
-  apt_cleanup
+  cleanup_package_cache
   log_info "OpenSUSE system setup completed successfully."
   prompt_reboot
 }
