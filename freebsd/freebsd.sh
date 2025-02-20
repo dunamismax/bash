@@ -310,6 +310,35 @@ home_permissions() {
   find "$home_dir" -type d -exec chmod g+s {} \;
 }
 
+set_bash_shell() {
+  local target_user="${1:-$USER}"
+
+  # Must run as root to modify /etc/shells and change user shell
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "This function requires root privileges. Please run as root."
+    return 1
+  fi
+
+  # Check if Bash is installed; if not, install it
+  if [ ! -x /usr/local/bin/bash ]; then
+    echo "Bash not found. Installing via pkg..."
+    pkg install -y bash || {
+      echo "Failed to install Bash."
+      return 1
+    }
+  fi
+
+  # Ensure /usr/local/bin/bash is listed in /etc/shells
+  if ! grep -Fxq "/usr/local/bin/bash" /etc/shells; then
+    echo "/usr/local/bin/bash" >> /etc/shells
+    echo "Added /usr/local/bin/bash to /etc/shells."
+  fi
+
+  # Set the user’s default shell to Bash
+  chsh -s /usr/local/bin/bash "$target_user"
+  echo "Default shell for $target_user changed to /usr/local/bin/bash."
+}
+
 prompt_reboot() {
   print_section "Reboot Prompt"
   read -rp "Reboot now? [y/N]: " answer
@@ -340,6 +369,7 @@ main() {
   final_checks
   home_permissions
   install_fastfetch
+  set_bash_shell
   prompt_reboot
 }
 
