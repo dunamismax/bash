@@ -1,8 +1,6 @@
-#!/usr/local/bin/env bash
+#!/usr/bin/env bash
 # FreeBSD System Setup Script
-# Fully configures a clean install of FreeBSD with tools, hardening and development configurations.
-# Additional functions from the Ubuntu setup script have been added where applicable.
-#
+# Fully configures a clean install of FreeBSD with tools, hardening, and development configurations.
 # Note:
 #   - Must be run as root.
 #   - Log output is saved to /var/log/freebsd_setup.log.
@@ -95,17 +93,9 @@ ZIG_DIR="/opt/zig"
 ZIG_BIN="/usr/local/bin/zig"
 
 # List of packages (adjust package names as available in pkg)
-# Core shells and editors
-PACKAGES=(
-  bash vim nano zsh
-
-  # Terminal utilities and file managers
-  screen tmux mc htop tree ncdu neofetch
-
-  # Development tools and libraries
-  git curl wget rsync sudo python3 py38-pip tzdata
-  gcc cmake ninja meson gettext openssh go gdb strace man
-)
+PACKAGES=(bash vim nano zsh screen tmux mc htop tree ncdu neofetch
+          git curl wget rsync sudo python3 py38-pip tzdata gcc cmake
+          ninja meson gettext openssh go gdb strace man)
 
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
@@ -250,7 +240,6 @@ install_plex() {
   fi
 }
 
-# On FreeBSD, ZFS is integrated. This function checks for a pool named "WD_BLACK" and sets its mountpoint.
 configure_zfs() {
   print_section "ZFS Configuration"
   log_info "Configuring ZFS pool..."
