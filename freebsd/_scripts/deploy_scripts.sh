@@ -25,8 +25,8 @@ QUIET_MODE=false                                 # When true, suppress console o
 DISABLE_COLORS="${DISABLE_COLORS:-false}"        # Set to true to disable colored output
 
 # Deployment‑specific configuration for user "sawyer"
-SCRIPT_SOURCE="/usr/home/sawyer/github/bash/freebsd/_scripts"  # Source directory for scripts
-SCRIPT_TARGET="/usr/home/sawyer/bin"                           # Target deployment directory
+SCRIPT_SOURCE="/home/sawyer/github/bash/freebsd/_scripts"  # Source directory for scripts
+SCRIPT_TARGET="/home/sawyer/bin"                           # Target deployment directory
 EXPECTED_OWNER="sawyer"                                        # Expected owner of source directory
 
 # ------------------------------------------------------------------------------

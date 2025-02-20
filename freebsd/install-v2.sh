@@ -28,8 +28,8 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/freebsd_setup.log"
 USERNAME="sawyer"
-# FreeBSD home directory is typically /usr/home/<username>
-USER_HOME="/usr/home/${USERNAME}"
+# FreeBSD home directory is typically /home/<username>
+USER_HOME="/home/${USERNAME}"
  
 # Set Bash as the default shell for the target user
 set_shell() {
@@ -482,7 +482,7 @@ download_repositories() {
     log INFO "--------------------------------------"
     log INFO "Starting GitHub repositories download..."
  
-    local github_dir="/usr/home/${USERNAME}/github"
+    local github_dir="/home/${USERNAME}/github"
     log INFO "Creating GitHub directory at $github_dir"
     mkdir -p "$github_dir" || handle_error "Failed to create GitHub directory."
  
@@ -509,7 +509,7 @@ download_repositories() {
 # DIRECTORY PERMISSIONS
 # ------------------------------------------------------------------------------
 set_directory_permissions() {
-    local github_dir="/usr/home/${USERNAME}/github"
+    local github_dir="/home/${USERNAME}/github"
     local hugo_public_dir="${github_dir}/hugo/dunamismax.com/public"
     local hugo_dir="${github_dir}/hugo"
     local BASE_DIR="$github_dir"
@@ -586,7 +586,7 @@ install_and_configure_caddy() {
     mkdir -p /usr/local/etc/caddy || handle_error "Failed to create Caddy config directory."
     log INFO "Caddy config directory: /usr/local/etc/caddy"
  
-    local caddyfile_src="/usr/home/${USERNAME}/github/bash/freebsd/dotfiles/caddy/Caddyfile"
+    local caddyfile_src="/home/${USERNAME}/github/bash/freebsd/dotfiles/caddy/Caddyfile"
     local caddyfile_dst="/usr/local/etc/caddy/Caddyfile"
  
     log INFO "Copying Caddyfile from $caddyfile_src to $caddyfile_dst..."

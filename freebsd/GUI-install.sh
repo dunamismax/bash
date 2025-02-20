@@ -21,8 +21,8 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/freebsd_gui_setup.log"  # Log file path
 USERNAME="sawyer"                           # Target username
-# For FreeBSD, the home directory is typically located at /usr/home/USERNAME
-USER_HOME="/usr/home/${USERNAME}"
+# For FreeBSD, the home directory is typically located at /home/USERNAME
+USER_HOME="/home/${USERNAME}"
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION

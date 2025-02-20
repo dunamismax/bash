@@ -175,7 +175,7 @@ configure_timezone() {
 
 setup_repos() {
   print_section "GitHub Repositories Setup"
-  local repo_dir="/usr/home/${USERNAME}/github"
+  local repo_dir="/home/${USERNAME}/github"
   log_info "Cloning repositories into $repo_dir..."
   mkdir -p "$repo_dir"
   for repo in bash windows web python go misc; do
@@ -194,8 +194,8 @@ copy_shell_configs() {
   print_section "Shell Configuration Files"
   log_info "Copying shell configuration files..."
   for file in .bashrc .profile; do
-    local src="/usr/home/${USERNAME}/github/bash/freebsd/dotfiles/$file"
-    local dest="/usr/home/${USERNAME}/$file"
+    local src="/home/${USERNAME}/github/bash/freebsd/dotfiles/$file"
+    local dest="/home/${USERNAME}/$file"
     if [ -f "$src" ]; then
       [ -f "$dest" ] && cp "$dest" "${dest}.bak"
       if ! cp -f "$src" "$dest"; then
@@ -340,8 +340,8 @@ configure_zfs() {
 
 deploy_user_scripts() {
   print_section "Deploying User Scripts"
-  local bin_dir="/usr/home/${USERNAME}/bin"
-  local scripts_src="/usr/home/${USERNAME}/github/bash/freebsd/_scripts/"
+  local bin_dir="/home/${USERNAME}/bin"
+  local scripts_src="/home/${USERNAME}/github/bash/freebsd/_scripts/"
   log_info "Deploying user scripts from $scripts_src to $bin_dir..."
   mkdir -p "$bin_dir"
   if rsync -ah --delete "$scripts_src" "$bin_dir"; then
@@ -462,11 +462,11 @@ enable_dunamismax_services() {
   local service_names=("dunamismax_ai_agents" "dunamismax_files" "dunamismax_messenger" "dunamismax_notes" "dunamismax")
   local ports=(8200 8300 8100 8500 8000)
   local directories=(
-    "/usr/home/${USERNAME}/github/web/ai_agents"
-    "/usr/home/${USERNAME}/github/web/converter_service"
-    "/usr/home/${USERNAME}/github/web/messenger"
-    "/usr/home/${USERNAME}/github/web/notes"
-    "/usr/home/${USERNAME}/github/web/dunamismax"
+    "/home/${USERNAME}/github/web/ai_agents"
+    "/home/${USERNAME}/github/web/converter_service"
+    "/home/${USERNAME}/github/web/messenger"
+    "/home/${USERNAME}/github/web/notes"
+    "/home/${USERNAME}/github/web/dunamismax"
   )
   local commands=(
     ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8200"
@@ -522,7 +522,7 @@ final_checks() {
 
 home_permissions() {
   print_section "Home Directory Permissions"
-  local home_dir="/usr/home/${USERNAME}"
+  local home_dir="/home/${USERNAME}"
   log_info "Setting ownership and permissions for $home_dir..."
   chown -R "${USERNAME}:${USERNAME}" "$home_dir"
   find "$home_dir" -type d -exec chmod g+s {} \;

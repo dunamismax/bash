@@ -22,7 +22,7 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 BACKUP_SOURCE="/mnt/WD_BLACK/BACKUP/"
 BACKUP_DEST="Backblaze:sawyer-backups"
 LOG_FILE="/var/log/backblaze-b2-backup.log"
-RCLONE_CONFIG="/usr/home/sawyer/.config/rclone/rclone.conf"
+RCLONE_CONFIG="/home/sawyer/.config/rclone/rclone.conf"
 RETENTION_DAYS=30
 
 # ------------------------------------------------------------------------------
