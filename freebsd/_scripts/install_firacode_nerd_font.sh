@@ -1,9 +1,8 @@
-#!/usr/bin/env bash
+#!/usr/local/bin/bash
 # ------------------------------------------------------------------------------
 # Script Name: install_firacode_nerd_font.sh
-# Description: This script installs the FiraCode Nerd Font on the system.
-# Author: Your Name | License: MIT
-# Version: 1.0.0
+# Description: This script installs the FiraCode Nerd Font on FreeBSD.
+# Author: Your Name | License: MIT | Version: 1.0.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -11,7 +10,6 @@
 #
 # ------------------------------------------------------------------------------
 
-# Enable strict mode: exit on error, undefined variables, or command pipeline failures
 set -Eeuo pipefail
 trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
@@ -19,6 +17,18 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE="/var/log/install_firacode_nerd_font.log"  # Path to the log file
+
+usage() {
+    cat << EOF
+Usage: sudo $(basename "$0") [OPTIONS]
+
+This script installs the FiraCode Nerd Font on FreeBSD.
+
+Options:
+  -h, --help    Show this help message and exit.
+EOF
+    exit 0
+}
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
@@ -37,7 +47,7 @@ log() {
     local BLUE='\033[0;34m'
     local NC='\033[0m'  # No Color
 
-    # Validate log level and set color
+    # Select color based on log level
     case "${level^^}" in
         INFO)
             local color="${GREEN}"
@@ -58,13 +68,8 @@ log() {
             ;;
     esac
 
-    # Format the log entry
     local log_entry="[$timestamp] [$level] $message"
-
-    # Append to log file
     echo "$log_entry" >> "$LOG_FILE"
-
-    # Output to console
     printf "${color}%s${NC}\n" "$log_entry" >&2
 }
 
@@ -73,19 +78,11 @@ log() {
 # ------------------------------------------------------------------------------
 handle_error() {
     local error_message="${1:-An error occurred. Check the log for details.}"
-    local exit_code="${2:-1}"  # Default exit code is 1
-    local timestamp
-    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-
-    # Log the error with additional context
+    local exit_code="${2:-1}"
     log ERROR "$error_message (Exit Code: $exit_code)"
     log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]}."
-
-    # Optionally, print the error to stderr for immediate visibility
     echo "ERROR: $error_message (Exit Code: $exit_code)" >&2
     echo "Script failed at line $LINENO in function ${FUNCNAME[1]}." >&2
-
-    # Exit with the specified exit code
     exit "$exit_code"
 }
 
@@ -93,7 +90,7 @@ handle_error() {
 # HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 check_root() {
-    if [[ "$EUID" -ne 0 ]]; then
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         handle_error "This script must be run as root."
     fi
 }
@@ -141,7 +138,7 @@ install_font() {
         handle_error "Failed to set permissions for the font file."
     fi
 
-    # Set ownership to root:wheel
+    # Set ownership to root:wheel (the default on FreeBSD)
     log INFO "Setting ownership for the font file..."
     if ! chown root:wheel "$font_dir/$font_file"; then
         handle_error "Failed to set ownership for the font file."
@@ -173,7 +170,7 @@ install_font() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN
+# MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
     # Parse input arguments
@@ -190,26 +187,22 @@ main() {
         shift
     done
 
-    # Ensure the script is run as root
     check_root
 
     # Ensure the log directory exists and is writable
+    local LOG_DIR
     LOG_DIR=$(dirname "$LOG_FILE")
     if [[ ! -d "$LOG_DIR" ]]; then
         mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
     fi
     touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
-    chmod 600 "$LOG_FILE"  # Restrict log file access to root only
+    chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
     log INFO "Script execution started."
-
-    # Call the font installation function
     install_font
-
     log INFO "Script execution finished."
 }
 
-# Execute main function if script is run directly
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi
