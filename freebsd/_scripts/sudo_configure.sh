@@ -32,7 +32,7 @@ check_root() {
 install_sudo() {
     if ! command -v sudo &>/dev/null; then
         log INFO "sudo not found. Installing sudo..."
-        pkg update -y && pkg install -y sudo || {
+        pkg update && pkg install sudo || {
             log ERROR "Failed to install sudo via pkg."
             exit 1
         }
