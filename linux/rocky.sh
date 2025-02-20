@@ -163,44 +163,30 @@ secure_ssh_config() {
   log_info "SSH configuration hardened successfully."
 }
 
-configure_nftables_firewall() {
-  log_info "Configuring nftables firewall..."
-  if ! command -v nft &>/dev/null; then
-    log_info "nft command not found. Installing nftables..."
-    dnf install -y nftables || handle_error "Failed to install nftables." 1
+configure_firewall() {
+  log_info "Configuring firewall using firewalld..."
+
+  # Check if firewall-cmd is available; if not, install firewalld.
+  if ! command -v firewall-cmd &>/dev/null; then
+    log_info "firewall-cmd not found. Installing firewalld..."
+    dnf install -y firewalld || handle_error "Failed to install firewalld." 1
   fi
-  if [ -f /etc/nftables.conf ]; then
-    cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
-    log_info "Backed up /etc/nftables.conf to /etc/nftables.conf.bak."
-  fi
-  nft flush ruleset || handle_error "Failed to flush nftables ruleset." 1
-  cat << 'EOF' > /etc/nftables.conf
-#!/usr/sbin/nft -f
-table inet filter {
-    chain input {
-        type filter hook input priority 0; policy drop;
-        ct state established,related accept
-        iif "lo" accept
-        ip protocol icmp accept
-        tcp dport { 22, 80, 443, 32400 } accept
-    }
-    chain forward {
-        type filter hook forward priority 0; policy drop;
-    }
-    chain output {
-        type filter hook output priority 0; policy accept;
-    }
-}
-EOF
-  if [ $? -ne 0 ]; then
-    handle_error "Failed to write /etc/nftables.conf." 1
-  fi
-  log_info "New nftables configuration written."
-  nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
-  log_info "nftables rules loaded successfully."
-  systemctl enable nftables || handle_error "Failed to enable nftables service." 1
-  systemctl restart nftables || handle_error "Failed to restart nftables service." 1
-  log_info "nftables service enabled and restarted."
+
+  # Enable and start the firewalld service.
+  systemctl enable firewalld || handle_error "Failed to enable firewalld service." 1
+  systemctl start firewalld || handle_error "Failed to start firewalld service." 1
+  log_info "firewalld service enabled and started."
+
+  # Open necessary ports permanently.
+  local ports=("22/tcp" "80/tcp" "443/tcp" "32400/tcp")
+  for port in "${ports[@]}"; do
+    firewall-cmd --permanent --add-port="$port" || handle_error "Failed to add port $port to firewalld configuration." 1
+    log_info "Added port $port to firewalld configuration."
+  done
+
+  # Reload firewalld to apply the new settings.
+  firewall-cmd --reload || handle_error "Failed to reload firewalld configuration." 1
+  log_info "firewalld configuration reloaded successfully."
 }
 
 configure_fail2ban() {
@@ -334,7 +320,7 @@ main() {
   setup_repos
   configure_ssh
   secure_ssh_config
-  configure_nftables_firewall
+  configure_firewall
   configure_fail2ban
   deploy_user_scripts
   home_permissions
