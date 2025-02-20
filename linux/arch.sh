@@ -77,7 +77,6 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 # Global Configuration Variables
 #------------------------------------------------------------
 USERNAME="sawyer"
-TIMEZONE="America/New_York"
 
 # Merged PACKAGES list for Arch (using yay)
 PACKAGES=(
@@ -102,13 +101,6 @@ PACKAGES=(
 
   # Additional compilers and tools
   clang llvm
-
-  # Common utilities and GUI components
-  xorg-server xorg-xinit xorg-xrandr i3-wm i3status i3lock i3blocks dmenu \
-    xterm alacritty feh ttf-dejavu picom
-
-  # System services and logging
-  chrony rsyslog cronie sudo
 )
 
 #------------------------------------------------------------
@@ -144,68 +136,16 @@ check_network() {
   log_info "Network connectivity OK."
 }
 
-check_distribution() {
-  if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    if [ "${ID:-}" != "arch" ]; then
-      handle_error "This script is intended for Arch Linux systems. Detected: ${NAME:-Unknown}." 1
-    fi
-    log_info "Distribution confirmed: ${PRETTY_NAME:-Arch Linux}."
-  else
-    log_warn "/etc/os-release not found. Assuming Arch Linux."
-  fi
-}
-
 update_system() {
   log_info "Updating system packages..."
   pacman -Syu --noconfirm || handle_error "Failed to update system packages." 1
   log_info "System update complete."
 }
 
-ensure_user() {
-  log_info "Ensuring user '$USERNAME' exists..."
-  if id "$USERNAME" &>/dev/null; then
-    log_info "User '$USERNAME' already exists."
-  else
-    log_info "User '$USERNAME' does not exist. Creating..."
-    useradd -m -s /bin/bash "$USERNAME" || handle_error "Failed to create user '$USERNAME'." 1
-    passwd -d "$USERNAME" || log_warn "Failed to remove password for user '$USERNAME'."
-    log_info "User '$USERNAME' created successfully."
-  fi
-}
-
-configure_timezone() {
-  if [ -n "$TIMEZONE" ]; then
-    log_info "Setting system timezone to $TIMEZONE..."
-    timedatectl set-timezone "$TIMEZONE" || handle_error "Failed to set timezone to $TIMEZONE." 1
-    log_info "Timezone set to $TIMEZONE."
-  else
-    log_info "TIMEZONE variable not set; skipping timezone configuration."
-  fi
-}
-
 install_packages() {
   log_info "Installing essential packages..."
   yay -S --noconfirm --needed "${PACKAGES[@]}" || handle_error "Package installation failed." 1
   log_info "Package installation complete."
-}
-
-configure_sudo() {
-  log_info "Configuring sudo privileges for user '$USERNAME'..."
-  if id -nG "$USERNAME" | grep -qw "wheel"; then
-    log_info "User '$USERNAME' is already in the wheel group. No changes needed."
-  else
-    log_info "Adding user '$USERNAME' to the wheel group..."
-    usermod -aG wheel "$USERNAME" || handle_error "Failed to add user '$USERNAME' to the wheel group." 1
-    log_info "User '$USERNAME' added to the wheel group successfully."
-  fi
-}
-
-configure_time_sync() {
-  log_info "Configuring time synchronization with chrony..."
-  systemctl enable chronyd || handle_error "Failed to enable chronyd service." 1
-  systemctl start chronyd || handle_error "Failed to start chronyd service." 1
-  log_info "Chrony configured successfully."
 }
 
 setup_repos() {
@@ -260,18 +200,22 @@ secure_ssh_config() {
 }
 
 configure_nftables_firewall() {
-  log_info "Configuring firewall using nftables..."
+  log_info "Configuring nftables firewall on Arch Linux..."
+  
   if ! command -v nft >/dev/null 2>&1; then
-    log_info "nft command not found. Installing nftables package..."
+    log_info "nft command not found. Installing nftables package via yay..."
     yay -S --noconfirm nftables || handle_error "Failed to install nftables." 1
   fi
+  
   if [ -f /etc/nftables.conf ]; then
     cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
     log_info "Existing /etc/nftables.conf backed up to /etc/nftables.conf.bak."
   fi
+  
   nft flush ruleset || handle_error "Failed to flush current nftables ruleset." 1
+  
   cat << 'EOF' > /etc/nftables.conf
-#!/usr/sbin/nft -f
+#!/usr/bin/nft -f
 table inet filter {
     chain input {
         type filter hook input priority 0; policy drop;
@@ -288,26 +232,19 @@ table inet filter {
     }
 }
 EOF
+  
   if [ $? -ne 0 ]; then
     handle_error "Failed to write /etc/nftables.conf." 1
   fi
+  
   log_info "New nftables configuration written to /etc/nftables.conf."
+  
   nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
   log_info "nftables rules loaded successfully."
+  
   systemctl enable nftables.service || handle_error "Failed to enable nftables service." 1
   systemctl restart nftables.service || handle_error "Failed to restart nftables service." 1
   log_info "nftables service enabled and restarted; firewall configuration persisted."
-}
-
-disable_ipv6() {
-  log_info "Disabling IPv6 for enhanced security..."
-  local ipv6_conf="/etc/sysctl.d/99-disable-ipv6.conf"
-  cat <<EOF > "$ipv6_conf"
-net.ipv6.conf.all.disable_ipv6 = 1
-net.ipv6.conf.default.disable_ipv6 = 1
-EOF
-  sysctl --system || handle_error "Failed to reload sysctl settings." 1
-  log_info "IPv6 disabled via $ipv6_conf."
 }
 
 configure_fail2ban() {
@@ -410,10 +347,6 @@ set_default_shell() {
   log_info "Default shell configuration complete."
 }
 
-install_and_configure_nala() {
-  log_info "Nala is an APT-specific tool and is not applicable on Arch Linux. Skipping."
-}
-
 install_fastfetch() {
   if command -v fastfetch &>/dev/null; then
     log_info "fastfetch is already installed."
@@ -422,10 +355,6 @@ install_fastfetch() {
   log_info "Installing fastfetch..."
   yay -S --noconfirm fastfetch || handle_error "Failed to install fastfetch." 1
   log_info "fastfetch installed successfully."
-}
-
-configure_unattended_upgrades() {
-  log_info "Unattended-upgrades is not applicable on Arch Linux. Skipping."
 }
 
 apt_cleanup() {
@@ -566,162 +495,6 @@ EOF
   fi
 }
 
-install_zig_binary() {
-  if command -v zig &>/dev/null; then
-    log_info "Zig is already installed."
-    return 0
-  fi
-  log_info "Installing Zig via yay..."
-  yay -S --noconfirm zig || handle_error "Failed to install Zig." 1
-  log_info "Zig installed successfully. Version: $(zig version)"
-}
-
-enable_dunamismax_services() {
-  log_info "Enabling DunamisMax website services..."
-  cat <<EOF >/etc/systemd/system/dunamismax-ai-agents.service
-[Unit]
-Description=DunamisMax AI Agents Service
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/ai_agents
-Environment="PATH=/home/${USERNAME}/github/web/ai_agents/.venv/bin"
-EnvironmentFile=/home/${USERNAME}/github/web/ai_agents/.env
-ExecStart=/home/${USERNAME}/github/web/ai_agents/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8200
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  cat <<EOF >/etc/systemd/system/dunamismax-files.service
-[Unit]
-Description=DunamisMax File Converter Service
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/converter_service
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/home/${USERNAME}/github/web/converter_service/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8300
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  cat <<EOF >/etc/systemd/system/dunamismax-messenger.service
-[Unit]
-Description=DunamisMax Messenger
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/messenger
-Environment="PATH=/home/${USERNAME}/github/web/messenger/.venv/bin"
-ExecStart=/home/${USERNAME}/github/web/messenger/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8100
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  cat <<EOF >/etc/systemd/system/dunamismax-notes.service
-[Unit]
-Description=DunamisMax Notes Page
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/notes
-Environment="PATH=/home/${USERNAME}/github/web/notes/.venv/bin"
-ExecStart=/home/${USERNAME}/github/web/notes/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8500
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  cat <<EOF >/etc/systemd/system/dunamismax.service
-[Unit]
-Description=DunamisMax Main Website
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/dunamismax
-Environment="PATH=/home/${USERNAME}/github/web/dunamismax/.venv/bin"
-ExecStart=/home/${USERNAME}/github/web/dunamismax/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  systemctl daemon-reload
-  systemctl enable dunamismax-ai-agents.service
-  systemctl enable dunamismax-files.service
-  systemctl enable dunamismax-messenger.service
-  systemctl enable dunamismax-notes.service
-  systemctl enable dunamismax.service
-  log_info "DunamisMax services enabled."
-}
-
-install_ly() {
-  log_info "Installing Ly Display Manager..."
-  yay -S --noconfirm git zig base-devel libpam libxcb xorg-server || handle_error "Failed to install Ly build dependencies." 1
-  local LY_DIR="/opt/ly"
-  if [ ! -d "$LY_DIR" ]; then
-    log_info "Cloning Ly repository into $LY_DIR..."
-    git clone https://github.com/fairyglade/ly "$LY_DIR" || handle_error "Failed to clone the Ly repository." 1
-  else
-    log_info "Ly repository already exists in $LY_DIR. Updating..."
-    (cd "$LY_DIR" && git pull) || handle_error "Failed to update the Ly repository." 1
-  fi
-  (cd "$LY_DIR" && zig build) || handle_error "Compilation of Ly failed." 1
-  (cd "$LY_DIR" && zig build installsystemd) || handle_error "Installation of Ly systemd service failed." 1
-  local dm_list=(gdm sddm lightdm lxdm)
-  for dm in "${dm_list[@]}"; do
-    if systemctl is-enabled "${dm}.service" &>/dev/null; then
-      log_info "Disabling ${dm}.service..."
-      systemctl disable --now "${dm}.service" || handle_error "Failed to disable ${dm}.service." 1
-    fi
-  done
-  if [ -L /etc/systemd/system/display-manager.service ]; then
-    log_info "Removing leftover /etc/systemd/system/display-manager.service symlink..."
-    rm /etc/systemd/system/display-manager.service || log_warn "Failed to remove display-manager.service symlink."
-  fi
-  systemctl enable ly.service || handle_error "Failed to enable ly.service." 1
-  systemctl disable getty@tty2.service || handle_error "Failed to disable getty@tty2.service." 1
-  log_info "Ly has been installed and configured as the default login manager."
-  log_info "Ly will take effect on next reboot, or start it now with: systemctl start ly.service"
-}
-
-dotfiles_load() {
-  log_info "Copying dotfiles configuration..."
-  local source_dir="/home/${USERNAME}/bash/linux/arch/dotfiles"
-  if [ ! -d "$source_dir" ]; then
-    log_warn "Dotfiles source directory $source_dir does not exist. Skipping dotfiles copy."
-    return 0
-  fi
-  log_info "Copying Alacritty configuration to ~/.config/alacritty..."
-  mkdir -p "/home/${USERNAME}/.config/alacritty"
-  rsync -a --delete "${source_dir}/alacritty/" "/home/${USERNAME}/.config/alacritty/" || handle_error "Failed to copy Alacritty configuration." 1
-  log_info "Copying i3 configuration to ~/.config/i3..."
-  mkdir -p "/home/${USERNAME}/.config/i3"
-  rsync -a --delete "${source_dir}/i3/" "/home/${USERNAME}/.config/i3/" || handle_error "Failed to copy i3 configuration." 1
-  log_info "Copying i3blocks configuration to ~/.config/i3blocks..."
-  mkdir -p "/home/${USERNAME}/.config/i3blocks"
-  rsync -a --delete "${source_dir}/i3blocks/" "/home/${USERNAME}/.config/i3blocks/" || handle_error "Failed to copy i3blocks configuration." 1
-  log_info "Setting execute permissions for i3blocks scripts..."
-  chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" || log_warn "Failed to set execute permissions on i3blocks scripts."
-  log_info "Copying picom configuration to ~/.config/picom..."
-  mkdir -p "/home/${USERNAME}/.config/picom"
-  rsync -a --delete "${source_dir}/picom/" "/home/${USERNAME}/.config/picom/" || handle_error "Failed to copy picom configuration." 1
-  log_info "Dotfiles loaded successfully."
-}
-
 #------------------------------------------------------------
 # Main Function: Execute Setup Steps in Order
 #------------------------------------------------------------
@@ -732,30 +505,20 @@ main() {
   check_distribution
   update_system
   ensure_user
-  configure_timezone
   install_packages
-  configure_sudo
-  configure_time_sync
   setup_repos
   configure_ssh
   secure_ssh_config
   configure_nftables_firewall
-  disable_ipv6
   configure_fail2ban
   deploy_user_scripts
   home_permissions
   bash_dotfiles_load
-  dotfiles_load
   set_default_shell
-  install_and_configure_nala
   install_fastfetch
   install_plex
   install_configure_zfs
   caddy_config
-  docker_config
-  install_zig_binary
-  enable_dunamismax_services
-  install_ly
   prompt_reboot
   apt_cleanup
   log_info "Arch Linux system setup completed successfully."
