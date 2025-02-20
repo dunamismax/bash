@@ -166,7 +166,7 @@ update_system() {
 
 install_packages() {
   log_info "Installing essential packages..."
-  yay -S --noconfirm --needed "${PACKAGES[@]}" || handle_error "Package installation failed." 1
+  pacman -S --noconfirm --needed "${PACKAGES[@]}" || handle_error "Package installation failed." 1
   log_info "Package installation complete."
 }
 
@@ -225,7 +225,7 @@ configure_nftables_firewall() {
   log_info "Configuring nftables firewall..."
   if ! command -v nft &>/dev/null; then
     log_info "nft command not found. Installing nftables via yay..."
-    yay -S --noconfirm nftables || handle_error "Failed to install nftables." 1
+    pacman -S --noconfirm nftables || handle_error "Failed to install nftables." 1
   fi
   if [ -f /etc/nftables.conf ]; then
     cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
@@ -367,7 +367,7 @@ install_fastfetch() {
     return 0
   fi
   log_info "Installing fastfetch..."
-  yay -S --noconfirm fastfetch || handle_error "Failed to install fastfetch." 1
+  pacman -S --noconfirm fastfetch || handle_error "Failed to install fastfetch." 1
   log_info "fastfetch installed successfully."
 }
 
@@ -411,7 +411,7 @@ caddy_config() {
   done
   log_info "Port release process completed."
   log_info "Installing Caddy..."
-  yay -S --noconfirm caddy || handle_error "Failed to install Caddy." 1
+  pacman -S --noconfirm caddy || handle_error "Failed to install Caddy." 1
   local custom_caddyfile="/home/${USERNAME}/github/linux/dotfiles/Caddyfile"
   local dest_caddyfile="/etc/caddy/Caddyfile"
   if [ -f "$custom_caddyfile" ]; then
@@ -431,7 +431,7 @@ install_configure_zfs() {
   log_info "Installing prerequisites for ZFS..."
   yay -S --noconfirm linux-headers || handle_error "Failed to install linux-headers." 1
   log_info "Installing ZFS packages..."
-  yay -S --noconfirm zfs-dkms zfs-utils || handle_error "Failed to install ZFS packages." 1
+  pacman -S --noconfirm zfs-dkms zfs-utils || handle_error "Failed to install ZFS packages." 1
   log_info "ZFS packages installed successfully."
   systemctl enable zfs-import-cache.service || log_warn "Could not enable zfs-import-cache.service."
   systemctl enable zfs-mount.service || log_warn "Could not enable zfs-mount.service."
@@ -482,7 +482,7 @@ EOF
   log_info "Docker service is enabled and running."
   if ! command -v docker-compose &>/dev/null; then
     log_info "Docker Compose not found; installing..."
-    yay -S --noconfirm docker-compose || handle_error "Failed to install Docker Compose." 1
+    pacman -S --noconfirm docker-compose || handle_error "Failed to install Docker Compose." 1
     log_info "Docker Compose installed successfully."
   else
     log_info "Docker Compose is already installed."
@@ -519,7 +519,7 @@ main() {
   check_root
   #check_distribution
   #ensure_user
-  install_yay
+  #install_yay
   #check_network
   update_system
   install_packages
