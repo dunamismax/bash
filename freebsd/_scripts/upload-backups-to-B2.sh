@@ -2,8 +2,9 @@
 # ------------------------------------------------------------------------------
 # Script Name: backblaze_b2_backup.sh
 # Description: Backup script for uploading data to Backblaze B2 with retention.
-# Author: Your Name | License: MIT
-# Version: 1.0.0
+#              Uploads data from the WD drive (mounted at /mnt/WD_BLACK/BACKUP/)
+#              to Backblaze B2 and deletes backups older than a specified age.
+# Author: Your Name | License: MIT | Version: 1.0.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -18,10 +19,10 @@ trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
-BACKUP_SOURCE="/mnt/media/WD_BLACK/BACKUP/"
+BACKUP_SOURCE="/mnt/WD_BLACK/BACKUP/"
 BACKUP_DEST="Backblaze:sawyer-backups"
 LOG_FILE="/var/log/backblaze-b2-backup.log"
-RCLONE_CONFIG="/home/sawyer/.config/rclone/rclone.conf"
+RCLONE_CONFIG="/usr/home/sawyer/.config/rclone/rclone.conf"
 RETENTION_DAYS=30
 
 # ------------------------------------------------------------------------------
@@ -138,7 +139,7 @@ main() {
         mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
     fi
     touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
-    chmod 600 "$LOG_FILE"  # Restrict log file access to root only
+    chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
     log INFO "Script execution started."
 
@@ -152,7 +153,7 @@ main() {
         handle_error "rclone config file '$RCLONE_CONFIG' not found."
     fi
 
-    # Perform backup and cleanup
+    # Perform backup upload and cleanup of old backups
     upload_backup
     cleanup_backups
 

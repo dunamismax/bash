@@ -1,281 +1,314 @@
-# ------------------------------------------------------------------------------
-#        ______                  ______
-#        ___  /_ ______ ____________  /_ _______________
-#        __  __ \_  __ `/__  ___/__  __ \__  ___/_  ___/
-#    ___ _  /_/ // /_/ / _(__  ) _  / / /_  /    / /__
-#    _(_)/_.___/ \__,_/  /____/  /_/ /_/ /_/     \___/
-#
-# ------------------------------------------------------------------------------
+#!/usr/local/bin/bash
+# ~/.bashrc for FreeBSD - Enhanced Version
 
 # ------------------------------------------------------------------------------
-# 0. Early return if not running interactively
+# 0. Exit if not an interactive shell
 # ------------------------------------------------------------------------------
-case $- in
+case "$-" in
     *i*) ;;
       *) return;;
 esac
 
-# 1. Environment variables
 # ------------------------------------------------------------------------------
+# 1. Environment Variables & Shell Options
+# ------------------------------------------------------------------------------
+# Prepend essential directories to PATH
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
-# Nord color scheme
-export NORD0="#2E3440"   # Polar Night (darkest)
-export NORD1="#3B4252"   # Polar Night
-export NORD2="#434C5E"   # Polar Night
-export NORD3="#4C566A"   # Polar Night (lightest)
-export NORD4="#D8DEE9"   # Snow Storm (darkest)
-export NORD5="#E5E9F0"   # Snow Storm
-export NORD6="#ECEFF4"   # Snow Storm (lightest)
-export NORD7="#8FBCBB"   # Frost (turquoise)
-export NORD8="#88C0D0"   # Frost (light blue)
-export NORD9="#81A1C1"   # Frost (blue)
-export NORD10="#5E81AC"  # Frost (dark blue)
-export NORD11="#BF616A"  # Aurora (red)
-export NORD12="#D08770"  # Aurora (orange)
-export NORD13="#EBCB8B"  # Aurora (yellow)
-export NORD14="#A3BE8C"  # Aurora (green)
-export NORD15="#B48EAD"  # Aurora (purple)
+# Enable useful Bash options
+shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify
 
-# Reset color code
-RESET='\[\e[0m\]'
-
-# Set terminal colors to Nord theme
-if [ "$TERM" = "xterm-256color" ] || [ "$TERM" = "screen-256color" ]; then
-    printf '\e]4;0;%s\e\\' "$NORD0"   # Color 0 (black)
-    printf '\e]4;1;%s\e\\' "$NORD11"  # Color 1 (red)
-    printf '\e]4;2;%s\e\\' "$NORD14"  # Color 2 (green)
-    printf '\e]4;3;%s\e\\' "$NORD13"  # Color 3 (yellow)
-    printf '\e]4;4;%s\e\\' "$NORD10"  # Color 4 (blue)
-    printf '\e]4;5;%s\e\\' "$NORD15"  # Color 5 (purple)
-    printf '\e]4;6;%s\e\\' "$NORD7"   # Color 6 (cyan)
-    printf '\e]4;7;%s\e\\' "$NORD6"   # Color 7 (white)
-    printf '\e]4;8;%s\e\\' "$NORD4"   # Color 8 (bright black)
-    printf '\e]4;9;%s\e\\' "$NORD11"  # Color 9 (bright red)
-    printf '\e]4;10;%s\e\\' "$NORD14" # Color 10 (bright green)
-    printf '\e]4;11;%s\e\\' "$NORD13" # Color 11 (bright yellow)
-    printf '\e]4;12;%s\e\\' "$NORD9"  # Color 12 (bright blue)
-    printf '\e]4;13;%s\e\\' "$NORD15" # Color 13 (bright purple)
-    printf '\e]4;14;%s\e\\' "$NORD7"  # Color 14 (bright cyan)
-    printf '\e]4;15;%s\e\\' "$NORD6"  # Color 15 (bright white)
-fi
-
-# Function to add directories to PATH without duplicates
-add_to_path() {
-    if [[ ":$PATH:" != *":$1:"* ]]; then
-        export PATH="$1:$PATH"
-    fi
-}
-
-# Add directories to PATH using the function
-add_to_path "/usr/local/bin"
-add_to_path "/usr/local/sbin"
-add_to_path "$HOME/.local/bin"
-
-# Set XDG directories for better standards compliance
+# XDG Base Directories
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_STATE_HOME="$HOME/.local/state"
 
-# Set editor and pager
-export EDITOR="/usr/local/bin/nvim"
-export VISUAL="/usr/local/bin/nvim"
+# Set default editor and pager
+if command -v nvim >/dev/null 2>&1; then
+    export EDITOR="nvim"
+    export VISUAL="nvim"
+    alias vim="nvim"
+    alias vi="nvim"
+elif command -v vim >/dev/null 2>&1; then
+    export EDITOR="vim"
+    export VISUAL="vim"
+    alias vi="vim"
+fi
 export PAGER="less"
 
-# Set locale
+# Locale and Timezone (adjust TZ as needed)
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
-
-# Set timezone
 export TZ="America/New_York"
 
-# Set terminal type
-export TERM="xterm-256color"
+# Force 256-color mode for xterm
+[[ "$TERM" == "xterm" ]] && export TERM="xterm-256color"
 
-# Set history settings
-export HISTSIZE=100000
-export HISTFILESIZE=200000
+# ------------------------------------------------------------------------------
+# 2. Nord Color Scheme (Lighter Palette Only)
+# ------------------------------------------------------------------------------
+# (Nord0–Nord3 omitted for improved contrast)
+NORD4="\[\033[38;2;216;222;233m\]"   # Snow Storm: #D8DEE9
+NORD5="\[\033[38;2;229;233;240m\]"   # Snow Storm: #E5E9F0
+NORD6="\[\033[38;2;236;239;244m\]"   # Snow Storm: #ECEFF4
+NORD7="\[\033[38;2;143;188;187m\]"   # Frost: #8FBCBB
+NORD8="\[\033[38;2;136;192;208m\]"   # Frost: #88C0D0
+NORD9="\[\033[38;2;129;161;193m\]"   # Frost: #81A1C1
+NORD10="\[\033[38;2;94;129;172m\]"   # Frost: #5E81AC
+NORD11="\[\033[38;2;191;97;106m\]"   # Aurora: #BF616A
+NORD12="\[\033[38;2;208;135;112m\]"   # Aurora: #D08770
+NORD13="\[\033[38;2;235;203;139m\]"   # Aurora: #EBCB8B
+NORD14="\[\033[38;2;163;190;140m\]"   # Aurora: #A3BE8C
+NORD15="\[\033[38;2;180;142;173m\]"   # Aurora: #B48EAD
+RESET="\[\e[0m\]"
+
+# Customize LESS (pager) colors with the Nord palette
+export LESS="-R -X -F -i -J --mouse"
+export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'     # Nord11 for blink
+export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'     # Nord8 for emphasis
+export LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[38;2;235;203;139m'     # Nord13 for standout
+export LESS_TERMCAP_se=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[38;2;163;190;140m'     # Nord14 for underline
+export LESS_TERMCAP_ue=$'\e[0m'
+
+# ------------------------------------------------------------------------------
+# 3. Enhanced History Settings
+# ------------------------------------------------------------------------------
+export HISTSIZE=1000000
+export HISTFILESIZE=2000000
 export HISTFILE="$HOME/.bash_history"
-export HISTCONTROL=ignoreboth
+export HISTCONTROL="ignoreboth:erasedups"
 export HISTTIMEFORMAT="%F %T "
 
-# Set LESS options
-export LESS="-R -X -F"
+# ------------------------------------------------------------------------------
+# 4. System Information & Greeting
+# ------------------------------------------------------------------------------
+if command -v fastfetch >/dev/null 2>&1; then
+    fastfetch
+fi
 
 # ------------------------------------------------------------------------------
-# 2. Greeting
+# 5. Development Environment Setup
 # ------------------------------------------------------------------------------
-neofetch
-echo "-----------------------------------"
-echo "Welcome, $USER!"
-echo "Today is $(date)"
-echo "Hostname: $(hostname)"
-echo "Uptime: $(uptime)"
-echo "OS: $(uname -sr)"
-echo "-----------------------------------"
-
-# ------------------------------------------------------------------------------
-# 3. pyenv initialization
-# ------------------------------------------------------------------------------
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-
-if command -v pyenv 1>/dev/null 2>&1; then
+# Initialize Pyenv if installed
+if [ -d "$HOME/.pyenv" ]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
     eval "$(pyenv init --path)"
     eval "$(pyenv init -)"
 fi
 
 # ------------------------------------------------------------------------------
-# 4. Less (pager) setup
+# 6. Less (Pager) Setup
 # ------------------------------------------------------------------------------
-# FreeBSD specific lesspipe location
-if [ -x /usr/local/bin/lesspipe.sh ]; then
-    export LESSOPEN="|/usr/local/bin/lesspipe.sh %s"
+if command -v lesspipe >/dev/null 2>&1; then
+    eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
 # ------------------------------------------------------------------------------
-# 5. Set PS1 with Nord colors (no Git integration)
+# 7. Prompt Customization - Clean, Nord-themed Single-Line Prompt
 # ------------------------------------------------------------------------------
-if [ "$color_prompt" = yes ]; then
-    PS1="\[${NORD7}\]\u\[${RESET}\]@\[${NORD8}\]\h\[${RESET}\]:\[${NORD9}\]\w\[${RESET}\]"
-    PS1+="\n\[${NORD13}\][\t]\[${RESET}\] "
-    PS1+="\$(if [[ \$? -eq 0 ]]; then echo '\[${NORD12}\]'; else echo '\[${NORD11}\]'; fi)\$\[${RESET}\] "
-else
-    PS1='\u@\h:\w\$ '
-fi
-unset color_prompt force_color_prompt
+# Colors for username, hostname, and directory
+USER_COLOR="${NORD7}"   # Nord7 – Frost (turquoise)
+HOST_COLOR="${NORD7}"   # Nord7 – Frost (turquoise)
+DIR_COLOR="${NORD9}"    # Nord9 – Frost (blue)
+PROMPT_ICON="${NORD10}> "  # Nord10 – Frost (darker blue)
+
+# Build the prompt: [username@hostname] [working_directory] >
+PS1="[${USER_COLOR}\u${RESET}@${HOST_COLOR}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
 
 # ------------------------------------------------------------------------------
-# 6. Color support for FreeBSD ls and other commands
+# 8. Colorized Output for Common Commands
 # ------------------------------------------------------------------------------
-# FreeBSD ls colors with Nord theme
-export CLICOLOR=1
-export LS_COLORS="rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.Z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36"
-
-# Colorized grep with Nord theme
-export GREP_COLORS="\
-ms=01;31:\           # Matched text (NORD11, Aurora red)
-mc=01;31:\           # Context-matched text (NORD11, Aurora red)
-sl=:\                # Unmatched lines (default)
-cx=:\                # Context lines (default)
-fn=35:\              # Filename (NORD15, Aurora purple)
-ln=32:\              # Line numbers (NORD14, Aurora green)
-bn=32:\              # Byte offsets (NORD14, Aurora green)
-se=36"               # Separators (NORD7, Frost turquoise)
-
-# Man Pages with Nord Colors
-export MANPAGER="less -s -M +Gg"
-export LESS_TERMCAP_mb=$'\e[1;31m'     # begin blink (NORD11, Aurora red)
-export LESS_TERMCAP_md=$'\e[1;36m'     # begin bold (NORD7, Frost turquoise)
-export LESS_TERMCAP_me=$'\e[0m'        # reset bold/blink
-export LESS_TERMCAP_so=$'\e[01;44;33m' # begin standout-mode - info box (NORD13, Aurora yellow on NORD0, Polar Night)
-export LESS_TERMCAP_se=$'\e[0m'        # reset standout-mode
-export LESS_TERMCAP_us=$'\e[1;32m'     # begin underline (NORD14, Aurora green)
-export LESS_TERMCAP_ue=$'\e[0m'        # reset underline
-
-# ------------------------------------------------------------------------------
-# 7. FreeBSD-specific aliases
-# ------------------------------------------------------------------------------
-# Basic ls aliases (FreeBSD style)
-alias ll='ls -hlAF'
+# FreeBSD’s default ls supports color with the -G flag
+alias ls='ls -G'
+alias ll='ls -lah'
 alias la='ls -A'
 alias l='ls -CF'
 
-# System management
-alias ports-update='sudo portsnap fetch update'
-alias pkg-update='sudo pkg update && sudo pkg upgrade'
-
-# ------------------------------------------------------------------------------
-# 8. Python virtual environment functions
-# ------------------------------------------------------------------------------
-alias venv='setup_venv'
-alias v='enable_venv'
-
-setup_venv() {
-    if type deactivate &>/dev/null; then
-        echo "Deactivating current virtual environment..."
-        deactivate
-    fi
-
-    echo "Creating a new virtual environment in $(pwd)/.venv..."
-    python3 -m venv .venv
-
-    echo "Activating the virtual environment..."
-    source .venv/bin/activate
-
-    if [ -f requirements.txt ]; then
-        echo "Installing dependencies from requirements.txt..."
-        pip install -r requirements.txt
-    else
-        echo "No requirements.txt found. Skipping pip install."
-    fi
-
-    echo "Virtual environment setup complete."
-}
-
-enable_venv() {
-    if type deactivate &>/dev/null; then
-        echo "Deactivating current virtual environment..."
-        deactivate
-    fi
-
-    if [ ! -d ".venv" ]; then
-        echo "No virtual environment found in current directory."
-        return 1
-    fi
-
-    echo "Activating the virtual environment..."
-    source .venv/bin/activate
-
-    if [ -f requirements.txt ]; then
-        echo "Installing dependencies from requirements.txt..."
-        pip install -r requirements.txt
-    else
-        echo "No requirements.txt found. Skipping pip install."
-    fi
-
-    echo "Virtual environment setup complete."
-}
-
-# ------------------------------------------------------------------------------
-# 9. Bash completion (FreeBSD specific)
-# ------------------------------------------------------------------------------
-if [ -f /usr/local/share/bash-completion/bash_completion.sh ]; then
-    . /usr/local/share/bash-completion/bash_completion.sh
+# For grep/diff: if GNU versions are installed (prefixed with "g"), use them.
+if command -v ggrep >/dev/null 2>&1; then
+    alias grep='ggrep --color=auto'
+else
+    alias grep='grep'
+fi
+if command -v gdiff >/dev/null 2>&1; then
+    alias diff='gdiff --color=auto'
+else
+    alias diff='diff'
 fi
 
 # ------------------------------------------------------------------------------
-# 10. Extractor function
+# 9. Aliases & Shortcuts (FreeBSD Package Management & Common Operations)
 # ------------------------------------------------------------------------------
-extract() {
-    if [ -f "$1" ]; then
-        case "$1" in
-            *.tar.bz2)   tar xvjf "$1"    ;;
-            *.tar.gz)    tar xvzf "$1"    ;;
-            *.bz2)       bunzip2 "$1"     ;;
-            *.rar)       unrar x "$1"     ;;
-            *.gz)        gunzip "$1"      ;;
-            *.tar)       tar xvf "$1"     ;;
-            *.tbz2)      tar xvjf "$1"    ;;
-            *.tgz)       tar xvzf "$1"    ;;
-            *.zip)       unzip "$1"       ;;
-            *.Z)         uncompress "$1"  ;;
-            *.7z)        7z x "$1"        ;;
-            *.xz)        unxz "$1"        ;;
-            *.lzma)      unlzma "$1"      ;;
-            *.tar.xz)    tar xvf "$1"     ;;
-            *.tar.lzma)  tar xvf "$1"     ;;
-            *.tar.Z)     tar xvf "$1"     ;;
-            *.tar.lz)    tar xvf "$1"     ;;
-            *.lz)        lzip -d "$1"     ;;
-            *.zst)       zstd -d "$1"     ;;
-            *.tar.zst)   tar --zstd -xvf "$1" ;;
-            *)           echo "Unable to extract '$1'" ;;
-        esac
-    else
-        echo "'$1' is not a valid file"
+# Directory navigation shortcuts
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias .....='cd ../../../..'
+
+# FreeBSD package management using pkg
+alias update='sudo pkg update && sudo pkg upgrade -y'
+alias install='sudo pkg install'
+alias remove='sudo pkg delete'
+alias autoremove='sudo pkg autoremove'
+alias search='pkg search'
+
+# Safety aliases for file operations
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+alias mkdir='mkdir -p'
+
+# Git shortcuts
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git pull'
+alias gd='git diff'
+alias glog='git log --oneline --graph --decorate'
+
+# General useful shortcuts
+alias h='history'
+alias j='jobs -l'
+alias path='echo -e ${PATH//:/\\n}'
+alias now='date +"%T"'
+alias nowdate='date +"%d-%m-%Y"'
+alias ports='sockstat -4'
+alias mem='top -o mem'
+alias disk='df -h'
+
+# Docker shortcuts (if Docker is installed on FreeBSD)
+alias d='docker'
+alias dc='docker-compose'
+alias dps='docker ps'
+alias di='docker images'
+
+# Miscellaneous
+alias sudo='sudo '   # Ensure aliases work with sudo
+alias watch='watch '
+
+# ------------------------------------------------------------------------------
+# 10. Enhanced Functions
+# ------------------------------------------------------------------------------
+# Create and activate a Python virtual environment
+setup_venv() {
+    local venv_name="${1:-.venv}"
+    if type deactivate &>/dev/null; then
+        deactivate
     fi
+    if [ ! -d "$venv_name" ]; then
+        echo "Creating virtual environment in $venv_name..."
+        python3 -m venv "$venv_name"
+    fi
+    source "$venv_name/bin/activate"
+    [ -f "requirements.txt" ] && pip install -r requirements.txt
+    [ -f "requirements-dev.txt" ] && pip install -r requirements-dev.txt
+}
+alias venv='setup_venv'
+
+# Universal archive extraction
+extract() {
+    if [ -z "$1" ]; then
+        echo "Usage: extract <archive>"
+        return 1
+    fi
+    if [ ! -f "$1" ]; then
+        echo "File '$1' not found."
+        return 1
+    fi
+    case "$1" in
+        *.tar.bz2)   tar xjf "$1" ;;
+        *.tar.gz)    tar xzf "$1" ;;
+        *.bz2)       bunzip2 "$1" ;;
+        *.rar)       unrar x "$1" ;;
+        *.gz)        gunzip "$1" ;;
+        *.tar)       tar xf "$1" ;;
+        *.tbz2)      tar xjf "$1" ;;
+        *.tgz)       tar xzf "$1" ;;
+        *.zip)       unzip "$1" ;;
+        *.Z)         uncompress "$1" ;;
+        *.7z)        7z x "$1" ;;
+        *.xz)        unxz "$1" ;;
+        *.tar.xz)    tar xf "$1" ;;
+        *.tar.zst)   tar --zstd -xf "$1" ;;
+         *) echo "Cannot extract '$1' with extract()"; return 1 ;;
+    esac
+}
+
+# Create a directory and immediately cd into it
+mkcd() {
+    mkdir -p "$1" && cd "$1" || return 1
+}
+
+# Search for files by pattern
+ff() {
+    find . -type f -iname "*$1*"
+}
+
+# Search for directories by pattern
+fd() {
+    find . -type d -iname "*$1*"
+}
+
+# Quickly back up a file with a timestamped .bak extension
+bak() {
+    cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"
+}
+
+# Create and switch to a temporary directory
+mktempdir() {
+    local tmpdir
+    tmpdir=$(mktemp -d -t tmp.XXXXXX)
+    echo "Created temporary directory: $tmpdir"
+    cd "$tmpdir" || return
+}
+
+# Serve the current directory over HTTP (default port 8000)
+serve() {
+    local port="${1:-8000}"
+    echo "Serving HTTP on port ${port}..."
+    python3 -m http.server "$port"
 }
 
 # ------------------------------------------------------------------------------
-# End of ~/.bashrc
+# 11. Bash Completion
 # ------------------------------------------------------------------------------
+if ! shopt -oq posix; then
+    if [ -f /usr/local/etc/bash_completion ]; then
+        . /usr/local/etc/bash_completion
+    elif [ -f /etc/bash_completion ]; then
+        . /etc/bash_completion
+    fi
+fi
+
+# ------------------------------------------------------------------------------
+# 12. Local Customizations
+# ------------------------------------------------------------------------------
+# Source a local bashrc file if it exists
+if [ -f ~/.bashrc.local ]; then
+    source ~/.bashrc.local
+fi
+
+# Auto-load all shell scripts in ~/.bashrc.d/
+if [ -d "$HOME/.bashrc.d" ]; then
+  for file in "$HOME"/.bashrc.d/*.sh; do
+    [ -r "$file" ] && source "$file"
+  done
+fi
+
+# ------------------------------------------------------------------------------
+# 13. Source Additional Environment Settings
+# ------------------------------------------------------------------------------
+[ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
+
+# ------------------------------------------------------------------------------
+# 14. Final PROMPT_COMMAND Consolidation
+# ------------------------------------------------------------------------------
+export PROMPT_COMMAND='history -a; echo "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
+
+# ------------------------------------------------------------------------------
+# End of ~/.bashrc

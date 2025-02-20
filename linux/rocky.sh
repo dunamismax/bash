@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Arch Linux System Setup Script
-# Fully configures a clean Arch Linux install with custom settings,
+# Rocky Linux System Setup Script
+# Fully configures a clean Rocky Linux 9.5 install with custom settings,
 # essential applications, system hardening, and development tools.
 #
 # Must be run as root.
 #
-# Author: dunamismax (rewritten for Arch) | License: MIT
+# Author: dunamismax (rewritten for Rocky Linux) | License: MIT
 
 set -Eeuo pipefail
 
@@ -22,7 +22,7 @@ NC='\033[0m'                      # Reset
 #------------------------------------------------------------
 # Logging Setup
 #------------------------------------------------------------
-LOG_FILE="/var/log/arch_setup.log"
+LOG_FILE="/var/log/rocky_setup.log"
 mkdir -p "$(dirname "$LOG_FILE")" || { echo "Cannot create log directory"; exit 1; }
 touch "$LOG_FILE" || { echo "Cannot create log file"; exit 1; }
 chmod 600 "$LOG_FILE" || { echo "Cannot set log file permissions"; exit 1; }
@@ -75,22 +75,23 @@ trap 'handle_error "An unexpected error occurred at line $LINENO."' ERR
 #------------------------------------------------------------
 USERNAME="sawyer"
 
-# Merged list of packages to install (using pacman)
+# List of packages to install using dnf.
+# Note: Some packages have been renamed or require the '-devel' suffix on RHEL.
 PACKAGES=(
-  bash vim nano screen tmux mc
-  base-devel cmake ninja meson gettext git pkgconf openssl libffi
-  nmap openssh ufw curl wget rsync htop iptables ca-certificates
-  bash-completion openbsd-netcat gdb strace iftop tcpdump lsof jq
-  iproute2 less bind-tools ncdu
-  zip unzip p7zip gawk ethtool tree universal-ctags the_silver_searcher ltrace
-  python python-pip python-virtualenv tzdata
-  zlib readline bzip2 tk xz ncurses gdbm nss libxml2
+  bash vim nano screen tmux mc rsync curl wget htop tree unzip zip
+  gcc make cmake ninja-build meson gettext git pkgconf openssl-devel libffi-devel
+  nmap openssh-server nftables
+  fail2ban
+  python3 python3-pip python3-virtualenv
+  iproute less bind-utils ncdu gawk ethtool ltrace strace tcpdump lsof jq
+  tzdata zlib readline bzip2 tk xz ncurses gdbm nss libxml2-devel
   clang llvm
 )
 
 #------------------------------------------------------------
 # Essential Functions Called in Main
 #------------------------------------------------------------
+
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
     handle_error "Script must be run as root. Exiting." 1
@@ -100,13 +101,14 @@ check_root() {
 
 update_system() {
   log_info "Updating system packages..."
-  pacman -Syu --noconfirm || handle_error "System update failed." 1
+  # Update repository metadata and upgrade installed packages
+  dnf upgrade --refresh -y || handle_error "System update failed." 1
   log_info "System update complete."
 }
 
 install_packages() {
   log_info "Installing essential packages..."
-  pacman -S --noconfirm --needed "${PACKAGES[@]}" || handle_error "Package installation failed." 1
+  dnf install -y "${PACKAGES[@]}" || handle_error "Package installation failed." 1
   log_info "Package installation complete."
 }
 
@@ -161,44 +163,30 @@ secure_ssh_config() {
   log_info "SSH configuration hardened successfully."
 }
 
-configure_nftables_firewall() {
-  log_info "Configuring nftables firewall..."
-  if ! command -v nft &>/dev/null; then
-    log_info "nft command not found. Installing nftables..."
-    pacman -S --noconfirm nftables || handle_error "Failed to install nftables." 1
+configure_firewall() {
+  log_info "Configuring firewall using firewalld..."
+
+  # Check if firewall-cmd is available; if not, install firewalld.
+  if ! command -v firewall-cmd &>/dev/null; then
+    log_info "firewall-cmd not found. Installing firewalld..."
+    dnf install -y firewalld || handle_error "Failed to install firewalld." 1
   fi
-  if [ -f /etc/nftables.conf ]; then
-    cp /etc/nftables.conf /etc/nftables.conf.bak || handle_error "Failed to backup existing nftables config." 1
-    log_info "Backed up /etc/nftables.conf to /etc/nftables.conf.bak."
-  fi
-  nft flush ruleset || handle_error "Failed to flush nftables ruleset." 1
-  cat << 'EOF' > /etc/nftables.conf
-#!/usr/bin/nft -f
-table inet filter {
-    chain input {
-        type filter hook input priority 0; policy drop;
-        ct state established,related accept
-        iif "lo" accept
-        ip protocol icmp accept
-        tcp dport { 22, 80, 443, 32400 } accept
-    }
-    chain forward {
-        type filter hook forward priority 0; policy drop;
-    }
-    chain output {
-        type filter hook output priority 0; policy accept;
-    }
-}
-EOF
-  if [ $? -ne 0 ]; then
-    handle_error "Failed to write /etc/nftables.conf." 1
-  fi
-  log_info "New nftables configuration written."
-  nft -f /etc/nftables.conf || handle_error "Failed to load nftables rules." 1
-  log_info "nftables rules loaded successfully."
-  systemctl enable nftables.service || handle_error "Failed to enable nftables service." 1
-  systemctl restart nftables.service || handle_error "Failed to restart nftables service." 1
-  log_info "nftables service enabled and restarted."
+
+  # Enable and start the firewalld service.
+  systemctl enable firewalld || handle_error "Failed to enable firewalld service." 1
+  systemctl start firewalld || handle_error "Failed to start firewalld service." 1
+  log_info "firewalld service enabled and started."
+
+  # Open necessary ports permanently.
+  local ports=("22/tcp" "80/tcp" "443/tcp" "32400/tcp")
+  for port in "${ports[@]}"; do
+    firewall-cmd --permanent --add-port="$port" || handle_error "Failed to add port $port to firewalld configuration." 1
+    log_info "Added port $port to firewalld configuration."
+  done
+
+  # Reload firewalld to apply the new settings.
+  firewall-cmd --reload || handle_error "Failed to reload firewalld configuration." 1
+  log_info "firewalld configuration reloaded successfully."
 }
 
 configure_fail2ban() {
@@ -207,7 +195,8 @@ configure_fail2ban() {
     return 0
   fi
   log_info "Installing Fail2ban..."
-  pacman -S --noconfirm fail2ban || handle_error "Failed to install Fail2ban." 1
+  dnf install -y fail2ban || handle_error "Failed to install Fail2ban." 1
+  # On RHEL-based systems SSH logs are usually in /var/log/secure.
   if [ -f /etc/fail2ban/jail.local ]; then
     cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak || log_warn "Failed to backup existing jail.local."
     log_info "Backed up /etc/fail2ban/jail.local."
@@ -217,7 +206,7 @@ configure_fail2ban() {
 enabled  = true
 port     = 22
 filter   = sshd
-logpath  = /var/log/auth.log
+logpath  = /var/log/secure
 maxretry = 5
 findtime = 600
 bantime  = 3600
@@ -259,7 +248,7 @@ home_permissions() {
 
 bash_dotfiles_load() {
   log_info "Copying dotfiles (.bashrc and .profile) to user and root home directories..."
-  local source_dir="/home/${USERNAME}/github/bash/linux/arch/dotfiles"
+  local source_dir="/home/${USERNAME}/github/bash/linux/rocky/dotfiles"
   if [ ! -d "$source_dir" ]; then
     log_warn "Dotfiles source directory $source_dir does not exist. Skipping."
     return 0
@@ -302,9 +291,9 @@ set_default_shell() {
 }
 
 cleanup_packages() {
-  log_info "Cleaning up orphan packages and cache..."
-  pacman -Rns $(pacman -Qtdq 2>/dev/null) --noconfirm || log_warn "No orphan packages to remove."
-  pacman -Sc --noconfirm || log_warn "pacman cache cleanup failed."
+  log_info "Cleaning up unused packages and cache..."
+  dnf autoremove -y || log_warn "No orphan packages to remove or autoremove failed."
+  dnf clean all || log_warn "dnf cache cleanup failed."
   log_info "Cleanup complete."
 }
 
@@ -331,7 +320,7 @@ main() {
   setup_repos
   configure_ssh
   secure_ssh_config
-  configure_nftables_firewall
+  configure_firewall
   configure_fail2ban
   deploy_user_scripts
   home_permissions
@@ -340,7 +329,7 @@ main() {
   cleanup_packages
   echo -e "${RED}Reminder: Sawyer, please install Plex, Caddy, ZFS and run the ZFS bash script as needed.${NC}"
   prompt_reboot
-  log_info "Arch Linux system setup completed successfully."
+  log_info "Rocky Linux system setup completed successfully."
 }
 
 main "$@"
