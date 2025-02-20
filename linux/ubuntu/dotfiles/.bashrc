@@ -1,5 +1,5 @@
-#!/bin/bash
-# ~/.bashrc for Debian - Enhanced Version
+#!/usr/local/bin/bash
+# ~/.bashrc for FreeBSD - Enhanced Version
 
 # ------------------------------------------------------------------------------
 # 0. Exit if not an interactive shell
@@ -81,12 +81,13 @@ export HISTFILESIZE=2000000
 export HISTFILE="$HOME/.bash_history"
 export HISTCONTROL="ignoreboth:erasedups"
 export HISTTIMEFORMAT="%F %T "
-# (The PROMPT_COMMAND will be set later.)
 
 # ------------------------------------------------------------------------------
 # 4. System Information & Greeting
 # ------------------------------------------------------------------------------
-fastfetch
+if command -v fastfetch >/dev/null 2>&1; then
+    fastfetch
+fi
 
 # ------------------------------------------------------------------------------
 # 5. Development Environment Setup
@@ -102,58 +103,58 @@ fi
 # ------------------------------------------------------------------------------
 # 6. Less (Pager) Setup
 # ------------------------------------------------------------------------------
-if [ -x /usr/bin/lesspipe ]; then
+if command -v lesspipe >/dev/null 2>&1; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
 # ------------------------------------------------------------------------------
 # 7. Prompt Customization - Clean, Nord-themed Single-Line Prompt
 # ------------------------------------------------------------------------------
-USERNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost (turquoise)
-HOSTNAME="\[\033[38;2;143;188;187m\]"   # Nord7 – Frost (turquoise)
-DIR_COLOR="\[\033[38;2;129;161;193m\]"  # Nord9 – Frost (blue)
-PROMPT_ICON="\[\033[38;2;94;129;172m\]>"  # Nord10 – Frost (darker blue)
+# Colors for username, hostname, and directory
+USER_COLOR="${NORD7}"   # Nord7 – Frost (turquoise)
+HOST_COLOR="${NORD7}"   # Nord7 – Frost (turquoise)
+DIR_COLOR="${NORD9}"    # Nord9 – Frost (blue)
+PROMPT_ICON="${NORD10}> "  # Nord10 – Frost (darker blue)
 
 # Build the prompt: [username@hostname] [working_directory] >
-PS1="[${USERNAME}\u${RESET}@${HOSTNAME}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
+PS1="[${USER_COLOR}\u${RESET}@${HOST_COLOR}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
 
 # ------------------------------------------------------------------------------
 # 8. Colorized Output for Common Commands
 # ------------------------------------------------------------------------------
-if command -v dircolors >/dev/null 2>&1; then
-    if [ -r ~/.dircolors ]; then
-        eval "$(dircolors -b ~/.dircolors)"
-    else
-        eval "$(dircolors -b)"
-    fi
-    alias ls='ls --color=auto'
-    alias dir='dir --color=auto'
-    alias vdir='vdir --color=auto'
-    alias grep='grep --color=auto'
-    alias fgrep='fgrep --color=auto'
-    alias egrep='egrep --color=auto'
-    alias diff='diff --color=auto'
-    alias ip='ip --color=auto'
-fi
-
-# ------------------------------------------------------------------------------
-# 9. Aliases & Shortcuts (Debian Package Management)
-# ------------------------------------------------------------------------------
-# Directory navigation shortcuts
+# FreeBSD’s default ls supports color with the -G flag
+alias ls='ls -G'
 alias ll='ls -lah'
 alias la='ls -A'
 alias l='ls -CF'
+
+# For grep/diff: if GNU versions are installed (prefixed with "g"), use them.
+if command -v ggrep >/dev/null 2>&1; then
+    alias grep='ggrep --color=auto'
+else
+    alias grep='grep'
+fi
+if command -v gdiff >/dev/null 2>&1; then
+    alias diff='gdiff --color=auto'
+else
+    alias diff='diff'
+fi
+
+# ------------------------------------------------------------------------------
+# 9. Aliases & Shortcuts (FreeBSD Package Management & Common Operations)
+# ------------------------------------------------------------------------------
+# Directory navigation shortcuts
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 
-# Debian system management using APT
-alias update='sudo apt update && sudo apt upgrade'
-alias install='sudo apt install'
-alias remove='sudo apt remove'
-alias autoremove='sudo apt autoremove'
-alias search='apt search'
+# FreeBSD package management using pkg
+alias update='sudo pkg update && sudo pkg upgrade -y'
+alias install='sudo pkg install'
+alias remove='sudo pkg delete'
+alias autoremove='sudo pkg autoremove'
+alias search='pkg search'
 
 # Safety aliases for file operations
 alias rm='rm -i'
@@ -176,11 +177,11 @@ alias j='jobs -l'
 alias path='echo -e ${PATH//:/\\n}'
 alias now='date +"%T"'
 alias nowdate='date +"%d-%m-%Y"'
-alias ports='ss -tulanp'
-alias mem='free -h'
+alias ports='sockstat -4'
+alias mem='top -o mem'
 alias disk='df -h'
 
-# Docker shortcuts
+# Docker shortcuts (if Docker is installed on FreeBSD)
 alias d='docker'
 alias dc='docker-compose'
 alias dps='docker ps'
@@ -277,8 +278,8 @@ serve() {
 # 11. Bash Completion
 # ------------------------------------------------------------------------------
 if ! shopt -oq posix; then
-    if [ -f /usr/share/bash-completion/bash_completion ]; then
-        . /usr/share/bash-completion/bash_completion
+    if [ -f /usr/local/etc/bash_completion ]; then
+        . /usr/local/etc/bash_completion
     elif [ -f /etc/bash_completion ]; then
         . /etc/bash_completion
     fi
@@ -305,10 +306,9 @@ fi
 [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
 
 # ------------------------------------------------------------------------------
-# Final PROMPT_COMMAND Consolidation (removed window-title echo)
+# 14. Final PROMPT_COMMAND Consolidation
 # ------------------------------------------------------------------------------
 export PROMPT_COMMAND='history -a; echo "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
 
 # ------------------------------------------------------------------------------
 # End of ~/.bashrc
-# ------------------------------------------------------------------------------
