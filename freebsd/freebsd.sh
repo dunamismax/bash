@@ -71,18 +71,6 @@ print_section() {
   log_info "${NORD14}${border}${NC}"
 }
 
-# Check for required commands
-command_exists() {
-  if ! command -v "$1" &>/dev/null; then
-    log_error "Required command '$1' not found. Exiting."
-    exit 1
-  fi
-}
-
-for cmd in pkg git rsync curl tar; do
-  command_exists "$cmd"
-done
-
 # Configuration Variables
 USERNAME="sawyer"
 TIMEZONE="America/New_York"
