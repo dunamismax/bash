@@ -1,9 +1,9 @@
 #!/usr/local/bin/bash
 # ------------------------------------------------------------------------------
 # Script Name: freebsd_backup.sh
-# Description: Backup script for FreeBSD systems with compression and retention.
-# Author: Your Name | License: MIT
-# Version: 1.0.0
+# Description: Backup script for FreeBSD systems with compression and retention,
+#              using the WD drive mounted at /mnt/WD_BLACK.
+# Author: Your Name | License: MIT | Version: 1.0.0
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -13,13 +13,12 @@
 
 # Enable strict mode: exit on error, undefined variables, or command pipeline failures
 set -Eeuo pipefail
-trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
 # ------------------------------------------------------------------------------
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 SOURCE="/"
-DESTINATION="/media/WD_BLACK/BACKUP/freebsd-backups"
+DESTINATION="/mnt/WD_BLACK/BACKUP/freebsd-backups"
 LOG_FILE="/var/log/freebsd-backup.log"
 RETENTION_DAYS=7
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
@@ -39,17 +38,12 @@ EXCLUDES=(
     "./var/tmp/*"
     "./var/cache/*"
     "./var/log/*"
-    "./var/lib/lxcfs/*"
-    "./var/lib/docker/*"
-    "./root/.cache/*"
-    "./home/*/.cache/*"
-    "./var/lib/plexmediaserver/*"
     "*.iso"
     "*.tmp"
     "*.swap.img"
 )
 
-# Create exclusion string for tar
+# Build exclusion arguments for tar
 EXCLUDES_ARGS=()
 for EXCLUDE in "${EXCLUDES[@]}"; do
     EXCLUDES_ARGS+=(--exclude="$EXCLUDE")
@@ -72,7 +66,7 @@ log() {
     local BLUE='\033[0;34m'
     local NC='\033[0m'  # No Color
 
-    # Validate log level and set color
+    # Select color based on log level
     case "${level^^}" in
         INFO)
             local color="${GREEN}"
@@ -93,13 +87,8 @@ log() {
             ;;
     esac
 
-    # Format the log entry
     local log_entry="[$timestamp] [$level] $message"
-
-    # Append to log file
     echo "$log_entry" >> "$LOG_FILE"
-
-    # Output to console
     printf "${color}%s${NC}\n" "$log_entry" >&2
 }
 
@@ -108,27 +97,22 @@ log() {
 # ------------------------------------------------------------------------------
 handle_error() {
     local error_message="${1:-An error occurred. Check the log for details.}"
-    local exit_code="${2:-1}"  # Default exit code is 1
-    local timestamp
-    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-
-    # Log the error with additional context
+    local exit_code="${2:-1}"
     log ERROR "$error_message (Exit Code: $exit_code)"
-    log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]}."
-
-    # Optionally, print the error to stderr for immediate visibility
+    log ERROR "Script failed at line $LINENO in function ${FUNCNAME[1]:-main}."
     echo "ERROR: $error_message (Exit Code: $exit_code)" >&2
-    echo "Script failed at line $LINENO in function ${FUNCNAME[1]}." >&2
-
-    # Exit with the specified exit code
+    echo "Script failed at line $LINENO in function ${FUNCNAME[1]:-main}." >&2
     exit "$exit_code"
 }
+
+# Set trap for any error
+trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
 
 # ------------------------------------------------------------------------------
 # HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
 check_root() {
-    if [[ "$EUID" -ne 0 ]]; then
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         handle_error "This script must be run as root."
     fi
 }
@@ -137,20 +121,19 @@ check_root() {
 # MAIN FUNCTIONS
 # ------------------------------------------------------------------------------
 perform_backup() {
-    log INFO "Starting on-the-fly backup and compression to $DESTINATION/$BACKUP_NAME"
+    log INFO "Starting backup and compression to ${DESTINATION}/${BACKUP_NAME}"
 
-    # Compress and stream directly to the destination using pigz, applying exclusions.
-    if tar -I pigz -cf "$DESTINATION/$BACKUP_NAME" \
-        "${EXCLUDES_ARGS[@]}" -C / .; then
-        log INFO "Backup and compression completed: $DESTINATION/$BACKUP_NAME"
+    # Create the backup archive with exclusions, compressing via pigz.
+    if tar -I pigz -cf "${DESTINATION}/${BACKUP_NAME}" "${EXCLUDES_ARGS[@]}" -C / .; then
+        log INFO "Backup and compression completed: ${DESTINATION}/${BACKUP_NAME}"
     else
         handle_error "Backup process failed."
     fi
 }
 
 cleanup_backups() {
-    log INFO "Removing old backups from $DESTINATION older than $RETENTION_DAYS days"
-    # Find and remove files older than RETENTION_DAYS
+    log INFO "Removing backups in ${DESTINATION} older than ${RETENTION_DAYS} days"
+    # Find and remove files older than RETENTION_DAYS days.
     if find "$DESTINATION" -mindepth 1 -maxdepth 1 -type f -mtime +$RETENTION_DAYS -delete; then
         log INFO "Old backups removed."
     else
@@ -159,10 +142,9 @@ cleanup_backups() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN
+# MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Ensure the script is run as root
     check_root
 
     # Ensure the log directory exists and is writable
@@ -171,26 +153,26 @@ main() {
         mkdir -p "$LOG_DIR" || handle_error "Failed to create log directory: $LOG_DIR"
     fi
     touch "$LOG_FILE" || handle_error "Failed to create log file: $LOG_FILE"
-    chmod 600 "$LOG_FILE"  # Restrict log file access to root only
+    chmod 600 "$LOG_FILE" || handle_error "Failed to set permissions on $LOG_FILE"
 
     log INFO "Script execution started."
 
-    # Create destination directory before checking mount
-    mkdir -p "$DESTINATION"
+    # Create the destination directory if it doesn't exist
+    mkdir -p "$DESTINATION" || handle_error "Failed to create destination directory: $DESTINATION"
 
     # Check if the destination is mounted
     if ! mount | grep -q "$DESTINATION"; then
-        handle_error "Destination mount point for '$DESTINATION' is not available."
+        handle_error "Destination mount point '$DESTINATION' is not available."
     fi
 
-    # Perform backup and cleanup
+    # Run the backup and then clean up old backups
     perform_backup
     cleanup_backups
 
     log INFO "Script execution finished."
 }
 
-# Execute main function if script is run directly
+# Execute main function if the script is run directly
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
 fi
