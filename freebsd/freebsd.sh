@@ -1,15 +1,22 @@
 #!/usr/local/bin/bash
+# ==============================================================================
 # FreeBSD Server Setup Script v4.1
 #
-# Overview:
+# Description:
 #   This script automates the initial configuration of a FreeBSD server.
-#   It updates the system, installs essential packages concurrently,
-#   hardens security settings, configures network services, and sets up various services,
-#   including a Caddy reverse proxy.
+#   It performs system updates, installs essential packages concurrently,
+#   applies security hardening measures, configures network services,
+#   and sets up various utilities including a Caddy reverse proxy.
 #
 # Author: dunamismax
 # Version: 4.1
 # Date: 2025-02-20
+#
+# License & Warranty:
+#   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, EXPRESS OR IMPLIED.
+#   THE AUTHOR SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING FROM THE USE OF THIS SCRIPT.
+#   USE THIS SCRIPT AT YOUR OWN RISK.
+# ==============================================================================
 
 set -Eeuo pipefail
 IFS=$'\n\t'
