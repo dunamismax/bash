@@ -657,6 +657,224 @@ EOF
     log INFO "doas configuration updated and secured."
 }
 
+# Backup Key Configuration Files
+backup_configs() {
+    local backup_dir="/var/backups/openbsd_config_$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$backup_dir"
+    log INFO "Backing up key configuration files to $backup_dir..."
+    local files_to_backup=(
+        "/etc/ssh/sshd_config"
+        "/etc/pf.conf"
+        "/etc/doas.conf"
+        "/etc/ntpd.conf"
+        "/etc/rc.conf.local"
+    )
+    for file in "${files_to_backup[@]}"; do
+        if [ -f "$file" ]; then
+            cp "$file" "$backup_dir" && log INFO "Backed up $file" || log WARN "Failed to backup $file"
+        else
+            log WARN "File $file not found; skipping backup."
+        fi
+    done
+}
+
+# Log Rotation and Archiving
+rotate_logs() {
+    local log_file="$LOG_FILE"
+    if [ -f "$log_file" ]; then
+        local rotated_file="${log_file}.$(date +%Y%m%d%H%M%S).gz"
+        log INFO "Rotating log file: $log_file -> $rotated_file"
+        if gzip -c "$log_file" > "$rotated_file" && :> "$log_file"; then
+            log INFO "Log rotation successful."
+        else
+            log WARN "Log rotation failed."
+        fi
+    else
+        log WARN "Log file $log_file does not exist."
+    fi
+}
+
+# System Health and Monitoring Checks
+system_health_check() {
+    log INFO "Performing system health check..."
+    log INFO "Uptime: $(uptime)"
+    log INFO "Disk Usage:"
+    df -h / | while read -r line; do log INFO "$line"; done
+    log INFO "Memory Usage:"
+    vmstat -s | while read -r line; do log INFO "$line"; done
+    log INFO "Load Average: $(sysctl -n vm.loadavg)"
+}
+
+# NTP/Time Synchronization Setup using openntpd
+configure_ntp() {
+    log INFO "Configuring NTP using openntpd..."
+    if ! command -v ntpd &>/dev/null; then
+        if pkg_add openntpd; then
+            log INFO "Installed openntpd."
+        else
+            log WARN "Failed to install openntpd."
+            return 1
+        fi
+    fi
+    local ntp_conf="/etc/ntpd.conf"
+    if [ ! -f "$ntp_conf" ]; then
+        cat <<'EOF' > "$ntp_conf"
+# Minimal openntpd configuration for OpenBSD
+server 0.pool.ntp.org
+server 1.pool.ntp.org
+server 2.pool.ntp.org
+server 3.pool.ntp.org
+EOF
+        log INFO "Created new ntpd configuration at $ntp_conf."
+    else
+        log INFO "ntpd configuration file exists at $ntp_conf."
+    fi
+    rcctl enable ntpd
+    if rcctl start ntpd; then
+        log INFO "ntpd started successfully."
+    else
+        log WARN "Failed to start ntpd."
+    fi
+}
+
+# Security Auditing using Lynis
+run_security_audit() {
+    log INFO "Running security audit with Lynis..."
+    if command -v lynis &>/dev/null; then
+        local audit_log="/var/log/lynis_audit_$(date +%Y%m%d%H%M%S).log"
+        if lynis audit system --quiet | tee "$audit_log"; then
+            log INFO "Lynis audit completed. Log saved to $audit_log."
+        else
+            log WARN "Lynis audit encountered issues."
+        fi
+    else
+        log WARN "Lynis is not installed; skipping security audit."
+    fi
+}
+
+# Service Health Checks and Auto-Restart
+check_services() {
+    log INFO "Checking status of key services..."
+    local services=("sshd" "pf" "cron" "caddy" "ntpd")
+    for service in "${services[@]}"; do
+        if rcctl check "$service" &>/dev/null; then
+            log INFO "Service $service is running."
+        else
+            log WARN "Service $service is not running; attempting to restart..."
+            if rcctl restart "$service"; then
+                log INFO "Service $service restarted successfully."
+            else
+                log ERROR "Failed to restart service $service."
+            fi
+        fi
+    done
+}
+
+# Firewall Rule Verification
+verify_firewall_rules() {
+    log INFO "Verifying firewall rules by testing connectivity on expected open ports..."
+    local ports=(22 80 443 32400)
+    local host="127.0.0.1"
+    for port in "${ports[@]}"; do
+        if nc -z -w3 "$host" "$port" 2>/dev/null; then
+            log INFO "Port $port on $host is accessible."
+        else
+            log WARN "Port $port on $host is not accessible. Check PF rules."
+        fi
+    done
+}
+
+# Automated SSL Certificate Management using acme-client
+update_ssl_certificates() {
+    log INFO "Updating SSL/TLS certificates using acme-client..."
+    if ! command -v acme-client &>/dev/null; then
+        if pkg_add acme-client; then
+            log INFO "acme-client installed successfully."
+        else
+            log WARN "Failed to install acme-client."
+            return 1
+        fi
+    fi
+    if [ -f /etc/acme-client.conf ]; then
+        if acme-client -v; then
+            log INFO "SSL certificates updated successfully."
+        else
+            log WARN "Failed to update SSL certificates with acme-client."
+        fi
+    else
+        log WARN "acme-client configuration file not found. Please configure /etc/acme-client.conf."
+    fi
+}
+
+# Automated Database Backups for PostgreSQL and MySQL
+backup_databases() {
+    local backup_dir="/var/backups/db_backups_$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$backup_dir"
+    log INFO "Starting automated database backups to $backup_dir..."
+    if command -v pg_dumpall &>/dev/null; then
+        if pg_dumpall -U postgres | gzip > "$backup_dir/postgres_backup.sql.gz"; then
+            log INFO "PostgreSQL backup completed."
+        else
+            log WARN "PostgreSQL backup failed."
+        fi
+    else
+        log WARN "pg_dumpall not found; skipping PostgreSQL backup."
+    fi
+    if command -v mysqldump &>/dev/null; then
+        if mysqldump --all-databases | gzip > "$backup_dir/mysql_backup.sql.gz"; then
+            log INFO "MySQL backup completed."
+        else
+            log WARN "MySQL backup failed."
+        fi
+    else
+        log WARN "mysqldump not found; skipping MySQL backup."
+    fi
+}
+
+# Container or Virtual Machine Setup (Basic VMM Guest)
+setup_vmm_guest() {
+    local guest_name="openbsd_guest"
+    local guest_img="/usr/local/share/openbsd_guest.img"
+    log INFO "Setting up a VMM guest named $guest_name..."
+    if [ ! -f "$guest_img" ]; then
+        log WARN "Guest image $guest_img not found. Please provide a valid image."
+        return 1
+    fi
+    local vm_conf="/etc/vm_${guest_name}.conf"
+    cat <<EOF > "$vm_conf"
+# VMM guest configuration for $guest_name
+cpu=2
+memory=1024
+disk="$guest_img"
+net="bridge0"
+EOF
+    log INFO "VM configuration written to $vm_conf."
+    if vmctl start "$guest_name" -f "$vm_conf"; then
+        log INFO "VM $guest_name started successfully."
+    else
+        log WARN "Failed to start VM $guest_name."
+    fi
+}
+
+# Performance Tuning and Optimization
+tune_system() {
+    log INFO "Applying performance tuning and system optimizations..."
+    local sysctl_conf="/etc/sysctl.conf"
+    [ -f "$sysctl_conf" ] && cp "$sysctl_conf" "${sysctl_conf}.bak.$(date +%Y%m%d%H%M%S)"
+    cat <<'EOF' >> "$sysctl_conf"
+# Performance tuning settings
+net.inet.tcp.delayed_ack=1
+kern.ipc.somaxconn=128
+net.inet.tcp.recvspace=65536
+net.inet.tcp.sendspace=65536
+EOF
+    sysctl -w net.inet.tcp.delayed_ack=1
+    sysctl -w kern.ipc.somaxconn=128
+    sysctl -w net.inet.tcp.recvspace=65536
+    sysctl -w net.inet.tcp.sendspace=65536
+    log INFO "Performance tuning applied. Review $sysctl_conf for details."
+}
+
 #--------------------------------------------------
 # Prompt for Reboot
 #--------------------------------------------------
@@ -705,6 +923,9 @@ main() {
     home_permissions
     configure_wifi
     setup_doas
+    tune_system
+    setup_vmm_guest
+    backup_databases
     install_i3_ly_and_tools
     prompt_reboot
 }
