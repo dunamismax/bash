@@ -1,23 +1,33 @@
 #!/usr/local/bin/bash
 # ==============================================================================
-# OpenBSD Server Setup Script v4.1
+# OpenBSD Server Automation Script v4.2
 #
-# Description:
+# Overview:
 #   This script automates the initial configuration of an OpenBSD server.
-#   It performs system updates, installs essential packages sequentially,
-#   applies security hardening measures, configures network services,
-#   and sets up various utilities including a Caddy reverse proxy.
+#   It performs system updates, sequentially installs essential packages,
+#   applies security hardening measures, configures network services (including
+#   SSH and PF firewall), and sets up various utilities such as a Caddy reverse
+#   proxy, Wi‑Fi networking, and an X11/i3/ly desktop environment.
+#
+# Features:
+#   - Comprehensive logging with colored terminal output.
+#   - Non-interactive and interactive configuration components.
+#   - Automatic backups of key configuration files before changes.
+#   - Modular design for easy customization and maintenance.
+#
+# Usage:
+#   Run this script as root. For help:
+#       $(basename "$0") --help
+#
+# Disclaimer:
+#   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, EXPRESS OR IMPLIED.
+#   THE AUTHOR IS NOT RESPONSIBLE FOR ANY DAMAGE CAUSED BY ITS USE.
+#   USE AT YOUR OWN RISK.
 #
 # Author: dunamismax (adapted for OpenBSD)
-# Version: 4.1
+# Version: 4.2
 # Date: 2025-02-20
-#
-# License & Warranty:
-#   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, EXPRESS OR IMPLIED.
-#   THE AUTHOR SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING FROM THE USE OF THIS SCRIPT.
-#   USE THIS SCRIPT AT YOUR OWN RISK.
 # ==============================================================================
-
 set -Eeuo pipefail
 IFS=$'\n\t'
 
@@ -35,27 +45,29 @@ readonly COLOR_GREEN='\033[0;32m'
 readonly COLOR_BLUE='\033[0;34m'
 readonly COLOR_NC='\033[0m'  # No Color
 
-# Ensure the log directory exists with secure permissions
+# Ensure log directory exists and log file is secure
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 
+# Optionally, set a secure umask for new files
+umask 077
+
 #--------------------------------------------------
-# Logging and Error Handling
+# Logging and Error Handling Functions
 #--------------------------------------------------
 log() {
     local level="${1:-INFO}"
     shift
     local msg="$*"
-    local ts
+    local ts color
     ts=$(date +"%Y-%m-%d %H:%M:%S")
-    local color
     case "${level^^}" in
-        INFO)  color="${COLOR_GREEN}" ;;
+        INFO)   color="${COLOR_GREEN}" ;;
         WARN|WARNING) color="${COLOR_YELLOW}"; level="WARN" ;;
-        ERROR) color="${COLOR_RED}" ;;
-        DEBUG) color="${COLOR_BLUE}" ;;
-        *)     color="${COLOR_NC}" ; level="INFO" ;;
+        ERROR)  color="${COLOR_RED}" ;;
+        DEBUG)  color="${COLOR_BLUE}" ;;
+        *)      color="${COLOR_NC}" ; level="INFO" ;;
     esac
     local entry="[$ts] [${level^^}] $msg"
     echo "$entry" >> "$LOG_FILE"
@@ -63,7 +75,7 @@ log() {
 }
 
 handle_error() {
-    local msg="${1:-An error occurred.}"
+    local msg="${1:-An unexpected error occurred.}"
     local exit_code="${2:-1}"
     log ERROR "Error on line ${BASH_LINENO[0]} in function ${FUNCNAME[1]:-main}: ${msg}"
     exit "$exit_code"
@@ -72,12 +84,13 @@ handle_error() {
 trap 'handle_error "Unexpected error encountered."' ERR
 
 #--------------------------------------------------
-# Utility Functions
+# Utility and Help Functions
 #--------------------------------------------------
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
-Automates OpenBSD server setup and configuration.
+
+This script automates the setup and configuration of an OpenBSD server.
 
 Options:
   -h, --help    Show this help message and exit.
@@ -94,7 +107,7 @@ check_root() {
 check_network() {
     log INFO "Checking network connectivity..."
     if ! ping -c1 google.com &>/dev/null; then
-        log WARN "Network connectivity seems unavailable."
+        log WARN "Network connectivity appears to be unavailable."
     else
         log INFO "Network connectivity verified."
     fi
@@ -106,15 +119,14 @@ check_network() {
 update_system() {
     log INFO "Running syspatch for system updates..."
     if command -v syspatch &>/dev/null; then
-        syspatch
-        log INFO "syspatch completed."
+        syspatch && log INFO "syspatch completed." || log WARN "syspatch encountered issues."
     else
         log WARN "syspatch not available; skipping system updates."
     fi
 }
 
 install_packages() {
-    log INFO "Installing essential packages sequentially..."
+    log INFO "Installing essential packages..."
     local packages=(
         bash vim nano zsh screen tmux mc htop tree ncdu neofetch
         git curl wget rsync
@@ -126,7 +138,7 @@ install_packages() {
     )
     for pkg in "${packages[@]}"; do
         if pkg_info "$pkg" &>/dev/null; then
-            log INFO "Package $pkg is already installed."
+            log INFO "Package '$pkg' is already installed."
         else
             if pkg_add "$pkg"; then
                 log INFO "Installed package: $pkg"
@@ -143,7 +155,6 @@ install_packages() {
 create_user() {
     if ! id "$USERNAME" &>/dev/null; then
         log INFO "Creating user '$USERNAME'..."
-        # Non-interactive user creation using useradd
         if useradd -m -s /usr/local/bin/bash "$USERNAME"; then
             echo "changeme" | passwd "$USERNAME"
             log INFO "User '$USERNAME' created with default password 'changeme'."
@@ -157,7 +168,7 @@ create_user() {
 
 configure_timezone() {
     local tz="America/New_York"
-    log INFO "Configuring timezone to ${tz}..."
+    log INFO "Setting timezone to ${tz}..."
     if [ -f "/usr/share/zoneinfo/${tz}" ]; then
         ln -sf "/usr/share/zoneinfo/${tz}" /etc/localtime
         log INFO "Timezone set to ${tz}."
@@ -196,7 +207,7 @@ copy_shell_configs() {
                 chown "${USERNAME}:${USERNAME}" "$dest"
                 log INFO "Copied $src to $dest"
             else
-                log WARN "Failed to copy $src"
+                log WARN "Failed to copy $src to $dest"
             fi
         else
             log WARN "Source file $src does not exist."
@@ -209,7 +220,7 @@ copy_shell_configs() {
 #--------------------------------------------------
 configure_ssh() {
     log INFO "Enabling SSH service..."
-    # On OpenBSD, enable sshd via rc.conf.local and rcctl
+    # Ensure SSH flags are set in rc.conf.local
     if ! grep -q "^sshd_flags=" /etc/rc.conf.local; then
         echo 'sshd_flags=""' >> /etc/rc.conf.local
     fi
@@ -255,7 +266,7 @@ install_plex() {
 }
 
 #--------------------------------------------------
-# Firewall Setup Using PF
+# PF Firewall Configuration
 #--------------------------------------------------
 detect_ext_if() {
     local iface
@@ -328,7 +339,7 @@ deploy_user_scripts() {
 }
 
 setup_cron() {
-    log INFO "Starting cron service..."
+    log INFO "Enabling and starting cron service..."
     rcctl enable cron
     if rcctl start cron; then
         log INFO "Cron service started."
@@ -346,6 +357,7 @@ configure_periodic() {
     }
     cat <<'EOF' > "$cron_file"
 #!/bin/sh
+# Daily package update maintenance task
 pkg_add -u
 EOF
     chmod +x "$cron_file" && log INFO "Daily maintenance script created." || log WARN "Failed to set execute permission on maintenance script."
@@ -399,7 +411,9 @@ install_and_configure_caddy_proxy() {
     else
         handle_error "Failed to install Caddy."
     fi
-    local caddyfile="/usr/local/etc/caddy/Caddyfile"
+    local caddy_dir="/usr/local/etc/caddy"
+    local caddyfile="${caddy_dir}/Caddyfile"
+    mkdir -p "$caddy_dir"
     [ -f "$caddyfile" ] && cp "$caddyfile" "${caddyfile}.backup.$(date +%Y%m%d%H%M%S)" && log INFO "Backed up existing Caddyfile."
     log INFO "Writing new Caddyfile configuration..."
     cat <<'EOF' > "$caddyfile"
@@ -460,12 +474,12 @@ configure_wifi() {
     local primary_iface
     primary_iface=$(echo "$devices" | head -n 1)
     local ssid psk
-    read -p "Enter SSID for primary Wi‑Fi ($primary_iface): " ssid
+    read -r -p "Enter SSID for primary Wi‑Fi ($primary_iface): " ssid
     if [ -z "$ssid" ]; then
         log ERROR "SSID cannot be empty."
         return 1
     fi
-    read -s -p "Enter PSK (leave empty for open networks): " psk
+    read -s -r -p "Enter PSK (leave empty for open networks): " psk
     echo
 
     local wpa_conf="/etc/wpa_supplicant.conf"
@@ -475,7 +489,7 @@ configure_wifi() {
     fi
 
     if grep -q "ssid=\"$ssid\"" "$wpa_conf"; then
-        log INFO "Network '$ssid' already configured in $wpa_conf."
+        log INFO "Network '$ssid' is already configured in $wpa_conf."
     else
         log INFO "Adding network '$ssid' configuration to $wpa_conf."
         {
@@ -490,7 +504,6 @@ configure_wifi() {
         } >> "$wpa_conf"
     fi
 
-    # Restart the primary wireless interface
     if ifconfig "$primary_iface" down && ifconfig "$primary_iface" up; then
         log INFO "Restarted interface $primary_iface."
     else
@@ -498,17 +511,17 @@ configure_wifi() {
         return 1
     fi
 
-    log INFO "Wi‑Fi configuration completed for detected devices."
+    log INFO "Wi‑Fi configuration completed for all detected devices."
 }
 
 install_i3_ly_and_tools() {
-    log INFO "Installing i3, addons, Xorg/X11, Zig and ly display manager..."
+    log INFO "Installing i3, Xorg/X11, Zig, and ly display manager..."
 
-    # 1. Install i3, its addons, feh, and Xorg/X11
+    # 1. Install i3 and related packages
     local packages=(i3 i3status i3lock dmenu i3blocks feh xorg xinit)
     for pkg in "${packages[@]}"; do
         if pkg_info "$pkg" &>/dev/null; then
-            log INFO "Package '$pkg' already installed."
+            log INFO "Package '$pkg' is already installed."
         else
             if pkg_add "$pkg"; then
                 log INFO "Installed package: $pkg"
@@ -572,10 +585,6 @@ install_i3_ly_and_tools() {
         return 1
     fi
 
-    # Optionally, you can test ly with:
-    # log INFO "Testing ly..."
-    # zig build run
-
     log INFO "Installing ly..."
     if zig build installsystemd; then
         log INFO "ly installed successfully."
@@ -584,7 +593,7 @@ install_i3_ly_and_tools() {
         return 1
     fi
 
-    # 4. Create an rc.d script for ly (since OpenBSD does not use systemd)
+    # 4. Create an rc.d script for ly (OpenBSD alternative to systemd)
     local rc_script="/etc/rc.d/ly"
     log INFO "Creating rc.d startup script for ly..."
     cat <<'EOF' > "$rc_script"
@@ -605,18 +614,16 @@ load_rc_config $name
 : ${ly_enable:=no}
 run_rc_command "$1"
 EOF
-
     chmod +x "$rc_script"
     log INFO "ly rc.d script created. To enable ly at boot, add 'ly_enable=yes' to /etc/rc.conf.local."
-
-    log INFO "Installation of i3, Xorg/X11, Zig and ly is complete."
+    log INFO "Installation of i3, Xorg/X11, Zig, and ly is complete."
 }
 
 #--------------------------------------------------
 # Prompt for Reboot
 #--------------------------------------------------
 prompt_reboot() {
-    read -rp "Reboot now? [y/N]: " answer
+    read -r -p "Reboot now? [y/N]: " answer
     if [[ "$answer" =~ ^[Yy]$ ]]; then
         log INFO "Rebooting system..."
         reboot
@@ -629,6 +636,7 @@ prompt_reboot() {
 # Main Execution Flow
 #--------------------------------------------------
 main() {
+    # Process command-line options
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -h|--help) usage ;;
