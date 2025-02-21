@@ -447,6 +447,41 @@ configure_wifi() {
     log INFO "Wi‑Fi configuration completed successfully."
 }
 
+install_desktop_environment() {
+    # Ensure the script is running as root.
+    check_root
+
+    # Update pkg repositories.
+    update_system
+
+    # Install Xorg and xinit for X11 support.
+    log INFO "Installing Xorg and xinit for X11 support..."
+    pkg install -y xorg xinit || handle_error "Failed to install Xorg."
+
+    # Install i3 and useful addons.
+    log INFO "Installing i3 window manager and addons..."
+    local i3_packages=( i3 i3status i3lock dmenu i3blocks )
+    pkg install -y "${i3_packages[@]}" || handle_error "Failed to install i3 packages."
+
+    # Install GNOME and GDM.
+    log INFO "Installing GNOME (gnome3) and GDM..."
+    local gnome_packages=( gnome3 gdm )
+    pkg install -y "${gnome_packages[@]}" || handle_error "Failed to install GNOME/GDM."
+
+    # Enable necessary services for GNOME.
+    log INFO "Enabling GNOME Display Manager (GDM) and required services..."
+    sysrc dbus_enable="YES" || handle_error "Failed to enable dbus."
+    sysrc gdm_enable="YES" || handle_error "Failed to enable gdm."
+    sysrc gnome_enable="YES" || handle_error "Failed to enable gnome."
+    log INFO "Starting dbus service..."
+    service dbus start || handle_error "Failed to start dbus."
+    log INFO "Starting gdm service..."
+    service gdm start || handle_error "Failed to start gdm."
+
+    log INFO "Desktop environment installation complete."
+    log INFO "Please reboot your system to start the graphical environment."
+}
+
 #--------------------------------------------------
 # Prompt for Reboot
 #--------------------------------------------------
@@ -493,6 +528,7 @@ main() {
     final_checks
     home_permissions
     configure_wifi
+    install_desktop_environment
     prompt_reboot
 }
 
