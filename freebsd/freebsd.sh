@@ -6,7 +6,7 @@
 #   installs essential packages in parallel, hardens security settings, configures network services,
 #   and sets up a Caddy reverse proxy.
 #
-# Author: dunamismax (improved by ChatGPT)
+# Author: dunamismax
 # Version: 4.0
 # Date: 02/20/2025
 
