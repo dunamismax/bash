@@ -635,6 +635,28 @@ EOF
     log INFO "Desktop environment installation complete."
 }
 
+setup_doas() {
+    log INFO "Setting up doas configuration..."
+
+    local doas_conf="/etc/doas.conf"
+    # Backup existing configuration if present
+    if [ -f "$doas_conf" ]; then
+        cp "$doas_conf" "${doas_conf}.bak.$(date +%Y%m%d%H%M%S)"
+        log INFO "Existing doas.conf backed up to ${doas_conf}.bak.$(date +%Y%m%d%H%M%S)"
+    fi
+
+    # Write new configuration: permit the user to execute any command as root
+    cat <<EOF > "$doas_conf"
+# /etc/doas.conf - doas configuration file
+#
+# Permit user ${USERNAME} to run any command as root.
+permit persist ${USERNAME} as root
+EOF
+
+    chmod 600 "$doas_conf"
+    log INFO "doas configuration updated and secured."
+}
+
 #--------------------------------------------------
 # Prompt for Reboot
 #--------------------------------------------------
@@ -682,6 +704,7 @@ main() {
     final_checks
     home_permissions
     configure_wifi
+    setup_doas
     install_i3_ly_and_tools
     prompt_reboot
 }
