@@ -515,11 +515,11 @@ configure_wifi() {
 }
 
 install_i3_ly_and_tools() {
-    log INFO "Installing i3, Xorg/X11, Zig, and ly display manager..."
+    log INFO "Installing i3, Xorg/X11, Zig, ly display manager, and XFCE desktop environment..."
 
     # 1. Install i3 and related packages
-    local packages=(i3 i3status i3lock dmenu i3blocks feh xorg xinit)
-    for pkg in "${packages[@]}"; do
+    local i3_packages=(i3 i3status i3lock dmenu i3blocks feh xorg xinit)
+    for pkg in "${i3_packages[@]}"; do
         if pkg_info "$pkg" &>/dev/null; then
             log INFO "Package '$pkg' is already installed."
         else
@@ -593,7 +593,7 @@ install_i3_ly_and_tools() {
         return 1
     fi
 
-    # 4. Create an rc.d script for ly (OpenBSD alternative to systemd)
+    # Create an rc.d script for ly (since OpenBSD does not use systemd)
     local rc_script="/etc/rc.d/ly"
     log INFO "Creating rc.d startup script for ly..."
     cat <<'EOF' > "$rc_script"
@@ -616,7 +616,23 @@ run_rc_command "$1"
 EOF
     chmod +x "$rc_script"
     log INFO "ly rc.d script created. To enable ly at boot, add 'ly_enable=yes' to /etc/rc.conf.local."
-    log INFO "Installation of i3, Xorg/X11, Zig, and ly is complete."
+
+    # 4. Install XFCE and its addons
+    log INFO "Installing XFCE desktop environment and addons..."
+    local xfce_packages=(xfce4-session xfce4-panel xfce4-appfinder xfce4-settings xfce4-terminal xfdesktop xfwm4 thunar mousepad xfce4-whiskermenu-plugin)
+    for pkg in "${xfce_packages[@]}"; do
+        if pkg_info "$pkg" &>/dev/null; then
+            log INFO "XFCE package '$pkg' is already installed."
+        else
+            if pkg_add "$pkg"; then
+                log INFO "Installed XFCE package: $pkg"
+            else
+                log WARN "Failed to install XFCE package: $pkg"
+            fi
+        fi
+    done
+
+    log INFO "Desktop environment installation complete."
 }
 
 #--------------------------------------------------
