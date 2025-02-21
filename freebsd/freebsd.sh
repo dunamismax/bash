@@ -851,34 +851,6 @@ update_ssl_certificates() {
 }
 
 #--------------------------------------------------
-# Bhyve Guest Setup
-#--------------------------------------------------
-setup_vmm_guest() {
-    local guest_name="freebsd_guest"
-    local guest_img="/usr/local/share/freebsd_guest.img"
-    log INFO "Setting up a bhyve guest named $guest_name..."
-    if [ ! -f "$guest_img" ]; then
-        log WARN "Guest image $guest_img not found. Please provide a valid image."
-        return 1
-    fi
-    local vm_conf="/usr/local/etc/${guest_name}.conf"
-    cat <<EOF > "$vm_conf"
-# bhyve guest configuration for $guest_name
-name=$guest_name
-cpu=2
-memory=1024M
-disk=$guest_img
-net_bridge=bridge0
-EOF
-    log INFO "VM configuration written to $vm_conf."
-    if bhyve -c 2 -m 1024M -A -H -P -s 0:0,hostbridge -s 1:0,virtio-net,tap0 -s 2:0,ahci-hd,"$guest_img" -s 31,lpc -l com1,stdio; then
-        log INFO "bhyve guest $guest_name started successfully."
-    else
-        log WARN "Failed to start bhyve guest $guest_name."
-    fi
-}
-
-#--------------------------------------------------
 # Performance Tuning and Final Checks
 #--------------------------------------------------
 tune_system() {
@@ -980,8 +952,6 @@ main() {
     check_services
     verify_firewall_rules
     rotate_logs
-
-    setup_vmm_guest
 
     final_checks
     home_permissions
