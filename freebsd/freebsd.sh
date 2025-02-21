@@ -367,6 +367,86 @@ EOF
     fi
 }
 
+configure_wifi() {
+    local wlan_device wpa_conf rc_conf ssid psk
+
+    # Identify the wireless adapter (if multiple, select the first one)
+    wlan_device=$(sysctl -n net.wlan.devices | awk '{print $1}')
+    if [ -z "$wlan_device" ]; then
+        log ERROR "No wireless adapter found."
+        return 1
+    fi
+    log INFO "Wireless adapter detected: $wlan_device"
+
+    # Load the corresponding driver module (assumes module name if_<device>)
+    if ! kldload "if_${wlan_device}" 2>/dev/null; then
+        log WARN "Could not load module if_${wlan_device} (it may already be loaded)."
+    fi
+    if ! kldstat | grep -q "if_${wlan_device}"; then
+        log ERROR "Failed to load driver for $wlan_device."
+        return 1
+    fi
+    log INFO "Driver for $wlan_device loaded."
+
+    # Create the wlan0 interface using the detected device
+    if ! ifconfig wlan0 create wlandev "$wlan_device"; then
+        log ERROR "Failed to create wlan0 interface."
+        return 1
+    fi
+    log INFO "wlan0 interface created."
+
+    # Prompt the user for SSID and PSK credentials
+    read -p "Enter SSID: " ssid
+    if [ -z "$ssid" ]; then
+        log ERROR "SSID cannot be empty."
+        return 1
+    fi
+    read -s -p "Enter PSK (leave empty for open networks): " psk
+    echo
+
+    # Update /etc/wpa_supplicant.conf with the network details
+    wpa_conf="/etc/wpa_supplicant.conf"
+    if [ ! -f "$wpa_conf" ]; then
+        touch "$wpa_conf" && chmod 600 "$wpa_conf"
+        log INFO "Created $wpa_conf with secure permissions."
+    fi
+
+    if grep -q "ssid=\"$ssid\"" "$wpa_conf"; then
+        log INFO "Network '$ssid' already exists in $wpa_conf."
+    else
+        log INFO "Adding network '$ssid' to $wpa_conf."
+        {
+            echo "network={"
+            echo "    ssid=\"$ssid\""
+            if [ -n "$psk" ]; then
+                echo "    psk=\"$psk\""
+            else
+                echo "    key_mgmt=NONE"
+            fi
+            echo "}"
+        } >> "$wpa_conf"
+    fi
+
+    # Ensure configuration persists by updating /etc/rc.conf
+    rc_conf="/etc/rc.conf"
+    if ! grep -q "^wlans_${wlan_device}=" "$rc_conf"; then
+        echo "wlans_${wlan_device}=\"wlan0\"" >> "$rc_conf"
+        log INFO "Added wlans_${wlan_device} entry to $rc_conf."
+    fi
+    if ! grep -q "^ifconfig_wlan0=" "$rc_conf"; then
+        echo "ifconfig_wlan0=\"WPA DHCP\"" >> "$rc_conf"
+        log INFO "Added ifconfig_wlan0 entry to $rc_conf."
+    fi
+
+    # Restart the wlan0 network interface
+    if ! service netif restart wlan0; then
+        log ERROR "Failed to restart wlan0 interface."
+        return 1
+    fi
+
+    log INFO "Wi‑Fi configuration completed successfully."
+}
+
 #--------------------------------------------------
 # Prompt for Reboot
 #--------------------------------------------------
@@ -412,6 +492,7 @@ main() {
     set_bash_shell
     final_checks
     home_permissions
+    configure_wifi
     prompt_reboot
 }
 
