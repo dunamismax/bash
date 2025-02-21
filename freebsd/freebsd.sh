@@ -1,24 +1,22 @@
 #!/usr/local/bin/bash
 #
-# FreeBSD Server Setup Script (Enhanced Version)
+# FreeBSD Server Setup Script v1.0
 #
-# This script automates the initial configuration of a FreeBSD server.
-# It performs system updates, installs essential CLI packages, sets up a new
-# user, configures SSH and the firewall, manages backups, configures a reverse
-# proxy (Caddy), and applies various system maintenance tasks.
-#
-# Key Features:
-#   - Strict error handling (set -Eeuo pipefail)
-#   - Modular, well-commented functions for ease of maintenance
-#   - Structured logging with timestamps and color-coded output
-#   - Comprehensive pre-checks and final system verification
+# Description:
+#   This script automates the initial configuration and setup of a FreeBSD server.
+#   It performs system updates, installs essential command-line packages, creates
+#   a new user account, configures SSH and the firewall, manages system backups, and
+#   sets up a reverse proxy using Caddy.
 #
 # Usage:
-#   Run this script as root (e.g., with sudo) to configure your FreeBSD server.
+#   Run this script as root (e.g., using sudo) to configure your FreeBSD server.
 #
-# NOTE:
-#   This version is tailored for server environments only.
-#   All GUI-related functions and packages have been removed.
+# Requirements:
+#   FreeBSD with pkg installed.
+#
+# Author: dunamismax
+# Version: 1.0
+# Date: 02/20/2025
 #
 
 set -Eeuo pipefail
