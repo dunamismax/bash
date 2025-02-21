@@ -1,21 +1,10 @@
 #!/usr/local/bin/bash
-#
 # FreeBSD Server Setup Script v4.0
 #
 # Overview:
 #   This script automates the initial configuration of a FreeBSD server. It updates the system,
 #   installs essential packages in parallel, hardens security settings, configures network services,
 #   and sets up a Caddy reverse proxy.
-#
-# Features:
-#   - System update and package installations using pkg (all packages installed concurrently)
-#   - Automated creation of a new user account with secure default settings (default password "changeme")
-#   - Enhanced SSH configuration and security hardening
-#   - Dynamic PF firewall configuration
-#   - Deployment and configuration of a Caddy reverse proxy for HTTPS traffic
-#
-# Usage:
-#   Run this script as root (e.g., via sudo) to fully configure your FreeBSD server.
 #
 # Author: dunamismax (improved by ChatGPT)
 # Version: 4.0
