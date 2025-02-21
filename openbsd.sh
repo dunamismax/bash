@@ -1,19 +1,19 @@
 #!/usr/local/bin/bash
 # ==============================================================================
-# OpenBSD Server Automation Script v4.2
+# OpenBSD Server Automation Script v4.2.1
 #
 # Overview:
 #   This script automates the initial configuration of an OpenBSD server.
-#   It performs system updates, sequentially installs essential packages,
-#   applies security hardening measures, configures network services (including
-#   SSH and PF firewall), and sets up various utilities such as a Caddy reverse
-#   proxy, Wi‑Fi networking, and an X11/i3/ly desktop environment.
+#   It updates the system, installs essential packages, configures user accounts,
+#   applies security hardening measures, and sets up network services including SSH,
+#   PF firewall, Caddy reverse proxy, Wi‑Fi networking, and a desktop environment
+#   (X11/i3/ly/XFCE). It also performs backups, security audits, and performance tuning.
 #
 # Features:
 #   - Comprehensive logging with colored terminal output.
-#   - Non-interactive and interactive configuration components.
-#   - Automatic backups of key configuration files before changes.
-#   - Modular design for easy customization and maintenance.
+#   - Modular functions for each configuration step.
+#   - Automatic backups before modifying key configuration files.
+#   - Integrated health checks, security auditing, and service monitoring.
 #
 # Usage:
 #   Run this script as root. For help:
@@ -25,32 +25,30 @@
 #   USE AT YOUR OWN RISK.
 #
 # Author: dunamismax (adapted for OpenBSD)
-# Version: 4.2
+# Version: 4.2.1
 # Date: 2025-02-20
 # ==============================================================================
 set -Eeuo pipefail
 IFS=$'\n\t'
 
 #--------------------------------------------------
-# Global Constants and Configurations
+# Global Constants and Environment Setup
 #--------------------------------------------------
 readonly LOG_FILE="/var/log/openbsd_setup.log"
 readonly USERNAME="sawyer"
 readonly USER_HOME="/home/${USERNAME}"
 
-# Terminal color definitions
+# Terminal color definitions for log messages
 readonly COLOR_RED='\033[0;31m'
 readonly COLOR_YELLOW='\033[0;33m'
 readonly COLOR_GREEN='\033[0;32m'
 readonly COLOR_BLUE='\033[0;34m'
 readonly COLOR_NC='\033[0m'  # No Color
 
-# Ensure log directory exists and log file is secure
+# Ensure log file and its directory exist with secure permissions
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
-
-# Optionally, set a secure umask for new files
 umask 077
 
 #--------------------------------------------------
@@ -84,7 +82,7 @@ handle_error() {
 trap 'handle_error "Unexpected error encountered."' ERR
 
 #--------------------------------------------------
-# Utility and Help Functions
+# Utility Functions
 #--------------------------------------------------
 usage() {
     cat <<EOF
@@ -150,7 +148,7 @@ install_packages() {
 }
 
 #--------------------------------------------------
-# User and Timezone Configuration
+# User and Timezone/NTP Configuration
 #--------------------------------------------------
 create_user() {
     if ! id "$USERNAME" &>/dev/null; then
@@ -174,6 +172,37 @@ configure_timezone() {
         log INFO "Timezone set to ${tz}."
     else
         log WARN "Timezone file for ${tz} not found."
+    fi
+}
+
+configure_ntp() {
+    log INFO "Configuring NTP using openntpd..."
+    if ! command -v ntpd &>/dev/null; then
+        if pkg_add openntpd; then
+            log INFO "Installed openntpd."
+        else
+            log WARN "Failed to install openntpd."
+            return 1
+        fi
+    fi
+    local ntp_conf="/etc/ntpd.conf"
+    if [ ! -f "$ntp_conf" ]; then
+        cat <<'EOF' > "$ntp_conf"
+# Minimal openntpd configuration for OpenBSD
+server 0.pool.ntp.org
+server 1.pool.ntp.org
+server 2.pool.ntp.org
+server 3.pool.ntp.org
+EOF
+        log INFO "Created new ntpd configuration at $ntp_conf."
+    else
+        log INFO "ntpd configuration file exists at $ntp_conf."
+    fi
+    rcctl enable ntpd
+    if rcctl start ntpd; then
+        log INFO "ntpd started successfully."
+    else
+        log WARN "Failed to start ntpd."
     fi
 }
 
@@ -215,12 +244,30 @@ copy_shell_configs() {
     done
 }
 
+set_bash_shell() {
+    if ! command -v /usr/local/bin/bash &>/dev/null; then
+        log INFO "Bash not found; installing..."
+        if ! pkg_add bash; then
+            log WARN "Bash installation failed."
+            return 1
+        fi
+    fi
+    if ! grep -qxF "/usr/local/bin/bash" /etc/shells; then
+        echo "/usr/local/bin/bash" >> /etc/shells
+        log INFO "Added /usr/local/bin/bash to /etc/shells."
+    fi
+    if chsh -s /usr/local/bin/bash "$USERNAME"; then
+        log INFO "Default shell for ${USERNAME} set to /usr/local/bin/bash."
+    else
+        log WARN "Failed to set default shell for ${USERNAME}."
+    fi
+}
+
 #--------------------------------------------------
-# SSH and Security Configuration
+# SSH and Doas Security Configuration
 #--------------------------------------------------
 configure_ssh() {
     log INFO "Enabling SSH service..."
-    # Ensure SSH flags are set in rc.conf.local
     if ! grep -q "^sshd_flags=" /etc/rc.conf.local; then
         echo 'sshd_flags=""' >> /etc/rc.conf.local
     fi
@@ -253,20 +300,25 @@ secure_ssh_config() {
     fi
 }
 
-#--------------------------------------------------
-# Plex Media Server Installation
-#--------------------------------------------------
-install_plex() {
-    log INFO "Installing Plex Media Server..."
-    if pkg_add plexmediaserver; then
-        log INFO "Plex installed successfully."
-    else
-        log WARN "Plex Media Server installation failed or is not available on OpenBSD."
+setup_doas() {
+    log INFO "Setting up doas configuration..."
+    local doas_conf="/etc/doas.conf"
+    if [ -f "$doas_conf" ]; then
+        cp "$doas_conf" "${doas_conf}.bak.$(date +%Y%m%d%H%M%S)"
+        log INFO "Existing doas.conf backed up."
     fi
+    cat <<EOF > "$doas_conf"
+# /etc/doas.conf - doas configuration file
+#
+# Permit user ${USERNAME} to run any command as root.
+permit persist ${USERNAME} as root
+EOF
+    chmod 600 "$doas_conf"
+    log INFO "doas configuration updated and secured."
 }
 
 #--------------------------------------------------
-# PF Firewall Configuration
+# Firewall Configuration Functions
 #--------------------------------------------------
 detect_ext_if() {
     local iface
@@ -323,84 +375,14 @@ configure_firewall() {
 }
 
 #--------------------------------------------------
-# Additional Server Setup Functions
+# Service Installation and Configuration
 #--------------------------------------------------
-deploy_user_scripts() {
-    local bin_dir="${USER_HOME}/bin"
-    local src_dir="${USER_HOME}/github/bash/openbsd/_scripts/"
-    mkdir -p "$bin_dir"
-    log INFO "Deploying user scripts from ${src_dir} to ${bin_dir}..."
-    if rsync -ah --delete "$src_dir" "$bin_dir"; then
-        find "$bin_dir" -type f -exec chmod 755 {} \;
-        log INFO "User scripts deployed successfully."
+install_plex() {
+    log INFO "Installing Plex Media Server..."
+    if pkg_add plexmediaserver; then
+        log INFO "Plex installed successfully."
     else
-        log WARN "Failed to deploy user scripts."
-    fi
-}
-
-setup_cron() {
-    log INFO "Enabling and starting cron service..."
-    rcctl enable cron
-    if rcctl start cron; then
-        log INFO "Cron service started."
-    else
-        log WARN "Cron service failed to start."
-    fi
-}
-
-configure_periodic() {
-    local cron_file="/etc/periodic/daily/openbsd_maintenance"
-    log INFO "Configuring daily maintenance tasks..."
-    [ -f "$cron_file" ] && {
-        mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" &&
-        log INFO "Backed up existing maintenance script."
-    }
-    cat <<'EOF' > "$cron_file"
-#!/bin/sh
-# Daily package update maintenance task
-pkg_add -u
-EOF
-    chmod +x "$cron_file" && log INFO "Daily maintenance script created." || log WARN "Failed to set execute permission on maintenance script."
-}
-
-final_checks() {
-    log INFO "Performing final system checks..."
-    echo "Kernel: $(uname -r)"
-    echo "Uptime: $(uptime)"
-    df -h /
-}
-
-home_permissions() {
-    log INFO "Setting ownership and permissions for ${USER_HOME}..."
-    chown -R "${USERNAME}:${USERNAME}" "${USER_HOME}"
-    find "${USER_HOME}" -type d -exec chmod g+s {} \;
-}
-
-install_fastfetch() {
-    log INFO "Installing Fastfetch..."
-    if pkg_add fastfetch; then
-        log INFO "Fastfetch installed successfully."
-    else
-        log WARN "Fastfetch installation failed or is not available on OpenBSD."
-    fi
-}
-
-set_bash_shell() {
-    if ! command -v /usr/local/bin/bash &>/dev/null; then
-        log INFO "Bash not found; installing..."
-        if ! pkg_add bash; then
-            log WARN "Bash installation failed."
-            return 1
-        fi
-    fi
-    if ! grep -qxF "/usr/local/bin/bash" /etc/shells; then
-        echo "/usr/local/bin/bash" >> /etc/shells
-        log INFO "Added /usr/local/bin/bash to /etc/shells."
-    fi
-    if chsh -s /usr/local/bin/bash "$USERNAME"; then
-        log INFO "Default shell for ${USERNAME} set to /usr/local/bin/bash."
-    else
-        log WARN "Failed to set default shell for ${USERNAME}."
+        log WARN "Plex Media Server installation failed or is not available on OpenBSD."
     fi
 }
 
@@ -452,9 +434,52 @@ EOF
     fi
 }
 
+install_fastfetch() {
+    log INFO "Installing Fastfetch..."
+    if pkg_add fastfetch; then
+        log INFO "Fastfetch installed successfully."
+    else
+        log WARN "Fastfetch installation failed or is not available on OpenBSD."
+    fi
+}
+
+#--------------------------------------------------
+# Cron and Periodic Maintenance
+#--------------------------------------------------
+setup_cron() {
+    log INFO "Enabling and starting cron service..."
+    rcctl enable cron
+    if rcctl start cron; then
+        log INFO "Cron service started."
+    else
+        log WARN "Cron service failed to start."
+    fi
+}
+
+configure_periodic() {
+    local cron_file="/etc/periodic/daily/openbsd_maintenance"
+    log INFO "Configuring daily maintenance tasks..."
+    [ -f "$cron_file" ] && {
+        mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" &&
+        log INFO "Backed up existing maintenance script."
+    }
+    cat <<'EOF' > "$cron_file"
+#!/bin/sh
+# Daily package update maintenance task
+pkg_add -u
+EOF
+    if chmod +x "$cron_file"; then
+        log INFO "Daily maintenance script created and made executable."
+    else
+        log WARN "Failed to set execute permission on maintenance script."
+    fi
+}
+
+#--------------------------------------------------
+# Wi‑Fi Network Configuration
+#--------------------------------------------------
 configure_wifi() {
     log INFO "Configuring Wi‑Fi interfaces..."
-    # Detect wireless interfaces (common prefixes: ath, iwn, iwm)
     local devices
     devices=$(ifconfig -l | tr ' ' '\n' | grep -E '^(ath|iwn|iwm)')
     if [ -z "$devices" ]; then
@@ -514,10 +539,13 @@ configure_wifi() {
     log INFO "Wi‑Fi configuration completed for all detected devices."
 }
 
+#--------------------------------------------------
+# Desktop Environment and Additional Tools
+#--------------------------------------------------
 install_i3_ly_and_tools() {
-    log INFO "Installing i3, Xorg/X11, Zig, ly display manager, and XFCE desktop environment..."
+    log INFO "Installing desktop environment components (i3, Xorg, Zig, ly, and XFCE)..."
 
-    # 1. Install i3 and related packages
+    # Install i3 and related packages
     local i3_packages=(i3 i3status i3lock dmenu i3blocks feh xorg xinit)
     for pkg in "${i3_packages[@]}"; do
         if pkg_info "$pkg" &>/dev/null; then
@@ -531,7 +559,7 @@ install_i3_ly_and_tools() {
         fi
     done
 
-    # 2. Install Zig from source
+    # Install Zig from source
     local zig_url="https://ziglang.org/download/0.12.1/zig-linux-x86_64-0.12.1.tar.xz"
     local zig_src_dir="/usr/local/src"
     local zig_tar="${zig_src_dir}/zig-0.12.1.tar.xz"
@@ -562,12 +590,9 @@ install_i3_ly_and_tools() {
         return 1
     fi
 
-    # 3. Clone and compile ly display manager with Zig
+    # Clone and build ly display manager using Zig
     local ly_src="${zig_src_dir}/ly"
-    if [ -d "$ly_src" ]; then
-        log INFO "Removing existing ly source directory..."
-        rm -rf "$ly_src"
-    fi
+    [ -d "$ly_src" ] && { log INFO "Removing existing ly source directory..."; rm -rf "$ly_src"; }
     log INFO "Cloning ly repository..."
     if git clone https://github.com/fairyglade/ly.git "$ly_src"; then
         log INFO "ly repository cloned."
@@ -593,7 +618,7 @@ install_i3_ly_and_tools() {
         return 1
     fi
 
-    # Create an rc.d script for ly (since OpenBSD does not use systemd)
+    # Create rc.d script for ly (OpenBSD does not use systemd)
     local rc_script="/etc/rc.d/ly"
     log INFO "Creating rc.d startup script for ly..."
     cat <<'EOF' > "$rc_script"
@@ -617,7 +642,7 @@ EOF
     chmod +x "$rc_script"
     log INFO "ly rc.d script created. To enable ly at boot, add 'ly_enable=yes' to /etc/rc.conf.local."
 
-    # 4. Install XFCE and its addons
+    # Install XFCE desktop environment and addons
     log INFO "Installing XFCE desktop environment and addons..."
     local xfce_packages=(xfce4-session xfce4-panel xfce4-appfinder xfce4-settings xfce4-terminal xfdesktop xfwm4 thunar mousepad xfce4-whiskermenu-plugin)
     for pkg in "${xfce_packages[@]}"; do
@@ -635,29 +660,9 @@ EOF
     log INFO "Desktop environment installation complete."
 }
 
-setup_doas() {
-    log INFO "Setting up doas configuration..."
-
-    local doas_conf="/etc/doas.conf"
-    # Backup existing configuration if present
-    if [ -f "$doas_conf" ]; then
-        cp "$doas_conf" "${doas_conf}.bak.$(date +%Y%m%d%H%M%S)"
-        log INFO "Existing doas.conf backed up to ${doas_conf}.bak.$(date +%Y%m%d%H%M%S)"
-    fi
-
-    # Write new configuration: permit the user to execute any command as root
-    cat <<EOF > "$doas_conf"
-# /etc/doas.conf - doas configuration file
-#
-# Permit user ${USERNAME} to run any command as root.
-permit persist ${USERNAME} as root
-EOF
-
-    chmod 600 "$doas_conf"
-    log INFO "doas configuration updated and secured."
-}
-
-# Backup Key Configuration Files
+#--------------------------------------------------
+# Backups and Log Maintenance
+#--------------------------------------------------
 backup_configs() {
     local backup_dir="/var/backups/openbsd_config_$(date +%Y%m%d%H%M%S)"
     mkdir -p "$backup_dir"
@@ -678,135 +683,6 @@ backup_configs() {
     done
 }
 
-# Log Rotation and Archiving
-rotate_logs() {
-    local log_file="$LOG_FILE"
-    if [ -f "$log_file" ]; then
-        local rotated_file="${log_file}.$(date +%Y%m%d%H%M%S).gz"
-        log INFO "Rotating log file: $log_file -> $rotated_file"
-        if gzip -c "$log_file" > "$rotated_file" && :> "$log_file"; then
-            log INFO "Log rotation successful."
-        else
-            log WARN "Log rotation failed."
-        fi
-    else
-        log WARN "Log file $log_file does not exist."
-    fi
-}
-
-# System Health and Monitoring Checks
-system_health_check() {
-    log INFO "Performing system health check..."
-    log INFO "Uptime: $(uptime)"
-    log INFO "Disk Usage:"
-    df -h / | while read -r line; do log INFO "$line"; done
-    log INFO "Memory Usage:"
-    vmstat -s | while read -r line; do log INFO "$line"; done
-    log INFO "Load Average: $(sysctl -n vm.loadavg)"
-}
-
-# NTP/Time Synchronization Setup using openntpd
-configure_ntp() {
-    log INFO "Configuring NTP using openntpd..."
-    if ! command -v ntpd &>/dev/null; then
-        if pkg_add openntpd; then
-            log INFO "Installed openntpd."
-        else
-            log WARN "Failed to install openntpd."
-            return 1
-        fi
-    fi
-    local ntp_conf="/etc/ntpd.conf"
-    if [ ! -f "$ntp_conf" ]; then
-        cat <<'EOF' > "$ntp_conf"
-# Minimal openntpd configuration for OpenBSD
-server 0.pool.ntp.org
-server 1.pool.ntp.org
-server 2.pool.ntp.org
-server 3.pool.ntp.org
-EOF
-        log INFO "Created new ntpd configuration at $ntp_conf."
-    else
-        log INFO "ntpd configuration file exists at $ntp_conf."
-    fi
-    rcctl enable ntpd
-    if rcctl start ntpd; then
-        log INFO "ntpd started successfully."
-    else
-        log WARN "Failed to start ntpd."
-    fi
-}
-
-# Security Auditing using Lynis
-run_security_audit() {
-    log INFO "Running security audit with Lynis..."
-    if command -v lynis &>/dev/null; then
-        local audit_log="/var/log/lynis_audit_$(date +%Y%m%d%H%M%S).log"
-        if lynis audit system --quiet | tee "$audit_log"; then
-            log INFO "Lynis audit completed. Log saved to $audit_log."
-        else
-            log WARN "Lynis audit encountered issues."
-        fi
-    else
-        log WARN "Lynis is not installed; skipping security audit."
-    fi
-}
-
-# Service Health Checks and Auto-Restart
-check_services() {
-    log INFO "Checking status of key services..."
-    local services=("sshd" "pf" "cron" "caddy" "ntpd")
-    for service in "${services[@]}"; do
-        if rcctl check "$service" &>/dev/null; then
-            log INFO "Service $service is running."
-        else
-            log WARN "Service $service is not running; attempting to restart..."
-            if rcctl restart "$service"; then
-                log INFO "Service $service restarted successfully."
-            else
-                log ERROR "Failed to restart service $service."
-            fi
-        fi
-    done
-}
-
-# Firewall Rule Verification
-verify_firewall_rules() {
-    log INFO "Verifying firewall rules by testing connectivity on expected open ports..."
-    local ports=(22 80 443 32400)
-    local host="127.0.0.1"
-    for port in "${ports[@]}"; do
-        if nc -z -w3 "$host" "$port" 2>/dev/null; then
-            log INFO "Port $port on $host is accessible."
-        else
-            log WARN "Port $port on $host is not accessible. Check PF rules."
-        fi
-    done
-}
-
-# Automated SSL Certificate Management using acme-client
-update_ssl_certificates() {
-    log INFO "Updating SSL/TLS certificates using acme-client..."
-    if ! command -v acme-client &>/dev/null; then
-        if pkg_add acme-client; then
-            log INFO "acme-client installed successfully."
-        else
-            log WARN "Failed to install acme-client."
-            return 1
-        fi
-    fi
-    if [ -f /etc/acme-client.conf ]; then
-        if acme-client -v; then
-            log INFO "SSL certificates updated successfully."
-        else
-            log WARN "Failed to update SSL certificates with acme-client."
-        fi
-    else
-        log WARN "acme-client configuration file not found. Please configure /etc/acme-client.conf."
-    fi
-}
-
-# Automated Database Backups for PostgreSQL and MySQL
 backup_databases() {
     local backup_dir="/var/backups/db_backups_$(date +%Y%m%d%H%M%S)"
     mkdir -p "$backup_dir"
@@ -831,7 +707,101 @@ backup_databases() {
     fi
 }
 
-# Container or Virtual Machine Setup (Basic VMM Guest)
+rotate_logs() {
+    if [ -f "$LOG_FILE" ]; then
+        local rotated_file="${LOG_FILE}.$(date +%Y%m%d%H%M%S).gz"
+        log INFO "Rotating log file: $LOG_FILE -> $rotated_file"
+        if gzip -c "$LOG_FILE" > "$rotated_file" && :> "$LOG_FILE"; then
+            log INFO "Log rotation successful."
+        else
+            log WARN "Log rotation failed."
+        fi
+    else
+        log WARN "Log file $LOG_FILE does not exist."
+    fi
+}
+
+#--------------------------------------------------
+# System Health, Security Audit, and Service Checks
+#--------------------------------------------------
+system_health_check() {
+    log INFO "Performing system health check..."
+    log INFO "Uptime: $(uptime)"
+    log INFO "Disk Usage:"
+    df -h / | while read -r line; do log INFO "$line"; done
+    log INFO "Memory Usage:"
+    vmstat -s | while read -r line; do log INFO "$line"; done
+    log INFO "Load Average: $(sysctl -n vm.loadavg)"
+}
+
+run_security_audit() {
+    log INFO "Running security audit with Lynis..."
+    if command -v lynis &>/dev/null; then
+        local audit_log="/var/log/lynis_audit_$(date +%Y%m%d%H%M%S).log"
+        if lynis audit system --quiet | tee "$audit_log"; then
+            log INFO "Lynis audit completed. Log saved to $audit_log."
+        else
+            log WARN "Lynis audit encountered issues."
+        fi
+    else
+        log WARN "Lynis is not installed; skipping security audit."
+    fi
+}
+
+check_services() {
+    log INFO "Checking status of key services..."
+    local services=("sshd" "pf" "cron" "caddy" "ntpd")
+    for service in "${services[@]}"; do
+        if rcctl check "$service" &>/dev/null; then
+            log INFO "Service $service is running."
+        else
+            log WARN "Service $service is not running; attempting to restart..."
+            if rcctl restart "$service"; then
+                log INFO "Service $service restarted successfully."
+            else
+                log ERROR "Failed to restart service $service."
+            fi
+        fi
+    done
+}
+
+verify_firewall_rules() {
+    log INFO "Verifying firewall rules by testing connectivity on expected open ports..."
+    local ports=(22 80 443 32400)
+    local host="127.0.0.1"
+    for port in "${ports[@]}"; do
+        if nc -z -w3 "$host" "$port" 2>/dev/null; then
+            log INFO "Port $port on $host is accessible."
+        else
+            log WARN "Port $port on $host is not accessible. Check PF rules."
+        fi
+    done
+}
+
+update_ssl_certificates() {
+    log INFO "Updating SSL/TLS certificates using acme-client..."
+    if ! command -v acme-client &>/dev/null; then
+        if pkg_add acme-client; then
+            log INFO "acme-client installed successfully."
+        else
+            log WARN "Failed to install acme-client."
+            return 1
+        fi
+    fi
+    if [ -f /etc/acme-client.conf ]; then
+        if acme-client -v; then
+            log INFO "SSL certificates updated successfully."
+        else
+            log WARN "Failed to update SSL certificates with acme-client."
+        fi
+    else
+        log WARN "acme-client configuration file not found. Please configure /etc/acme-client.conf."
+    fi
+}
+
+#--------------------------------------------------
+# VMM Guest Setup
+#--------------------------------------------------
 setup_vmm_guest() {
     local guest_name="openbsd_guest"
     local guest_img="/usr/local/share/openbsd_guest.img"
@@ -856,7 +826,9 @@ EOF
     fi
 }
 
-# Performance Tuning and Optimization
+#--------------------------------------------------
+# Performance Tuning and Final Checks
+#--------------------------------------------------
 tune_system() {
     log INFO "Applying performance tuning and system optimizations..."
     local sysctl_conf="/etc/sysctl.conf"
@@ -873,6 +845,19 @@ EOF
     sysctl -w net.inet.tcp.recvspace=65536
     sysctl -w net.inet.tcp.sendspace=65536
     log INFO "Performance tuning applied. Review $sysctl_conf for details."
+}
+
+final_checks() {
+    log INFO "Performing final system checks..."
+    echo "Kernel: $(uname -r)"
+    echo "Uptime: $(uptime)"
+    df -h /
+}
+
+home_permissions() {
+    log INFO "Setting ownership and permissions for ${USER_HOME}..."
+    chown -R "${USERNAME}:${USERNAME}" "${USER_HOME}"
+    find "${USER_HOME}" -type d -exec chmod g+s {} \;
 }
 
 #--------------------------------------------------
@@ -903,30 +888,67 @@ main() {
 
     check_root
     check_network
+
+    # System update and package installation
     update_system
     install_packages
+
+    # User account, timezone, and NTP configuration
     create_user
     configure_timezone
+    configure_ntp
+
+    # Repository cloning and shell configuration
     setup_repos
     copy_shell_configs
+    set_bash_shell
+
+    # SSH and doas security configuration
     configure_ssh
     secure_ssh_config
+    setup_doas
+
+    # Install additional services and tools
     install_plex
     install_and_configure_caddy_proxy
+    install_fastfetch
+
+    # Configure firewall (PF)
     configure_firewall
-    deploy_user_scripts
+
+    # Setup cron and daily maintenance tasks
     setup_cron
     configure_periodic
-    install_fastfetch
-    set_bash_shell
+
+    # Configure Wi‑Fi networking
+    configure_wifi
+
+    # Install desktop environment and related tools
+    install_i3_ly_and_tools
+
+    # Backup configuration files and databases
+    backup_configs
+    backup_databases
+
+    # Update SSL certificates if applicable
+    update_ssl_certificates
+
+    # Run security audit, tune system, and perform health checks
+    run_security_audit
+    tune_system
+    system_health_check
+    check_services
+    verify_firewall_rules
+    rotate_logs
+
+    # Set up a basic VMM guest if applicable
+    setup_vmm_guest
+
+    # Final system checks and permission corrections
     final_checks
     home_permissions
-    configure_wifi
-    setup_doas
-    tune_system
-    setup_vmm_guest
-    backup_databases
-    install_i3_ly_and_tools
+
+    # Prompt user for system reboot
     prompt_reboot
 }
 
