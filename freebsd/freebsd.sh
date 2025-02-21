@@ -1,31 +1,28 @@
 #!/usr/local/bin/bash
 # ==============================================================================
-# FreeBSD Server Automation Script v4.2.1 (Revised)
+# FreeBSD Server Automation Script v4.2.2 (Improved)
 #
 # Overview:
 #   This script automates the initial configuration of a FreeBSD server.
 #   It updates the system, installs essential packages, sets up user accounts,
-#   applies security hardening, and configures network services including SSH,
-#   PF firewall, Caddy reverse proxy, Wi‑Fi networking, and a desktop environment
-#   (X11/i3/ly/XFCE). It also handles backups, security audits, and performance tuning.
+#   applies security hardening, and configures services such as SSH, PF firewall,
+#   Caddy reverse proxy, Wi‑Fi networking, and a desktop environment.
 #
 # Features:
-#   - Comprehensive logging with colored terminal output.
+#   - Comprehensive logging with colored output.
 #   - Modular functions for each configuration step.
-#   - Automatic backups before modifying key configuration files.
-#   - Integrated health checks, security auditing, and service monitoring.
+#   - Automatic backups (via a centralized backup_file helper).
+#   - Optional non‑interactive mode (with Wi‑Fi credentials supplied via options).
 #
 # Usage:
-#   Run this script as root. For help:
+#   Run as root. For help:
 #       $(basename "$0") --help
 #
 # Disclaimer:
-#   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, EXPRESS OR IMPLIED.
-#   THE AUTHOR IS NOT RESPONSIBLE FOR ANY DAMAGE CAUSED BY ITS USE.
-#   USE AT YOUR OWN RISK.
+#   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 #
 # Author: dunamismax (adapted for FreeBSD)
-# Version: 4.2.1
+# Version: 4.2.2
 # Date: 2025-02-20
 # ==============================================================================
 set -Eeuo pipefail
@@ -45,11 +42,17 @@ readonly COLOR_GREEN='\033[0;32m'
 readonly COLOR_BLUE='\033[0;34m'
 readonly COLOR_NC='\033[0m'  # No Color
 
-# Ensure log file directory exists with secure permissions
+# Create secure log file
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 umask 077
+
+# Global options (overridable via CLI)
+NON_INTERACTIVE=0
+WIFI_SSID=""
+WIFI_PSK=""
+NO_REBOOT=0
 
 #--------------------------------------------------
 # Logging and Error Handling Functions
@@ -86,6 +89,21 @@ command_exists() {
     command -v "$1" &>/dev/null
 }
 
+# Centralized backup function for configuration files
+backup_file() {
+    local file="$1"
+    if [ -f "$file" ]; then
+        local backup="${file}.bak.$(date +%Y%m%d%H%M%S)"
+        if cp "$file" "$backup"; then
+            log INFO "Backed up $file to $backup"
+        else
+            log WARN "Failed to backup $file"
+        fi
+    else
+        log WARN "File $file not found; skipping backup."
+    fi
+}
+
 #--------------------------------------------------
 # Script Usage and Argument Parsing
 #--------------------------------------------------
@@ -96,9 +114,37 @@ Usage: $(basename "$0") [OPTIONS]
 This script automates the setup and configuration of a FreeBSD server.
 
 Options:
-  -h, --help    Show this help message and exit.
+  -h, --help                Show this help message and exit.
+  -n, --non-interactive     Run in non-interactive mode.
+  -s, --wifi-ssid SSID      Specify Wi‑Fi SSID (non-interactive mode).
+  -p, --wifi-psk PSK        Specify Wi‑Fi PSK (leave empty for open networks).
+  -r, --no-reboot           Do not prompt for reboot at the end.
 EOF
     exit 0
+}
+
+# Parse CLI options
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                usage ;;
+            -n|--non-interactive)
+                NON_INTERACTIVE=1 ;;
+            -s|--wifi-ssid)
+                WIFI_SSID="$2"
+                shift ;;
+            -p|--wifi-psk)
+                WIFI_PSK="$2"
+                shift ;;
+            -r|--no-reboot)
+                NO_REBOOT=1 ;;
+            *)
+                log WARN "Unknown option: $1"
+                usage ;;
+        esac
+        shift
+    done
 }
 
 #--------------------------------------------------
@@ -163,7 +209,7 @@ create_user() {
         log INFO "Creating user '$USERNAME'..."
         if pw useradd "$USERNAME" -m -s /usr/local/bin/bash; then
             echo "changeme" | passwd "$USERNAME"
-            log INFO "User '$USERNAME' created with default password 'changeme'."
+            log INFO "User '$USERNAME' created with default password 'changeme'. (Change immediately!)"
         else
             log WARN "Failed to create user '$USERNAME'."
         fi
@@ -280,10 +326,8 @@ configure_ssh() {
 
 secure_ssh_config() {
     local sshd_config="/etc/ssh/sshd_config"
-    local backup_file="/etc/ssh/sshd_config.bak.$(date +%Y%m%d%H%M%S)"
+    backup_file "$sshd_config"
     if [ -f "$sshd_config" ]; then
-        cp "$sshd_config" "$backup_file"
-        log INFO "Backed up SSH config to $backup_file."
         sed -i '' 's/^#*PermitRootLogin.*/PermitRootLogin no/' "$sshd_config"
         sed -i '' 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' "$sshd_config"
         sed -i '' 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config"
@@ -302,10 +346,7 @@ secure_ssh_config() {
 setup_doas() {
     log INFO "Setting up doas configuration..."
     local doas_conf="/etc/doas.conf"
-    if [ -f "$doas_conf" ]; then
-        cp "$doas_conf" "${doas_conf}.bak.$(date +%Y%m%d%H%M%S)"
-        log INFO "Existing doas.conf backed up."
-    fi
+    [ -f "$doas_conf" ] && backup_file "$doas_conf"
     cat <<EOF > "$doas_conf"
 # /etc/doas.conf - doas configuration file
 permit persist ${USERNAME} as root
@@ -393,9 +434,7 @@ install_and_configure_caddy_proxy() {
     local caddy_dir="/usr/local/etc/caddy"
     local caddyfile="${caddy_dir}/Caddyfile"
     mkdir -p "$caddy_dir"
-    if [ -f "$caddyfile" ]; then
-        cp "$caddyfile" "${caddyfile}.backup.$(date +%Y%m%d%H%M%S)" && log INFO "Backed up existing Caddyfile."
-    fi
+    [ -f "$caddyfile" ] && backup_file "$caddyfile"
     log INFO "Writing new Caddyfile configuration..."
     cat <<'EOF' > "$caddyfile"
 {
@@ -458,10 +497,7 @@ setup_cron() {
 configure_periodic() {
     local cron_file="/etc/periodic/daily/freebsd_maintenance"
     log INFO "Configuring daily maintenance tasks..."
-    if [ -f "$cron_file" ]; then
-        mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" &&
-        log INFO "Backed up existing maintenance script."
-    fi
+    [ -f "$cron_file" ] && backup_file "$cron_file"
     cat <<'EOF' > "$cron_file"
 #!/bin/sh
 # Daily package update maintenance task
@@ -498,18 +534,32 @@ configure_wifi() {
     local primary_iface
     primary_iface=$(echo "$devices" | head -n 1)
     local ssid psk
-    read -r -p "Enter SSID for primary Wi‑Fi ($primary_iface): " ssid
-    if [ -z "$ssid" ]; then
-        log ERROR "SSID cannot be empty."
-        return 1
+
+    # Use provided Wi‑Fi credentials if in non-interactive mode
+    if [ "$NON_INTERACTIVE" -eq 1 ]; then
+        if [ -z "$WIFI_SSID" ]; then
+            log ERROR "Non-interactive mode: Wi‑Fi SSID not provided."
+            return 1
+        fi
+        ssid="$WIFI_SSID"
+        psk="$WIFI_PSK"
+        log INFO "Using provided Wi‑Fi credentials for interface $primary_iface."
+    else
+        read -r -p "Enter SSID for primary Wi‑Fi ($primary_iface): " ssid
+        if [ -z "$ssid" ]; then
+            log ERROR "SSID cannot be empty."
+            return 1
+        fi
+        read -s -r -p "Enter PSK (leave empty for open networks): " psk
+        echo
     fi
-    read -s -r -p "Enter PSK (leave empty for open networks): " psk
-    echo
 
     local wpa_conf="/etc/wpa_supplicant.conf"
     if [ ! -f "$wpa_conf" ]; then
         touch "$wpa_conf" && chmod 600 "$wpa_conf"
         log INFO "Created $wpa_conf with secure permissions."
+    else
+        backup_file "$wpa_conf"
     fi
 
     if grep -q "ssid=\"$ssid\"" "$wpa_conf"; then
@@ -543,7 +593,6 @@ configure_wifi() {
 #--------------------------------------------------
 install_i3_ly_and_tools() {
     log INFO "Installing desktop environment components (i3, Xorg, Zig, ly, XFCE)..."
-    # Install i3 and related packages
     local i3_packages=(i3 i3status i3lock dmenu i3blocks feh xorg xinit)
     for pkg in "${i3_packages[@]}"; do
         if pkg info -e "$pkg" &>/dev/null; then
@@ -557,7 +606,7 @@ install_i3_ly_and_tools() {
         fi
     done
 
-    # Install Zig from source (using the FreeBSD binary)
+    # Install Zig (FreeBSD binary)
     local zig_url="https://ziglang.org/download/0.12.1/zig-freebsd-x86_64-0.12.1.tar.xz"
     local zig_src_dir="/usr/local/src"
     local zig_tar="${zig_src_dir}/zig-0.12.1.tar.xz"
@@ -590,10 +639,7 @@ install_i3_ly_and_tools() {
 
     # Clone and build ly display manager using Zig
     local ly_src="${zig_src_dir}/ly"
-    if [ -d "$ly_src" ]; then
-        log INFO "Removing existing ly source directory..."
-        rm -rf "$ly_src"
-    fi
+    [ -d "$ly_src" ] && { log INFO "Removing existing ly source directory..."; rm -rf "$ly_src"; }
     log INFO "Cloning ly repository..."
     if git clone https://github.com/fairyglade/ly.git "$ly_src"; then
         log INFO "ly repository cloned."
@@ -677,7 +723,11 @@ backup_configs() {
     )
     for file in "${files_to_backup[@]}"; do
         if [ -f "$file" ]; then
-            cp "$file" "$backup_dir" && log INFO "Backed up $file" || log WARN "Failed to backup $file"
+            if cp "$file" "$backup_dir"; then
+                log INFO "Backed up $file"
+            else
+                log WARN "Failed to backup $file"
+            fi
         else
             log WARN "File $file not found; skipping backup."
         fi
@@ -821,7 +871,6 @@ disk=$guest_img
 net_bridge=bridge0
 EOF
     log INFO "VM configuration written to $vm_conf."
-    # This is a simplified bhyve startup command; actual parameters may vary.
     if bhyve -c 2 -m 1024M -A -H -P -s 0:0,hostbridge -s 1:0,virtio-net,tap0 -s 2:0,ahci-hd,"$guest_img" -s 31,lpc -l com1,stdio; then
         log INFO "bhyve guest $guest_name started successfully."
     else
@@ -835,7 +884,7 @@ EOF
 tune_system() {
     log INFO "Applying performance tuning and system optimizations..."
     local sysctl_conf="/etc/sysctl.conf"
-    [ -f "$sysctl_conf" ] && cp "$sysctl_conf" "${sysctl_conf}.bak.$(date +%Y%m%d%H%M%S)"
+    [ -f "$sysctl_conf" ] && backup_file "$sysctl_conf"
     cat <<'EOF' >> "$sysctl_conf"
 # Performance tuning settings
 net.inet.tcp.delayed_ack=1
@@ -867,6 +916,14 @@ home_permissions() {
 # Prompt for Reboot
 #--------------------------------------------------
 prompt_reboot() {
+    if [ "$NO_REBOOT" -eq 1 ]; then
+        log INFO "Reboot prompt suppressed (no-reboot flag set). Please reboot later to apply changes."
+        return
+    fi
+    if [ "$NON_INTERACTIVE" -eq 1 ]; then
+        log INFO "Non-interactive mode; skipping reboot prompt."
+        return
+    fi
     read -r -p "Reboot now? [y/N]: " answer
     if [[ "$answer" =~ ^[Yy]$ ]]; then
         log INFO "Rebooting system..."
@@ -880,15 +937,7 @@ prompt_reboot() {
 # Main Execution Flow
 #--------------------------------------------------
 main() {
-    # Process command-line options
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -h|--help) usage ;;
-            *) log WARN "Unknown option: $1"; usage ;;
-        esac
-        shift
-    done
-
+    parse_args "$@"
     check_root
     check_network
 
