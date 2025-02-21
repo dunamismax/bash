@@ -1,13 +1,13 @@
 #!/usr/local/bin/bash
 # ==============================================================================
-# OpenBSD Server Automation Script v4.2.1
+# OpenBSD Server Automation Script v4.2.1 (Revised)
 #
 # Overview:
 #   This script automates the initial configuration of an OpenBSD server.
-#   It updates the system, installs essential packages, configures user accounts,
-#   applies security hardening measures, and sets up network services including SSH,
+#   It updates the system, installs essential packages, sets up user accounts,
+#   applies security hardening, and configures network services including SSH,
 #   PF firewall, Caddy reverse proxy, Wi‑Fi networking, and a desktop environment
-#   (X11/i3/ly/XFCE). It also performs backups, security audits, and performance tuning.
+#   (X11/i3/ly/XFCE). It also handles backups, security audits, and performance tuning.
 #
 # Features:
 #   - Comprehensive logging with colored terminal output.
@@ -32,20 +32,20 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 #--------------------------------------------------
-# Global Constants and Environment Setup
+# Global Constants & Environment Setup
 #--------------------------------------------------
 readonly LOG_FILE="/var/log/openbsd_setup.log"
 readonly USERNAME="sawyer"
 readonly USER_HOME="/home/${USERNAME}"
 
-# Terminal color definitions for log messages
+# Terminal color definitions
 readonly COLOR_RED='\033[0;31m'
 readonly COLOR_YELLOW='\033[0;33m'
 readonly COLOR_GREEN='\033[0;32m'
 readonly COLOR_BLUE='\033[0;34m'
 readonly COLOR_NC='\033[0m'  # No Color
 
-# Ensure log file and its directory exist with secure permissions
+# Ensure log file directory exists with secure permissions
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
@@ -61,11 +61,11 @@ log() {
     local ts color
     ts=$(date +"%Y-%m-%d %H:%M:%S")
     case "${level^^}" in
-        INFO)   color="${COLOR_GREEN}" ;;
+        INFO)    color="${COLOR_GREEN}" ;;
         WARN|WARNING) color="${COLOR_YELLOW}"; level="WARN" ;;
-        ERROR)  color="${COLOR_RED}" ;;
-        DEBUG)  color="${COLOR_BLUE}" ;;
-        *)      color="${COLOR_NC}" ; level="INFO" ;;
+        ERROR)   color="${COLOR_RED}" ;;
+        DEBUG)   color="${COLOR_BLUE}" ;;
+        *)       color="${COLOR_NC}" ; level="INFO" ;;
     esac
     local entry="[$ts] [${level^^}] $msg"
     echo "$entry" >> "$LOG_FILE"
@@ -75,14 +75,19 @@ log() {
 handle_error() {
     local msg="${1:-An unexpected error occurred.}"
     local exit_code="${2:-1}"
-    log ERROR "Error on line ${BASH_LINENO[0]} in function ${FUNCNAME[1]:-main}: ${msg}"
+    local func="${FUNCNAME[1]:-main}"
+    log ERROR "Error on line ${BASH_LINENO[0]} in function ${func}: ${msg}"
     exit "$exit_code"
 }
-
 trap 'handle_error "Unexpected error encountered."' ERR
 
+# Utility: Check if a command exists
+command_exists() {
+    command -v "$1" &>/dev/null
+}
+
 #--------------------------------------------------
-# Utility Functions
+# Script Usage and Argument Parsing
 #--------------------------------------------------
 usage() {
     cat <<EOF
@@ -96,6 +101,9 @@ EOF
     exit 0
 }
 
+#--------------------------------------------------
+# Pre-requisites
+#--------------------------------------------------
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
         handle_error "Script must be run as root."
@@ -103,20 +111,20 @@ check_root() {
 }
 
 check_network() {
-    log INFO "Checking network connectivity..."
+    log INFO "Verifying network connectivity..."
     if ! ping -c1 google.com &>/dev/null; then
-        log WARN "Network connectivity appears to be unavailable."
+        log WARN "Network connectivity appears unavailable."
     else
         log INFO "Network connectivity verified."
     fi
 }
 
 #--------------------------------------------------
-# System Update and Package Installation
+# System Update & Package Installation
 #--------------------------------------------------
 update_system() {
-    log INFO "Running syspatch for system updates..."
-    if command -v syspatch &>/dev/null; then
+    log INFO "Updating system using syspatch..."
+    if command_exists syspatch; then
         syspatch && log INFO "syspatch completed." || log WARN "syspatch encountered issues."
     else
         log WARN "syspatch not available; skipping system updates."
@@ -177,7 +185,7 @@ configure_timezone() {
 
 configure_ntp() {
     log INFO "Configuring NTP using openntpd..."
-    if ! command -v ntpd &>/dev/null; then
+    if ! command_exists ntpd; then
         if pkg_add openntpd; then
             log INFO "Installed openntpd."
         else
@@ -188,7 +196,7 @@ configure_ntp() {
     local ntp_conf="/etc/ntpd.conf"
     if [ ! -f "$ntp_conf" ]; then
         cat <<'EOF' > "$ntp_conf"
-# Minimal openntpd configuration for OpenBSD
+# Minimal openntpd configuration
 server 0.pool.ntp.org
 server 1.pool.ntp.org
 server 2.pool.ntp.org
@@ -207,7 +215,7 @@ EOF
 }
 
 #--------------------------------------------------
-# Repository and Shell Configuration
+# Repository and Shell Setup
 #--------------------------------------------------
 setup_repos() {
     local repo_dir="${USER_HOME}/github"
@@ -245,7 +253,7 @@ copy_shell_configs() {
 }
 
 set_bash_shell() {
-    if ! command -v /usr/local/bin/bash &>/dev/null; then
+    if ! command_exists /usr/local/bin/bash; then
         log INFO "Bash not found; installing..."
         if ! pkg_add bash; then
             log WARN "Bash installation failed."
@@ -309,8 +317,6 @@ setup_doas() {
     fi
     cat <<EOF > "$doas_conf"
 # /etc/doas.conf - doas configuration file
-#
-# Permit user ${USERNAME} to run any command as root.
 permit persist ${USERNAME} as root
 EOF
     chmod 600 "$doas_conf"
@@ -318,7 +324,7 @@ EOF
 }
 
 #--------------------------------------------------
-# Firewall Configuration Functions
+# Firewall (PF) Configuration
 #--------------------------------------------------
 detect_ext_if() {
     local iface
@@ -540,11 +546,10 @@ configure_wifi() {
 }
 
 #--------------------------------------------------
-# Desktop Environment and Additional Tools
+# Desktop Environment & Additional Tools
 #--------------------------------------------------
 install_i3_ly_and_tools() {
-    log INFO "Installing desktop environment components (i3, Xorg, Zig, ly, and XFCE)..."
-
+    log INFO "Installing desktop environment components (i3, Xorg, Zig, ly, XFCE)..."
     # Install i3 and related packages
     local i3_packages=(i3 i3status i3lock dmenu i3blocks feh xorg xinit)
     for pkg in "${i3_packages[@]}"; do
@@ -592,7 +597,10 @@ install_i3_ly_and_tools() {
 
     # Clone and build ly display manager using Zig
     local ly_src="${zig_src_dir}/ly"
-    [ -d "$ly_src" ] && { log INFO "Removing existing ly source directory..."; rm -rf "$ly_src"; }
+    if [ -d "$ly_src" ]; then
+        log INFO "Removing existing ly source directory..."
+        rm -rf "$ly_src"
+    fi
     log INFO "Cloning ly repository..."
     if git clone https://github.com/fairyglade/ly.git "$ly_src"; then
         log INFO "ly repository cloned."
@@ -640,7 +648,7 @@ load_rc_config $name
 run_rc_command "$1"
 EOF
     chmod +x "$rc_script"
-    log INFO "ly rc.d script created. To enable ly at boot, add 'ly_enable=yes' to /etc/rc.conf.local."
+    log INFO "ly rc.d script created. Enable it at boot by adding 'ly_enable=yes' to /etc/rc.conf.local."
 
     # Install XFCE desktop environment and addons
     log INFO "Installing XFCE desktop environment and addons..."
@@ -687,7 +695,7 @@ backup_databases() {
     local backup_dir="/var/backups/db_backups_$(date +%Y%m%d%H%M%S)"
     mkdir -p "$backup_dir"
     log INFO "Starting automated database backups to $backup_dir..."
-    if command -v pg_dumpall &>/dev/null; then
+    if command_exists pg_dumpall; then
         if pg_dumpall -U postgres | gzip > "$backup_dir/postgres_backup.sql.gz"; then
             log INFO "PostgreSQL backup completed."
         else
@@ -696,7 +704,7 @@ backup_databases() {
     else
         log WARN "pg_dumpall not found; skipping PostgreSQL backup."
     fi
-    if command -v mysqldump &>/dev/null; then
+    if command_exists mysqldump; then
         if mysqldump --all-databases | gzip > "$backup_dir/mysql_backup.sql.gz"; then
             log INFO "MySQL backup completed."
         else
@@ -736,7 +744,7 @@ system_health_check() {
 
 run_security_audit() {
     log INFO "Running security audit with Lynis..."
-    if command -v lynis &>/dev/null; then
+    if command_exists lynis; then
         local audit_log="/var/log/lynis_audit_$(date +%Y%m%d%H%M%S).log"
         if lynis audit system --quiet | tee "$audit_log"; then
             log INFO "Lynis audit completed. Log saved to $audit_log."
@@ -755,7 +763,7 @@ check_services() {
         if rcctl check "$service" &>/dev/null; then
             log INFO "Service $service is running."
         else
-            log WARN "Service $service is not running; attempting to restart..."
+            log WARN "Service $service is not running; attempting restart..."
             if rcctl restart "$service"; then
                 log INFO "Service $service restarted successfully."
             else
@@ -766,7 +774,7 @@ check_services() {
 }
 
 verify_firewall_rules() {
-    log INFO "Verifying firewall rules by testing connectivity on expected open ports..."
+    log INFO "Verifying firewall rules..."
     local ports=(22 80 443 32400)
     local host="127.0.0.1"
     for port in "${ports[@]}"; do
@@ -780,7 +788,7 @@ verify_firewall_rules() {
 
 update_ssl_certificates() {
     log INFO "Updating SSL/TLS certificates using acme-client..."
-    if ! command -v acme-client &>/dev/null; then
+    if ! command_exists acme-client; then
         if pkg_add acme-client; then
             log INFO "acme-client installed successfully."
         else
@@ -795,7 +803,7 @@ update_ssl_certificates() {
             log WARN "Failed to update SSL certificates with acme-client."
         fi
     else
-        log WARN "acme-client configuration file not found. Please configure /etc/acme-client.conf."
+        log WARN "acme-client configuration file not found. Configure /etc/acme-client.conf."
     fi
 }
 
@@ -889,51 +897,39 @@ main() {
     check_root
     check_network
 
-    # System update and package installation
     update_system
     install_packages
 
-    # User account, timezone, and NTP configuration
     create_user
     configure_timezone
     configure_ntp
 
-    # Repository cloning and shell configuration
     setup_repos
     copy_shell_configs
     set_bash_shell
 
-    # SSH and doas security configuration
     configure_ssh
     secure_ssh_config
     setup_doas
 
-    # Install additional services and tools
     install_plex
     install_and_configure_caddy_proxy
     install_fastfetch
 
-    # Configure firewall (PF)
     configure_firewall
 
-    # Setup cron and daily maintenance tasks
     setup_cron
     configure_periodic
 
-    # Configure Wi‑Fi networking
     configure_wifi
 
-    # Install desktop environment and related tools
     install_i3_ly_and_tools
 
-    # Backup configuration files and databases
     backup_configs
     backup_databases
 
-    # Update SSL certificates if applicable
     update_ssl_certificates
 
-    # Run security audit, tune system, and perform health checks
     run_security_audit
     tune_system
     system_health_check
@@ -941,14 +937,11 @@ main() {
     verify_firewall_rules
     rotate_logs
 
-    # Set up a basic VMM guest if applicable
     setup_vmm_guest
 
-    # Final system checks and permission corrections
     final_checks
     home_permissions
 
-    # Prompt user for system reboot
     prompt_reboot
 }
 
