@@ -501,37 +501,115 @@ configure_wifi() {
     log INFO "Wi‑Fi configuration completed for detected devices."
 }
 
-install_desktop_environment() {
-    check_root
-    update_system
+install_i3_ly_and_tools() {
+    log INFO "Installing i3, addons, Xorg/X11, Zig and ly display manager..."
 
-    log INFO "Installing Xorg and xinit..."
-    if ! pkg_add xorg xinit; then
-        handle_error "Failed to install Xorg and xinit."
+    # 1. Install i3, its addons, feh, and Xorg/X11
+    local packages=(i3 i3status i3lock dmenu i3blocks feh xorg xinit)
+    for pkg in "${packages[@]}"; do
+        if pkg_info "$pkg" &>/dev/null; then
+            log INFO "Package '$pkg' already installed."
+        else
+            if pkg_add "$pkg"; then
+                log INFO "Installed package: $pkg"
+            else
+                log WARN "Failed to install package: $pkg"
+            fi
+        fi
+    done
+
+    # 2. Install Zig from source
+    local zig_url="https://ziglang.org/download/0.12.1/zig-linux-x86_64-0.12.1.tar.xz"
+    local zig_src_dir="/usr/local/src"
+    local zig_tar="${zig_src_dir}/zig-0.12.1.tar.xz"
+    local zig_dir="${zig_src_dir}/zig-0.12.1"
+
+    mkdir -p "$zig_src_dir"
+    log INFO "Downloading Zig from ${zig_url}..."
+    if fetch -o "$zig_tar" "$zig_url"; then
+        log INFO "Zig tarball downloaded."
+    else
+        log ERROR "Failed to download Zig tarball."
+        return 1
     fi
 
-    log INFO "Installing i3 window manager and addons..."
-    local i3_packages=( i3 i3status i3lock dmenu i3blocks )
-    if ! pkg_add "${i3_packages[@]}"; then
-        handle_error "Failed to install i3 packages."
+    log INFO "Extracting Zig..."
+    if tar -xJf "$zig_tar" -C "$zig_src_dir"; then
+        log INFO "Zig extracted to ${zig_dir}."
+    else
+        log ERROR "Failed to extract Zig."
+        return 1
     fi
 
-    log INFO "Installing GNOME and GDM..."
-    local gnome_packages=( gnome gdm )
-    if ! pkg_add "${gnome_packages[@]}"; then
-        handle_error "Failed to install GNOME/GDM."
+    if [ -x "${zig_dir}/zig" ]; then
+        ln -sf "${zig_dir}/zig" /usr/local/bin/zig
+        log INFO "Zig binary symlinked to /usr/local/bin/zig."
+    else
+        log ERROR "Zig binary not found in ${zig_dir}."
+        return 1
     fi
 
-    log INFO "Enabling GNOME services..."
-    rcctl enable dbus
-    rcctl enable gdm
-    rcctl enable gnome
+    # 3. Clone and compile ly display manager with Zig
+    local ly_src="${zig_src_dir}/ly"
+    if [ -d "$ly_src" ]; then
+        log INFO "Removing existing ly source directory..."
+        rm -rf "$ly_src"
+    fi
+    log INFO "Cloning ly repository..."
+    if git clone https://github.com/fairyglade/ly.git "$ly_src"; then
+        log INFO "ly repository cloned."
+    else
+        log ERROR "Failed to clone ly repository."
+        return 1
+    fi
 
-    log INFO "Starting dbus and gdm services..."
-    rcctl start dbus || handle_error "Failed to start dbus."
-    rcctl start gdm || handle_error "Failed to start gdm."
+    cd "$ly_src" || { log ERROR "Cannot change directory to ly source."; return 1; }
+    log INFO "Building ly with Zig..."
+    if zig build; then
+        log INFO "ly built successfully."
+    else
+        log ERROR "ly build failed."
+        return 1
+    fi
 
-    log INFO "Desktop environment installation complete. A reboot is recommended."
+    # Optionally, you can test ly with:
+    # log INFO "Testing ly..."
+    # zig build run
+
+    log INFO "Installing ly..."
+    if zig build installsystemd; then
+        log INFO "ly installed successfully."
+    else
+        log ERROR "ly installation failed."
+        return 1
+    fi
+
+    # 4. Create an rc.d script for ly (since OpenBSD does not use systemd)
+    local rc_script="/etc/rc.d/ly"
+    log INFO "Creating rc.d startup script for ly..."
+    cat <<'EOF' > "$rc_script"
+#!/bin/sh
+#
+# PROVIDE: ly
+# REQUIRE: DAEMON
+# KEYWORD: shutdown
+. /etc/rc.d/rc.subr
+
+name="ly"
+rcvar=ly_enable
+command="/usr/local/bin/ly"
+start_cmd=":; /usr/local/bin/ly &"
+stop_cmd=":"
+
+load_rc_config $name
+: ${ly_enable:=no}
+run_rc_command "$1"
+EOF
+
+    chmod +x "$rc_script"
+    log INFO "ly rc.d script created. To enable ly at boot, add 'ly_enable=yes' to /etc/rc.conf.local."
+
+    log INFO "Installation of i3, Xorg/X11, Zig and ly is complete."
 }
 
 #--------------------------------------------------
@@ -580,7 +658,7 @@ main() {
     final_checks
     home_permissions
     configure_wifi
-    install_desktop_environment
+    install_i3_ly_and_tools
     prompt_reboot
 }
 
