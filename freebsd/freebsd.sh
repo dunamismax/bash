@@ -2,22 +2,29 @@
 #
 # FreeBSD Server Setup Script v1.0
 #
-# Description:
-#   This script automates the initial configuration and setup of a FreeBSD server.
-#   It performs system updates, installs essential command-line packages, creates
-#   a new user account, configures SSH and the firewall, manages system backups, and
-#   sets up a reverse proxy using Caddy.
+# Overview:
+#   This script streamlines the initial configuration of a FreeBSD server by automating
+#   a wide range of setup tasks. It not only updates the system and installs essential
+#   command-line tools, but also enhances security, configures network services, and 
+#   implements robust backup routines.
+#
+# Features:
+#   - System updates and package installations using pkg
+#   - Automated creation of a new user account with secure default settings (password to be changed immediately)
+#   - Comprehensive SSH configuration and hardening for enhanced security
+#   - Dynamic firewall configuration using PF, with automatic backup of previous settings
+#   - Scheduled system and Plex Media Server backups with retention management
+#   - Deployment and configuration of a Caddy reverse proxy to manage HTTPS traffic
 #
 # Usage:
-#   Run this script as root (e.g., using sudo) to configure your FreeBSD server.
+#   Run this script as root (e.g., via sudo) to fully configure your FreeBSD server.
 #
-# Requirements:
-#   FreeBSD with pkg installed.
+# Prerequisites:
+#   - A FreeBSD system with the pkg package manager installed.
 #
 # Author: dunamismax
 # Version: 1.0
 # Date: 02/20/2025
-#
 
 set -Eeuo pipefail
 IFS=$'\n\t'
