@@ -1,25 +1,24 @@
 #!/usr/local/bin/bash
 #
-# FreeBSD Server Setup Script v2.0
+# FreeBSD Server Setup Script v4.0
 #
 # Overview:
 #   This script automates the initial configuration of a FreeBSD server. It updates the system,
-#   installs essential packages, hardens security settings, configures network services, and
-#   sets up scheduled backups and a Caddy reverse proxy.
+#   installs essential packages in parallel, hardens security settings, configures network services,
+#   and sets up a Caddy reverse proxy.
 #
 # Features:
-#   - System update and package installations using pkg
-#   - Automated creation of a new user account with secure default settings (password set to "changeme")
+#   - System update and package installations using pkg (all packages installed concurrently)
+#   - Automated creation of a new user account with secure default settings (default password "changeme")
 #   - Enhanced SSH configuration and security hardening
-#   - Dynamic PF firewall configuration with backup of previous settings
-#   - Scheduled system and Plex Media Server backups with retention management
+#   - Dynamic PF firewall configuration
 #   - Deployment and configuration of a Caddy reverse proxy for HTTPS traffic
 #
 # Usage:
 #   Run this script as root (e.g., via sudo) to fully configure your FreeBSD server.
 #
 # Author: dunamismax (improved by ChatGPT)
-# Version: 2.0
+# Version: 4.0
 # Date: 02/20/2025
 
 set -Eeuo pipefail
@@ -116,7 +115,7 @@ update_system() {
 }
 
 install_packages() {
-    log INFO "Installing essential packages..."
+    log INFO "Installing essential packages in parallel..."
     local packages=(
         bash vim nano zsh screen tmux mc htop tree ncdu neofetch
         git curl wget rsync
@@ -126,11 +125,11 @@ install_packages() {
         postgresql14-client postgresql14-server mysql80-client mysql80-server redis
         ruby rust jq doas
     )
-    for pkg in "${packages[@]}"; do
-        pkg install -y "$pkg" \
-            && log INFO "Installed: $pkg" \
-            || log WARN "Failed to install: $pkg"
-    done
+    # Use 4 parallel jobs during installation with the "-j" flag.
+    local job_count=4
+    pkg install -y -j "$job_count" "${packages[@]}" \
+        && log INFO "All packages installed successfully." \
+        || handle_error "Package installation encountered errors."
 }
 
 #--------------------------------------------------
@@ -232,69 +231,8 @@ install_plex() {
 }
 
 #--------------------------------------------------
-# Backup Functions
-#--------------------------------------------------
-perform_backup() {
-    local source_dir="$1"
-    local dest_dir="$2"
-    local backup_prefix="$3"
-    local retention_days="$4"
-    local ts
-    ts=$(date +"%Y-%m-%d_%H-%M-%S")
-    local backup_name="${backup_prefix}-${ts}.tar.gz"
-    local excludes=(
-        "./proc/*" "./sys/*" "./dev/*" "./run/*" "./tmp/*" "./mnt/*" "./media/*"
-        "./swapfile" "./lost+found" "./var/tmp/*" "./var/cache/*" "./var/log/*"
-        "*.iso" "*.tmp" "*.swap.img"
-    )
-    local exclude_args=()
-    for pattern in "${excludes[@]}"; do
-        exclude_args+=(--exclude="$pattern")
-    done
-
-    log INFO "Creating backup ${backup_name} in ${dest_dir}..."
-    mkdir -p "$dest_dir"
-    tar -I pigz -cf "${dest_dir}/${backup_name}" "${exclude_args[@]}" -C "$source_dir" . \
-        && log INFO "Backup successful: ${dest_dir}/${backup_name}" \
-        || handle_error "Backup process failed."
-    log INFO "Removing backups older than ${retention_days} days in ${dest_dir}..."
-    find "$dest_dir" -maxdepth 1 -type f -mtime +"${retention_days}" -delete \
-        || log WARN "Failed to remove some old backups."
-}
-
-backup_system() {
-    local source="/"
-    local destination="/mnt/WD_BLACK/BACKUP/freebsd-backups"
-    local retention=7
-    perform_backup "$source" "$destination" "backup" "$retention"
-}
-
-backup_plex() {
-    local source="/usr/local/plexdata/Library/Application Support/Plex Media Server/"
-    local destination="/mnt/WD_BLACK/BACKUP/plex-backups"
-    local retention=7
-    if [ ! -d "$source" ]; then
-        handle_error "Plex source directory '$source' does not exist."
-    fi
-    if ! mount | grep -q "$destination"; then
-        handle_error "Backup destination '$destination' is not mounted."
-    fi
-    perform_backup "$source" "$destination" "plex-backup" "$retention"
-}
-
-#--------------------------------------------------
 # Firewall Setup Using PF
 #--------------------------------------------------
-backup_pf_conf() {
-    local pf_conf="/etc/pf.conf"
-    if [ -f "$pf_conf" ]; then
-        cp "$pf_conf" "${pf_conf}.backup.$(date +%Y%m%d%H%M%S)"
-        log INFO "Backed up pf.conf."
-    else
-        log INFO "pf.conf not found; skipping backup."
-    fi
-}
-
 detect_ext_if() {
     local iface
     iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
@@ -338,7 +276,6 @@ enable_and_reload_pf() {
 }
 
 configure_firewall() {
-    backup_pf_conf
     local ext_if
     ext_if=$(detect_ext_if)
     generate_pf_conf "$ext_if"
@@ -479,8 +416,6 @@ main() {
     install_plex
     install_and_configure_caddy_proxy
     configure_firewall
-    backup_system
-    backup_plex
     deploy_user_scripts
     setup_cron
     configure_periodic
