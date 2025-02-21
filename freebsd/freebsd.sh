@@ -1,39 +1,40 @@
 #!/usr/local/bin/bash
-# FreeBSD Server Setup Script v4.0
+# FreeBSD Server Setup Script v4.1
 #
 # Overview:
-#   This script automates the initial configuration of a FreeBSD server. It updates the system,
-#   installs essential packages in parallel, hardens security settings, configures network services,
-#   and sets up a Caddy reverse proxy.
+#   This script automates the initial configuration of a FreeBSD server.
+#   It updates the system, installs essential packages concurrently,
+#   hardens security settings, configures network services, and sets up various services,
+#   including a Caddy reverse proxy.
 #
 # Author: dunamismax
-# Version: 4.0
-# Date: 02/20/2025
+# Version: 4.1
+# Date: 2025-02-20
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 
 #--------------------------------------------------
-# Global Constants
+# Global Constants and Configurations
 #--------------------------------------------------
 readonly LOG_FILE="/var/log/freebsd_setup.log"
 readonly USERNAME="sawyer"
 readonly USER_HOME="/home/${USERNAME}"
 
-# Terminal color definitions for logging output
-readonly RED='\033[0;31m'
-readonly YELLOW='\033[0;33m'
-readonly GREEN='\033[0;32m'
-readonly BLUE='\033[0;34m'
-readonly NC='\033[0m'  # No Color
+# Terminal color definitions
+readonly COLOR_RED='\033[0;31m'
+readonly COLOR_YELLOW='\033[0;33m'
+readonly COLOR_GREEN='\033[0;32m'
+readonly COLOR_BLUE='\033[0;34m'
+readonly COLOR_NC='\033[0m'  # No Color
 
-# Ensure the log directory exists
+# Ensure the log directory exists with secure permissions
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 
 #--------------------------------------------------
-# Logging and Error Handling Functions
+# Logging and Error Handling
 #--------------------------------------------------
 log() {
     local level="${1:-INFO}"
@@ -43,23 +44,22 @@ log() {
     ts=$(date +"%Y-%m-%d %H:%M:%S")
     local color
     case "${level^^}" in
-        INFO)  color="${GREEN}" ;;
-        WARN|WARNING) color="${YELLOW}"; level="WARN" ;;
-        ERROR) color="${RED}" ;;
-        DEBUG) color="${BLUE}" ;;
-        *)     color="${NC}" ; level="INFO" ;;
+        INFO)  color="${COLOR_GREEN}" ;;
+        WARN|WARNING) color="${COLOR_YELLOW}"; level="WARN" ;;
+        ERROR) color="${COLOR_RED}" ;;
+        DEBUG) color="${COLOR_BLUE}" ;;
+        *)     color="${COLOR_NC}" ; level="INFO" ;;
     esac
     local entry="[$ts] [${level^^}] $msg"
     echo "$entry" >> "$LOG_FILE"
-    printf "${color}%s${NC}\n" "$entry" >&2
+    printf "%b%s%b\n" "${color}" "$entry" "${COLOR_NC}" >&2
 }
 
 handle_error() {
     local msg="${1:-An error occurred.}"
-    local code="${2:-1}"
-    log ERROR "$msg (Exit code: ${code})"
-    log ERROR "Failure at line ${BASH_LINENO[0]} in function ${FUNCNAME[1]:-main}"
-    exit "$code"
+    local exit_code="${2:-1}"
+    log ERROR "Error on line ${BASH_LINENO[0]} in function ${FUNCNAME[1]:-main}: ${msg}"
+    exit "$exit_code"
 }
 
 trap 'handle_error "Unexpected error encountered."' ERR
@@ -80,14 +80,14 @@ EOF
 
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
-        handle_error "This script must be run as root."
+        handle_error "Script must be run as root."
     fi
 }
 
 check_network() {
-    log INFO "Verifying network connectivity..."
+    log INFO "Checking network connectivity..."
     if ! ping -c1 -t5 google.com &>/dev/null; then
-        log WARN "Network connectivity appears to be unavailable."
+        log WARN "Network connectivity seems unavailable."
     else
         log INFO "Network connectivity verified."
     fi
@@ -98,13 +98,18 @@ check_network() {
 #--------------------------------------------------
 update_system() {
     log INFO "Updating pkg repositories..."
-    pkg update || log WARN "pkg update encountered issues."
+    if ! pkg update; then
+        log WARN "pkg update encountered issues."
+    fi
+
     log INFO "Upgrading installed packages..."
-    pkg upgrade -y || log WARN "pkg upgrade encountered issues."
+    if ! pkg upgrade -y; then
+        log WARN "pkg upgrade encountered issues."
+    fi
 }
 
 install_packages() {
-    log INFO "Installing essential packages in parallel..."
+    log INFO "Installing essential packages concurrently..."
     local packages=(
         bash vim nano zsh screen tmux mc htop tree ncdu neofetch
         git curl wget rsync
@@ -114,11 +119,12 @@ install_packages() {
         postgresql14-client postgresql14-server mysql80-client mysql80-server redis
         ruby rust jq doas
     )
-    # Use 4 parallel jobs during installation with the "-j" flag.
     local job_count=4
-    pkg install -y -j "$job_count" "${packages[@]}" \
-        && log INFO "All packages installed successfully." \
-        || handle_error "Package installation encountered errors."
+    if pkg install -y -j "$job_count" "${packages[@]}"; then
+        log INFO "All packages installed successfully."
+    else
+        handle_error "Package installation encountered errors."
+    fi
 }
 
 #--------------------------------------------------
@@ -127,10 +133,12 @@ install_packages() {
 create_user() {
     if ! id "$USERNAME" &>/dev/null; then
         log INFO "Creating user '$USERNAME'..."
-        pw useradd "$USERNAME" -m -s /usr/local/bin/bash -G wheel \
-            || log WARN "Failed to create user '$USERNAME'."
-        echo "changeme" | pw usermod "$USERNAME" -h 0
-        log INFO "User '$USERNAME' created with default password 'changeme'."
+        if pw useradd "$USERNAME" -m -s /usr/local/bin/bash -G wheel; then
+            echo "changeme" | pw usermod "$USERNAME" -h 0
+            log INFO "User '$USERNAME' created with default password 'changeme'."
+        else
+            log WARN "Failed to create user '$USERNAME'."
+        fi
     else
         log INFO "User '$USERNAME' already exists."
     fi
@@ -138,11 +146,11 @@ create_user() {
 
 configure_timezone() {
     local tz="America/New_York"
-    log INFO "Setting timezone to ${tz}..."
+    log INFO "Configuring timezone to ${tz}..."
     if [ -f "/usr/share/zoneinfo/${tz}" ]; then
         cp "/usr/share/zoneinfo/${tz}" /etc/localtime
         echo "$tz" > /etc/timezone
-        log INFO "Timezone configured to ${tz}."
+        log INFO "Timezone set to ${tz}."
     else
         log WARN "Timezone file for ${tz} not found."
     fi
@@ -168,15 +176,18 @@ setup_repos() {
 }
 
 copy_shell_configs() {
-    log INFO "Copying shell configuration files..."
+    log INFO "Deploying shell configuration files..."
     for file in .bashrc .profile; do
         local src="${USER_HOME}/github/bash/freebsd/dotfiles/${file}"
         local dest="${USER_HOME}/${file}"
         if [ -f "$src" ]; then
             [ -f "$dest" ] && cp "$dest" "${dest}.bak"
-            cp -f "$src" "$dest" \
-                && { chown "${USERNAME}:${USERNAME}" "$dest"; log INFO "Copied $src to $dest"; } \
-                || log WARN "Failed to copy $src"
+            if cp -f "$src" "$dest"; then
+                chown "${USERNAME}:${USERNAME}" "$dest"
+                log INFO "Copied $src to $dest"
+            else
+                log WARN "Failed to copy $src"
+            fi
         else
             log WARN "Source file $src does not exist."
         fi
@@ -187,9 +198,11 @@ copy_shell_configs() {
 # SSH and Security Configuration
 #--------------------------------------------------
 configure_ssh() {
-    log INFO "Configuring SSH..."
+    log INFO "Enabling SSH service..."
     sysrc sshd_enable="YES"
-    service sshd restart || log WARN "Failed to restart SSH service."
+    if ! service sshd restart; then
+        log WARN "Failed to restart SSH service."
+    fi
 }
 
 secure_ssh_config() {
@@ -203,7 +216,9 @@ secure_ssh_config() {
         sed -i '' 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$sshd_config"
         sed -i '' 's/^#*X11Forwarding.*/X11Forwarding no/' "$sshd_config"
         log INFO "Hardened SSH configuration."
-        service sshd restart || log WARN "Failed to restart SSH after configuration."
+        if ! service sshd restart; then
+            log WARN "Failed to restart SSH after changes."
+        fi
     else
         log WARN "SSH configuration file not found."
     fi
@@ -214,9 +229,11 @@ secure_ssh_config() {
 #--------------------------------------------------
 install_plex() {
     log INFO "Installing Plex Media Server..."
-    pkg install -y plexmediaserver \
-        && log INFO "Plex installed successfully." \
-        || log WARN "Failed to install Plex Media Server."
+    if pkg install -y plexmediaserver; then
+        log INFO "Plex installed successfully."
+    else
+        log WARN "Plex Media Server installation failed."
+    fi
 }
 
 #--------------------------------------------------
@@ -226,7 +243,7 @@ detect_ext_if() {
     local iface
     iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
     if [ -z "$iface" ]; then
-        handle_error "Unable to detect the external interface."
+        handle_error "Unable to detect external interface."
     fi
     echo "$iface"
 }
@@ -234,7 +251,7 @@ detect_ext_if() {
 generate_pf_conf() {
     local ext_if="$1"
     local pf_conf="/etc/pf.conf"
-    log INFO "Generating pf.conf with external interface: ${ext_if}"
+    log INFO "Generating pf.conf using external interface: ${ext_if}"
     cat <<EOF > "$pf_conf"
 #
 # pf.conf generated on $(date)
@@ -254,13 +271,17 @@ EOF
 enable_and_reload_pf() {
     sysrc pf_enable="YES"
     if service pf status >/dev/null 2>&1; then
-        pfctl -f /etc/pf.conf \
-            && log INFO "PF configuration reloaded." \
-            || log WARN "PF reload failed."
+        if pfctl -f /etc/pf.conf; then
+            log INFO "PF configuration reloaded."
+        else
+            log WARN "Failed to reload PF configuration."
+        fi
     else
-        service pf start \
-            && log INFO "PF service started." \
-            || handle_error "Failed to start PF service."
+        if service pf start; then
+            log INFO "PF service started."
+        else
+            handle_error "Failed to start PF service."
+        fi
     fi
 }
 
@@ -280,21 +301,28 @@ deploy_user_scripts() {
     local src_dir="${USER_HOME}/github/bash/freebsd/_scripts/"
     mkdir -p "$bin_dir"
     log INFO "Deploying user scripts from ${src_dir} to ${bin_dir}..."
-    rsync -ah --delete "$src_dir" "$bin_dir" \
-        && { find "$bin_dir" -type f -exec chmod 755 {} \; ; log INFO "User scripts deployed."; } \
-        || log WARN "Failed to deploy user scripts."
+    if rsync -ah --delete "$src_dir" "$bin_dir"; then
+        find "$bin_dir" -type f -exec chmod 755 {} \;
+        log INFO "User scripts deployed successfully."
+    else
+        log WARN "Failed to deploy user scripts."
+    fi
 }
 
 setup_cron() {
     log INFO "Starting cron service..."
-    service cron start || log WARN "Cron service failed to start."
+    if ! service cron start; then
+        log WARN "Cron service failed to start."
+    fi
 }
 
 configure_periodic() {
     local cron_file="/etc/periodic/daily/freebsd_maintenance"
     log INFO "Configuring daily maintenance tasks..."
-    [ -f "$cron_file" ] && mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" \
-        && log INFO "Existing maintenance script backed up."
+    [ -f "$cron_file" ] && {
+        mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" &&
+        log INFO "Backed up existing maintenance script."
+    }
     cat <<'EOF' > "$cron_file"
 #!/bin/sh
 pkg update -q && pkg upgrade -y && pkg autoremove -y && pkg clean -y
@@ -303,7 +331,7 @@ EOF
 }
 
 final_checks() {
-    log INFO "Performing final system checks:"
+    log INFO "Performing final system checks..."
     echo "Kernel: $(uname -r)"
     echo "Uptime: $(uptime)"
     df -h /
@@ -318,32 +346,45 @@ home_permissions() {
 
 install_fastfetch() {
     log INFO "Installing Fastfetch..."
-    pkg install -y fastfetch \
-        && log INFO "Fastfetch installed successfully." \
-        || log WARN "Fastfetch installation failed."
+    if pkg install -y fastfetch; then
+        log INFO "Fastfetch installed successfully."
+    else
+        log WARN "Fastfetch installation failed."
+    fi
 }
 
 set_bash_shell() {
     if ! command -v /usr/local/bin/bash &>/dev/null; then
         log INFO "Bash not found; installing..."
-        pkg install -y bash || { log WARN "Bash installation failed."; return 1; }
+        if ! pkg install -y bash; then
+            log WARN "Bash installation failed."
+            return 1
+        fi
     fi
     if ! grep -qxF "/usr/local/bin/bash" /etc/shells; then
         echo "/usr/local/bin/bash" >> /etc/shells
         log INFO "Added /usr/local/bin/bash to /etc/shells."
     fi
-    chsh -s /usr/local/bin/bash "$USERNAME" && log INFO "Default shell for ${USERNAME} set to /usr/local/bin/bash."
+    if chsh -s /usr/local/bin/bash "$USERNAME"; then
+        log INFO "Default shell for ${USERNAME} set to /usr/local/bin/bash."
+    else
+        log WARN "Failed to set default shell for ${USERNAME}."
+    fi
 }
 
 install_and_configure_caddy_proxy() {
     log INFO "Installing Caddy reverse proxy..."
-    pkg install -y caddy || handle_error "Failed to install Caddy."
+    if pkg install -y caddy; then
+        log INFO "Caddy installed successfully."
+    else
+        handle_error "Failed to install Caddy."
+    fi
     local caddyfile="/usr/local/etc/caddy/Caddyfile"
     [ -f "$caddyfile" ] && cp "$caddyfile" "${caddyfile}.backup.$(date +%Y%m%d%H%M%S)" && log INFO "Backed up existing Caddyfile."
     log INFO "Writing new Caddyfile configuration..."
     cat <<'EOF' > "$caddyfile"
 {
-    # Global options block (customize as needed)
+    # Global options block
     # email your-email@example.com
 }
 
@@ -359,28 +400,38 @@ https://dunamismax.com, https://www.dunamismax.com {
 EOF
     sysrc caddy_enable="YES"
     if service caddy status >/dev/null 2>&1; then
-        service caddy reload && log INFO "Caddy reloaded successfully." || {
-            service caddy start && log INFO "Caddy started successfully." || handle_error "Failed to start/reload Caddy."
-        }
+        if service caddy reload; then
+            log INFO "Caddy reloaded successfully."
+        else
+            if service caddy start; then
+                log INFO "Caddy started successfully."
+            else
+                handle_error "Failed to start or reload Caddy."
+            fi
+        fi
     else
-        service caddy start && log INFO "Caddy started successfully." || handle_error "Failed to start Caddy service."
+        if service caddy start; then
+            log INFO "Caddy started successfully."
+        else
+            handle_error "Failed to start Caddy service."
+        fi
     fi
 }
 
 configure_wifi() {
     local wlan_device wpa_conf rc_conf ssid psk
 
-    # Identify the wireless adapter (if multiple, select the first one)
+    # Detect the wireless adapter (select the first one if multiple)
     wlan_device=$(sysctl -n net.wlan.devices | awk '{print $1}')
     if [ -z "$wlan_device" ]; then
         log ERROR "No wireless adapter found."
         return 1
     fi
-    log INFO "Wireless adapter detected: $wlan_device"
+    log INFO "Detected wireless adapter: $wlan_device"
 
-    # Load the corresponding driver module (assumes module name if_<device>)
+    # Load the corresponding driver module (if not already loaded)
     if ! kldload "if_${wlan_device}" 2>/dev/null; then
-        log WARN "Could not load module if_${wlan_device} (it may already be loaded)."
+        log WARN "Module if_${wlan_device} may already be loaded."
     fi
     if ! kldstat | grep -q "if_${wlan_device}"; then
         log ERROR "Failed to load driver for $wlan_device."
@@ -395,7 +446,7 @@ configure_wifi() {
     fi
     log INFO "wlan0 interface created."
 
-    # Prompt the user for SSID and PSK credentials
+    # Prompt for SSID and PSK credentials
     read -p "Enter SSID: " ssid
     if [ -z "$ssid" ]; then
         log ERROR "SSID cannot be empty."
@@ -404,7 +455,7 @@ configure_wifi() {
     read -s -p "Enter PSK (leave empty for open networks): " psk
     echo
 
-    # Update /etc/wpa_supplicant.conf with the network details
+    # Update /etc/wpa_supplicant.conf with network details
     wpa_conf="/etc/wpa_supplicant.conf"
     if [ ! -f "$wpa_conf" ]; then
         touch "$wpa_conf" && chmod 600 "$wpa_conf"
@@ -412,9 +463,9 @@ configure_wifi() {
     fi
 
     if grep -q "ssid=\"$ssid\"" "$wpa_conf"; then
-        log INFO "Network '$ssid' already exists in $wpa_conf."
+        log INFO "Network '$ssid' already configured in $wpa_conf."
     else
-        log INFO "Adding network '$ssid' to $wpa_conf."
+        log INFO "Adding network '$ssid' configuration..."
         {
             echo "network={"
             echo "    ssid=\"$ssid\""
@@ -427,7 +478,7 @@ configure_wifi() {
         } >> "$wpa_conf"
     fi
 
-    # Ensure configuration persists by updating /etc/rc.conf
+    # Ensure configuration persists in /etc/rc.conf
     rc_conf="/etc/rc.conf"
     if ! grep -q "^wlans_${wlan_device}=" "$rc_conf"; then
         echo "wlans_${wlan_device}=\"wlan0\"" >> "$rc_conf"
@@ -438,48 +489,46 @@ configure_wifi() {
         log INFO "Added ifconfig_wlan0 entry to $rc_conf."
     fi
 
-    # Restart the wlan0 network interface
+    # Restart the wlan0 interface
     if ! service netif restart wlan0; then
         log ERROR "Failed to restart wlan0 interface."
         return 1
     fi
 
-    log INFO "Wi‑Fi configuration completed successfully."
+    log INFO "Wi‑Fi configuration completed."
 }
 
 install_desktop_environment() {
-    # Ensure the script is running as root.
     check_root
-
-    # Update pkg repositories.
     update_system
 
-    # Install Xorg and xinit for X11 support.
-    log INFO "Installing Xorg and xinit for X11 support..."
-    pkg install -y xorg xinit || handle_error "Failed to install Xorg."
+    log INFO "Installing Xorg and xinit..."
+    if ! pkg install -y xorg xinit; then
+        handle_error "Failed to install Xorg and xinit."
+    fi
 
-    # Install i3 and useful addons.
     log INFO "Installing i3 window manager and addons..."
     local i3_packages=( i3 i3status i3lock dmenu i3blocks )
-    pkg install -y "${i3_packages[@]}" || handle_error "Failed to install i3 packages."
+    if ! pkg install -y "${i3_packages[@]}"; then
+        handle_error "Failed to install i3 packages."
+    fi
 
-    # Install GNOME and GDM.
-    log INFO "Installing GNOME (gnome3) and GDM..."
+    log INFO "Installing GNOME and GDM..."
     local gnome_packages=( gnome3 gdm )
-    pkg install -y "${gnome_packages[@]}" || handle_error "Failed to install GNOME/GDM."
+    if ! pkg install -y "${gnome_packages[@]}"; then
+        handle_error "Failed to install GNOME/GDM."
+    fi
 
-    # Enable necessary services for GNOME.
-    log INFO "Enabling GNOME Display Manager (GDM) and required services..."
-    sysrc dbus_enable="YES" || handle_error "Failed to enable dbus."
-    sysrc gdm_enable="YES" || handle_error "Failed to enable gdm."
-    sysrc gnome_enable="YES" || handle_error "Failed to enable gnome."
-    log INFO "Starting dbus service..."
+    log INFO "Enabling GNOME services..."
+    sysrc dbus_enable="YES"
+    sysrc gdm_enable="YES"
+    sysrc gnome_enable="YES"
+
+    log INFO "Starting dbus and gdm services..."
     service dbus start || handle_error "Failed to start dbus."
-    log INFO "Starting gdm service..."
     service gdm start || handle_error "Failed to start gdm."
 
-    log INFO "Desktop environment installation complete."
-    log INFO "Please reboot your system to start the graphical environment."
+    log INFO "Desktop environment installation complete. A reboot is recommended."
 }
 
 #--------------------------------------------------
@@ -491,7 +540,7 @@ prompt_reboot() {
         log INFO "Rebooting system..."
         reboot
     else
-        log INFO "Reboot canceled. Please reboot later to apply all changes."
+        log INFO "Reboot canceled. Please reboot later to apply changes."
     fi
 }
 
@@ -532,6 +581,4 @@ main() {
     prompt_reboot
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    main "$@"
-fi
+[[ "${BASH_SOURCE[0]}" == "$0" ]] && main "$@"
