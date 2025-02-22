@@ -1,36 +1,51 @@
 ###############################################################################
-# Alacritty Configuration File (TOML)
+# Alacritty Configuration File
 #
-# A comprehensive configuration for a comfortable terminal experience.
-# Uses the Hack font (with fallback to Noto Sans) at a larger size.
+# This configuration provides a comfortable terminal experience with:
+#   • Custom font settings (using Hack with fallback to Noto Sans)
+#   • Defined window dimensions, title, and decorations
+#   • A carefully chosen color scheme
+#   • A beam-style cursor with unfocused hollow rendering
+#   • Extended scrollback and faster scrolling multiplier
+#   • Clipboard and search key bindings
 #
 # Save this file as: ~/.config/alacritty/alacritty.toml
 ###############################################################################
 
 # -----------------------------------------------------------------------------
+# General Options
+# -----------------------------------------------------------------------------
+live_config_reload = true
+
+# -----------------------------------------------------------------------------
+# Environment Variables
+# -----------------------------------------------------------------------------
+[env]
+TERM = "xterm-256color"
+
+# -----------------------------------------------------------------------------
 # Font Configuration
 # -----------------------------------------------------------------------------
 [font]
-# Primary font configuration: family, style, and size.
-normal = { family = "Hack", style = "Regular" }
-bold   = { family = "Hack", style = "Bold" }
-italic = { family = "Hack", style = "Italic" }
-size   = 14.0
-fallback = ["Noto Sans"]
+# Primary font settings: family, style, and size.
+normal      = { family = "Hack", style = "Regular" }
+bold        = { family = "Hack", style = "Bold" }
+italic      = { family = "Hack", style = "Italic" }
+# Fallback fonts are used if the primary font is missing glyphs.
+fallback    = ["Noto Sans"]
+size        = 14.0
 
 # -----------------------------------------------------------------------------
 # Window & Terminal Settings
 # -----------------------------------------------------------------------------
 [window]
-title = "Alacritty"
+title         = "Alacritty"
 dynamic_title = true
+decorations   = "full"
 
 [window.dimensions]
 columns = 120
 lines   = 30
-
-# Available options: "full", "none", "transparent"
-decorations = "full"
 
 # -----------------------------------------------------------------------------
 # Color Scheme
@@ -64,52 +79,47 @@ white   = "#eaeaea"
 # -----------------------------------------------------------------------------
 [cursor]
 # Options: "Block", "Underline", or "Beam"
-style = "Beam"
+style            = "Beam"
 unfocused_hollow = true
 
 # -----------------------------------------------------------------------------
-# Scrolling & Smooth Scrolling
+# Scrolling Configuration
 # -----------------------------------------------------------------------------
 [scrolling]
 # Maximum number of lines to retain in the scrollback buffer.
-history = 1000000
+history    = 1000000
 # Scroll multiplier for faster scrolling.
 multiplier = 3
 
 # -----------------------------------------------------------------------------
 # Key Bindings
 # -----------------------------------------------------------------------------
-# Alacritty does not support tabs; the key bindings below cover clipboard and quit operations.
+# Note: Alacritty does not support tabs; these bindings cover common clipboard
+#       and quit operations, along with search commands.
 [[key_bindings]]
-key = "V"
-mods = "Control|Shift"
+key    = "V"
+mods   = "Control|Shift"
 action = "Paste"
 
 [[key_bindings]]
-key = "C"
-mods = "Control|Shift"
+key    = "C"
+mods   = "Control|Shift"
 action = "Copy"
 
 [[key_bindings]]
-key = "Q"
-mods = "Control"
+key    = "Q"
+mods   = "Control"
 action = "Quit"
 
 [[key_bindings]]
-key = "F"
-mods = "Control"
+key    = "F"
+mods   = "Control"
 action = "SearchForward"
 
 [[key_bindings]]
-key = "B"
-mods = "Control"
+key    = "B"
+mods   = "Control"
 action = "SearchBackward"
-
-# -----------------------------------------------------------------------------
-# Miscellaneous Options
-# -----------------------------------------------------------------------------
-# Automatically reload configuration file when it is changed.
-live_config_reload = true
 
 ###############################################################################
 # End of Configuration
