@@ -1,25 +1,37 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Ubuntu Server Automation Script v6.1 (Master)
+# Ubuntu System Initialization & Hardening Script v6.1 (Master)
 #
-# Overview:
-#   This master script automates initial configuration and hardening of an
-#   Ubuntu system. It updates the system, installs essential packages, and
-#   configures time settings, SSH, firewall, and additional services such as
-#   Plex, Caddy, ZFS, Docker, Docker Compose, Zig, Ly, KDE, and various custom
-#   services. It includes backup, logging, periodic maintenance, and system
-#   health functions.
+# Description:
+#   This master automation script bootstraps and secures an Ubuntu server by
+#   performing a comprehensive set of configuration tasks. It updates the system,
+#   installs essential packages, and sets up critical services including time
+#   synchronization, SSH hardening, firewall configuration, and deployment of key
+#   applications such as Plex, Caddy, Fastfetch, ZFS, Docker (with Compose), Zig, and
+#   the Ly display manager. Additionally, it manages GitHub repository setups, user
+#   shell configurations, periodic maintenance routines, backups, log rotation,
+#   security audits, and performance tuning.
+#
+# Key Functions:
+#   - System update, upgrade, and essential package installation
+#   - Timezone setting and NTP configuration for accurate timekeeping
+#   - GitHub repository and dotfiles management for user environment setup
+#   - SSH, sudo, and firewall (ufw) hardening to bolster security
+#   - Installation and configuration of various services and utilities
+#   - Backup creation, log rotation, and regular system health and security checks
+#   - Final system checks and optional reboot prompt for applying changes
 #
 # Usage:
-#   Run as root.
+#   Execute this script as root to fully initialize and secure your Ubuntu system.
 #
 # Disclaimer:
 #   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 #
-# Author: dunamismax (rewritten and improved)
+# Author: dunamismax (Rewritten & Enhanced)
 # Version: 6.1
 # Date: 2025-02-22
 # ==============================================================================
+
 set -Eeuo pipefail
 IFS=$'\n\t'
 
