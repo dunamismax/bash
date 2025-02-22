@@ -746,8 +746,8 @@ main() {
     update_ssl_certificates
     tune_system
 
-    final_checks
     home_permissions
+    final_checks
 
     prompt_reboot
 }
