@@ -1,64 +1,79 @@
-########################################################################
-#                __________________         _____________ ______       #
-# _____________ _______  /______  /_____  _____  __/___(_)___  /_____  #
-# _  ___/_  __ `/_  __  / _  __  / __  / / /__  /_  __  / __  / _  _ \ #
-# / /__  / /_/ / / /_/ /  / /_/ /  _  /_/ / _  __/  _  /  _  /  /  __/ #
-# \___/  \__,_/  \__,_/   \__,_/   _\__, /  /_/     /_/   /_/   \___/  #
-#                                  /____/                              #
-########################################################################
-
 {
+    # Global configuration
     # Use this email for Let's Encrypt notifications
     email dunamismax@tutamail.com
-    # Global logging: captures all events (including errors during startup)
+
+    # Global logging: captures startup and general events in JSON format
     log {
         output file /var/log/caddy/caddy.log
         format json
     }
+
+    # Uncomment the following line to enable debug mode (for troubleshooting)
+    # debug
 }
 
+# ------------------------------------------------------------------------------
 # Redirect www to non-www
+# ------------------------------------------------------------------------------
 www.dunamismax.com {
     redir https://dunamismax.com{uri} permanent
 }
 
-# Main website configuration for FastAPI
+# ------------------------------------------------------------------------------
+# Main Website Configuration (FastAPI)
+# ------------------------------------------------------------------------------
 dunamismax.com {
-    # Deny hidden files (dotfiles like .git, .htaccess, etc.), except .well-known
+    # Block access to hidden files (dotfiles) except for .well-known (needed for ACME)
     @hiddenFiles {
-        path /.*
-        not path /.well-known/*
+        path_regexp hidden ^/(?!\.well-known/)\..*
     }
-    respond @hiddenFiles 404
+    handle @hiddenFiles {
+        respond 404
+    }
+
     # Reverse proxy all other requests to the FastAPI application
     reverse_proxy localhost:8000
-    # Per-site logging: captures site-specific access logs
+
+    # Per-site logging: write access logs in JSON format
     log {
         output file /var/log/caddy/dunamismax_access.log
         format json
     }
+
+    # (Optional) Uncomment to enable gzip encoding for improved performance
+    # encode gzip
 }
 
-# Messenger app
+# ------------------------------------------------------------------------------
+# Messenger App
+# ------------------------------------------------------------------------------
 messenger.dunamismax.com {
     reverse_proxy localhost:8100
+
     log {
         output file /var/log/caddy/messenger_access.log
         format json
     }
 }
 
-# AI Agents app
+# ------------------------------------------------------------------------------
+# AI Agents App
+# ------------------------------------------------------------------------------
 agents.dunamismax.com {
     reverse_proxy localhost:8200
+
     log {
         output file /var/log/caddy/ai_agents_access.log
         format json
     }
 }
 
-# File server
+# ------------------------------------------------------------------------------
+# File Server (File Converter)
+# ------------------------------------------------------------------------------
 files.dunamismax.com {
+    # Allow larger request bodies (up to 2GB)
     request_body {
         max_size 2GB
     }
@@ -72,16 +87,28 @@ files.dunamismax.com {
 
     log {
         output file /var/log/caddy/file_converter_access.log
+        format json
     }
 }
 
-# Dashboard app (port 8400 to-do)
-
-# Notes app
+# ------------------------------------------------------------------------------
+# Notes App
+# ------------------------------------------------------------------------------
 notes.dunamismax.com {
     reverse_proxy localhost:8500
+
     log {
         output file /var/log/caddy/notes_access.log
         format json
     }
 }
+
+# ------------------------------------------------------------------------------
+# (Optional) Additional Site Configurations
+# ------------------------------------------------------------------------------
+# To add new sites without modifying this file, consider using the include directive:
+# include /etc/caddy/sites-enabled/*.caddyfile
+
+###############################################################################
+# End of Caddyfile
+###############################################################################
