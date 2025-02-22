@@ -24,28 +24,44 @@ IFS=$'\n\t'
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-readonly LOG_FILE="/var/log/update_dns_records.log"  # Log file path
+readonly LOG_FILE="/var/log/update_dns_records.log"   # Log file path
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly DISABLE_COLORS="${DISABLE_COLORS:-false}"     # Set to true to disable colored output
-readonly LOG_LEVEL="${LOG_LEVEL:-INFO}"                # Options: INFO, DEBUG, WARN, ERROR
+readonly DISABLE_COLORS="${DISABLE_COLORS:-false}"      # Set to "true" to disable colored output
+readonly LOG_LEVEL="${LOG_LEVEL:-INFO}"                 # Options: INFO, DEBUG, WARN, ERROR, CRITICAL
 readonly QUIET_MODE=false
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-readonly NORD9='\033[38;2;129;161;193m'    # #81A1C1 (Bluish)
-readonly NORD10='\033[38;2;94;129;172m'     # #5E81AC (Accent Blue)
-readonly NORD11='\033[38;2;191;97;106m'     # #BF616A (Reddish)
-readonly NORD13='\033[38;2;235;203;139m'    # #EBCB8B (Yellowish)
-readonly NORD14='\033[38;2;163;190;140m'    # #A3BE8C (Greenish)
-readonly NC='\033[0m'                       # No Color
+readonly NORD9='\033[38;2;129;161;193m'    # Bluish (DEBUG)
+readonly NORD10='\033[38;2;94;129;172m'     # Accent Blue (section headers)
+readonly NORD11='\033[38;2;191;97;106m'     # Reddish (ERROR/CRITICAL)
+readonly NORD13='\033[38;2;235;203;139m'    # Yellowish (WARN)
+readonly NORD14='\033[38;2;163;190;140m'    # Greenish (INFO)
+readonly NC='\033[0m'                       # Reset / No Color
+
+# ------------------------------------------------------------------------------
+# LOG LEVEL CONVERSION FUNCTION
+# ------------------------------------------------------------------------------
+get_log_level_num() {
+    local lvl="${1^^}"
+    case "$lvl" in
+        VERBOSE|V)     echo 0 ;;
+        DEBUG|D)       echo 1 ;;
+        INFO|I)        echo 2 ;;
+        WARN|WARNING|W)echo 3 ;;
+        ERROR|E)       echo 4 ;;
+        CRITICAL|C)    echo 5 ;;
+        *)             echo 2 ;;
+    esac
+}
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
 # ------------------------------------------------------------------------------
+# Usage: log LEVEL "message"
 log() {
-    # Usage: log [LEVEL] message
     local level="${1:-INFO}"
     shift
     local message="$*"
@@ -97,7 +113,6 @@ cleanup() {
     # Insert any necessary cleanup tasks here (e.g., removing temporary files)
 }
 
-# Trap cleanup on exit and handle signals for graceful error handling
 trap cleanup EXIT
 trap 'handle_error "Script interrupted by user." 130' SIGINT
 trap 'handle_error "Script terminated." 143' SIGTERM
@@ -185,7 +200,7 @@ get_public_ip() {
 }
 
 # ------------------------------------------------------------------------------
-# MAIN LOGIC FUNCTION
+# MAIN LOGIC FUNCTION: Update DNS Records
 # ------------------------------------------------------------------------------
 update_dns_records() {
     print_section "Starting Cloudflare DNS Update"
@@ -253,7 +268,6 @@ update_dns_records() {
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Ensure the script is run with Bash
     if [[ -z "${BASH_VERSION:-}" ]]; then
         echo -e "${NORD11}ERROR: Please run this script with bash.${NC}" >&2
         exit 1
@@ -264,7 +278,7 @@ main() {
     check_dependencies
     validate_config
 
-    # Ensure the log directory exists and secure the log file
+    # Ensure the log directory exists and secure the log file.
     local log_dir
     log_dir="$(dirname "$LOG_FILE")"
     if [[ ! -d "$log_dir" ]]; then

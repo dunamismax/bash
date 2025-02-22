@@ -8,9 +8,7 @@
 #              (via pigz), password‑based encryption/decryption (via OpenSSL), and
 #              interactive PGP operations (key management, message encryption/decryption,
 #              signing, and verification).
-#
-# Author: Your Name | License: MIT
-# Version: 3.1
+# Author: Your Name | License: MIT | Version: 3.1
 # ------------------------------------------------------------------------------
 #
 # Usage:
@@ -23,43 +21,60 @@
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-# ENABLE STRICT MODE
+# ENABLE STRICT MODE & SET IFS
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
+IFS=$'\n\t'
 
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/advanced_file_tool.log"
-SCRIPT_NAME="$(basename "$0")"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DISABLE_COLORS="${DISABLE_COLORS:-false}"  # Set to true to disable colored output
+readonly LOG_FILE="/var/log/advanced_file_tool.log"
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly DISABLE_COLORS="${DISABLE_COLORS:-false}"
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-NORD0='\033[38;2;46;52;64m'      # Dark background (#2E3440)
-NORD1='\033[38;2;59;66;82m'
-NORD2='\033[38;2;67;76;94m'
-NORD3='\033[38;2;76;86;106m'
-NORD4='\033[38;2;216;222;233m'   # Light gray text (#D8DEE9)
-NORD5='\033[38;2;229;233;240m'
-NORD6='\033[38;2;236;239;244m'
-NORD7='\033[38;2;143;188;187m'   # Teal for success/info (#8FBCBB)
-NORD8='\033[38;2;136;192;208m'   # Accent blue for headings (#88C0D0)
-NORD9='\033[38;2;129;161;193m'   # Blue for debug (#81A1C1)
-NORD10='\033[38;2;94;129;172m'   # Purple for highlights (#5E81AC)
-NORD11='\033[38;2;191;97;106m'   # Red for errors (#BF616A)
-NORD12='\033[38;2;208;135;112m'  # Orange for warnings (#D08770)
-NORD13='\033[38;2;235;203;139m'  # Yellow for labels (#EBCB8B)
-NORD14='\033[38;2;163;190;140m'  # Green for OK messages (#A3BE8C)
-NC='\033[0m'                    # No Color
+readonly NORD0='\033[38;2;46;52;64m'      # Dark background (#2E3440)
+readonly NORD1='\033[38;2;59;66;82m'
+readonly NORD2='\033[38;2;67;76;94m'
+readonly NORD3='\033[38;2;76;86;106m'
+readonly NORD4='\033[38;2;216;222;233m'   # Light gray text (#D8DEE9)
+readonly NORD5='\033[38;2;229;233;240m'
+readonly NORD6='\033[38;2;236;239;244m'
+readonly NORD7='\033[38;2;143;188;187m'   # Teal for success/info (#8FBCBB)
+readonly NORD8='\033[38;2;136;192;208m'   # Accent blue for headings (#88C0D0)
+readonly NORD9='\033[38;2;129;161;193m'   # Blue for debug (#81A1C1)
+readonly NORD10='\033[38;2;94;129;172m'   # Purple for highlights (#5E81AC)
+readonly NORD11='\033[38;2;191;97;106m'   # Red for errors (#BF616A)
+readonly NORD12='\033[38;2;208;135;112m'  # Orange for warnings (#D08770)
+readonly NORD13='\033[38;2;235;203;139m'  # Yellow for labels (#EBCB8B)
+readonly NORD14='\033[38;2;163;190;140m'  # Green for OK messages (#A3BE8C)
+readonly NC='\033[0m'                    # Reset / No Color
+
+# ------------------------------------------------------------------------------
+# LOG LEVEL CONVERSION FUNCTION
+# ------------------------------------------------------------------------------
+get_log_level_num() {
+    local lvl="${1^^}"
+    case "$lvl" in
+        VERBOSE|V)     echo 0 ;;
+        DEBUG|D)       echo 1 ;;
+        INFO|I)        echo 2 ;;
+        WARN|WARNING|W) echo 3 ;;
+        ERROR|E)       echo 4 ;;
+        CRITICAL|C)    echo 5 ;;
+        *)             echo 2 ;;
+    esac
+}
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
 # ------------------------------------------------------------------------------
+# Usage: log LEVEL "message"
 log() {
-    # Usage: log LEVEL "message"
     local level="${1:-INFO}"
     shift
     local message="$*"
@@ -68,12 +83,12 @@ log() {
 
     if [[ "$DISABLE_COLORS" != true ]]; then
         case "$upper_level" in
-            INFO)  color="${NORD14}" ;;  # Green for info
+            INFO)  color="${NORD14}" ;;   # Green for info
             WARN|WARNING)
                 upper_level="WARN"
-                color="${NORD12}" ;;      # Orange for warnings
-            ERROR) color="${NORD11}" ;;     # Red for errors
-            DEBUG) color="${NORD9}"  ;;     # Blue for debug
+                color="${NORD12}" ;;       # Orange for warnings
+            ERROR) color="${NORD11}" ;;      # Red for errors
+            DEBUG) color="${NORD9}"  ;;      # Blue for debug
             *)     color="$NC"       ;;
         esac
     fi
@@ -436,7 +451,11 @@ main_menu() {
             3) encryption_menu ;;
             4) pgp_menu ;;
             5) additional_menu ;;
-            q|Q) log INFO "User exited the tool. Goodbye!"; echo -e "${NORD14}Goodbye!${NC}"; exit 0 ;;
+            q|Q)
+                log INFO "User exited the tool. Goodbye!"
+                echo -e "${NORD14}Goodbye!${NC}"
+                exit 0
+                ;;
             *) echo -e "${NORD12}Invalid selection. Please choose a valid option.${NC}"; sleep 1 ;;
         esac
     done
@@ -446,7 +465,7 @@ main_menu() {
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
 main() {
-    # Ensure script is run with Bash and root privileges
+    # Ensure script is run with Bash and root privileges.
     if [[ -z "${BASH_VERSION:-}" ]]; then
         echo -e "${NORD11}ERROR: Please run this script with bash.${NC}" >&2
         exit 1
@@ -454,7 +473,7 @@ main() {
 
     check_root
 
-    # Ensure log directory exists and secure the log file
+    # Ensure the log directory exists and secure the log file.
     local LOG_DIR
     LOG_DIR="$(dirname "$LOG_FILE")"
     if [[ ! -d "$LOG_DIR" ]]; then

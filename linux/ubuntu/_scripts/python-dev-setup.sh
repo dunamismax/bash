@@ -4,12 +4,9 @@
 # Description: Prepares an Ubuntu system with essential development tools,
 #              installs/updates pyenv, the latest stable Python, and pipx‑managed
 #              CLI tools using a robust Nord‑themed enhanced template.
-#
-#              IMPORTANT: Do not run this script with sudo! It must be run as a
+#              IMPORTANT: Do NOT run this script with sudo! It must be run as a
 #              standard non‑root user so that pyenv installs properly.
-#
-# Author: Your Name | License: MIT
-# Version: 2.1
+# Author: Your Name | License: MIT | Version: 2.1
 # ------------------------------------------------------------------------------
 #
 # Usage Examples:
@@ -19,26 +16,30 @@
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-# ENABLE STRICT MODE
+# ENABLE STRICT MODE & SET IFS
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
+IFS=$'\n\t'
 
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-# Log file now stored in your home directory (non‑root user has write access)
-LOG_FILE="${HOME}/.python_dev_setup.log"
-SCRIPT_NAME="$(basename "$0")"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_LEVEL="${LOG_LEVEL:-INFO}"        # Options: INFO, DEBUG, WARN, ERROR
-QUIET_MODE=false                      # When true, suppress console output
-DISABLE_COLORS="${DISABLE_COLORS:-false}"  # Set to true to disable colored output
+readonly LOG_FILE="${HOME}/.python_dev_setup.log"   # Log file in user's home directory
+readonly DISABLE_COLORS="${DISABLE_COLORS:-false}"    # Set to "true" to disable colored output
+# Default log level is INFO. Allowed levels (case-insensitive): VERBOSE, DEBUG, INFO, WARN, ERROR, CRITICAL.
+readonly DEFAULT_LOG_LEVEL="INFO"
+# Users can override via environment variable LOG_LEVEL.
+LOG_LEVEL="${LOG_LEVEL:-$DEFAULT_LOG_LEVEL}"
+# Script details
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly QUIET_MODE=false                             # When true, suppress console output
 
 # pyenv configuration
-PYENV_ROOT="${HOME}/.pyenv"
+readonly PYENV_ROOT="${HOME}/.pyenv"
 
 # List of pipx‑managed tools to install/upgrade
-PIPX_TOOLS=(
+readonly PIPX_TOOLS=(
     ansible-core
     black
     cookiecutter
@@ -62,54 +63,69 @@ PIPX_TOOLS=(
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-NORD0='\033[38;2;46;52;64m'      # #2E3440
-NORD1='\033[38;2;59;66;82m'      # #3B4252
-NORD2='\033[38;2;67;76;94m'      # #434C5E
-NORD3='\033[38;2;76;86;106m'     # #4C566A
-NORD4='\033[38;2;216;222;233m'   # #D8DEE9
-NORD5='\033[38;2;229;233;240m'   # #E5E9F0
-NORD6='\033[38;2;236;239;244m'   # #ECEFF4
-NORD7='\033[38;2;143;188;187m'   # #8FBCBB
-NORD8='\033[38;2;136;192;208m'   # #88C0D0
-NORD9='\033[38;2;129;161;193m'   # #81A1C1
-NORD10='\033[38;2;94;129;172m'   # #5E81AC
-NORD11='\033[38;2;191;97;106m'   # #BF616A
-NORD12='\033[38;2;208;135;112m'  # #D08770
-NORD13='\033[38;2;235;203;139m'  # #EBCB8B
-NORD14='\033[38;2;163;190;140m'  # #A3BE8C
-NORD15='\033[38;2;180;142;173m'  # #B48EAD
-NC='\033[0m'                    # No Color
+readonly NORD9='\033[38;2;129;161;193m'   # Bluish (DEBUG)
+readonly NORD10='\033[38;2;94;129;172m'    # Accent Blue (section headers)
+readonly NORD11='\033[38;2;191;97;106m'    # Reddish (ERROR/CRITICAL)
+readonly NORD13='\033[38;2;235;203;139m'   # Yellowish (WARN)
+readonly NORD14='\033[38;2;163;190;140m'   # Greenish (INFO)
+readonly NC='\033[0m'                      # Reset / No Color
+
+# ------------------------------------------------------------------------------
+# LOG LEVEL CONVERSION FUNCTION
+# ------------------------------------------------------------------------------
+# Converts log level string to a numeric value.
+get_log_level_num() {
+    local lvl="${1^^}"  # uppercase
+    case "$lvl" in
+        VERBOSE|V)     echo 0 ;;
+        DEBUG|D)       echo 1 ;;
+        INFO|I)        echo 2 ;;
+        WARN|WARNING|W) echo 3 ;;
+        ERROR|E)       echo 4 ;;
+        CRITICAL|C)    echo 5 ;;
+        *)             echo 2 ;;  # default to INFO if unknown
+    esac
+}
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
 # ------------------------------------------------------------------------------
+# Usage: log LEVEL message
+# Example: log INFO "Starting process..."
 log() {
-    # Usage: log [LEVEL] message
     local level="${1:-INFO}"
     shift
     local message="$*"
     local upper_level="${level^^}"
 
-    # Only log DEBUG messages when LOG_LEVEL is DEBUG
-    if [[ "$upper_level" == "DEBUG" && "${LOG_LEVEL^^}" != "DEBUG" ]]; then
-        return 0
+    # Determine numeric log level of this message and current threshold.
+    local msg_level
+    msg_level=$(get_log_level_num "$upper_level")
+    local current_level
+    current_level=$(get_log_level_num "${LOG_LEVEL}")
+    if (( msg_level < current_level )); then
+        return 0  # Skip messages below current log threshold.
     fi
 
-    local color="$NC"
+    # Choose color (only for interactive stderr output).
+    local color="${NC}"
     if [[ "$DISABLE_COLORS" != true ]]; then
         case "$upper_level" in
-            INFO)   color="${NORD14}" ;;  # Greenish
-            WARN)   color="${NORD13}" ;;  # Yellowish
-            ERROR)  color="${NORD11}" ;;  # Reddish
-            DEBUG)  color="${NORD9}"  ;;  # Bluish
-            *)      color="$NC"     ;;
+            DEBUG)         color="${NORD9}"  ;;  # Bluish
+            INFO)          color="${NORD14}" ;;  # Greenish
+            WARN)          color="${NORD13}" ;;  # Yellowish
+            ERROR|CRITICAL)color="${NORD11}" ;;  # Reddish
+            *)             color="${NC}"   ;;
         esac
     fi
 
     local timestamp
     timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
     local log_entry="[$timestamp] [$upper_level] $message"
+
+    # Append plain log entry to log file (no color codes)
     echo "$log_entry" >> "$LOG_FILE"
+    # Print colorized log entry to stderr if not in quiet mode
     if [[ "$QUIET_MODE" != true ]]; then
         printf "%b%s%b\n" "$color" "$log_entry" "$NC" >&2
     fi
@@ -119,10 +135,13 @@ log() {
 # ERROR HANDLING & CLEANUP FUNCTIONS
 # ------------------------------------------------------------------------------
 handle_error() {
-    local error_message="${1:-"An error occurred. Check the log for details."}"
+    local error_message="${1:-"An unknown error occurred"}"
     local exit_code="${2:-1}"
+    local lineno="${BASH_LINENO[0]:-${LINENO}}"
+    local func="${FUNCNAME[1]:-main}"
+
     log ERROR "$error_message (Exit Code: $exit_code)"
-    log ERROR "Script encountered an error at line $LINENO in function ${FUNCNAME[1]:-main}."
+    log ERROR "Error in function '$func' at line $lineno."
     echo -e "${NORD11}ERROR: $error_message (Exit Code: $exit_code)${NC}" >&2
     exit "$exit_code"
 }
@@ -133,7 +152,9 @@ cleanup() {
 }
 
 trap cleanup EXIT
-trap 'handle_error "Script failed at line $LINENO. See above for details."' ERR
+trap 'handle_error "Script interrupted by user." 130' SIGINT
+trap 'handle_error "Script terminated." 143' SIGTERM
+trap 'handle_error "An unexpected error occurred at line ${BASH_LINENO[0]:-${LINENO}}." "$?"' ERR
 
 # ------------------------------------------------------------------------------
 # HELPER & UTILITY FUNCTIONS
@@ -166,7 +187,6 @@ Usage: $SCRIPT_NAME [OPTIONS]
 Description:
   Prepares an Ubuntu system with essential development tools,
   installs/updates pyenv, the latest stable Python, and pipx‑managed CLI tools.
-  Uses a Nord‑themed enhanced template for robust error handling and logging.
   IMPORTANT: Do NOT run this script with sudo.
 
 Options:
@@ -365,7 +385,7 @@ print_section() {
 main() {
     # Ensure the script is executed with Bash.
     if [[ -z "${BASH_VERSION:-}" ]]; then
-        echo -e "${NORD11}ERROR: Please run this script with bash.${NC}" >&2
+        echo -e "${NORD11}ERROR: Please run this script with Bash.${NC}" >&2
         exit 1
     fi
 
@@ -401,5 +421,4 @@ main() {
 # ------------------------------------------------------------------------------
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     main "$@"
-    exit 0
 fi

@@ -7,85 +7,91 @@
 #              creating it if needed, and downloads the media in highest quality,
 #              merging audio and video into an mp4 via ffmpeg. For wget, it downloads
 #              the file into the specified directory.
-#
-# Author: Your Name | License: MIT
-# Version: 2.1
+# Author: Your Name | License: MIT | Version: 2.1
 # ------------------------------------------------------------------------------
 #
 # Usage:
 #   ./universal_downloader.sh
 #
-# Note:
-#   Ensure that wget, yt-dlp, ffmpeg, and other dependencies are installed.
-#   This script will attempt to install missing dependencies using apt.
+# Notes:
+#   - Ensure that wget, yt-dlp, ffmpeg, and other dependencies are installed.
+#     This script will attempt to install missing dependencies using apt.
 #
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
-# ENABLE STRICT MODE & ERROR TRAPPING
+# ENABLE STRICT MODE & SET IFS
 # ------------------------------------------------------------------------------
 set -Eeuo pipefail
-
-cleanup() {
-    log INFO "Cleanup: Exiting script."
-    # Add any additional cleanup tasks here.
-}
-trap cleanup EXIT
-trap 'handle_error "Script failed at line $LINENO with exit code $?."' ERR
+IFS=$'\n\t'
 
 # ------------------------------------------------------------------------------
 # GLOBAL VARIABLES & CONFIGURATION
 # ------------------------------------------------------------------------------
-LOG_FILE="/var/log/media_downloader.log"
-LOG_LEVEL="${LOG_LEVEL:-INFO}"
-QUIET_MODE=false
-DISABLE_COLORS="${DISABLE_COLORS:-false}"
+readonly LOG_FILE="/var/log/media_downloader.log"   # Log file path
+readonly DISABLE_COLORS="${DISABLE_COLORS:-false}"    # Set to "true" to disable colored output
+# Default log level is INFO. Allowed levels: VERBOSE, DEBUG, INFO, WARN, ERROR, CRITICAL.
+readonly DEFAULT_LOG_LEVEL="INFO"
+LOG_LEVEL="${LOG_LEVEL:-$DEFAULT_LOG_LEVEL}"
+readonly QUIET_MODE=false                            # Set to true to suppress console output
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-NORD0='\033[38;2;46;52;64m'      # Dark background
-NORD1='\033[38;2;59;66;82m'
-NORD2='\033[38;2;67;76;94m'
-NORD3='\033[38;2;76;86;106m'
-NORD4='\033[38;2;216;222;233m'
-NORD5='\033[38;2;229;233;240m'
-NORD6='\033[38;2;236;239;244m'
-NORD7='\033[38;2;143;188;187m'   # Teal (for success)
-NORD8='\033[38;2;136;192;208m'   # Accent
-NORD9='\033[38;2;129;161;193m'   # Blue (for debug)
-NORD10='\033[38;2;94;129;172m'
-NORD11='\033[38;2;191;97;106m'   # Red (for errors)
-NORD12='\033[38;2;208;135;112m'
-NORD13='\033[38;2;235;203;139m'  # Yellow (for warnings)
-NORD14='\033[38;2;163;190;140m'  # Green (for info)
-NC='\033[0m'                    # Reset Color
+readonly NORD8='\033[38;2;136;192;208m'   # Accent (for banner)
+readonly NORD9='\033[38;2;129;161;193m'   # Blue (DEBUG)
+readonly NORD11='\033[38;2;191;97;106m'   # Red (ERROR)
+readonly NORD13='\033[38;2;235;203;139m'  # Yellow (WARN)
+readonly NORD14='\033[38;2;163;190;140m'  # Green (INFO)
+readonly NC='\033[0m'                     # Reset / No Color
+
+# ------------------------------------------------------------------------------
+# LOG LEVEL CONVERSION FUNCTION
+# ------------------------------------------------------------------------------
+get_log_level_num() {
+    local lvl="${1^^}"
+    case "$lvl" in
+        VERBOSE|V)     echo 0 ;;
+        DEBUG|D)       echo 1 ;;
+        INFO|I)        echo 2 ;;
+        WARN|WARNING|W)echo 3 ;;
+        ERROR|E)       echo 4 ;;
+        CRITICAL|C)    echo 5 ;;
+        *)             echo 2 ;;
+    esac
+}
 
 # ------------------------------------------------------------------------------
 # LOGGING FUNCTION
 # ------------------------------------------------------------------------------
+# Usage: log LEVEL "message"
 log() {
-    # Usage: log [LEVEL] "message"
     local level="${1:-INFO}"
     shift
     local message="$*"
     local upper_level="${level^^}"
-    local timestamp
-    timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
     
-    local color="$NC"
+    local msg_level
+    msg_level=$(get_log_level_num "$upper_level")
+    local current_level
+    current_level=$(get_log_level_num "$LOG_LEVEL")
+    if (( msg_level < current_level )); then
+        return 0
+    fi
+
+    local color="${NC}"
     if [[ "$DISABLE_COLORS" != true ]]; then
         case "$upper_level" in
-            INFO)  color="${NORD14}" ;;      # Info: green
-            WARN|WARNING)
-                upper_level="WARN"
-                color="${NORD13}" ;;          # Warning: yellow
-            ERROR) color="${NORD11}" ;;         # Error: red
-            DEBUG) color="${NORD9}"  ;;         # Debug: blue
-            *)     color="$NC"     ;;
+            DEBUG)         color="${NORD9}"  ;;
+            INFO)          color="${NORD14}" ;;
+            WARN|WARNING)  color="${NORD13}" ;;
+            ERROR|CRITICAL)color="${NORD11}" ;;
+            *)             color="${NC}"     ;;
         esac
     fi
-    
+
+    local timestamp
+    timestamp="$(date +"%Y-%m-%d %H:%M:%S")"
     local log_entry="[$timestamp] [$upper_level] $message"
     echo "$log_entry" >> "$LOG_FILE"
     if [[ "$QUIET_MODE" != true ]]; then
@@ -94,7 +100,7 @@ log() {
 }
 
 # ------------------------------------------------------------------------------
-# ERROR HANDLING FUNCTION
+# ERROR HANDLING & CLEANUP FUNCTIONS
 # ------------------------------------------------------------------------------
 handle_error() {
     local error_message="${1:-"Unknown error occurred"}"
@@ -103,8 +109,18 @@ handle_error() {
     exit "$exit_code"
 }
 
+cleanup() {
+    log INFO "Cleanup: Exiting script."
+    # Add any additional cleanup tasks here.
+}
+
+trap cleanup EXIT
+trap 'handle_error "Script interrupted at line ${BASH_LINENO[0]:-${LINENO}}." 130' SIGINT
+trap 'handle_error "Script terminated." 143' SIGTERM
+trap 'handle_error "An unexpected error occurred at line ${BASH_LINENO[0]:-${LINENO}}." "$?"' ERR
+
 # ------------------------------------------------------------------------------
-# INSTALL PREREQUISITES FUNCTION
+# HELPER & UTILITY FUNCTIONS
 # ------------------------------------------------------------------------------
 install_prerequisites() {
     log INFO "Installing required tools..."
