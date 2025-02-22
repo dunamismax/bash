@@ -4,21 +4,7 @@
 #
 # Description:
 #   This master automation script bootstraps and secures an Ubuntu server by
-#   performing a comprehensive set of configuration tasks. It updates the system,
-#   installs essential packages, and sets up critical services including time
-#   synchronization, SSH hardening, firewall configuration, and deployment of key
-#   applications such as Plex, Caddy, Fastfetch, ZFS, Docker (with Compose).
-#   The script is written to be idempotent – running it
-#   multiple times causes no duplicate entries or adverse side effects.
-#
-# Key Functions:
-#   - System update, upgrade, and essential package installation
-#   - Timezone and NTP configuration with duplicate–avoidance
-#   - GitHub repository and dotfiles management with version checks
-#   - SSH, sudo, and firewall (ufw) hardening with in–place file edits
-#   - Installation and configuration of various services and utilities
-#   - Backup creation, log rotation, and regular system health and security checks
-#   - Final system checks and an optional reboot prompt for applying changes
+#   performing a comprehensive set of configuration tasks.
 #
 # Usage:
 #   Execute this script as root to fully initialize and secure your Ubuntu system.
