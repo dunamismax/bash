@@ -599,22 +599,6 @@ backup_configs() {
     done
 }
 
-backup_databases() {
-    print_section "Database Backups"
-    local backup_dir="/var/backups/db_backups_$(date +%Y%m%d%H%M%S)"
-    mkdir -p "$backup_dir"
-    if command_exists pg_dumpall; then
-        pg_dumpall -U postgres | gzip > "$backup_dir/postgres_backup.sql.gz" && log_info "PostgreSQL backup completed." || log_warn "PostgreSQL backup failed."
-    else
-        log_warn "pg_dumpall not found; skipping PostgreSQL backup."
-    fi
-    if command_exists mysqldump; then
-        mysqldump --all-databases | gzip > "$backup_dir/mysql_backup.sql.gz" && log_info "MySQL backup completed." || log_warn "MySQL backup failed."
-    else
-        log_warn "mysqldump not found; skipping MySQL backup."
-    fi
-}
-
 rotate_logs() {
     print_section "Log Rotation"
     if [ -f "$LOG_FILE" ]; then
@@ -754,7 +738,6 @@ main() {
     configure_periodic
 
     backup_configs
-    backup_databases
     rotate_logs
 
     system_health_check
