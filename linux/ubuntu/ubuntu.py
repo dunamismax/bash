@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 """
-Ubuntu System Initialization & Hardening Script v6.1 (Master, Idempotent)
+Ubuntu System Initialization & Hardening Script
 
-Description:
-  This master automation script bootstraps and secures an Ubuntu server by
-  performing a comprehensive set of configuration tasks.
+This production-ready automation script bootstraps, configures, and hardens an Ubuntu server.
+It performs a comprehensive set of system configuration tasks including:
+  - System update and essential package installation
+  - Timezone configuration
+  - GitHub repository setup and shell configuration updates
+  - SSH hardening and sudo configuration
+  - Firewall (ufw) setup and verification
+  - Installation and configuration of services (Plex, Caddy, Fastfetch, Docker)
+  - Deployment of user scripts and dotfiles
+  - Periodic maintenance tasks and performance tuning
+  - ZFS pool configuration and final system health checks
 
 Usage:
-  Execute this script as root to fully initialize and secure your Ubuntu system.
+  Run this script as root to fully initialize and secure your Ubuntu system:
+      sudo ./ubuntu_setup.py
 
 Disclaimer:
   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
@@ -25,10 +34,13 @@ import datetime
 import logging
 import filecmp
 import atexit
+import platform
 
 # ----------------------------
 # Global Variables & Constants
 # ----------------------------
+
+# Software versions and download URLs
 PLEX_VERSION = "1.41.3.9314-a0bfb8370"
 PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_amd64.deb"
 
@@ -36,15 +48,15 @@ FASTFETCH_VERSION = "2.36.1"
 FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-amd64.deb"
 
 DOCKER_COMPOSE_VERSION = "2.20.2"
-# We emulate uname output by using platform.uname() for system and machine.
-import platform
 uname = platform.uname()
 DOCKER_COMPOSE_URL = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{uname.system}-{uname.machine}"
 
+# Logging and user configuration
 LOG_FILE = "/var/log/ubuntu_setup.log"
 USERNAME = "sawyer"
 USER_HOME = f"/home/{USERNAME}"
 
+# List of essential packages to install
 PACKAGES = [
     "bash", "vim", "nano", "screen", "tmux", "mc", "zsh", "htop", "tree", "ncdu", "neofetch",
     "build-essential", "cmake", "ninja-build", "meson", "gettext", "git",
@@ -64,71 +76,93 @@ PACKAGES = [
 
 # Terminal color definitions (Nord theme)
 NORD9  = '\033[38;2;129;161;193m'    # Debug messages
-NORD10 = '\033[38;2;94;129;172m'
-NORD11 = '\033[38;2;191;97;106m'      # Error messages
-NORD13 = '\033[38;2;235;203;139m'     # Warning messages
-NORD14 = '\033[38;2;163;190;140m'     # Info messages
-NC     = '\033[0m'                   # Reset
+NORD10 = '\033[38;2;94;129;172m'     # Secondary info
+NORD11 = '\033[38;2;191;97;106m'     # Error messages
+NORD13 = '\033[38;2;235;203;139m'    # Warning messages
+NORD14 = '\033[38;2;163;190;140m'    # Info messages
+NC     = '\033[0m'                  # Reset color
 
 # ----------------------------
 # Logging Setup
 # ----------------------------
-if not os.path.exists(os.path.dirname(LOG_FILE)):
-    os.makedirs(os.path.dirname(LOG_FILE), mode=0o700, exist_ok=True)
+
+def setup_logging():
+    """Configure logging to both file and console with color support."""
+    if not os.path.exists(os.path.dirname(LOG_FILE)):
+        os.makedirs(os.path.dirname(LOG_FILE), mode=0o700, exist_ok=True)
     
-logger = logging.getLogger("ubuntu_setup")
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S")
+    logger = logging.getLogger("ubuntu_setup")
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S")
 
-# File handler
-fh = logging.FileHandler(LOG_FILE)
-fh.setLevel(logging.DEBUG)
-fh.setFormatter(formatter)
-logger.addHandler(fh)
+    # File handler for logging
+    fh = logging.FileHandler(LOG_FILE)
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
-# Console handler with color if output is tty
-class ColorFormatter(logging.Formatter):
-    COLORS = {
-        'DEBUG': NORD9,
-        'INFO': NORD14,
-        'WARNING': NORD13,
-        'ERROR': NORD11,
-        'CRITICAL': NORD11,
-    }
-    def format(self, record):
-        color = self.COLORS.get(record.levelname, '')
-        message = super().format(record)
-        return f"{color}{message}{NC}"
+    # Console handler with color support if output is tty
+    class ColorFormatter(logging.Formatter):
+        COLORS = {
+            'DEBUG': NORD9,
+            'INFO': NORD14,
+            'WARNING': NORD13,
+            'ERROR': NORD11,
+            'CRITICAL': NORD11,
+        }
+        def format(self, record):
+            color = self.COLORS.get(record.levelname, '')
+            message = super().format(record)
+            return f"{color}{message}{NC}"
 
-if sys.stderr.isatty():
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    ch.setFormatter(ColorFormatter('[%(asctime)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
-    logger.addHandler(ch)
+    if sys.stderr.isatty():
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        ch.setFormatter(ColorFormatter('[%(asctime)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
+        logger.addHandler(ch)
+    return logger
 
-def log_info(message):
+logger = setup_logging()
+
+def log_info(message: str) -> None:
     logger.info(message)
 
-def log_warn(message):
+def log_warn(message: str) -> None:
     logger.warning(message)
 
-def log_error(message):
+def log_error(message: str) -> None:
     logger.error(message)
 
-def log_debug(message):
+def log_debug(message: str) -> None:
     logger.debug(message)
 
 # ----------------------------
 # Utility Functions
 # ----------------------------
-def run_command(cmd, check=True, capture_output=False, text=True):
-    log_debug(f"Running command: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
-    return subprocess.run(cmd, check=check, capture_output=capture_output, text=text)
 
-def command_exists(cmd):
+def run_command(cmd, check=True, capture_output=False, text=True, **kwargs):
+    """
+    Execute a shell command.
+    
+    :param cmd: Command to execute as a list or string.
+    :param check: If True, raise CalledProcessError on non-zero exit.
+    :param capture_output: Capture stdout and stderr if True.
+    :param text: Return output as text.
+    :return: CompletedProcess instance.
+    """
+    log_debug(f"Executing command: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+    return subprocess.run(cmd, check=check, capture_output=capture_output, text=text, **kwargs)
+
+def command_exists(cmd: str) -> bool:
+    """Check if a command exists in the system's PATH."""
     return shutil.which(cmd) is not None
 
-def backup_file(file_path):
+def backup_file(file_path: str) -> None:
+    """
+    Create a backup of a file with a timestamp suffix.
+    
+    :param file_path: Path of the file to backup.
+    """
     if os.path.isfile(file_path):
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         backup = f"{file_path}.bak.{timestamp}"
@@ -140,30 +174,45 @@ def backup_file(file_path):
     else:
         log_warn(f"File {file_path} not found; skipping backup.")
 
-def print_section(title):
+def print_section(title: str) -> None:
+    """
+    Log a section header to improve readability of log output.
+    
+    :param title: Section title.
+    """
     border = "─" * 60
     log_info(f"{NORD10}{border}{NC}")
     log_info(f"{NORD10}  {title}{NC}")
     log_info(f"{NORD10}{border}{NC}")
 
-def handle_error(msg, code=1):
+def handle_error(msg: str, code: int = 1) -> None:
+    """
+    Log an error message and exit the script.
+    
+    :param msg: Error message to log.
+    :param code: Exit code.
+    """
     log_error(f"{msg} (Exit Code: {code})")
     sys.exit(code)
 
-def cleanup():
+def cleanup() -> None:
+    """Perform any necessary cleanup tasks before the script exits."""
     log_info("Performing cleanup tasks before exit.")
-    # Add any cleanup tasks here.
+    # Additional cleanup tasks can be added here.
 
 atexit.register(cleanup)
 
 # ----------------------------
 # Pre-requisites and System Checks
 # ----------------------------
-def check_root():
+
+def check_root() -> None:
+    """Ensure the script is run as root."""
     if os.geteuid() != 0:
         handle_error("Script must be run as root. Exiting.")
 
-def check_network():
+def check_network() -> None:
+    """Verify network connectivity by pinging a reliable host."""
     print_section("Network Connectivity Check")
     log_info("Verifying network connectivity...")
     try:
@@ -175,21 +224,26 @@ def check_network():
 # ----------------------------
 # System Update & Package Installation
 # ----------------------------
-def update_system():
+
+def update_system() -> None:
+    """Update package repositories and upgrade installed packages."""
     print_section("System Update & Upgrade")
     log_info("Updating package repositories...")
     try:
         run_command(["apt", "update", "-qq"])
     except subprocess.CalledProcessError:
         handle_error("Failed to update package repositories.")
+    
     log_info("Upgrading system packages...")
     try:
         run_command(["apt", "upgrade", "-y"])
     except subprocess.CalledProcessError:
         handle_error("Failed to upgrade packages.")
+    
     log_info("System update and upgrade complete.")
 
-def install_packages():
+def install_packages() -> None:
+    """Install essential packages defined in the PACKAGES list."""
     print_section("Essential Package Installation")
     log_info("Installing packages...")
     for pkg in PACKAGES:
@@ -207,9 +261,15 @@ def install_packages():
 # ----------------------------
 # Timezone and NTP Configuration
 # ----------------------------
-def configure_timezone():
+
+def configure_timezone() -> None:
+    """
+    Configure the system timezone.
+    
+    This function sets the timezone to a specified value by creating a symbolic link to the appropriate timezone file.
+    """
     print_section("Timezone Configuration")
-    tz = "America/New_York"
+    tz = "America/New_York"  # Modify as needed
     log_info(f"Setting timezone to {tz}...")
     tz_file = f"/usr/share/zoneinfo/{tz}"
     if os.path.isfile(tz_file):
@@ -226,7 +286,13 @@ def configure_timezone():
 # ----------------------------
 # Repository and Shell Setup
 # ----------------------------
-def setup_repos():
+
+def setup_repos() -> None:
+    """
+    Set up GitHub repositories in the user's home directory.
+    
+    Clones or updates a predefined list of repositories.
+    """
     print_section("GitHub Repositories Setup")
     log_info(f"Setting up GitHub repositories for user '{USERNAME}'...")
     gh_dir = os.path.join(USER_HOME, "github")
@@ -253,7 +319,12 @@ def setup_repos():
     except subprocess.CalledProcessError:
         log_warn(f"Failed to set ownership of '{gh_dir}'.")
 
-def copy_shell_configs():
+def copy_shell_configs() -> None:
+    """
+    Update the user's shell configuration files (.bashrc and .profile) from a repository source.
+    
+    Performs a backup if needed and applies new configurations.
+    """
     print_section("Shell Configuration Update")
     source_dir = os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles")
     dest_dir = USER_HOME
@@ -274,13 +345,17 @@ def copy_shell_configs():
                     log_warn(f"Failed to copy {src}: {e}")
         else:
             log_warn(f"Source file {src} not found; skipping.")
-    # Sourcing .bashrc in a Python script does not affect the current shell.
     if os.path.isfile(os.path.join(dest_dir, ".bashrc")):
         log_info(f"Sourcing {os.path.join(dest_dir, '.bashrc')} is not applicable in Python.")
     else:
         log_warn(f"No .bashrc found in {dest_dir}; skipping source.")
 
-def set_bash_shell():
+def set_bash_shell() -> None:
+    """
+    Ensure that /bin/bash is set as the default shell for the specified user.
+    
+    Installs bash if not present and updates /etc/shells.
+    """
     print_section("Default Shell Configuration")
     if not command_exists("bash"):
         log_info("Bash not found; installing...")
@@ -309,7 +384,13 @@ def set_bash_shell():
 # ----------------------------
 # SSH and Sudo Security Configuration
 # ----------------------------
-def configure_ssh():
+
+def configure_ssh() -> None:
+    """
+    Configure and secure the OpenSSH server.
+    
+    Installs OpenSSH server if not present, backs up and updates the sshd_config file, and restarts SSH.
+    """
     print_section("SSH Configuration")
     log_info("Configuring OpenSSH Server...")
     try:
@@ -343,7 +424,6 @@ def configure_ssh():
     try:
         with open(sshd_config, "r") as f:
             lines = f.readlines()
-        new_lines = []
         for key, value in ssh_settings.items():
             found = False
             for i, line in enumerate(lines):
@@ -363,7 +443,12 @@ def configure_ssh():
     except subprocess.CalledProcessError:
         handle_error("Failed to restart SSH service.")
 
-def setup_sudoers():
+def setup_sudoers() -> None:
+    """
+    Ensure the specified user has sudo privileges.
+    
+    Checks the user's groups and adds them to the sudo group if necessary.
+    """
     print_section("Sudo Configuration")
     log_info(f"Ensuring user {USERNAME} has sudo privileges...")
     try:
@@ -379,7 +464,13 @@ def setup_sudoers():
 # ----------------------------
 # Firewall (UFW) Configuration
 # ----------------------------
-def configure_firewall():
+
+def configure_firewall() -> None:
+    """
+    Configure the UFW firewall.
+    
+    Sets default policies, allows specific ports, and enables the firewall.
+    """
     print_section("Firewall Configuration")
     log_info("Configuring firewall with ufw...")
     ufw_cmd = "/usr/sbin/ufw"
@@ -398,7 +489,6 @@ def configure_firewall():
             run_command([ufw_cmd, "allow", f"{port}/tcp"])
         except subprocess.CalledProcessError:
             log_warn(f"Failed to allow port {port}.")
-    # Enable ufw if inactive
     try:
         result = run_command([ufw_cmd, "status"], capture_output=True)
         if "inactive" in result.stdout:
@@ -420,13 +510,19 @@ def configure_firewall():
 # ----------------------------
 # Service Installation and Configuration
 # ----------------------------
-def install_plex():
+
+def install_plex() -> None:
+    """
+    Install and configure Plex Media Server.
+    
+    Downloads the Plex .deb package, installs it, configures the service to run as the specified user,
+    and enables the service.
+    """
     print_section("Plex Media Server Installation")
     log_info("Installing Plex Media Server...")
     if not command_exists("curl"):
         handle_error("curl is required but not installed.")
     temp_deb = "/tmp/plexmediaserver.deb"
-    # Check if Plex is installed
     try:
         subprocess.run(["dpkg", "-s", "plexmediaserver"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         log_info("Plex Media Server is already installed; skipping download and installation.")
@@ -476,7 +572,13 @@ def install_plex():
         pass
     log_info("Plex Media Server installed successfully.")
 
-def caddy_config():
+def caddy_config() -> None:
+    """
+    Configure Caddy web server.
+    
+    Frees up occupied network ports, installs dependencies, adds the GPG key and repository,
+    installs Caddy, and deploys a custom Caddyfile.
+    """
     print_section("Caddy Configuration")
     log_info("Releasing occupied network ports...")
     tcp_ports = ["80", "443", "8080", "32400", "8324", "32469"]
@@ -512,12 +614,11 @@ def caddy_config():
         run_command(["apt", "install", "-y", "debian-keyring", "debian-archive-keyring", "apt-transport-https", "curl"])
     except subprocess.CalledProcessError:
         handle_error("Failed to install dependencies for Caddy.")
-    # Add Caddy GPG key if not present
     keyring_file = "/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
     if not os.path.isfile(keyring_file):
         try:
+            # Download and add Caddy GPG key
             run_command(["curl", "-1sLf", "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"], capture_output=True)
-            # Pipe output to gpg for dearmoring
             with subprocess.Popen(["curl", "-1sLf", "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"], stdout=subprocess.PIPE) as proc:
                 with open(keyring_file, "wb") as f:
                     run_command(["gpg", "--dearmor"], check=True, capture_output=False, text=False, input=proc.stdout.read())
@@ -526,7 +627,6 @@ def caddy_config():
             handle_error(f"Failed to add Caddy GPG key: {e}")
     else:
         log_info("Caddy GPG key already exists.")
-    # Add repository if not already added
     repo_file = "/etc/apt/sources.list.d/caddy-stable.list"
     if not os.path.isfile(repo_file):
         try:
@@ -575,7 +675,12 @@ def caddy_config():
         log_warn("Failed to restart Caddy service.")
     log_info("Caddy configuration completed.")
 
-def install_fastfetch():
+def install_fastfetch() -> None:
+    """
+    Install Fastfetch, a system information tool.
+    
+    Downloads the Fastfetch .deb package, installs it, and fixes dependencies if necessary.
+    """
     print_section("Fastfetch Installation")
     temp_deb = "/tmp/fastfetch-linux-amd64.deb"
     try:
@@ -602,7 +707,13 @@ def install_fastfetch():
         pass
     log_info("Fastfetch installed successfully.")
 
-def docker_config():
+def docker_config() -> None:
+    """
+    Install and configure Docker and Docker Compose.
+    
+    Installs Docker if not present, adds the user to the docker group, updates Docker daemon configuration,
+    and installs Docker Compose.
+    """
     print_section("Docker Configuration")
     log_info("Installing Docker...")
     if command_exists("docker"):
@@ -613,7 +724,6 @@ def docker_config():
             log_info("Docker installed successfully.")
         except subprocess.CalledProcessError:
             handle_error("Failed to install Docker.")
-    # Add user to docker group if not already a member
     try:
         result = subprocess.run(["id", "-nG", USERNAME], capture_output=True, text=True, check=True)
         if "docker" not in result.stdout.split():
@@ -675,7 +785,12 @@ def docker_config():
     else:
         log_info("Docker Compose is already installed.")
 
-def deploy_user_scripts():
+def deploy_user_scripts() -> None:
+    """
+    Deploy user scripts from the repository to the user's bin directory.
+    
+    Uses rsync to synchronize scripts and sets executable permissions.
+    """
     print_section("Deploying User Scripts")
     script_source = os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "_scripts")
     script_target = os.path.join(USER_HOME, "bin")
@@ -689,7 +804,12 @@ def deploy_user_scripts():
     except subprocess.CalledProcessError:
         handle_error("Script deployment failed.")
 
-def dotfiles_load():
+def dotfiles_load() -> None:
+    """
+    Load and deploy dotfiles from the repository to the user's configuration directory.
+    
+    Synchronizes configurations for applications like alacritty, i3, and picom.
+    """
     print_section("Loading Dotfiles")
     config_base = os.path.join(USER_HOME, ".config")
     dotfiles_dirs = {
@@ -713,7 +833,12 @@ def dotfiles_load():
         except subprocess.CalledProcessError:
             log_warn("Failed to set execute permissions on i3blocks scripts.")
 
-def configure_periodic():
+def configure_periodic() -> None:
+    """
+    Set up a daily cron job for system maintenance.
+    
+    Creates a cron script that updates and cleans the system.
+    """
     print_section("Periodic Maintenance Setup")
     cron_file = "/etc/cron.daily/ubuntu_maintenance"
     marker = "# Ubuntu maintenance script"
@@ -722,7 +847,6 @@ def configure_periodic():
             if marker in f.read():
                 log_info("Daily maintenance cron job already configured.")
                 return
-        # Backup existing cron file
         backup_file(cron_file)
     content = """#!/bin/sh
 # Ubuntu maintenance script
@@ -736,7 +860,12 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
     except Exception as e:
         log_warn(f"Failed to set execute permission on {cron_file}: {e}")
 
-def backup_configs():
+def backup_configs() -> None:
+    """
+    Backup critical system configuration files.
+    
+    Copies configuration files to a timestamped backup directory.
+    """
     print_section("Configuration Backups")
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     backup_dir = f"/var/backups/ubuntu_config_{timestamp}"
@@ -751,7 +880,10 @@ def backup_configs():
         else:
             log_warn(f"File {file} not found; skipping.")
 
-def rotate_logs():
+def rotate_logs() -> None:
+    """
+    Rotate the log file by compressing it and truncating the original.
+    """
     print_section("Log Rotation")
     if os.path.isfile(LOG_FILE):
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -761,7 +893,6 @@ def rotate_logs():
                 import gzip
                 with gzip.GzipFile(fileobj=f_out, mode="wb") as gz:
                     shutil.copyfileobj(f_in, gz)
-            # Truncate original log file
             open(LOG_FILE, "w").close()
             log_info(f"Log rotated to {rotated_file}.")
         except Exception as e:
@@ -769,7 +900,12 @@ def rotate_logs():
     else:
         log_warn(f"Log file {LOG_FILE} does not exist.")
 
-def system_health_check():
+def system_health_check() -> None:
+    """
+    Perform basic system health checks and log the results.
+    
+    Checks uptime, disk usage, memory usage, and logs CPU and network interface details.
+    """
     print_section("System Health Check")
     try:
         uptime = subprocess.check_output(["uptime"], text=True).strip()
@@ -789,7 +925,12 @@ def system_health_check():
     except Exception as e:
         log_warn(f"Failed to get memory usage: {e}")
 
-def verify_firewall_rules():
+def verify_firewall_rules() -> None:
+    """
+    Verify that specific ports are accessible as expected.
+    
+    Uses netcat to check connectivity on predefined ports.
+    """
     print_section("Firewall Rules Verification")
     for port in ["22", "80", "443", "32400"]:
         try:
@@ -798,7 +939,12 @@ def verify_firewall_rules():
         except subprocess.CalledProcessError:
             log_warn(f"Port {port} is not accessible. Check ufw rules.")
 
-def update_ssl_certificates():
+def update_ssl_certificates() -> None:
+    """
+    Update SSL certificates using certbot.
+    
+    Installs certbot if necessary and renews certificates.
+    """
     print_section("SSL Certificates Update")
     if not command_exists("certbot"):
         try:
@@ -813,7 +959,12 @@ def update_ssl_certificates():
     except subprocess.CalledProcessError:
         log_warn("Failed to update SSL certificates.")
 
-def tune_system():
+def tune_system() -> None:
+    """
+    Apply performance tuning settings to the system.
+    
+    Updates /etc/sysctl.conf with network performance parameters and applies them immediately.
+    """
     print_section("Performance Tuning")
     sysctl_conf = "/etc/sysctl.conf"
     if os.path.isfile(sysctl_conf):
@@ -843,7 +994,12 @@ net.ipv4.tcp_wmem=4096 16384 4194304
     else:
         log_info(f"Performance tuning settings already exist in {sysctl_conf}.")
 
-def final_checks():
+def final_checks() -> None:
+    """
+    Perform final system checks and log system information.
+    
+    Verifies kernel version, uptime, disk usage, memory usage, CPU details, network interfaces, and load averages.
+    """
     print_section("Final System Checks")
     try:
         kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
@@ -888,7 +1044,12 @@ def final_checks():
     except Exception as e:
         log_warn(f"Failed to get load averages: {e}")
 
-def home_permissions():
+def home_permissions() -> None:
+    """
+    Ensure correct ownership and permissions for the user's home directory.
+    
+    Sets ownership, applies the setgid bit to directories, and applies default ACLs if setfacl is available.
+    """
     print_section("Home Directory Permissions")
     try:
         run_command(["chown", "-R", f"{USERNAME}:{USERNAME}", USER_HOME])
@@ -908,7 +1069,13 @@ def home_permissions():
     else:
         log_warn("setfacl not found; skipping default ACL configuration.")
 
-def install_configure_zfs():
+def install_configure_zfs() -> None:
+    """
+    Install and configure ZFS.
+    
+    Installs required packages, enables ZFS services, imports an existing ZFS pool if available,
+    and sets the mount point.
+    """
     print_section("ZFS Installation and Configuration")
     zpool_name = "WD_BLACK"
     mount_point = f"/media/{zpool_name}"
@@ -935,7 +1102,6 @@ def install_configure_zfs():
         run_command(["systemctl", "enable", "zfs-mount.service"])
     except subprocess.CalledProcessError:
         log_warn("Could not enable zfs-mount.service.")
-    # Check if the pool exists
     try:
         subprocess.run(["zpool", "list", zpool_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         log_info(f"ZFS pool '{zpool_name}' is already imported.")
@@ -952,7 +1118,12 @@ def install_configure_zfs():
     except subprocess.CalledProcessError:
         log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}'.")
 
-def prompt_reboot():
+def prompt_reboot() -> None:
+    """
+    Prompt the user for a system reboot to apply changes.
+    
+    If the user confirms, the system will be rebooted.
+    """
     print_section("Reboot Prompt")
     answer = input("Would you like to reboot now? [y/N]: ").strip().lower()
     if answer == "y":
@@ -967,7 +1138,9 @@ def prompt_reboot():
 # ----------------------------
 # Main Execution Flow
 # ----------------------------
-def main():
+
+def main() -> None:
+    """Main function executing the entire setup process."""
     check_root()
     check_network()
 
