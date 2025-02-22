@@ -13,7 +13,7 @@
 #   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 #
 # Author: dunamismax
-# Version: 6.1
+# Version: 4.2.0
 # Date: 2025-02-22
 # ==============================================================================
 
