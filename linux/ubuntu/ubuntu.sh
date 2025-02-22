@@ -641,6 +641,54 @@ home_permissions() {
     fi
 }
 
+install_configure_zfs() {
+    print_section "ZFS Installation and Configuration"
+
+    local zpool_name="WD_BLACK"
+    local mount_point="/media/${zpool_name}"
+
+    # Update package lists
+    if ! apt update; then
+        log_error "Failed to update package lists."
+        return 1
+    fi
+
+    # Install prerequisites
+    if ! apt install -y dpkg-dev linux-headers-generic linux-image-generic; then
+        log_error "Failed to install prerequisites."
+        return 1
+    fi
+
+    # Install ZFS packages
+    if ! DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux; then
+        log_error "Failed to install ZFS packages."
+        return 1
+    fi
+
+    # Enable necessary ZFS services
+    systemctl enable zfs-import-cache.service || log_warn "Could not enable zfs-import-cache.service."
+    systemctl enable zfs-mount.service || log_warn "Could not enable zfs-mount.service."
+
+    # Check if the pool exists
+    if ! zpool list "$zpool_name" &>/dev/null; then
+        if zpool import -f "$zpool_name"; then
+            log_info "Imported ZFS pool '$zpool_name'."
+        else
+            log_error "Failed to import ZFS pool '$zpool_name'."
+            return 1
+        fi
+    else
+        log_info "ZFS pool '$zpool_name' is already imported."
+    fi
+
+    # Set the mount point
+    if zfs set mountpoint="${mount_point}" "$zpool_name"; then
+        log_info "Mountpoint for pool '$zpool_name' set to '$mount_point'."
+    else
+        log_warn "Failed to set mountpoint for ZFS pool '$zpool_name'."
+    fi
+}
+
 #--------------------------------------------------
 # Prompt for Reboot
 #--------------------------------------------------
@@ -695,6 +743,7 @@ main() {
     tune_system
 
     home_permissions
+    install_configure_zfs
     final_checks
 
     prompt_reboot
