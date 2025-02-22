@@ -449,23 +449,6 @@ install_fastfetch() {
     fi
 }
 
-install_configure_zfs() {
-    print_section "ZFS Installation and Configuration"
-    local zpool_name="WD_BLACK"
-    local mount_point="/media/${zpool_name}"
-    apt update || { log_error "Failed to update package lists."; return 1; }
-    apt install -y dpkg-dev linux-headers-generic linux-image-generic || { log_error "Failed to install prerequisites."; return 1; }
-    DEBIAN_FRONTEND=noninteractive apt install -y zfs-dkms zfsutils-linux || { log_error "Failed to install ZFS packages."; return 1; }
-    systemctl enable zfs-import-cache.service || log_warn "Could not enable zfs-import-cache.service."
-    systemctl enable zfs-mount.service || log_warn "Could not enable zfs-mount.service."
-    if ! zpool list "$zpool_name" &>/dev/null; then
-        zpool import -f "$zpool_name" && log_info "Imported ZFS pool '$zpool_name'." || { log_error "Failed to import ZFS pool '$zpool_name'."; return 1; }
-    else
-        log_info "ZFS pool '$zpool_name' is already imported."
-    fi
-    zfs set mountpoint="${mount_point}" "$zpool_name" && log_info "Mountpoint for pool '$zpool_name' set to '$mount_point'." || log_warn "Failed to set mountpoint for ZFS pool '$zpool_name'."
-}
-
 docker_config() {
     print_section "Docker Configuration"
     log_info "Installing Docker..."
@@ -706,7 +689,6 @@ main() {
     caddy_config
     install_fastfetch
 
-    install_configure_zfs
     docker_config
 
     deploy_user_scripts
