@@ -197,28 +197,6 @@ configure_timezone() {
     fi
 }
 
-configure_ntp() {
-    print_section "NTP Configuration"
-    log_info "Configuring NTP service..."
-    local ntp_conf="/etc/ntp.conf"
-    # Only update if the required servers are not already present.
-    if [ -f "$ntp_conf" ] && grep -q "0.pool.ntp.org iburst" "$ntp_conf"; then
-        log_info "NTP configuration already present in $ntp_conf."
-    else
-        backup_file "$ntp_conf"
-        cat <<'EOF' > "$ntp_conf"
-# Minimal NTP configuration
-server 0.pool.ntp.org iburst
-server 1.pool.ntp.org iburst
-server 2.pool.ntp.org iburst
-server 3.pool.ntp.org iburst
-EOF
-        log_info "Created/updated NTP configuration at $ntp_conf."
-    fi
-    systemctl enable ntp
-    systemctl restart ntp && log_info "NTP service restarted successfully." || log_warn "Failed to restart NTP service."
-}
-
 #--------------------------------------------------
 # Repository and Shell Setup
 #--------------------------------------------------
@@ -715,7 +693,6 @@ main() {
     install_packages
 
     configure_timezone
-    configure_ntp
 
     setup_repos
     copy_shell_configs
