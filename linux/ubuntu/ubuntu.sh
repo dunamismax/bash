@@ -515,34 +515,6 @@ install_xfce_desktop() {
     log_info "XFCE desktop installation complete."
 }
 
-enable_dunamismax_services() {
-    print_section "DunamisMax Services Setup"
-    for service in ai-agents files messenger notes main; do
-        local service_file="/etc/systemd/system/dunamismax-${service}.service"
-        cat <<EOF >"$service_file"
-[Unit]
-Description=DunamisMax ${service^} Service
-After=network.target
-
-[Service]
-User=${USERNAME}
-Group=${USERNAME}
-WorkingDirectory=/home/${USERNAME}/github/web/${service}
-Environment="PATH=/home/${USERNAME}/github/web/${service}/.venv/bin"
-ExecStart=/home/${USERNAME}/github/web/${service}/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $((8000 + ${#service}))
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-        log_info "Created service file for dunamismax-${service}."
-    done
-    systemctl daemon-reload
-    for service in ai-agents files messenger notes main; do
-        systemctl enable "dunamismax-${service}.service" && log_info "Enabled dunamismax-${service}.service."
-    done
-}
-
 deploy_user_scripts() {
     print_section "Deploying User Scripts"
     local script_source="/home/${USERNAME}/github/bash/linux/_scripts"
@@ -635,18 +607,6 @@ run_security_audit() {
     else
         log_warn "Lynis not installed; skipping security audit."
     fi
-}
-
-check_services() {
-    print_section "Service Status Check"
-    for service in ssh ufw cron caddy ntp; do
-        if systemctl is-active --quiet "$service"; then
-            log_info "Service $service is running."
-        else
-            log_warn "Service $service is not running; attempting restart..."
-            systemctl restart "$service" && log_info "Service $service restarted successfully." || log_error "Failed to restart service $service."
-        fi
-    done
 }
 
 verify_firewall_rules() {
@@ -755,7 +715,6 @@ main() {
     install_ly
     install_xfce_desktop
 
-    enable_dunamismax_services
     deploy_user_scripts
     dotfiles_load
 
@@ -767,7 +726,6 @@ main() {
 
     system_health_check
     run_security_audit
-    check_services
     verify_firewall_rules
     update_ssl_certificates
     tune_system
