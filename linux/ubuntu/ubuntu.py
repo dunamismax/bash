@@ -9,7 +9,7 @@ It performs a comprehensive set of system configuration tasks including:
   - GitHub repository setup and shell configuration updates
   - SSH hardening and sudo configuration
   - Firewall (ufw) setup and verification
-  - Installation and configuration of services (Plex, Caddy, Fastfetch, Docker)
+  - Installation and configuration of services (Plex, Fastfetch, Docker)
   - Deployment of user scripts and dotfiles
   - Periodic maintenance tasks and performance tuning
   - ZFS pool configuration and final system health checks
@@ -572,109 +572,6 @@ def install_plex() -> None:
         pass
     log_info("Plex Media Server installed successfully.")
 
-def caddy_config() -> None:
-    """
-    Configure Caddy web server.
-    
-    Frees up occupied network ports, installs dependencies, adds the GPG key and repository,
-    installs Caddy, and deploys a custom Caddyfile.
-    """
-    print_section("Caddy Configuration")
-    log_info("Releasing occupied network ports...")
-    tcp_ports = ["80", "443", "8080", "32400", "8324", "32469"]
-    udp_ports = ["80", "443", "1900", "5353", "32410", "32411", "32412", "32413", "32414", "32415"]
-    for port in tcp_ports:
-        try:
-            result = run_command(["lsof", "-t", "-i", f"TCP:{port}", "-sTCP:LISTEN"], capture_output=True)
-            pids = result.stdout.strip().splitlines()
-            if pids:
-                log_info(f"Killing processes on TCP port {port}: {', '.join(pids)}")
-                for pid in pids:
-                    try:
-                        run_command(["kill", "-9", pid])
-                    except subprocess.CalledProcessError:
-                        log_warn(f"Failed to kill process {pid} on TCP port {port}")
-        except subprocess.CalledProcessError:
-            pass
-    for port in udp_ports:
-        try:
-            result = run_command(["lsof", "-t", "-i", f"UDP:{port}"], capture_output=True)
-            pids = result.stdout.strip().splitlines()
-            if pids:
-                log_info(f"Killing processes on UDP port {port}: {', '.join(pids)}")
-                for pid in pids:
-                    try:
-                        run_command(["kill", "-9", pid])
-                    except subprocess.CalledProcessError:
-                        log_warn(f"Failed to kill process {pid} on UDP port {port}")
-        except subprocess.CalledProcessError:
-            pass
-    log_info("Installing dependencies for Caddy...")
-    try:
-        run_command(["apt", "install", "-y", "debian-keyring", "debian-archive-keyring", "apt-transport-https", "curl"])
-    except subprocess.CalledProcessError:
-        handle_error("Failed to install dependencies for Caddy.")
-    keyring_file = "/usr/share/keyrings/caddy-stable-archive-keyring.gpg"
-    if not os.path.isfile(keyring_file):
-        try:
-            # Download and add Caddy GPG key
-            run_command(["curl", "-1sLf", "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"], capture_output=True)
-            with subprocess.Popen(["curl", "-1sLf", "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"], stdout=subprocess.PIPE) as proc:
-                with open(keyring_file, "wb") as f:
-                    run_command(["gpg", "--dearmor"], check=True, capture_output=False, text=False, input=proc.stdout.read())
-            log_info("Added Caddy GPG key.")
-        except Exception as e:
-            handle_error(f"Failed to add Caddy GPG key: {e}")
-    else:
-        log_info("Caddy GPG key already exists.")
-    repo_file = "/etc/apt/sources.list.d/caddy-stable.list"
-    if not os.path.isfile(repo_file):
-        try:
-            output = subprocess.check_output(["curl", "-1sLf", "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt"], text=True)
-            with open(repo_file, "w") as f:
-                f.write(output)
-            log_info("Added Caddy repository.")
-        except Exception as e:
-            handle_error(f"Failed to add Caddy repository: {e}")
-    else:
-        log_info("Caddy repository already exists.")
-    try:
-        run_command(["apt", "update"])
-    except subprocess.CalledProcessError:
-        handle_error("Failed to update package lists.")
-    try:
-        subprocess.run(["dpkg", "-s", "caddy"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        log_info("Caddy is already installed.")
-    except subprocess.CalledProcessError:
-        try:
-            run_command(["apt", "install", "-y", "caddy"])
-        except subprocess.CalledProcessError:
-            handle_error("Failed to install Caddy.")
-    custom_caddyfile = os.path.join(USER_HOME, "github", "linux", "ubuntu", "dotfiles", "Caddyfile")
-    dest_caddyfile = "/etc/caddy/Caddyfile"
-    if os.path.isfile(custom_caddyfile):
-        copy = True
-        if os.path.isfile(dest_caddyfile) and filecmp.cmp(custom_caddyfile, dest_caddyfile):
-            log_info("Custom Caddyfile is already in place.")
-            copy = False
-        if copy:
-            try:
-                shutil.copy2(custom_caddyfile, dest_caddyfile)
-                log_info("Copied custom Caddyfile.")
-            except Exception as e:
-                log_warn(f"Failed to copy custom Caddyfile: {e}")
-    else:
-        log_warn(f"Custom Caddyfile not found at {custom_caddyfile}.")
-    try:
-        run_command(["systemctl", "enable", "caddy"])
-    except subprocess.CalledProcessError:
-        log_warn("Failed to enable Caddy service.")
-    try:
-        run_command(["systemctl", "restart", "caddy"])
-    except subprocess.CalledProcessError:
-        log_warn("Failed to restart Caddy service.")
-    log_info("Caddy configuration completed.")
-
 def install_fastfetch() -> None:
     """
     Install Fastfetch, a system information tool.
@@ -1158,7 +1055,6 @@ def main() -> None:
     configure_firewall()
 
     install_plex()
-    caddy_config()
     install_fastfetch()
 
     docker_config()
