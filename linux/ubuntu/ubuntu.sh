@@ -544,33 +544,6 @@ install_ly() {
     log_info "Ly installed and configured as the default login manager."
 }
 
-install_kde_desktop() {
-    print_section "KDE Plasma Desktop Installation"
-    log_info "Installing KDE Plasma desktop environment and associated applications..."
-    local kde_packages=(
-        kubuntu-desktop
-        kde-plasma-desktop
-        kde-standard
-        kde-applications
-        konsole
-        dolphin
-        kate
-        systemsettings
-        kdeconnect
-        plasma-widget-networkmanagement
-        plasma-widget-volume
-        plasma-widget-clock
-    )
-    for pkg in "${kde_packages[@]}"; do
-        if dpkg -s "$pkg" &>/dev/null; then
-            log_info "KDE package '$pkg' is already installed."
-        else
-            apt install -y "$pkg" && log_info "Installed KDE package: $pkg" || log_warn "Failed to install KDE package: $pkg"
-        fi
-    done
-    log_info "KDE Plasma desktop installation complete."
-}
-
 deploy_user_scripts() {
     print_section "Deploying User Scripts"
     local script_source="/home/${USERNAME}/github/bash/linux/_scripts"
@@ -776,7 +749,6 @@ main() {
 
     install_zig_binary
     install_ly
-    install_kde_desktop
 
     deploy_user_scripts
     dotfiles_load
