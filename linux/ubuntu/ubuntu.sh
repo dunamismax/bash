@@ -7,8 +7,8 @@
 #   performing a comprehensive set of configuration tasks. It updates the system,
 #   installs essential packages, and sets up critical services including time
 #   synchronization, SSH hardening, firewall configuration, and deployment of key
-#   applications such as Plex, Caddy, Fastfetch, ZFS, Docker (with Compose), Zig, and
-#   the Ly display manager. The script is written to be idempotent – running it
+#   applications such as Plex, Caddy, Fastfetch, ZFS, Docker (with Compose).
+#   The script is written to be idempotent – running it
 #   multiple times causes no duplicate entries or adverse side effects.
 #
 # Key Functions:
@@ -45,9 +45,6 @@ FASTFETCH_URL="https://github.com/fastfetch-cli/fastfetch/releases/download/${FA
 
 DOCKER_COMPOSE_VERSION="2.20.2"
 DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)"
-
-ZIG_VERSION="0.12.1"
-ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
 
 LY_REPO="https://github.com/fairyglade/ly"
 
@@ -554,57 +551,6 @@ EOF
     fi
 }
 
-install_zig_binary() {
-    print_section "Zig Installation"
-    local zig_install_dir="/opt/zig"
-    local temp_download="/tmp/zig.tar.xz"
-    apt install -y curl tar || handle_error "Failed to install required dependencies."
-    if command_exists zig; then
-        log_info "Zig is already installed."
-    else
-        curl -L -o "${temp_download}" "${ZIG_URL}" || handle_error "Failed to download Zig binary."
-        rm -rf "${zig_install_dir}"
-        mkdir -p "${zig_install_dir}" || handle_error "Failed to create ${zig_install_dir}."
-        tar -xf "${temp_download}" -C "${zig_install_dir}" --strip-components=1 || handle_error "Failed to extract Zig binary."
-        ln -sf "${zig_install_dir}/zig" /usr/local/bin/zig || handle_error "Failed to create symlink for Zig."
-        rm -f "${temp_download}"
-        if command_exists zig; then
-            log_info "Zig installed successfully! Version: $(zig version)"
-        else
-            handle_error "Zig is not accessible from the command line."
-        fi
-    fi
-}
-
-install_ly() {
-    print_section "Ly Display Manager Installation"
-    for cmd in git zig systemctl; do
-        command_exists "$cmd" || handle_error "'$cmd' is required but not installed."
-    done
-    apt update || handle_error "Failed to update package lists."
-    apt install -y build-essential libpam0g-dev libxcb-xkb-dev libxcb-randr0-dev libxcb-xinerama0-dev libxcb-xrm-dev libxkbcommon-dev libxkbcommon-x11-dev \
-        || handle_error "Failed to install Ly build dependencies."
-    local ly_dir="/opt/ly"
-    if [ ! -d "$ly_dir/.git" ]; then
-        git clone "$LY_REPO" "$ly_dir" || handle_error "Failed to clone the Ly repository."
-    else
-        (cd "$ly_dir" && git pull) || handle_error "Failed to update the Ly repository."
-    fi
-    (cd "$ly_dir" && zig build) || handle_error "Compilation of Ly failed."
-    (cd "$ly_dir" && zig build installsystemd) || handle_error "Installation of Ly systemd service failed."
-    for dm in gdm sddm lightdm lxdm; do
-        if systemctl is-enabled "${dm}.service" &>/dev/null; then
-            systemctl disable --now "${dm}.service" && log_info "Disabled ${dm}.service." || handle_error "Failed to disable ${dm}.service."
-        fi
-    done
-    if [ -L /etc/systemd/system/display-manager.service ]; then
-        rm /etc/systemd/system/display-manager.service && log_info "Removed display-manager.service symlink."
-    fi
-    systemctl enable ly.service || handle_error "Failed to enable ly.service."
-    systemctl disable getty@tty2.service || handle_error "Failed to disable getty@tty2.service."
-    log_info "Ly installed and configured as the default login manager."
-}
-
 deploy_user_scripts() {
     print_section "Deploying User Scripts"
     local script_source="/home/${USERNAME}/github/bash/linux/ubuntu/_scripts"
@@ -817,9 +763,6 @@ main() {
 
     install_configure_zfs
     docker_config
-
-    install_zig_binary
-    install_ly
 
     deploy_user_scripts
     dotfiles_load
