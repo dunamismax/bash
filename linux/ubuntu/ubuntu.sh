@@ -263,7 +263,7 @@ setup_repos() {
 
 copy_shell_configs() {
     print_section "Shell Configuration Update"
-    local source_dir="/home/${USERNAME}/github/bash/linux/dotfiles"
+    local source_dir="/home/${USERNAME}/github/bash/linux/ubuntu/dotfiles"
     local dest_dir="/home/${USERNAME}"
     for file in ".bashrc" ".profile"; do
         local src="${source_dir}/${file}"
@@ -426,7 +426,7 @@ caddy_config() {
     else
         log_info "Caddy is already installed."
     fi
-    local custom_caddyfile="/home/${USERNAME}/github/linux/dotfiles/Caddyfile"
+    local custom_caddyfile="/home/${USERNAME}/github/linux/ubuntu/dotfiles/Caddyfile"
     local dest_caddyfile="/etc/caddy/Caddyfile"
     if [ -f "$custom_caddyfile" ]; then
         cp -f "$custom_caddyfile" "$dest_caddyfile" && log_info "Copied custom Caddyfile." || log_warn "Failed to copy custom Caddyfile."
@@ -558,7 +558,7 @@ install_ly() {
 
 deploy_user_scripts() {
     print_section "Deploying User Scripts"
-    local script_source="/home/${USERNAME}/github/bash/linux/_scripts"
+    local script_source="/home/${USERNAME}/github/bash/linux/ubuntu/_scripts"
     local script_target="/home/${USERNAME}/bin"
     if [ ! -d "$script_source" ]; then
         handle_error "Source directory '$script_source' does not exist."
@@ -574,10 +574,10 @@ dotfiles_load() {
     print_section "Loading Dotfiles"
     local config_base="/home/${USERNAME}/.config"
     declare -A dotfiles_dirs=(
-        [alacritty]="/home/${USERNAME}/github/bash/linux/dotfiles/alacritty"
-        [i3]="/home/${USERNAME}/github/bash/linux/dotfiles/i3"
-        [i3blocks]="/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks"
-        [picom]="/home/${USERNAME}/github/bash/linux/dotfiles/picom"
+        [alacritty]="/home/${USERNAME}/github/bash/linux/ubuntu/dotfiles/alacritty"
+        [i3]="/home/${USERNAME}/github/bash/linux/ubuntu/dotfiles/i3"
+        [i3blocks]="/home/${USERNAME}/github/bash/linux/ubuntu/dotfiles/i3blocks"
+        [picom]="/home/${USERNAME}/github/bash/linux/ubuntu/dotfiles/picom"
     )
     for dir in "${!dotfiles_dirs[@]}"; do
         local src="${dotfiles_dirs[$dir]}"
