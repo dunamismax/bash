@@ -1073,7 +1073,7 @@ def main() -> None:
     tune_system()
 
     home_permissions()
-    install_configure_zfs()
+    # install_configure_zfs()
     final_checks()
 
     prompt_reboot()
