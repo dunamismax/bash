@@ -32,8 +32,6 @@ FASTFETCH_URL="https://github.com/fastfetch-cli/fastfetch/releases/download/${FA
 DOCKER_COMPOSE_VERSION="2.20.2"
 DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)"
 
-LY_REPO="https://github.com/fairyglade/ly"
-
 LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 USER_HOME="/home/${USERNAME}"
