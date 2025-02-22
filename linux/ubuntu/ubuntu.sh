@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Ubuntu Server Automation Script v6.0 (Master)
+# Ubuntu Server Automation Script v6.1 (Master)
 #
 # Overview:
 #   This master script automates initial configuration and hardening of an
-#   Ubuntu system. It updates the system, installs essential packages,
+#   Ubuntu system. It updates the system, installs essential packages, and
 #   configures time settings, SSH, firewall, and additional services such as
-#   Plex, Caddy, ZFS, Docker, Zig/LY, XFCE, GitHub repositories, and various
-#   custom services. It also includes backup, logging, periodic maintenance,
-#   and system health functions.
+#   Plex, Caddy, ZFS, Docker, Docker Compose, Zig, Ly, KDE, and various custom
+#   services. It includes backup, logging, periodic maintenance, and system
+#   health functions.
 #
 # Usage:
 #   Run as root.
@@ -17,15 +17,31 @@
 #   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 #
 # Author: dunamismax (rewritten and improved)
-# Version: 6.0
+# Version: 6.1
 # Date: 2025-02-22
 # ==============================================================================
 set -Eeuo pipefail
 IFS=$'\n\t'
 
 #--------------------------------------------------
-# Global Constants & Environment Setup
+# Global Variables & Parameterized URLs/Versions
 #--------------------------------------------------
+# Software version and download URLs – change these to update software versions.
+PLEX_VERSION="1.41.3.9314-a0bfb8370"
+PLEX_URL="https://downloads.plex.tv/plex-media-server-new/${PLEX_VERSION}/debian/plexmediaserver_${PLEX_VERSION}_amd64.deb"
+
+FASTFETCH_VERSION="2.36.1"
+FASTFETCH_URL="https://github.com/fastfetch-cli/fastfetch/releases/download/${FASTFETCH_VERSION}/fastfetch-linux-amd64.deb"
+
+DOCKER_COMPOSE_VERSION="2.20.2"
+DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)"
+
+ZIG_VERSION="0.12.1"
+ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz"
+
+LY_REPO="https://github.com/fairyglade/ly"
+
+# User, logging and package settings
 LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 USER_HOME="/home/${USERNAME}"
@@ -98,7 +114,7 @@ trap 'handle_error "An unexpected error occurred at line ${LINENO}."' ERR
 
 cleanup() {
     log_info "Performing cleanup tasks before exit."
-    # Place any cleanup commands here.
+    # Add any cleanup commands here.
 }
 trap cleanup EXIT
 
@@ -165,7 +181,15 @@ update_system() {
 install_packages() {
     print_section "Essential Package Installation"
     log_info "Installing packages..."
-    apt install -y "${PACKAGES[@]}" || handle_error "Failed to install one or more packages."
+    # Only install packages that are not already installed
+    for pkg in "${PACKAGES[@]}"; do
+        if ! dpkg -s "$pkg" &>/dev/null; then
+            apt install -y "$pkg" || handle_error "Failed to install package: $pkg"
+            log_info "Installed package: $pkg"
+        else
+            log_info "Package already installed: $pkg"
+        fi
+    done
     log_info "Package installation complete."
 }
 
@@ -177,8 +201,7 @@ configure_timezone() {
     local tz="America/New_York"
     log_info "Setting timezone to ${tz}..."
     if [ -f "/usr/share/zoneinfo/${tz}" ]; then
-        ln -sf "/usr/share/zoneinfo/${tz}" /etc/localtime
-        log_info "Timezone set to ${tz}."
+        ln -sf "/usr/share/zoneinfo/${tz}" /etc/localtime && log_info "Timezone set to ${tz}." || log_warn "Failed to set timezone."
     else
         log_warn "Timezone file for ${tz} not found."
     fi
@@ -214,10 +237,14 @@ setup_repos() {
     mkdir -p "$GH_DIR" || handle_error "Failed to create GitHub directory at $GH_DIR."
     for repo in bash windows web python go misc; do
         local REPO_DIR="$GH_DIR/$repo"
-        [ -d "$REPO_DIR" ] && { log_info "Removing existing repository '$repo' directory..."; rm -rf "$REPO_DIR"; }
-        log_info "Cloning repository '$repo' into '$REPO_DIR'..."
-        git clone "https://github.com/dunamismax/$repo.git" "$REPO_DIR" && \
-            log_info "Repository '$repo' cloned successfully." || log_warn "Failed to clone repository '$repo'."
+        if [ -d "$REPO_DIR" ]; then
+            log_info "Repository '$repo' already exists. Pulling latest changes..."
+            (cd "$REPO_DIR" && git pull) || log_warn "Failed to update repository '$repo'."
+        else
+            log_info "Cloning repository '$repo' into '$REPO_DIR'..."
+            git clone "https://github.com/dunamismax/$repo.git" "$REPO_DIR" && \
+                log_info "Repository '$repo' cloned successfully." || log_warn "Failed to clone repository '$repo'."
+        fi
     done
     chown -R "$USERNAME:$USERNAME" "$GH_DIR" && log_info "Ownership of '$GH_DIR' set to '$USERNAME'."
 }
@@ -236,7 +263,7 @@ copy_shell_configs() {
             log_warn "Source file ${src} not found; skipping."
         fi
     done
-    # Source the updated .bashrc if available
+    # Optionally source the updated .bashrc if available
     [ -f "${dest_dir}/.bashrc" ] && { log_info "Sourcing ${dest_dir}/.bashrc..."; source "${dest_dir}/.bashrc"; } || \
         log_warn "No .bashrc found in ${dest_dir}; skipping source."
 }
@@ -247,7 +274,7 @@ set_bash_shell() {
         log_info "Bash not found; installing..."
         apt install -y bash || { log_warn "Bash installation failed."; return 1; }
     fi
-    grep -qxF "/bin/bash" /etc/shells || echo "/bin/bash" >> /etc/shells && log_info "Added /bin/bash to /etc/shells."
+    grep -qxF "/bin/bash" /etc/shells || { echo "/bin/bash" >> /etc/shells && log_info "Added /bin/bash to /etc/shells."; }
     chsh -s /bin/bash "$USERNAME" && log_info "Default shell for ${USERNAME} set to /bin/bash." || \
         log_warn "Failed to set default shell for ${USERNAME}."
 }
@@ -310,11 +337,14 @@ configure_firewall() {
     [ -x "$ufw_cmd" ] || handle_error "ufw command not found. Please install ufw."
     "$ufw_cmd" default deny incoming || log_warn "Failed to set default deny incoming."
     "$ufw_cmd" default allow outgoing || log_warn "Failed to set default allow outgoing."
-    "$ufw_cmd" allow 22/tcp || log_warn "Failed to allow SSH."
-    "$ufw_cmd" allow 80/tcp || log_warn "Failed to allow HTTP."
-    "$ufw_cmd" allow 443/tcp || log_warn "Failed to allow HTTPS."
-    "$ufw_cmd" allow 32400/tcp || log_warn "Failed to allow Plex port."
-    "$ufw_cmd" --force enable || handle_error "Failed to enable ufw firewall."
+    for port in 22 80 443 32400; do
+        "$ufw_cmd" allow "${port}/tcp" || log_warn "Failed to allow port ${port}."
+    done
+    if "$ufw_cmd" status | grep -qi inactive; then
+        "$ufw_cmd" --force enable || handle_error "Failed to enable ufw firewall."
+    else
+        log_info "ufw firewall is already enabled."
+    fi
     systemctl enable ufw || log_warn "Failed to enable ufw service."
     systemctl start ufw || log_warn "Failed to start ufw service."
     log_info "Firewall configured and enabled."
@@ -327,23 +357,26 @@ install_plex() {
     print_section "Plex Media Server Installation"
     log_info "Installing Plex Media Server..."
     command_exists curl || handle_error "curl is required but not installed."
-    local plex_url="https://downloads.plex.tv/plex-media-server-new/1.41.3.9314-a0bfb8370/debian/plexmediaserver_1.41.3.9314-a0bfb8370_amd64.deb"
     local temp_deb="/tmp/plexmediaserver.deb"
-    curl -L -o "$temp_deb" "$plex_url" || handle_error "Failed to download Plex Media Server .deb file."
-    dpkg -i "$temp_deb" || {
-        log_warn "dpkg encountered issues. Attempting to fix missing dependencies..."
-        apt install -f -y || handle_error "Failed to install dependencies for Plex."
-    }
-    local plex_conf="/etc/default/plexmediaserver"
-    if [ -f "$plex_conf" ]; then
-        sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$plex_conf" \
-            && log_info "Configured Plex to run as ${USERNAME}." || log_warn "Failed to set Plex user in $plex_conf"
+    if dpkg -s plexmediaserver &>/dev/null; then
+        log_info "Plex Media Server is already installed; skipping download and installation."
     else
-        log_warn "$plex_conf not found; skipping user configuration."
+        curl -L -o "$temp_deb" "$PLEX_URL" || handle_error "Failed to download Plex Media Server .deb file."
+        dpkg -i "$temp_deb" || {
+            log_warn "dpkg encountered issues. Attempting to fix missing dependencies..."
+            apt install -f -y || handle_error "Failed to install dependencies for Plex."
+        }
+        local plex_conf="/etc/default/plexmediaserver"
+        if [ -f "$plex_conf" ]; then
+            sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$plex_conf" \
+                && log_info "Configured Plex to run as ${USERNAME}." || log_warn "Failed to set Plex user in $plex_conf"
+        else
+            log_warn "$plex_conf not found; skipping user configuration."
+        fi
+        systemctl enable plexmediaserver || log_warn "Failed to enable Plex service."
+        rm -f "$temp_deb"
+        log_info "Plex Media Server installed successfully."
     fi
-    systemctl enable plexmediaserver || log_warn "Failed to enable Plex service."
-    rm -f "$temp_deb"
-    log_info "Plex Media Server installed successfully."
 }
 
 caddy_config() {
@@ -354,12 +387,18 @@ caddy_config() {
     for port in "${tcp_ports[@]}"; do
         local pids
         pids=$(lsof -t -i TCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
-        [ -n "$pids" ] && { log_info "Killing processes on TCP port $port: $pids"; kill -9 $pids || log_warn "Failed to kill processes on TCP port $port"; }
+        if [ -n "$pids" ]; then
+            log_info "Killing processes on TCP port $port: $pids"
+            kill -9 $pids || log_warn "Failed to kill processes on TCP port $port"
+        fi
     done
     for port in "${udp_ports[@]}"; do
         local pids
         pids=$(lsof -t -i UDP:"$port" 2>/dev/null || true)
-        [ -n "$pids" ] && { log_info "Killing processes on UDP port $port: $pids"; kill -9 $pids || log_warn "Failed to kill processes on UDP port $port"; }
+        if [ -n "$pids" ]; then
+            log_info "Killing processes on UDP port $port: $pids"
+            kill -9 $pids || log_warn "Failed to kill processes on UDP port $port"
+        fi
     done
     log_info "Installing dependencies for Caddy..."
     apt install -y debian-keyring debian-archive-keyring apt-transport-https curl || \
@@ -370,8 +409,11 @@ caddy_config() {
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
         tee /etc/apt/sources.list.d/caddy-stable.list || handle_error "Failed to add Caddy repository."
     apt update || handle_error "Failed to update package lists."
-    apt install -y caddy || handle_error "Failed to install Caddy."
-    log_info "Caddy installed successfully."
+    if ! dpkg -s caddy &>/dev/null; then
+        apt install -y caddy || handle_error "Failed to install Caddy."
+    else
+        log_info "Caddy is already installed."
+    fi
     local custom_caddyfile="/home/${USERNAME}/github/linux/dotfiles/Caddyfile"
     local dest_caddyfile="/etc/caddy/Caddyfile"
     if [ -f "$custom_caddyfile" ]; then
@@ -386,15 +428,18 @@ caddy_config() {
 
 install_fastfetch() {
     print_section "Fastfetch Installation"
-    local fastfetch_url="https://github.com/fastfetch-cli/fastfetch/releases/download/2.36.1/fastfetch-linux-amd64.deb"
     local temp_deb="/tmp/fastfetch-linux-amd64.deb"
-    curl -L -o "$temp_deb" "$fastfetch_url" || handle_error "Failed to download fastfetch deb file."
-    dpkg -i "$temp_deb" || {
-        log_warn "fastfetch installation issues; fixing dependencies..."
-        apt install -f -y || handle_error "Failed to fix dependencies for fastfetch."
-    }
-    rm -f "$temp_deb"
-    log_info "Fastfetch installed successfully."
+    if dpkg -s fastfetch &>/dev/null; then
+        log_info "Fastfetch is already installed; skipping."
+    else
+        curl -L -o "$temp_deb" "$FASTFETCH_URL" || handle_error "Failed to download fastfetch deb file."
+        dpkg -i "$temp_deb" || {
+            log_warn "fastfetch installation issues; fixing dependencies..."
+            apt install -f -y || handle_error "Failed to fix dependencies for fastfetch."
+        }
+        rm -f "$temp_deb"
+        log_info "Fastfetch installed successfully."
+    fi
 }
 
 install_configure_zfs() {
@@ -442,9 +487,7 @@ EOF
     systemctl restart docker || handle_error "Failed to restart Docker."
     log_info "Docker is running."
     if ! command_exists docker-compose; then
-        local version="2.20.2"
-        curl -L "https://github.com/docker/compose/releases/download/v${version}/docker-compose-$(uname -s)-$(uname -m)" \
-            -o /usr/local/bin/docker-compose || handle_error "Failed to download Docker Compose."
+        curl -L "$DOCKER_COMPOSE_URL" -o /usr/local/bin/docker-compose || handle_error "Failed to download Docker Compose."
         chmod +x /usr/local/bin/docker-compose || handle_error "Failed to set executable permission on Docker Compose."
         log_info "Docker Compose installed successfully."
     else
@@ -454,21 +497,23 @@ EOF
 
 install_zig_binary() {
     print_section "Zig Installation"
-    local zig_version="0.12.1"
-    local zig_tarball_url="https://ziglang.org/download/${zig_version}/zig-linux-x86_64-${zig_version}.tar.xz"
     local zig_install_dir="/opt/zig"
     local temp_download="/tmp/zig.tar.xz"
     apt install -y curl tar || handle_error "Failed to install required dependencies."
-    curl -L -o "${temp_download}" "${zig_tarball_url}" || handle_error "Failed to download Zig binary."
-    rm -rf "${zig_install_dir}"
-    mkdir -p "${zig_install_dir}" || handle_error "Failed to create ${zig_install_dir}."
-    tar -xf "${temp_download}" -C "${zig_install_dir}" --strip-components=1 || handle_error "Failed to extract Zig binary."
-    ln -sf "${zig_install_dir}/zig" /usr/local/bin/zig || handle_error "Failed to create symlink for Zig."
-    rm -f "${temp_download}"
     if command_exists zig; then
-        log_info "Zig installed successfully! Version: $(zig version)"
+        log_info "Zig is already installed."
     else
-        handle_error "Zig is not accessible from the command line."
+        curl -L -o "${temp_download}" "${ZIG_URL}" || handle_error "Failed to download Zig binary."
+        rm -rf "${zig_install_dir}"
+        mkdir -p "${zig_install_dir}" || handle_error "Failed to create ${zig_install_dir}."
+        tar -xf "${temp_download}" -C "${zig_install_dir}" --strip-components=1 || handle_error "Failed to extract Zig binary."
+        ln -sf "${zig_install_dir}/zig" /usr/local/bin/zig || handle_error "Failed to create symlink for Zig."
+        rm -f "${temp_download}"
+        if command_exists zig; then
+            log_info "Zig installed successfully! Version: $(zig version)"
+        else
+            handle_error "Zig is not accessible from the command line."
+        fi
     fi
 }
 
@@ -482,18 +527,16 @@ install_ly() {
         || handle_error "Failed to install Ly build dependencies."
     local ly_dir="/opt/ly"
     if [ ! -d "$ly_dir" ]; then
-        git clone https://github.com/fairyglade/ly "$ly_dir" || handle_error "Failed to clone the Ly repository."
+        git clone "$LY_REPO" "$ly_dir" || handle_error "Failed to clone the Ly repository."
     else
-        cd "$ly_dir" || handle_error "Failed to change directory to $ly_dir."
-        git pull || handle_error "Failed to update the Ly repository."
+        (cd "$ly_dir" && git pull) || handle_error "Failed to update the Ly repository."
     fi
-    cd "$ly_dir" || handle_error "Failed to change directory to $ly_dir."
-    zig build || handle_error "Compilation of Ly failed."
-    zig build installsystemd || handle_error "Installation of Ly systemd service failed."
+    (cd "$ly_dir" && zig build) || handle_error "Compilation of Ly failed."
+    (cd "$ly_dir" && zig build installsystemd) || handle_error "Installation of Ly systemd service failed."
     for dm in gdm sddm lightdm lxdm; do
-        systemctl is-enabled "${dm}.service" &>/dev/null && {
+        if systemctl is-enabled "${dm}.service" &>/dev/null; then
             systemctl disable --now "${dm}.service" && log_info "Disabled ${dm}.service." || handle_error "Failed to disable ${dm}.service."
-        }
+        fi
     done
     [ -L /etc/systemd/system/display-manager.service ] && rm /etc/systemd/system/display-manager.service && log_info "Removed display-manager.service symlink."
     systemctl enable ly.service || handle_error "Failed to enable ly.service."
@@ -504,25 +547,20 @@ install_ly() {
 install_kde_desktop() {
     print_section "KDE Plasma Desktop Installation"
     log_info "Installing KDE Plasma desktop environment and associated applications..."
-    
-    # List of packages for a full KDE experience.
-    # The kubuntu-desktop meta-package provides the complete Kubuntu experience,
-    # while additional packages help ensure a rich set of tools.
     local kde_packages=(
-        kubuntu-desktop      # Full Kubuntu desktop, including KDE Plasma, SDDM, and integrated apps
-        kde-plasma-desktop    # Minimal KDE Plasma desktop (if not already provided by kubuntu-desktop)
-        kde-standard          # Standard set of KDE applications
-        kde-applications      # Full set of KDE applications
-        konsole               # KDE terminal emulator
-        dolphin               # KDE file manager
-        kate                  # KDE text editor
-        systemsettings        # KDE configuration center
-        kdeconnect            # Integration with mobile devices
-        plasma-widget-networkmanagement  # Network management widget
-        plasma-widget-volume             # Volume control widget
-        plasma-widget-clock              # Clock widget
+        kubuntu-desktop
+        kde-plasma-desktop
+        kde-standard
+        kde-applications
+        konsole
+        dolphin
+        kate
+        systemsettings
+        kdeconnect
+        plasma-widget-networkmanagement
+        plasma-widget-volume
+        plasma-widget-clock
     )
-    
     for pkg in "${kde_packages[@]}"; do
         if dpkg -s "$pkg" &>/dev/null; then
             log_info "KDE package '$pkg' is already installed."
@@ -537,8 +575,10 @@ deploy_user_scripts() {
     print_section "Deploying User Scripts"
     local script_source="/home/${USERNAME}/github/bash/linux/_scripts"
     local script_target="/home/${USERNAME}/bin"
-    [ -d "$script_source" ] || handle_error "Source directory '$script_source' does not exist."
-    [ -d "$script_target" ] || { mkdir -p "$script_target" && chown "${USERNAME}:${USERNAME}" "$script_target"; }
+    if [ ! -d "$script_source" ]; then
+        handle_error "Source directory '$script_source' does not exist."
+    fi
+    mkdir -p "$script_target" && chown "${USERNAME}:${USERNAME}" "$script_target"
     rsync --dry-run -ah --delete "${script_source}/" "${script_target}/" || handle_error "Dry-run failed for script deployment."
     rsync -ah --delete "${script_source}/" "${script_target}/" || handle_error "Script deployment failed."
     find "${script_target}" -type f -exec chmod 755 {} \; || handle_error "Failed to update script permissions."
@@ -550,8 +590,8 @@ dotfiles_load() {
     local config_base="/home/${USERNAME}/.config"
     declare -A dotfiles_dirs=(
         [alacritty]="/home/${USERNAME}/github/bash/linux/dotfiles/alacritty"
-        [i3]="$(printf '%s\n' "/home/${USERNAME}/github/bash/linux/dotfiles/i3")"
-        [i3blocks]="$(printf '%s\n' "/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks")"
+        [i3]="/home/${USERNAME}/github/bash/linux/dotfiles/i3"
+        [i3blocks]="/home/${USERNAME}/github/bash/linux/dotfiles/i3blocks"
         [picom]="/home/${USERNAME}/github/bash/linux/dotfiles/picom"
     )
     for dir in "${!dotfiles_dirs[@]}"; do
@@ -566,7 +606,9 @@ dotfiles_load() {
 configure_periodic() {
     print_section "Periodic Maintenance Setup"
     local cron_file="/etc/cron.daily/ubuntu_maintenance"
-    [ -f "$cron_file" ] && mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" && log_info "Existing cron file backed up."
+    if [ -f "$cron_file" ]; then
+        mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" && log_info "Existing cron file backed up."
+    fi
     cat <<'EOF' > "$cron_file"
 #!/bin/sh
 # Ubuntu maintenance script
@@ -580,7 +622,11 @@ backup_configs() {
     local backup_dir="/var/backups/ubuntu_config_$(date +%Y%m%d%H%M%S)"
     mkdir -p "$backup_dir"
     for file in /etc/ssh/sshd_config /etc/ufw/user.rules /etc/ntp.conf; do
-        [ -f "$file" ] && cp "$file" "$backup_dir" && log_info "Backed up $file" || log_warn "File $file not found; skipping."
+        if [ -f "$file" ]; then
+            cp "$file" "$backup_dir" && log_info "Backed up $file" || log_warn "Failed to backup $file"
+        else
+            log_warn "File $file not found; skipping."
+        fi
     done
 }
 
@@ -691,7 +737,6 @@ home_permissions() {
 #--------------------------------------------------
 prompt_reboot() {
     print_section "Reboot Prompt"
-    # In non-interactive environments, you might skip prompting.
     read -rp "Would you like to reboot now? [y/N]: " answer
     if [[ "$answer" =~ ^[Yy]$ ]]; then
         log_info "Rebooting system now..."
