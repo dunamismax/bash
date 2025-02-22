@@ -577,16 +577,6 @@ system_health_check() {
     log_info "Memory Usage:"; free -h | while read -r line; do log_info "$line"; done
 }
 
-run_security_audit() {
-    print_section "Security Audit"
-    if command_exists lynis; then
-        local audit_log="/var/log/lynis_audit_$(date +%Y%m%d%H%M%S).log"
-        lynis audit system --quiet | tee "$audit_log" && log_info "Lynis audit completed. Log saved to $audit_log." || log_warn "Lynis audit encountered issues."
-    else
-        log_warn "Lynis not installed; skipping security audit."
-    fi
-}
-
 verify_firewall_rules() {
     print_section "Firewall Rules Verification"
     for port in 22 80 443 32400; do
@@ -700,7 +690,6 @@ main() {
     rotate_logs
 
     system_health_check
-    run_security_audit
     verify_firewall_rules
     update_ssl_certificates
     tune_system
