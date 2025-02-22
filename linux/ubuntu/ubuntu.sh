@@ -44,7 +44,7 @@ PACKAGES=(
   libssl-dev libffi-dev zlib1g-dev libreadline-dev libbz2-dev tk-dev xz-utils libncurses5-dev libgdbm-dev libnss3-dev liblzma-dev libxml2-dev libxmlsec1-dev
   ca-certificates software-properties-common apt-transport-https gnupg lsb-release
   clang llvm netcat-openbsd lsof unzip zip
-  xorg x11-xserver-utils i3-wm i3status i3lock i3blocks dmenu xterm alacritty feh fonts-dejavu-core picom
+  xorg x11-xserver-utils xterm alacritty feh fonts-dejavu-core
   net-tools nmap iftop iperf3 tcpdump lynis
   golang-go gdb
   john hydra aircrack-ng nikto
