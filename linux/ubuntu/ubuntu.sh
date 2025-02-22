@@ -501,18 +501,36 @@ install_ly() {
     log_info "Ly installed and configured as the default login manager."
 }
 
-install_xfce_desktop() {
-    print_section "XFCE Desktop Installation"
-    log_info "Installing XFCE desktop environment and addons..."
-    local xfce_packages=(xfce4-session xfce4-panel xfce4-appfinder xfce4-settings xfce4-terminal xfdesktop xfwm4 thunar mousepad xfce4-whiskermenu-plugin)
-    for pkg in "${xfce_packages[@]}"; do
+install_kde_desktop() {
+    print_section "KDE Plasma Desktop Installation"
+    log_info "Installing KDE Plasma desktop environment and associated applications..."
+    
+    # List of packages for a full KDE experience.
+    # The kubuntu-desktop meta-package provides the complete Kubuntu experience,
+    # while additional packages help ensure a rich set of tools.
+    local kde_packages=(
+        kubuntu-desktop      # Full Kubuntu desktop, including KDE Plasma, SDDM, and integrated apps
+        kde-plasma-desktop    # Minimal KDE Plasma desktop (if not already provided by kubuntu-desktop)
+        kde-standard          # Standard set of KDE applications
+        kde-applications      # Full set of KDE applications
+        konsole               # KDE terminal emulator
+        dolphin               # KDE file manager
+        kate                  # KDE text editor
+        systemsettings        # KDE configuration center
+        kdeconnect            # Integration with mobile devices
+        plasma-widget-networkmanagement  # Network management widget
+        plasma-widget-volume             # Volume control widget
+        plasma-widget-clock              # Clock widget
+    )
+    
+    for pkg in "${kde_packages[@]}"; do
         if dpkg -s "$pkg" &>/dev/null; then
-            log_info "XFCE package '$pkg' is already installed."
+            log_info "KDE package '$pkg' is already installed."
         else
-            apt install -y "$pkg" && log_info "Installed XFCE package: $pkg" || log_warn "Failed to install XFCE package: $pkg"
+            apt install -y "$pkg" && log_info "Installed KDE package: $pkg" || log_warn "Failed to install KDE package: $pkg"
         fi
     done
-    log_info "XFCE desktop installation complete."
+    log_info "KDE Plasma desktop installation complete."
 }
 
 deploy_user_scripts() {
@@ -713,7 +731,7 @@ main() {
 
     install_zig_binary
     install_ly
-    install_xfce_desktop
+    install_kde_desktop
 
     deploy_user_scripts
     dotfiles_load
