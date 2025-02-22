@@ -80,6 +80,7 @@ export HISTTIMEFORMAT="%F %T "
 # 4. System Information & Greeting
 # ------------------------------------------------------------------------------
 if command -v fastfetch >/dev/null 2>&1; then
+    echo -e "\n"
     fastfetch
     echo -e "\n"
 fi
