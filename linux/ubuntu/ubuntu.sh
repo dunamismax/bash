@@ -12,7 +12,7 @@
 # Disclaimer:
 #   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 #
-# Author: dunamismax (Rewritten & Enhanced for Idempotency)
+# Author: dunamismax
 # Version: 6.1
 # Date: 2025-02-22
 # ==============================================================================
