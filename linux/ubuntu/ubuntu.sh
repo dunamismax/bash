@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Ubuntu System Initialization & Hardening Script v6.1 (Master)
+# Ubuntu System Initialization & Hardening Script v6.1 (Master, Idempotent)
 #
 # Description:
 #   This master automation script bootstraps and secures an Ubuntu server by
@@ -8,18 +8,17 @@
 #   installs essential packages, and sets up critical services including time
 #   synchronization, SSH hardening, firewall configuration, and deployment of key
 #   applications such as Plex, Caddy, Fastfetch, ZFS, Docker (with Compose), Zig, and
-#   the Ly display manager. Additionally, it manages GitHub repository setups, user
-#   shell configurations, periodic maintenance routines, backups, log rotation,
-#   security audits, and performance tuning.
+#   the Ly display manager. The script is written to be idempotent – running it
+#   multiple times causes no duplicate entries or adverse side effects.
 #
 # Key Functions:
 #   - System update, upgrade, and essential package installation
-#   - Timezone setting and NTP configuration for accurate timekeeping
-#   - GitHub repository and dotfiles management for user environment setup
-#   - SSH, sudo, and firewall (ufw) hardening to bolster security
+#   - Timezone and NTP configuration with duplicate–avoidance
+#   - GitHub repository and dotfiles management with version checks
+#   - SSH, sudo, and firewall (ufw) hardening with in–place file edits
 #   - Installation and configuration of various services and utilities
 #   - Backup creation, log rotation, and regular system health and security checks
-#   - Final system checks and optional reboot prompt for applying changes
+#   - Final system checks and an optional reboot prompt for applying changes
 #
 # Usage:
 #   Execute this script as root to fully initialize and secure your Ubuntu system.
@@ -27,7 +26,7 @@
 # Disclaimer:
 #   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 #
-# Author: dunamismax (Rewritten & Enhanced)
+# Author: dunamismax (Rewritten & Enhanced for Idempotency)
 # Version: 6.1
 # Date: 2025-02-22
 # ==============================================================================
@@ -38,7 +37,6 @@ IFS=$'\n\t'
 #--------------------------------------------------
 # Global Variables & Parameterized URLs/Versions
 #--------------------------------------------------
-# Software version and download URLs – change these to update software versions.
 PLEX_VERSION="1.41.3.9314-a0bfb8370"
 PLEX_URL="https://downloads.plex.tv/plex-media-server-new/${PLEX_VERSION}/debian/plexmediaserver_${PLEX_VERSION}_amd64.deb"
 
@@ -53,7 +51,6 @@ ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERS
 
 LY_REPO="https://github.com/fairyglade/ly"
 
-# User, logging and package settings
 LOG_FILE="/var/log/ubuntu_setup.log"
 USERNAME="sawyer"
 USER_HOME="/home/${USERNAME}"
@@ -193,7 +190,6 @@ update_system() {
 install_packages() {
     print_section "Essential Package Installation"
     log_info "Installing packages..."
-    # Only install packages that are not already installed
     for pkg in "${PACKAGES[@]}"; do
         if ! dpkg -s "$pkg" &>/dev/null; then
             apt install -y "$pkg" || handle_error "Failed to install package: $pkg"
@@ -213,6 +209,7 @@ configure_timezone() {
     local tz="America/New_York"
     log_info "Setting timezone to ${tz}..."
     if [ -f "/usr/share/zoneinfo/${tz}" ]; then
+        # ln -sf is idempotent – it resets the symlink each time.
         ln -sf "/usr/share/zoneinfo/${tz}" /etc/localtime && log_info "Timezone set to ${tz}." || log_warn "Failed to set timezone."
     else
         log_warn "Timezone file for ${tz} not found."
@@ -223,7 +220,11 @@ configure_ntp() {
     print_section "NTP Configuration"
     log_info "Configuring NTP service..."
     local ntp_conf="/etc/ntp.conf"
-    if [ ! -f "$ntp_conf" ]; then
+    # Only update if the required servers are not already present.
+    if [ -f "$ntp_conf" ] && grep -q "0.pool.ntp.org iburst" "$ntp_conf"; then
+        log_info "NTP configuration already present in $ntp_conf."
+    else
+        backup_file "$ntp_conf"
         cat <<'EOF' > "$ntp_conf"
 # Minimal NTP configuration
 server 0.pool.ntp.org iburst
@@ -231,9 +232,7 @@ server 1.pool.ntp.org iburst
 server 2.pool.ntp.org iburst
 server 3.pool.ntp.org iburst
 EOF
-        log_info "Created new NTP configuration at $ntp_conf."
-    else
-        log_info "NTP configuration exists at $ntp_conf."
+        log_info "Created/updated NTP configuration at $ntp_conf."
     fi
     systemctl enable ntp
     systemctl restart ntp && log_info "NTP service restarted successfully." || log_warn "Failed to restart NTP service."
@@ -249,7 +248,7 @@ setup_repos() {
     mkdir -p "$GH_DIR" || handle_error "Failed to create GitHub directory at $GH_DIR."
     for repo in bash windows web python go misc; do
         local REPO_DIR="$GH_DIR/$repo"
-        if [ -d "$REPO_DIR" ]; then
+        if [ -d "$REPO_DIR/.git" ]; then
             log_info "Repository '$repo' already exists. Pulling latest changes..."
             (cd "$REPO_DIR" && git pull) || log_warn "Failed to update repository '$repo'."
         else
@@ -269,15 +268,23 @@ copy_shell_configs() {
         local src="${source_dir}/${file}"
         local dest="${dest_dir}/${file}"
         if [ -f "$src" ]; then
-            log_info "Copying ${src} to ${dest}..."
-            cp -f "$src" "$dest" && chown "${USERNAME}:${USERNAME}" "$dest" || log_warn "Failed to copy ${src}."
+            # Only copy if source and destination differ.
+            if [ -f "$dest" ] && cmp -s "$src" "$dest"; then
+                log_info "File ${dest} is already up-to-date."
+            else
+                log_info "Copying ${src} to ${dest}..."
+                cp -f "$src" "$dest" && chown "${USERNAME}:${USERNAME}" "$dest" || log_warn "Failed to copy ${src}."
+            fi
         else
             log_warn "Source file ${src} not found; skipping."
         fi
     done
-    # Optionally source the updated .bashrc if available
-    [ -f "${dest_dir}/.bashrc" ] && { log_info "Sourcing ${dest_dir}/.bashrc..."; source "${dest_dir}/.bashrc"; } || \
+    if [ -f "${dest_dir}/.bashrc" ]; then
+        log_info "Sourcing ${dest_dir}/.bashrc..."
+        source "${dest_dir}/.bashrc"
+    else
         log_warn "No .bashrc found in ${dest_dir}; skipping source."
+    fi
 }
 
 set_bash_shell() {
@@ -286,7 +293,11 @@ set_bash_shell() {
         log_info "Bash not found; installing..."
         apt install -y bash || { log_warn "Bash installation failed."; return 1; }
     fi
-    grep -qxF "/bin/bash" /etc/shells || { echo "/bin/bash" >> /etc/shells && log_info "Added /bin/bash to /etc/shells."; }
+    if ! grep -qxF "/bin/bash" /etc/shells; then
+        echo "/bin/bash" >> /etc/shells && log_info "Added /bin/bash to /etc/shells."
+    else
+        log_info "/bin/bash is already present in /etc/shells."
+    fi
     chsh -s /bin/bash "$USERNAME" && log_info "Default shell for ${USERNAME} set to /bin/bash." || \
         log_warn "Failed to set default shell for ${USERNAME}."
 }
@@ -304,7 +315,9 @@ configure_ssh() {
     fi
     systemctl enable --now ssh || handle_error "Failed to enable/start SSH service."
     local sshd_config="/etc/ssh/sshd_config"
-    [ -f "$sshd_config" ] || handle_error "SSHD configuration file not found: $sshd_config"
+    if [ ! -f "$sshd_config" ]; then
+        handle_error "SSHD configuration file not found: $sshd_config"
+    fi
     backup_file "$sshd_config"
     declare -A ssh_settings=(
         [Port]=22
@@ -319,7 +332,7 @@ configure_ssh() {
     )
     for key in "${!ssh_settings[@]}"; do
         if grep -qE "^${key}[[:space:]]" "$sshd_config"; then
-            sed -i "s/^${key}[[:space:]].*/${key} ${ssh_settings[$key]}/" "$sshd_config"
+            sed -i "s|^${key}[[:space:]].*|${key} ${ssh_settings[$key]}|" "$sshd_config"
         else
             echo "${key} ${ssh_settings[$key]}" >> "$sshd_config"
         fi
@@ -346,10 +359,14 @@ configure_firewall() {
     print_section "Firewall Configuration"
     log_info "Configuring firewall with ufw..."
     local ufw_cmd="/usr/sbin/ufw"
-    [ -x "$ufw_cmd" ] || handle_error "ufw command not found. Please install ufw."
+    if [ ! -x "$ufw_cmd" ]; then
+        handle_error "ufw command not found. Please install ufw."
+    fi
+    # These commands are idempotent in ufw
     "$ufw_cmd" default deny incoming || log_warn "Failed to set default deny incoming."
     "$ufw_cmd" default allow outgoing || log_warn "Failed to set default allow outgoing."
     for port in 22 80 443 32400; do
+        # ufw will not duplicate rules if they already exist.
         "$ufw_cmd" allow "${port}/tcp" || log_warn "Failed to allow port ${port}."
     done
     if "$ufw_cmd" status | grep -qi inactive; then
@@ -380,8 +397,13 @@ install_plex() {
         }
         local plex_conf="/etc/default/plexmediaserver"
         if [ -f "$plex_conf" ]; then
-            sed -i "s/^PLEX_MEDIA_SERVER_USER=.*/PLEX_MEDIA_SERVER_USER=${USERNAME}/" "$plex_conf" \
-                && log_info "Configured Plex to run as ${USERNAME}." || log_warn "Failed to set Plex user in $plex_conf"
+            # Only update if the USER setting is not already set as desired.
+            if grep -q "^PLEX_MEDIA_SERVER_USER=${USERNAME}" "$plex_conf"; then
+                log_info "Plex user is already configured as ${USERNAME}."
+            else
+                sed -i "s|^PLEX_MEDIA_SERVER_USER=.*|PLEX_MEDIA_SERVER_USER=${USERNAME}|" "$plex_conf" \
+                    && log_info "Configured Plex to run as ${USERNAME}." || log_warn "Failed to set Plex user in $plex_conf"
+            fi
         else
             log_warn "$plex_conf not found; skipping user configuration."
         fi
@@ -415,11 +437,21 @@ caddy_config() {
     log_info "Installing dependencies for Caddy..."
     apt install -y debian-keyring debian-archive-keyring apt-transport-https curl || \
         handle_error "Failed to install dependencies for Caddy."
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
-        gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg || \
-        handle_error "Failed to add Caddy GPG key."
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
-        tee /etc/apt/sources.list.d/caddy-stable.list || handle_error "Failed to add Caddy repository."
+    # Add Caddy GPG key only if not already present
+    if [ ! -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg ]; then
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
+            gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg || \
+            handle_error "Failed to add Caddy GPG key."
+    else
+        log_info "Caddy GPG key already exists."
+    fi
+    # Add repository if not already added
+    if [ ! -f /etc/apt/sources.list.d/caddy-stable.list ]; then
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
+            tee /etc/apt/sources.list.d/caddy-stable.list || handle_error "Failed to add Caddy repository."
+    else
+        log_info "Caddy repository already exists."
+    fi
     apt update || handle_error "Failed to update package lists."
     if ! dpkg -s caddy &>/dev/null; then
         apt install -y caddy || handle_error "Failed to install Caddy."
@@ -429,7 +461,11 @@ caddy_config() {
     local custom_caddyfile="/home/${USERNAME}/github/linux/ubuntu/dotfiles/Caddyfile"
     local dest_caddyfile="/etc/caddy/Caddyfile"
     if [ -f "$custom_caddyfile" ]; then
-        cp -f "$custom_caddyfile" "$dest_caddyfile" && log_info "Copied custom Caddyfile." || log_warn "Failed to copy custom Caddyfile."
+        if [ -f "$dest_caddyfile" ] && cmp -s "$custom_caddyfile" "$dest_caddyfile"; then
+            log_info "Custom Caddyfile is already in place."
+        else
+            cp -f "$custom_caddyfile" "$dest_caddyfile" && log_info "Copied custom Caddyfile." || log_warn "Failed to copy custom Caddyfile."
+        fi
     else
         log_warn "Custom Caddyfile not found at $custom_caddyfile."
     fi
@@ -484,7 +520,8 @@ docker_config() {
         usermod -aG docker "$USERNAME" && log_info "Added user '$USERNAME' to docker group." || log_warn "Failed to add $USERNAME to docker group."
     fi
     mkdir -p /etc/docker || handle_error "Failed to create /etc/docker."
-    cat <<EOF >/etc/docker/daemon.json
+    local desired_daemon_json
+    desired_daemon_json=$(cat <<'EOF'
 {
   "log-driver": "json-file",
   "log-opts": {
@@ -494,7 +531,17 @@ docker_config() {
   "exec-opts": ["native.cgroupdriver=systemd"]
 }
 EOF
-    log_info "Docker daemon configuration updated."
+)
+    if [ -f /etc/docker/daemon.json ]; then
+        if diff -q /etc/docker/daemon.json <(echo "$desired_daemon_json") &>/dev/null; then
+            log_info "Docker daemon configuration is already up-to-date."
+        else
+            backup_file /etc/docker/daemon.json
+            echo "$desired_daemon_json" > /etc/docker/daemon.json && log_info "Docker daemon configuration updated."
+        fi
+    else
+        echo "$desired_daemon_json" > /etc/docker/daemon.json && log_info "Docker daemon configuration created."
+    fi
     systemctl enable docker || log_warn "Could not enable Docker service."
     systemctl restart docker || handle_error "Failed to restart Docker."
     log_info "Docker is running."
@@ -538,7 +585,7 @@ install_ly() {
     apt install -y build-essential libpam0g-dev libxcb-xkb-dev libxcb-randr0-dev libxcb-xinerama0-dev libxcb-xrm-dev libxkbcommon-dev libxkbcommon-x11-dev \
         || handle_error "Failed to install Ly build dependencies."
     local ly_dir="/opt/ly"
-    if [ ! -d "$ly_dir" ]; then
+    if [ ! -d "$ly_dir/.git" ]; then
         git clone "$LY_REPO" "$ly_dir" || handle_error "Failed to clone the Ly repository."
     else
         (cd "$ly_dir" && git pull) || handle_error "Failed to update the Ly repository."
@@ -550,7 +597,9 @@ install_ly() {
             systemctl disable --now "${dm}.service" && log_info "Disabled ${dm}.service." || handle_error "Failed to disable ${dm}.service."
         fi
     done
-    [ -L /etc/systemd/system/display-manager.service ] && rm /etc/systemd/system/display-manager.service && log_info "Removed display-manager.service symlink."
+    if [ -L /etc/systemd/system/display-manager.service ]; then
+        rm /etc/systemd/system/display-manager.service && log_info "Removed display-manager.service symlink."
+    fi
     systemctl enable ly.service || handle_error "Failed to enable ly.service."
     systemctl disable getty@tty2.service || handle_error "Failed to disable getty@tty2.service."
     log_info "Ly installed and configured as the default login manager."
@@ -564,7 +613,7 @@ deploy_user_scripts() {
         handle_error "Source directory '$script_source' does not exist."
     fi
     mkdir -p "$script_target" && chown "${USERNAME}:${USERNAME}" "$script_target"
-    rsync --dry-run -ah --delete "${script_source}/" "${script_target}/" || handle_error "Dry-run failed for script deployment."
+    # Using rsync with --delete ensures only changes are updated.
     rsync -ah --delete "${script_source}/" "${script_target}/" || handle_error "Script deployment failed."
     find "${script_target}" -type f -exec chmod 755 {} \; || handle_error "Failed to update script permissions."
     log_info "User scripts deployed successfully."
@@ -585,21 +634,26 @@ dotfiles_load() {
         mkdir -p "$dest"
         rsync -a --delete "$src/" "$dest/" && log_info "Loaded ${dir} configuration." || handle_error "Failed to copy ${dir} configuration."
     done
-    chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" || log_warn "Failed to set execute permissions on i3blocks scripts."
+    if [ -d "/home/${USERNAME}/.config/i3blocks/scripts" ]; then
+        chmod -R +x "/home/${USERNAME}/.config/i3blocks/scripts" || log_warn "Failed to set execute permissions on i3blocks scripts."
+    fi
 }
 
 configure_periodic() {
     print_section "Periodic Maintenance Setup"
     local cron_file="/etc/cron.daily/ubuntu_maintenance"
-    if [ -f "$cron_file" ]; then
-        mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" && log_info "Existing cron file backed up."
-    fi
-    cat <<'EOF' > "$cron_file"
+    # Check if the cron file already contains our marker comment.
+    if [ -f "$cron_file" ] && grep -q "^# Ubuntu maintenance script" "$cron_file"; then
+        log_info "Daily maintenance cron job already configured."
+    else
+        [ -f "$cron_file" ] && mv "$cron_file" "${cron_file}.bak.$(date +%Y%m%d%H%M%S)" && log_info "Existing cron file backed up."
+        cat <<'EOF' > "$cron_file"
 #!/bin/sh
 # Ubuntu maintenance script
 apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
 EOF
-    chmod +x "$cron_file" && log_info "Daily maintenance script created at $cron_file." || log_warn "Failed to set execute permission on $cron_file."
+        chmod +x "$cron_file" && log_info "Daily maintenance script created at $cron_file." || log_warn "Failed to set execute permission on $cron_file."
+    fi
 }
 
 backup_configs() {
@@ -677,16 +731,21 @@ tune_system() {
     print_section "Performance Tuning"
     local sysctl_conf="/etc/sysctl.conf"
     [ -f "$sysctl_conf" ] && backup_file "$sysctl_conf"
-    cat <<'EOF' >> "$sysctl_conf"
+    # Only append tuning settings if not already present (using a marker comment)
+    if ! grep -q "# Performance tuning settings for Ubuntu" "$sysctl_conf"; then
+        cat <<'EOF' >> "$sysctl_conf"
 # Performance tuning settings for Ubuntu
 net.core.somaxconn=128
 net.ipv4.tcp_rmem=4096 87380 6291456
 net.ipv4.tcp_wmem=4096 16384 4194304
 EOF
-    sysctl -w net.core.somaxconn=128
-    sysctl -w net.ipv4.tcp_rmem="4096 87380 6291456"
-    sysctl -w net.ipv4.tcp_wmem="4096 16384 4194304"
-    log_info "Performance tuning applied."
+        sysctl -w net.core.somaxconn=128
+        sysctl -w net.ipv4.tcp_rmem="4096 87380 6291456"
+        sysctl -w net.ipv4.tcp_wmem="4096 16384 4194304"
+        log_info "Performance tuning applied."
+    else
+        log_info "Performance tuning settings already exist in $sysctl_conf."
+    fi
 }
 
 final_checks() {
