@@ -1,22 +1,17 @@
-#!/usr/local/bin/bash
-# ~/.bashrc for FreeBSD - Enhanced Version
+###############################################################################
+# ~/.bashrc – Enhanced Ubuntu Bash Configuration
+###############################################################################
 
-# ------------------------------------------------------------------------------
 # 0. Exit if not an interactive shell
-# ------------------------------------------------------------------------------
-case "$-" in
-    *i*) ;;
-      *) return;;
-esac
+[[ $- != *i* ]] && return
 
-# ------------------------------------------------------------------------------
 # 1. Environment Variables & Shell Options
 # ------------------------------------------------------------------------------
 # Prepend essential directories to PATH
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
 # Enable useful Bash options
-shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify
+shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify 2>/dev/null || true
 
 # XDG Base Directories
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -34,10 +29,13 @@ elif command -v vim >/dev/null 2>&1; then
     export EDITOR="vim"
     export VISUAL="vim"
     alias vi="vim"
+else
+    export EDITOR="nano"
+    export VISUAL="nano"
 fi
 export PAGER="less"
 
-# Locale and Timezone (adjust TZ as needed)
+# Locale and Timezone
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
 export TZ="America/New_York"
@@ -45,35 +43,32 @@ export TZ="America/New_York"
 # Force 256-color mode for xterm
 [[ "$TERM" == "xterm" ]] && export TERM="xterm-256color"
 
+# 2. Nord Color Scheme (Lighter Palette)
 # ------------------------------------------------------------------------------
-# 2. Nord Color Scheme (Lighter Palette Only)
-# ------------------------------------------------------------------------------
-# (Nord0–Nord3 omitted for improved contrast)
-NORD4="\[\033[38;2;216;222;233m\]"   # Snow Storm: #D8DEE9
-NORD5="\[\033[38;2;229;233;240m\]"   # Snow Storm: #E5E9F0
-NORD6="\[\033[38;2;236;239;244m\]"   # Snow Storm: #ECEFF4
-NORD7="\[\033[38;2;143;188;187m\]"   # Frost: #8FBCBB
-NORD8="\[\033[38;2;136;192;208m\]"   # Frost: #88C0D0
-NORD9="\[\033[38;2;129;161;193m\]"   # Frost: #81A1C1
-NORD10="\[\033[38;2;94;129;172m\]"   # Frost: #5E81AC
-NORD11="\[\033[38;2;191;97;106m\]"   # Aurora: #BF616A
-NORD12="\[\033[38;2;208;135;112m\]"   # Aurora: #D08770
-NORD13="\[\033[38;2;235;203;139m\]"   # Aurora: #EBCB8B
-NORD14="\[\033[38;2;163;190;140m\]"   # Aurora: #A3BE8C
-NORD15="\[\033[38;2;180;142;173m\]"   # Aurora: #B48EAD
+NORD4="\[\033[38;2;216;222;233m\]"
+NORD5="\[\033[38;2;229;233;240m\]"
+NORD6="\[\033[38;2;236;239;244m\]"
+NORD7="\[\033[38;2;143;188;187m\]"
+NORD8="\[\033[38;2;136;192;208m\]"
+NORD9="\[\033[38;2;129;161;193m\]"
+NORD10="\[\033[38;2;94;129;172m\]"
+NORD11="\[\033[38;2;191;97;106m\]"
+NORD12="\[\033[38;2;208;135;112m\]"
+NORD13="\[\033[38;2;235;203;139m\]"
+NORD14="\[\033[38;2;163;190;140m\]"
+NORD15="\[\033[38;2;180;142;173m\]"
 RESET="\[\e[0m\]"
 
 # Customize LESS (pager) colors with the Nord palette
 export LESS="-R -X -F -i -J --mouse"
-export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'     # Nord11 for blink
-export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'     # Nord8 for emphasis
+export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'
+export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'
 export LESS_TERMCAP_me=$'\e[0m'
-export LESS_TERMCAP_so=$'\e[38;2;235;203;139m'     # Nord13 for standout
+export LESS_TERMCAP_so=$'\e[38;2;235;203;139m'
 export LESS_TERMCAP_se=$'\e[0m'
-export LESS_TERMCAP_us=$'\e[38;2;163;190;140m'     # Nord14 for underline
+export LESS_TERMCAP_us=$'\e[38;2;163;190;140m'
 export LESS_TERMCAP_ue=$'\e[0m'
 
-# ------------------------------------------------------------------------------
 # 3. Enhanced History Settings
 # ------------------------------------------------------------------------------
 export HISTSIZE=1000000
@@ -82,17 +77,16 @@ export HISTFILE="$HOME/.bash_history"
 export HISTCONTROL="ignoreboth:erasedups"
 export HISTTIMEFORMAT="%F %T "
 
-# ------------------------------------------------------------------------------
 # 4. System Information & Greeting
 # ------------------------------------------------------------------------------
 if command -v fastfetch >/dev/null 2>&1; then
     fastfetch
+    echo -e "\n"
 fi
 
-# ------------------------------------------------------------------------------
 # 5. Development Environment Setup
 # ------------------------------------------------------------------------------
-# Initialize Pyenv if installed
+# Initialize pyenv if installed
 if [ -d "$HOME/.pyenv" ]; then
     export PYENV_ROOT="$HOME/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
@@ -100,63 +94,51 @@ if [ -d "$HOME/.pyenv" ]; then
     eval "$(pyenv init -)"
 fi
 
-# ------------------------------------------------------------------------------
 # 6. Less (Pager) Setup
 # ------------------------------------------------------------------------------
 if command -v lesspipe >/dev/null 2>&1; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
+# 7. Prompt Customization – Clean, Nord-themed Prompt with Git Branch
 # ------------------------------------------------------------------------------
-# 7. Prompt Customization - Clean, Nord-themed Single-Line Prompt
-# ------------------------------------------------------------------------------
-# Colors for username, hostname, and directory
-USER_COLOR="${NORD7}"   # Nord7 – Frost (turquoise)
-HOST_COLOR="${NORD7}"   # Nord7 – Frost (turquoise)
-DIR_COLOR="${NORD9}"    # Nord9 – Frost (blue)
-PROMPT_ICON="${NORD10}> "  # Nord10 – Frost (darker blue)
+# Function to extract current Git branch (if any)
+parse_git_branch() {
+    git rev-parse --abbrev-ref HEAD 2>/dev/null | sed "s/^/ (\e[38;2;136;192;208m/; s/$/\e[0m)/"
+}
+# Define prompt colors
+USER_COLOR="${NORD7}"
+HOST_COLOR="${NORD7}"
+DIR_COLOR="${NORD9}"
+PROMPT_ICON="${NORD10}> "
+export PS1="[\u@\h] [${DIR_COLOR}\w${RESET}]\$(parse_git_branch) ${PROMPT_ICON}${NORD6} "
 
-# Build the prompt: [username@hostname] [working_directory] >
-PS1="[${USER_COLOR}\u${RESET}@${HOST_COLOR}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
-
+# 8. Colorized Output for Common Commands & Aliases
 # ------------------------------------------------------------------------------
-# 8. Colorized Output for Common Commands
-# ------------------------------------------------------------------------------
-# FreeBSD’s default ls supports color with the -G flag
-alias ls='ls -G'
+alias ls='ls --color=auto'
 alias ll='ls -lah'
 alias la='ls -A'
 alias l='ls -CF'
 
-# For grep/diff: if GNU versions are installed (prefixed with "g"), use them.
-if command -v ggrep >/dev/null 2>&1; then
-    alias grep='ggrep --color=auto'
-else
-    alias grep='grep'
-fi
-if command -v gdiff >/dev/null 2>&1; then
-    alias diff='gdiff --color=auto'
-else
-    alias diff='diff'
-fi
+# For grep/diff
+alias grep='grep --color=auto'
+# If colordiff is installed, you might use: alias diff='colordiff'
 
+# 9. Aliases & Shortcuts (Ubuntu Package Management & Common Operations)
 # ------------------------------------------------------------------------------
-# 9. Aliases & Shortcuts (FreeBSD Package Management & Common Operations)
-# ------------------------------------------------------------------------------
-# Directory navigation shortcuts
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 
-# FreeBSD package management using pkg
-alias update='sudo pkg update && sudo pkg upgrade -y'
-alias install='sudo pkg install'
-alias remove='sudo pkg delete'
-alias autoremove='sudo pkg autoremove'
-alias search='pkg search'
+# Ubuntu package management via apt
+alias update='sudo apt update && sudo apt upgrade -y'
+alias install='sudo apt install'
+alias remove='sudo apt remove'
+alias autoremove='sudo apt autoremove'
+alias search='apt search'
 
-# Safety aliases for file operations
+# Safety aliases
 alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
@@ -171,30 +153,25 @@ alias gl='git pull'
 alias gd='git diff'
 alias glog='git log --oneline --graph --decorate'
 
-# General useful shortcuts
+# Miscellaneous aliases
 alias h='history'
 alias j='jobs -l'
 alias path='echo -e ${PATH//:/\\n}'
 alias now='date +"%T"'
 alias nowdate='date +"%d-%m-%Y"'
-alias ports='sockstat -4'
-alias mem='top -o mem'
+alias ports='ss -tulwn'
+alias mem='top'
 alias disk='df -h'
+alias watch='watch'
 
-# Docker shortcuts (if Docker is installed on FreeBSD)
+# Docker shortcuts (if installed)
 alias d='docker'
 alias dc='docker-compose'
 alias dps='docker ps'
 alias di='docker images'
 
-# Miscellaneous
-alias sudo='sudo '   # Ensure aliases work with sudo
-alias watch='watch '
-
-# ------------------------------------------------------------------------------
 # 10. Enhanced Functions
 # ------------------------------------------------------------------------------
-# Create and activate a Python virtual environment
 setup_venv() {
     local venv_name="${1:-.venv}"
     if type deactivate &>/dev/null; then
@@ -210,13 +187,11 @@ setup_venv() {
 }
 alias venv='setup_venv'
 
-# Universal archive extraction
 extract() {
     if [ -z "$1" ]; then
         echo "Usage: extract <archive>"
         return 1
-    fi
-    if [ ! -f "$1" ]; then
+    elif [ ! -f "$1" ]; then
         echo "File '$1' not found."
         return 1
     fi
@@ -235,80 +210,57 @@ extract() {
         *.xz)        unxz "$1" ;;
         *.tar.xz)    tar xf "$1" ;;
         *.tar.zst)   tar --zstd -xf "$1" ;;
-         *) echo "Cannot extract '$1' with extract()"; return 1 ;;
+        *) echo "Cannot extract '$1' with extract()"; return 1 ;;
     esac
 }
 
-# Create a directory and immediately cd into it
-mkcd() {
-    mkdir -p "$1" && cd "$1" || return 1
-}
-
-# Search for files by pattern
-ff() {
-    find . -type f -iname "*$1*"
-}
-
-# Search for directories by pattern
-fd() {
-    find . -type d -iname "*$1*"
-}
-
-# Quickly back up a file with a timestamped .bak extension
-bak() {
-    cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"
-}
-
-# Create and switch to a temporary directory
+mkcd() { mkdir -p "$1" && cd "$1" || return 1; }
+ff() { find . -type f -iname "*$1*"; }
+fd() { find . -type d -iname "*$1*"; }
+bak() { cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"; }
 mktempdir() {
     local tmpdir
     tmpdir=$(mktemp -d -t tmp.XXXXXX)
     echo "Created temporary directory: $tmpdir"
     cd "$tmpdir" || return
 }
-
-# Serve the current directory over HTTP (default port 8000)
 serve() {
     local port="${1:-8000}"
     echo "Serving HTTP on port ${port}..."
     python3 -m http.server "$port"
 }
 
-# ------------------------------------------------------------------------------
 # 11. Bash Completion
 # ------------------------------------------------------------------------------
 if ! shopt -oq posix; then
-    if [ -f /usr/local/etc/bash_completion ]; then
-        . /usr/local/etc/bash_completion
+    if [ -f /usr/share/bash-completion/bash_completion ]; then
+        . /usr/share/bash-completion/bash_completion
     elif [ -f /etc/bash_completion ]; then
         . /etc/bash_completion
     fi
 fi
 
-# ------------------------------------------------------------------------------
 # 12. Local Customizations
 # ------------------------------------------------------------------------------
-# Source a local bashrc file if it exists
 if [ -f ~/.bashrc.local ]; then
     source ~/.bashrc.local
 fi
 
-# Auto-load all shell scripts in ~/.bashrc.d/
+# Auto-load scripts in ~/.bashrc.d/
 if [ -d "$HOME/.bashrc.d" ]; then
-  for file in "$HOME"/.bashrc.d/*.sh; do
-    [ -r "$file" ] && source "$file"
-  done
+    for file in "$HOME"/.bashrc.d/*.sh; do
+        [ -r "$file" ] && source "$file"
+    done
 fi
 
-# ------------------------------------------------------------------------------
 # 13. Source Additional Environment Settings
 # ------------------------------------------------------------------------------
 [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
 
-# ------------------------------------------------------------------------------
 # 14. Final PROMPT_COMMAND Consolidation
 # ------------------------------------------------------------------------------
-export PROMPT_COMMAND='history -a; echo "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
+export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
 
-# ------------------------------------------------------------------------------
+###############################################################################
 # End of ~/.bashrc
+###############################################################################
