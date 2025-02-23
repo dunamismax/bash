@@ -35,7 +35,7 @@ QUIET_MODE=false                                   # When true, suppress console
 readonly DISABLE_COLORS="${DISABLE_COLORS:-false}"  # Set to true to disable colored output
 
 # Deployment‑specific configuration
-readonly SCRIPT_SOURCE="/home/sawyer/github/bash/linux/_scripts"  # Source directory for scripts
+readonly SCRIPT_SOURCE="/home/sawyer/github/bash/linux/ubuntu/_scripts"  # Source directory for scripts
 readonly SCRIPT_TARGET="/home/sawyer/bin"                           # Target deployment directory
 readonly EXPECTED_OWNER="sawyer"                                    # Expected owner of source directory
 
