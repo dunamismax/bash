@@ -243,7 +243,7 @@ def update_system() -> None:
     log_info("System update and upgrade complete.")
 
 def install_packages() -> None:
-    """Install all missing essential packages along with suggested apps in a single batch."""
+    """Install all missing essential packages (and their recommended packages) in a single batch."""
     print_section("Essential Package Installation")
     log_info("Checking for required packages...")
     
@@ -261,11 +261,11 @@ def install_packages() -> None:
             missing_packages.append(pkg)
     
     if missing_packages:
-        log_info(f"Installing missing packages and suggested apps: {' '.join(missing_packages)}")
+        log_info(f"Installing missing packages: {' '.join(missing_packages)}")
         try:
-            # Use --install-suggests to also install suggested packages
-            run_command(["apt", "install", "-y", "--install-suggests"] + missing_packages)
-            log_info("All missing packages and their suggested apps installed successfully.")
+            # Removed the --install-suggests flag to only install recommended packages.
+            run_command(["apt", "install", "-y"] + missing_packages)
+            log_info("All missing packages installed successfully.")
         except subprocess.CalledProcessError:
             handle_error("Failed to install one or more packages.")
     else:
