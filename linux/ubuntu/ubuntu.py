@@ -103,7 +103,7 @@ PACKAGES = [
     "p7zip-full",
 
     # Virtualization and emulation (optional; useful for testing and development)
-    "qemu", "libvirt-clients", "libvirt-daemon-system", "virt-manager",
+    "qemu-system", "libvirt-clients", "libvirt-daemon-system", "virt-manager", "qemu-user-static",
 ]
 
 # Terminal color definitions (Nord theme)
