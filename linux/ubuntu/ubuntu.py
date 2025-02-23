@@ -701,35 +701,6 @@ def deploy_user_scripts() -> None:
     except subprocess.CalledProcessError:
         handle_error("Script deployment failed.")
 
-def dotfiles_load() -> None:
-    """
-    Load and deploy dotfiles from the repository to the user's configuration directory.
-    
-    Synchronizes configurations for applications like alacritty, i3, and picom.
-    """
-    print_section("Loading Dotfiles")
-    config_base = os.path.join(USER_HOME, ".config")
-    dotfiles_dirs = {
-        "alacritty": os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles", "alacritty"),
-        "i3": os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles", "i3"),
-        "i3blocks": os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles", "i3blocks"),
-        "picom": os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles", "picom"),
-    }
-    for dir_name, src in dotfiles_dirs.items():
-        dest = os.path.join(config_base, dir_name)
-        os.makedirs(dest, exist_ok=True)
-        try:
-            run_command(["rsync", "-a", "--delete", f"{src}/", f"{dest}/"])
-            log_info(f"Loaded {dir_name} configuration.")
-        except subprocess.CalledProcessError:
-            handle_error(f"Failed to copy {dir_name} configuration.")
-    i3blocks_scripts = os.path.join(USER_HOME, ".config", "i3blocks", "scripts")
-    if os.path.isdir(i3blocks_scripts):
-        try:
-            run_command(["chmod", "-R", "+x", i3blocks_scripts])
-        except subprocess.CalledProcessError:
-            log_warn("Failed to set execute permissions on i3blocks scripts.")
-
 def configure_periodic() -> None:
     """
     Set up a daily cron job for system maintenance.
@@ -1060,7 +1031,6 @@ def main() -> None:
     docker_config()
 
     deploy_user_scripts()
-    dotfiles_load()
 
     configure_periodic()
 
