@@ -243,20 +243,27 @@ def update_system() -> None:
     log_info("System update and upgrade complete.")
 
 def install_packages() -> None:
-    """Install essential packages defined in the PACKAGES list."""
+    """Install all missing essential packages in a single batch."""
     print_section("Essential Package Installation")
-    log_info("Installing packages...")
+    log_info("Checking for required packages...")
+    
+    missing_packages = []
     for pkg in PACKAGES:
         try:
             subprocess.run(["dpkg", "-s", pkg], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             log_info(f"Package already installed: {pkg}")
         except subprocess.CalledProcessError:
-            try:
-                run_command(["apt", "install", "-y", pkg])
-                log_info(f"Installed package: {pkg}")
-            except subprocess.CalledProcessError:
-                handle_error(f"Failed to install package: {pkg}")
-    log_info("Package installation complete.")
+            missing_packages.append(pkg)
+    
+    if missing_packages:
+        log_info(f"Installing missing packages: {' '.join(missing_packages)}")
+        try:
+            run_command(["apt", "install", "-y"] + missing_packages)
+            log_info("All missing packages installed successfully.")
+        except subprocess.CalledProcessError:
+            handle_error("Failed to install one or more packages.")
+    else:
+        log_info("All required packages are already installed.")
 
 # ----------------------------
 # Timezone and NTP Configuration
