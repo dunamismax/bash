@@ -1043,6 +1043,52 @@ def install_configure_zfs() -> None:
             log_info(f"Mountpoint for pool '{zpool_name}' set to '{mount_point}'.")
         except subprocess.CalledProcessError:
             log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}'.")
+            
+def configure_fail2ban() -> None:
+    """
+    Configure and enable fail2ban with a secure basic default configuration.
+    
+    This function creates (or backs up and overwrites) the /etc/fail2ban/jail.local file
+    with settings that protect SSH by default, then enables and restarts the fail2ban service.
+    """
+    print_section("Fail2ban Configuration")
+    jail_local = "/etc/fail2ban/jail.local"
+    config_content = """[DEFAULT]
+# Ban IPs for 10 minutes after reaching max retries
+bantime  = 600
+# Look for failed attempts within 10 minutes
+findtime = 600
+# Ban an IP after 3 failed login attempts
+maxretry = 3
+# Use systemd for reading logs on modern systems
+backend  = systemd
+# Resolve DNS only if necessary; warn if issues occur
+usedns   = warn
+
+[sshd]
+enabled  = true
+port     = ssh
+logpath  = /var/log/auth.log
+maxretry = 3
+"""
+    # Backup existing configuration if present
+    if os.path.isfile(jail_local):
+        backup_file(jail_local)
+    
+    try:
+        with open(jail_local, "w") as f:
+            f.write(config_content)
+        log_info("Fail2ban configuration written to /etc/fail2ban/jail.local.")
+    except Exception as e:
+        log_warn(f"Failed to write Fail2ban configuration: {e}")
+    
+    # Enable and restart fail2ban service to apply the new configuration
+    try:
+        run_command(["systemctl", "enable", "fail2ban"])
+        run_command(["systemctl", "restart", "fail2ban"])
+        log_info("Fail2ban service enabled and restarted successfully.")
+    except subprocess.CalledProcessError:
+        log_warn("Failed to enable or restart the Fail2ban service.")
 
 def prompt_reboot() -> None:
     """
@@ -1101,6 +1147,7 @@ def main() -> None:
     tune_system()
 
     home_permissions()
+    configure_fail2ban()
     install_configure_zfs()
     final_checks()
 
