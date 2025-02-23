@@ -953,28 +953,33 @@ def home_permissions() -> None:
 def install_configure_zfs() -> None:
     """
     Install and configure ZFS.
-    
-    Installs required packages, enables ZFS services, imports an existing ZFS pool if available,
-    and sets the mount point.
+
+    Installs required packages, enables ZFS services, attempts to import an existing ZFS pool,
+    and sets the mount point if the pool is available. If the pool (WD_BLACK) is not found or
+    fails to mount, the function logs a warning and skips the mountpoint configuration.
     """
     print_section("ZFS Installation and Configuration")
     zpool_name = "WD_BLACK"
     mount_point = f"/media/{zpool_name}"
+
+    # Update package lists and install prerequisites
     try:
         run_command(["apt", "update"])
     except subprocess.CalledProcessError:
-        log_error("Failed to update package lists.")
+        log_error("Failed to update package lists. Skipping ZFS configuration.")
         return
     try:
         run_command(["apt", "install", "-y", "dpkg-dev", "linux-headers-generic", "linux-image-generic"])
     except subprocess.CalledProcessError:
-        log_error("Failed to install prerequisites.")
+        log_error("Failed to install prerequisites. Skipping ZFS configuration.")
         return
     try:
         run_command(["apt", "install", "-y", "zfs-dkms", "zfsutils-linux"], check=True)
     except subprocess.CalledProcessError:
-        log_error("Failed to install ZFS packages.")
+        log_error("Failed to install ZFS packages. Skipping ZFS configuration.")
         return
+
+    # Enable ZFS services; continue even if these steps fail
     try:
         run_command(["systemctl", "enable", "zfs-import-cache.service"])
     except subprocess.CalledProcessError:
@@ -983,21 +988,29 @@ def install_configure_zfs() -> None:
         run_command(["systemctl", "enable", "zfs-mount.service"])
     except subprocess.CalledProcessError:
         log_warn("Could not enable zfs-mount.service.")
+
+    # Attempt to list or import the ZFS pool
+    pool_imported = False
     try:
-        subprocess.run(["zpool", "list", zpool_name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["zpool", "list", zpool_name],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         log_info(f"ZFS pool '{zpool_name}' is already imported.")
+        pool_imported = True
     except subprocess.CalledProcessError:
         try:
             run_command(["zpool", "import", "-f", zpool_name])
             log_info(f"Imported ZFS pool '{zpool_name}'.")
+            pool_imported = True
         except subprocess.CalledProcessError:
-            log_error(f"Failed to import ZFS pool '{zpool_name}'.")
-            return
-    try:
-        run_command(["zfs", "set", f"mountpoint={mount_point}", zpool_name])
-        log_info(f"Mountpoint for pool '{zpool_name}' set to '{mount_point}'.")
-    except subprocess.CalledProcessError:
-        log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}'.")
+            log_warn(f"ZFS pool '{zpool_name}' not found or failed to import. Skipping mountpoint configuration.")
+
+    # Set the mount point if the pool was imported successfully
+    if pool_imported:
+        try:
+            run_command(["zfs", "set", f"mountpoint={mount_point}", zpool_name])
+            log_info(f"Mountpoint for pool '{zpool_name}' set to '{mount_point}'.")
+        except subprocess.CalledProcessError:
+            log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}'.")
 
 def prompt_reboot() -> None:
     """
