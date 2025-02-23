@@ -58,20 +58,52 @@ USER_HOME = f"/home/{USERNAME}"
 
 # List of essential packages to install
 PACKAGES = [
+    # Shells, editors, and basic utilities
     "bash", "vim", "nano", "screen", "tmux", "mc", "zsh", "htop", "tree", "ncdu", "neofetch",
-    "build-essential", "cmake", "ninja-build", "meson", "gettext", "git",
+
+    # Development tools and build systems
+    "build-essential", "cmake", "ninja-build", "meson", "gettext", "git", "pkg-config",
+
+    # SSH, firewall, and system management
     "openssh-server", "ufw", "curl", "wget", "rsync", "sudo", "bash-completion",
+
+    # Python and related libraries
     "python3", "python3-dev", "python3-pip", "python3-venv",
     "libssl-dev", "libffi-dev", "zlib1g-dev", "libreadline-dev", "libbz2-dev", "tk-dev", "xz-utils",
     "libncurses5-dev", "libgdbm-dev", "libnss3-dev", "liblzma-dev", "libxml2-dev", "libxmlsec1-dev",
+
+    # Certificate management and system tools
     "ca-certificates", "software-properties-common", "apt-transport-https", "gnupg", "lsb-release",
+
+    # Compilers and low-level tools
     "clang", "llvm", "netcat-openbsd", "lsof", "unzip", "zip",
+
+    # Xorg and GUI utilities (if needed)
     "xorg", "x11-xserver-utils", "xterm", "alacritty", "fonts-dejavu-core",
-    "net-tools", "nmap", "iftop", "iperf3", "tcpdump", "lynis",
-    "golang-go", "gdb",
-    "john", "hydra", "aircrack-ng", "nikto",
+
+    # Networking and diagnostic tools
+    "net-tools", "nmap", "iftop", "iperf3", "tcpdump", "lynis", "traceroute", "mtr",
+
+    # System monitoring and performance tools
+    "iotop", "glances",
+
+    # Programming languages and debugging tools
+    "golang-go", "gdb", "cargo",
+
+    # Security tools and penetration testing utilities
+    "john", "hydra", "aircrack-ng", "nikto", "fail2ban", "rkhunter", "chkrootkit",
+
+    # Database clients and servers
     "postgresql-client", "mysql-client", "redis-server",
-    "ruby", "rustc", "jq", "certbot",
+
+    # Scripting languages and additional utilities
+    "ruby", "rustc", "jq", "yq", "certbot",
+
+    # Archiving and compression
+    "p7zip-full",
+
+    # Virtualization and emulation (optional; useful for testing and development)
+    "qemu", "libvirt-clients", "libvirt-daemon-system", "virt-manager",
 ]
 
 # Terminal color definitions (Nord theme)
