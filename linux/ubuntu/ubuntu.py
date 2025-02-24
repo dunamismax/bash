@@ -1938,12 +1938,12 @@ def main() -> None:
     install_configure_zfs()
     install_brave_browser()
     install_flatpak_and_apps()
-    install_configure_caddy()
     install_configure_vscode_insiders()
     configure_unattended_upgrades()
     configure_apparmor()
     cleanup_system()
     configure_wayland()
+    install_configure_caddy()
     final_checks()
 
     prompt_reboot()
