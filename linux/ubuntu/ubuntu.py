@@ -26,15 +26,15 @@ Version: 4.2.0
 Date: 2025-02-22
 """
 
-import os
-import sys
-import subprocess
-import shutil
-import datetime
-import logging
-import filecmp
 import atexit
+import datetime
+import filecmp
+import logging
+import os
 import platform
+import shutil
+import subprocess
+import sys
 
 # ----------------------------
 # Global Variables & Constants
@@ -59,64 +59,126 @@ USER_HOME = f"/home/{USERNAME}"
 # List of essential packages to install
 PACKAGES = [
     # Shells, editors, and basic utilities
-    "bash", "vim", "nano", "screen", "tmux", "mc", "zsh", "htop", "tree", "ncdu", "neofetch",
-
+    "bash",
+    "vim",
+    "nano",
+    "screen",
+    "tmux",
+    "mc",
+    "zsh",
+    "htop",
+    "tree",
+    "ncdu",
+    "neofetch",
     # Development tools and build systems
-    "build-essential", "cmake", "ninja-build", "meson", "gettext", "git", "pkg-config",
-
+    "build-essential",
+    "cmake",
+    "ninja-build",
+    "meson",
+    "gettext",
+    "git",
+    "pkg-config",
     # SSH, firewall, and system management
-    "openssh-server", "ufw", "curl", "wget", "rsync", "sudo", "bash-completion",
-
+    "openssh-server",
+    "ufw",
+    "curl",
+    "wget",
+    "rsync",
+    "sudo",
+    "bash-completion",
     # Python and related libraries
-    "python3", "python3-dev", "python3-pip", "python3-venv",
-    "libssl-dev", "libffi-dev", "zlib1g-dev", "libreadline-dev", "libbz2-dev", "tk-dev", "xz-utils",
-    "libncurses5-dev", "libgdbm-dev", "libnss3-dev", "liblzma-dev", "libxml2-dev", "libxmlsec1-dev",
-
+    "python3",
+    "python3-dev",
+    "python3-pip",
+    "python3-venv",
+    "libssl-dev",
+    "libffi-dev",
+    "zlib1g-dev",
+    "libreadline-dev",
+    "libbz2-dev",
+    "tk-dev",
+    "xz-utils",
+    "libncurses5-dev",
+    "libgdbm-dev",
+    "libnss3-dev",
+    "liblzma-dev",
+    "libxml2-dev",
+    "libxmlsec1-dev",
     # Certificate management and system tools
-    "ca-certificates", "software-properties-common", "apt-transport-https", "gnupg", "lsb-release",
-
+    "ca-certificates",
+    "software-properties-common",
+    "apt-transport-https",
+    "gnupg",
+    "lsb-release",
     # Compilers and low-level tools
-    "clang", "llvm", "netcat-openbsd", "lsof", "unzip", "zip",
-
+    "clang",
+    "llvm",
+    "netcat-openbsd",
+    "lsof",
+    "unzip",
+    "zip",
     # Xorg and GUI utilities (if needed)
-    "xorg", "x11-xserver-utils", "xterm", "alacritty", "fonts-dejavu-core",
-
+    "xorg",
+    "x11-xserver-utils",
+    "xterm",
+    "alacritty",
+    "fonts-dejavu-core",
     # Networking and diagnostic tools
-    "net-tools", "nmap", "iftop", "iperf3", "tcpdump", "lynis", "traceroute", "mtr",
-
+    "net-tools",
+    "nmap",
+    "iftop",
+    "iperf3",
+    "tcpdump",
+    "lynis",
+    "traceroute",
+    "mtr",
     # System monitoring and performance tools
-    "iotop", "glances",
-
+    "iotop",
+    "glances",
     # Programming languages and debugging tools
-    "golang-go", "gdb", "cargo",
-
+    "golang-go",
+    "gdb",
+    "cargo",
     # Security tools and penetration testing utilities
-    "john", "hydra", "aircrack-ng", "nikto", "fail2ban", "rkhunter", "chkrootkit",
-
+    "john",
+    "hydra",
+    "aircrack-ng",
+    "nikto",
+    "fail2ban",
+    "rkhunter",
+    "chkrootkit",
     # Database clients and servers
-    "postgresql-client", "mysql-client", "redis-server",
-
+    "postgresql-client",
+    "mysql-client",
+    "redis-server",
     # Scripting languages and additional utilities
-    "ruby", "rustc", "jq", "yq", "certbot",
-
+    "ruby",
+    "rustc",
+    "jq",
+    "yq",
+    "certbot",
     # Archiving and compression
     "p7zip-full",
-
     # Virtualization and emulation (optional; useful for testing and development)
-    "qemu-system", "libvirt-clients", "libvirt-daemon-system", "virt-manager", "qemu-user-static",
+    "qemu-system",
+    "libvirt-clients",
+    "libvirt-daemon-system",
+    "virt-manager",
+    "qemu-user-static",
 ]
 
 # Terminal color definitions (Nord theme)
-NORD9  = '\033[38;2;129;161;193m'    # Debug messages
-NORD10 = '\033[38;2;94;129;172m'     # Secondary info
-NORD11 = '\033[38;2;191;97;106m'     # Error messages
-NORD13 = '\033[38;2;235;203;139m'    # Warning messages
-NORD14 = '\033[38;2;163;190;140m'    # Info messages
-NC     = '\033[0m'                  # Reset color
+NORD9 = "\033[38;2;129;161;193m"  # Debug messages
+NORD10 = "\033[38;2;94;129;172m"  # Secondary info
+NORD11 = "\033[38;2;191;97;106m"  # Error messages
+NORD13 = "\033[38;2;235;203;139m"  # Warning messages
+NORD14 = "\033[38;2;163;190;140m"  # Info messages
+NC = "\033[0m"  # Reset color
 
 # ----------------------------
 # Logging Setup
 # ----------------------------
+
 
 def setup_logging():
     """Configure logging to both file and console with color support."""
@@ -125,7 +187,7 @@ def setup_logging():
 
     logger = logging.getLogger("ubuntu_setup")
     logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S")
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
 
     # File handler for logging
     fh = logging.FileHandler(LOG_FILE)
@@ -136,41 +198,51 @@ def setup_logging():
     # Console handler with color support if output is tty
     class ColorFormatter(logging.Formatter):
         COLORS = {
-            'DEBUG': NORD9,
-            'INFO': NORD14,
-            'WARNING': NORD13,
-            'ERROR': NORD11,
-            'CRITICAL': NORD11,
+            "DEBUG": NORD9,
+            "INFO": NORD14,
+            "WARNING": NORD13,
+            "ERROR": NORD11,
+            "CRITICAL": NORD11,
         }
+
         def format(self, record):
-            color = self.COLORS.get(record.levelname, '')
+            color = self.COLORS.get(record.levelname, "")
             message = super().format(record)
             return f"{color}{message}{NC}"
 
     if sys.stderr.isatty():
         ch = logging.StreamHandler()
         ch.setLevel(logging.DEBUG)
-        ch.setFormatter(ColorFormatter('[%(asctime)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S"))
+        ch.setFormatter(
+            ColorFormatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+        )
         logger.addHandler(ch)
     return logger
 
+
 logger = setup_logging()
+
 
 def log_info(message: str) -> None:
     logger.info(message)
 
+
 def log_warn(message: str) -> None:
     logger.warning(message)
+
 
 def log_error(message: str) -> None:
     logger.error(message)
 
+
 def log_debug(message: str) -> None:
     logger.debug(message)
+
 
 # ----------------------------
 # Utility Functions
 # ----------------------------
+
 
 def run_command(cmd, check=True, capture_output=False, text=True, **kwargs):
     """
@@ -185,9 +257,11 @@ def run_command(cmd, check=True, capture_output=False, text=True, **kwargs):
     log_debug(f"Executing command: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
     return subprocess.run(cmd, check=check, capture_output=capture_output, text=text, **kwargs)
 
+
 def command_exists(cmd: str) -> bool:
     """Check if a command exists in the system's PATH."""
     return shutil.which(cmd) is not None
+
 
 def backup_file(file_path: str) -> None:
     """
@@ -206,6 +280,7 @@ def backup_file(file_path: str) -> None:
     else:
         log_warn(f"File {file_path} not found; skipping backup.")
 
+
 def print_section(title: str) -> None:
     """
     Log a section header to improve readability of log output.
@@ -217,6 +292,7 @@ def print_section(title: str) -> None:
     log_info(f"{NORD10}  {title}{NC}")
     log_info(f"{NORD10}{border}{NC}")
 
+
 def handle_error(msg: str, code: int = 1) -> None:
     """
     Log an error message and exit the script.
@@ -227,10 +303,12 @@ def handle_error(msg: str, code: int = 1) -> None:
     log_error(f"{msg} (Exit Code: {code})")
     sys.exit(code)
 
+
 def cleanup() -> None:
     """Perform any necessary cleanup tasks before the script exits."""
     log_info("Performing cleanup tasks before exit.")
     # Additional cleanup tasks can be added here.
+
 
 atexit.register(cleanup)
 
@@ -238,10 +316,12 @@ atexit.register(cleanup)
 # Pre-requisites and System Checks
 # ----------------------------
 
+
 def check_root() -> None:
     """Ensure the script is run as root."""
     if os.geteuid() != 0:
         handle_error("Script must be run as root. Exiting.")
+
 
 def check_network() -> None:
     """Verify network connectivity by pinging a reliable host."""
@@ -253,9 +333,11 @@ def check_network() -> None:
     except subprocess.CalledProcessError:
         handle_error("No network connectivity. Please verify your network settings.")
 
+
 # ----------------------------
 # System Update & Package Installation
 # ----------------------------
+
 
 def update_system() -> None:
     """Update package repositories and upgrade installed packages."""
@@ -274,6 +356,7 @@ def update_system() -> None:
 
     log_info("System update and upgrade complete.")
 
+
 def install_packages() -> None:
     """Install all missing essential packages (and their recommended packages) in a single batch."""
     print_section("Essential Package Installation")
@@ -286,7 +369,7 @@ def install_packages() -> None:
                 ["dpkg", "-s", pkg],
                 check=True,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
             )
             log_info(f"Package already installed: {pkg}")
         except subprocess.CalledProcessError:
@@ -303,9 +386,11 @@ def install_packages() -> None:
     else:
         log_info("All required packages are already installed.")
 
+
 # ----------------------------
 # Timezone and NTP Configuration
 # ----------------------------
+
 
 def configure_timezone() -> None:
     """
@@ -328,9 +413,11 @@ def configure_timezone() -> None:
     else:
         log_warn(f"Timezone file for {tz} not found.")
 
+
 # ----------------------------
 # Repository and Shell Setup
 # ----------------------------
+
 
 def setup_repos() -> None:
     """
@@ -364,6 +451,7 @@ def setup_repos() -> None:
     except subprocess.CalledProcessError:
         log_warn(f"Failed to set ownership of '{gh_dir}'.")
 
+
 def copy_shell_configs() -> None:
     """
     Update the user's shell configuration files (.bashrc and .profile) from a repository source.
@@ -394,6 +482,7 @@ def copy_shell_configs() -> None:
         log_info(f"Sourcing {os.path.join(dest_dir, '.bashrc')} is not applicable in Python.")
     else:
         log_warn(f"No .bashrc found in {dest_dir}; skipping source.")
+
 
 def set_bash_shell() -> None:
     """
@@ -426,9 +515,11 @@ def set_bash_shell() -> None:
     except subprocess.CalledProcessError:
         log_warn(f"Failed to set default shell for {USERNAME}.")
 
+
 # ----------------------------
 # SSH and Sudo Security Configuration
 # ----------------------------
+
 
 def configure_ssh() -> None:
     """
@@ -439,7 +530,12 @@ def configure_ssh() -> None:
     print_section("SSH Configuration")
     log_info("Configuring OpenSSH Server...")
     try:
-        subprocess.run(["dpkg", "-s", "openssh-server"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["dpkg", "-s", "openssh-server"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     except subprocess.CalledProcessError:
         log_info("openssh-server not installed. Installing...")
         try:
@@ -488,6 +584,7 @@ def configure_ssh() -> None:
     except subprocess.CalledProcessError:
         handle_error("Failed to restart SSH service.")
 
+
 def setup_sudoers() -> None:
     """
     Ensure the specified user has sudo privileges.
@@ -505,6 +602,7 @@ def setup_sudoers() -> None:
             log_info(f"User {USERNAME} added to sudo group.")
     except subprocess.CalledProcessError:
         log_warn(f"Failed to add {USERNAME} to sudo group.")
+
 
 def configure_firewall() -> None:
     """
@@ -525,7 +623,7 @@ def configure_firewall() -> None:
     # Set default policies
     default_commands = [
         ([ufw_cmd, "default", "deny", "incoming"], "set default deny for incoming traffic"),
-        ([ufw_cmd, "default", "allow", "outgoing"], "set default allow for outgoing traffic")
+        ([ufw_cmd, "default", "allow", "outgoing"], "set default allow for outgoing traffic"),
     ]
     for cmd, description in default_commands:
         try:
@@ -561,7 +659,7 @@ def configure_firewall() -> None:
     # Ensure ufw service is enabled and started via systemctl
     service_commands = [
         (["systemctl", "enable", "ufw"], "enable ufw service"),
-        (["systemctl", "start", "ufw"], "start ufw service")
+        (["systemctl", "start", "ufw"], "start ufw service"),
     ]
     for cmd, description in service_commands:
         try:
@@ -572,9 +670,11 @@ def configure_firewall() -> None:
 
     log_info("Firewall configuration completed successfully.")
 
+
 # ----------------------------
 # Service Installation and Configuration
 # ----------------------------
+
 
 def install_plex() -> None:
     """
@@ -589,7 +689,12 @@ def install_plex() -> None:
         handle_error("curl is required but not installed.")
     temp_deb = "/tmp/plexmediaserver.deb"
     try:
-        subprocess.run(["dpkg", "-s", "plexmediaserver"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["dpkg", "-s", "plexmediaserver"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         log_info("Plex Media Server is already installed; skipping download and installation.")
         return
     except subprocess.CalledProcessError:
@@ -637,6 +742,7 @@ def install_plex() -> None:
         pass
     log_info("Plex Media Server installed successfully.")
 
+
 def install_fastfetch() -> None:
     """
     Install Fastfetch, a system information tool.
@@ -646,7 +752,12 @@ def install_fastfetch() -> None:
     print_section("Fastfetch Installation")
     temp_deb = "/tmp/fastfetch-linux-amd64.deb"
     try:
-        subprocess.run(["dpkg", "-s", "fastfetch"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["dpkg", "-s", "fastfetch"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         log_info("Fastfetch is already installed; skipping.")
         return
     except subprocess.CalledProcessError:
@@ -668,6 +779,7 @@ def install_fastfetch() -> None:
     except Exception:
         pass
     log_info("Fastfetch installed successfully.")
+
 
 def docker_config() -> None:
     """
@@ -747,6 +859,7 @@ def docker_config() -> None:
     else:
         log_info("Docker Compose is already installed.")
 
+
 def deploy_user_scripts() -> None:
     """
     Deploy user scripts from the repository to the user's bin directory.
@@ -765,6 +878,7 @@ def deploy_user_scripts() -> None:
         log_info("User scripts deployed successfully.")
     except subprocess.CalledProcessError:
         handle_error("Script deployment failed.")
+
 
 def configure_periodic() -> None:
     """
@@ -793,6 +907,7 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
     except Exception as e:
         log_warn(f"Failed to set execute permission on {cron_file}: {e}")
 
+
 def backup_configs() -> None:
     """
     Backup critical system configuration files.
@@ -813,6 +928,7 @@ def backup_configs() -> None:
         else:
             log_warn(f"File {file} not found; skipping.")
 
+
 def rotate_logs() -> None:
     """
     Rotate the log file by compressing it and truncating the original.
@@ -824,6 +940,7 @@ def rotate_logs() -> None:
         try:
             with open(LOG_FILE, "rb") as f_in, open(rotated_file, "wb") as f_out:
                 import gzip
+
                 with gzip.GzipFile(fileobj=f_out, mode="wb") as gz:
                     shutil.copyfileobj(f_in, gz)
             open(LOG_FILE, "w").close()
@@ -832,6 +949,7 @@ def rotate_logs() -> None:
             log_warn(f"Log rotation failed: {e}")
     else:
         log_warn(f"Log file {LOG_FILE} does not exist.")
+
 
 def system_health_check() -> None:
     """
@@ -858,6 +976,7 @@ def system_health_check() -> None:
     except Exception as e:
         log_warn(f"Failed to get memory usage: {e}")
 
+
 def verify_firewall_rules() -> None:
     """
     Verify that specific ports are accessible as expected.
@@ -867,10 +986,16 @@ def verify_firewall_rules() -> None:
     print_section("Firewall Rules Verification")
     for port in ["22", "80", "443", "32400"]:
         try:
-            subprocess.run(["nc", "-z", "-w3", "127.0.0.1", port], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["nc", "-z", "-w3", "127.0.0.1", port],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
             log_info(f"Port {port} is accessible.")
         except subprocess.CalledProcessError:
             log_warn(f"Port {port} is not accessible. Check ufw rules.")
+
 
 def update_ssl_certificates() -> None:
     """
@@ -891,6 +1016,7 @@ def update_ssl_certificates() -> None:
         log_info("SSL certificates updated successfully.")
     except subprocess.CalledProcessError:
         log_warn("Failed to update SSL certificates.")
+
 
 def tune_system() -> None:
     """
@@ -919,13 +1045,14 @@ net.ipv4.tcp_wmem=4096 16384 4194304
             with open(sysctl_conf, "a") as f:
                 f.write(tuning)
             run_command(["sysctl", "-w", "net.core.somaxconn=128"])
-            run_command(["sysctl", "-w", 'net.ipv4.tcp_rmem=4096 87380 6291456'])
-            run_command(["sysctl", "-w", 'net.ipv4.tcp_wmem=4096 16384 4194304'])
+            run_command(["sysctl", "-w", "net.ipv4.tcp_rmem=4096 87380 6291456"])
+            run_command(["sysctl", "-w", "net.ipv4.tcp_wmem=4096 16384 4194304"])
             log_info("Performance tuning applied.")
         except Exception as e:
             log_warn(f"Failed to apply performance tuning: {e}")
     else:
         log_info(f"Performance tuning settings already exist in {sysctl_conf}.")
+
 
 def final_checks() -> None:
     """
@@ -977,6 +1104,7 @@ def final_checks() -> None:
     except Exception as e:
         log_warn(f"Failed to get load averages: {e}")
 
+
 def home_permissions() -> None:
     """
     Ensure correct ownership and permissions for the user's home directory.
@@ -1002,6 +1130,7 @@ def home_permissions() -> None:
     else:
         log_warn("setfacl not found; skipping default ACL configuration.")
 
+
 def install_configure_zfs() -> None:
     """
     Install and configure ZFS.
@@ -1021,7 +1150,9 @@ def install_configure_zfs() -> None:
         log_error("Failed to update package lists. Skipping ZFS configuration.")
         return
     try:
-        run_command(["apt", "install", "-y", "dpkg-dev", "linux-headers-generic", "linux-image-generic"])
+        run_command(
+            ["apt", "install", "-y", "dpkg-dev", "linux-headers-generic", "linux-image-generic"]
+        )
     except subprocess.CalledProcessError:
         log_error("Failed to install prerequisites. Skipping ZFS configuration.")
         return
@@ -1044,8 +1175,12 @@ def install_configure_zfs() -> None:
     # Attempt to list or import the ZFS pool
     pool_imported = False
     try:
-        subprocess.run(["zpool", "list", zpool_name],
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["zpool", "list", zpool_name],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         log_info(f"ZFS pool '{zpool_name}' is already imported.")
         pool_imported = True
     except subprocess.CalledProcessError:
@@ -1054,7 +1189,9 @@ def install_configure_zfs() -> None:
             log_info(f"Imported ZFS pool '{zpool_name}'.")
             pool_imported = True
         except subprocess.CalledProcessError:
-            log_warn(f"ZFS pool '{zpool_name}' not found or failed to import. Skipping mountpoint configuration.")
+            log_warn(
+                f"ZFS pool '{zpool_name}' not found or failed to import. Skipping mountpoint configuration."
+            )
 
     # Set the mount point if the pool was imported successfully
     if pool_imported:
@@ -1063,6 +1200,7 @@ def install_configure_zfs() -> None:
             log_info(f"Mountpoint for pool '{zpool_name}' set to '{mount_point}'.")
         except subprocess.CalledProcessError:
             log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}'.")
+
 
 def configure_fail2ban() -> None:
     """
@@ -1110,6 +1248,7 @@ maxretry = 3
     except subprocess.CalledProcessError:
         log_warn("Failed to enable or restart the Fail2ban service.")
 
+
 def configure_wayland() -> None:
     """
     Configure environment variables to enable Wayland for default applications.
@@ -1129,7 +1268,7 @@ def configure_wayland() -> None:
     env_vars = {
         "GDK_BACKEND": "wayland",
         "QT_QPA_PLATFORM": "wayland",
-        "SDL_VIDEODRIVER": "wayland"
+        "SDL_VIDEODRIVER": "wayland",
     }
 
     # ----------------------------
@@ -1213,6 +1352,206 @@ def configure_wayland() -> None:
     except Exception as e:
         log_warn(f"Failed to update user environment file {user_env_file}: {e}")
 
+
+def install_brave_browser() -> None:
+    """
+    Install the Brave browser on Ubuntu.
+
+    This function downloads and executes the Brave installation script from:
+      https://dl.brave.com/install.sh
+
+    It uses the following command:
+      curl -fsS https://dl.brave.com/install.sh | sh
+
+    Logs progress and handles errors accordingly.
+    """
+    print_section("Brave Browser Installation")
+    log_info("Installing Brave browser...")
+
+    try:
+        # Execute the Brave install script using sh
+        run_command(["sh", "-c", "curl -fsS https://dl.brave.com/install.sh | sh"])
+        log_info("Brave browser installed successfully.")
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to install Brave browser: {e}")
+
+
+def install_flatpak_and_apps() -> None:
+    """
+    Install Flatpak and the GNOME Software Flatpak plugin, add the Flathub repository,
+    and then install a list of Flatpak applications from Flathub.
+
+    Steps performed:
+      1. Install Flatpak: sudo apt install flatpak
+      2. Install GNOME Software Flatpak plugin: sudo apt install gnome-software-plugin-flatpak
+      3. Add the Flathub repository:
+             flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      4. Install the list of Flatpak apps listed below
+
+    Uses the run_command(), print_section(), log_info(), log_warn(), and handle_error()
+    functions from the master script.
+    """
+    # Print section header for clarity
+    print_section("Flatpak Installation and Setup")
+
+    # Install Flatpak
+    log_info("Installing Flatpak...")
+    try:
+        run_command(["apt", "install", "-y", "flatpak"])
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to install Flatpak: {e}")
+
+    # Install GNOME Software Flatpak plugin
+    log_info("Installing GNOME Software Flatpak plugin...")
+    try:
+        run_command(["apt", "install", "-y", "gnome-software-plugin-flatpak"])
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to install GNOME Software Flatpak plugin: {e}")
+
+    # Add the Flathub repository
+    log_info("Adding Flathub repository...")
+    try:
+        run_command(
+            [
+                "flatpak",
+                "remote-add",
+                "--if-not-exists",
+                "flathub",
+                "https://dl.flathub.org/repo/flathub.flatpakrepo",
+            ]
+        )
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to add Flathub repository: {e}")
+
+    # List of Flatpak apps to install from Flathub
+    flatpak_apps = [
+        "com.discordapp.Discord",
+        "com.usebottles.bottles",
+        "com.valvesoftware.Steam",
+        "com.spotify.Client",
+        "org.videolan.VLC",
+        "org.libretro.RetroArch",
+        "com.obsproject.Studio",
+        "com.github.tchx84.Flatseal",
+        "net.lutris.Lutris",
+        "net.davidotek.pupgui2",
+        "com.visualstudio.code",
+        "org.gimp.GIMP",
+        "org.qbittorrent.qBittorrent",
+        "com.github.Matoking.protontricks",
+        "md.obsidian.Obsidian",
+        "org.prismlauncher.PrismLauncher",
+        "com.bitwarden.desktop",
+        "org.kde.kdenlive",
+        "org.signal.Signal",
+        "org.gnome.Boxes",
+        "com.stremio.Stremio",
+        "org.blender.Blender",
+        "org.localsend.localsend_app",
+        "fr.handbrake.ghb",
+        "org.remmina.Remmina",
+        "org.audacityteam.Audacity",
+        "com.rustdesk.RustDesk",
+        "com.getpostman.Postman",
+        "io.github.aandrew_me.ytdn",
+        "org.shotcut.Shotcut",
+        "com.calibre_ebook.calibre",
+        "tv.plex.PlexDesktop",
+        "org.filezillaproject.Filezilla",
+        "com.github.k4zmu2a.spacecadetpinball",
+        "org.virt_manager.virt-manager",
+        "org.raspberrypi.rpi-imager",
+    ]
+
+    # Install each Flatpak app
+    log_info("Installing Flatpak applications from Flathub...")
+    for app in flatpak_apps:
+        log_info(f"Installing {app}...")
+        try:
+            run_command(["flatpak", "install", "--assumeyes", "flathub", app])
+            log_info(f"{app} installed successfully.")
+        except subprocess.CalledProcessError as e:
+            log_warn(f"Failed to install {app}: {e}")
+
+
+def install_configure_caddy() -> None:
+    """
+    Install and configure the Caddy web server.
+
+    Steps performed:
+      1. Download the Caddy deb package from:
+         https://github.com/caddyserver/caddy/releases/download/v2.9.1/caddy_2.9.1_linux_amd64.deb
+      2. Install Caddy using dpkg and fix dependency issues if necessary.
+      3. Remove the temporary deb file.
+      4. Copy the custom Caddyfile from /home/sawyer/github/linux/ubuntu/dotfiles/Caddyfile
+         to the default location (/etc/caddy/Caddyfile), backing up any existing file.
+      5. Enable the Caddy service and restart it.
+    """
+    print_section("Caddy Installation and Configuration")
+    log_info("Installing Caddy web server...")
+
+    # Define URLs and paths
+    caddy_deb_url = (
+        "https://github.com/caddyserver/caddy/releases/download/v2.9.1/caddy_2.9.1_linux_amd64.deb"
+    )
+    temp_deb = "/tmp/caddy_2.9.1_linux_amd64.deb"
+
+    # Download the Caddy package
+    try:
+        run_command(["curl", "-L", "-o", temp_deb, caddy_deb_url])
+        log_info("Caddy package downloaded successfully.")
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to download Caddy package: {e}")
+
+    # Install the Caddy package
+    try:
+        run_command(["dpkg", "-i", temp_deb])
+    except subprocess.CalledProcessError:
+        log_warn("Dependency issues encountered during Caddy installation. Attempting to fix...")
+        try:
+            run_command(["apt", "install", "-f", "-y"])
+        except subprocess.CalledProcessError as e:
+            handle_error(f"Failed to resolve dependencies for Caddy: {e}")
+    log_info("Caddy installed successfully.")
+
+    # Remove the temporary deb package file
+    try:
+        os.remove(temp_deb)
+        log_info("Removed temporary Caddy package file.")
+    except Exception as e:
+        log_warn(f"Failed to remove temporary file {temp_deb}: {e}")
+
+    # Copy the custom Caddyfile
+    source_caddyfile = "/home/sawyer/github/linux/ubuntu/dotfiles/Caddyfile"
+    dest_caddyfile = "/etc/caddy/Caddyfile"
+    if not os.path.isfile(source_caddyfile):
+        log_warn(
+            f"Source Caddyfile not found at {source_caddyfile}. Skipping Caddyfile configuration."
+        )
+    else:
+        if os.path.exists(dest_caddyfile):
+            backup_file(dest_caddyfile)
+        try:
+            shutil.copy2(source_caddyfile, dest_caddyfile)
+            log_info(f"Copied {source_caddyfile} to {dest_caddyfile}.")
+        except Exception as e:
+            log_warn(f"Failed to copy Caddyfile: {e}")
+
+    # Enable the Caddy service
+    try:
+        run_command(["systemctl", "enable", "caddy"])
+        log_info("Caddy service enabled.")
+    except subprocess.CalledProcessError as e:
+        log_warn(f"Failed to enable Caddy service: {e}")
+
+    # Start (or restart) the Caddy service
+    try:
+        run_command(["systemctl", "restart", "caddy"])
+        log_info("Caddy service started successfully.")
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to start Caddy service: {e}")
+
+
 def prompt_reboot() -> None:
     """
     Prompt the user for a system reboot to apply changes.
@@ -1230,52 +1569,47 @@ def prompt_reboot() -> None:
     else:
         log_info("Reboot canceled. Please reboot later for all changes to take effect.")
 
+
 # ----------------------------
 # Main Execution Flow
 # ----------------------------
+
 
 def main() -> None:
     """Main function executing the entire setup process."""
     check_root()
     check_network()
-
     update_system()
     install_packages()
-
     configure_timezone()
-
     setup_repos()
     copy_shell_configs()
     set_bash_shell()
-
     configure_ssh()
     setup_sudoers()
     configure_firewall()
-
     install_plex()
     install_fastfetch()
-
     docker_config()
-
     deploy_user_scripts()
-
     configure_periodic()
-
     backup_configs()
     rotate_logs()
-
     system_health_check()
     verify_firewall_rules()
     update_ssl_certificates()
     tune_system()
-
     home_permissions()
     configure_fail2ban()
     install_configure_zfs()
+    install_brave_browser()
+    install_flatpak_and_apps()
+    install_configure_caddy()
     configure_wayland()
     final_checks()
 
     prompt_reboot()
+
 
 if __name__ == "__main__":
     main()
