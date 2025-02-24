@@ -1173,46 +1173,51 @@ def home_permissions() -> None:
 
 def install_configure_zfs() -> None:
     """
-    Install and configure ZFS.
+    Install and configure ZFS for external pool 'WD_BLACK' with mount point '/media/WD_BLACK'.
 
-    Installs required packages, enables ZFS services, attempts to import an existing ZFS pool,
-    and sets the mount point if the pool is available. If the pool (WD_BLACK) is not found or
-    fails to mount, the function logs a warning and skips the mountpoint configuration.
+    This function:
+      - Updates package lists and installs prerequisites and ZFS packages.
+      - Enables the ZFS import and mount services.
+      - Creates the desired mount point directory.
+      - Imports the ZFS pool (if not already imported).
+      - Sets the mountpoint property on the pool.
+      - Updates the pool cachefile property to ensure auto-import at boot.
+      - Attempts to mount all ZFS datasets and verifies the mount.
     """
     print_section("ZFS Installation and Configuration")
     zpool_name = "WD_BLACK"
     mount_point = f"/media/{zpool_name}"
+    cache_file = "/etc/zfs/zpool.cache"
 
     # Update package lists and install prerequisites
     try:
         run_command(["apt", "update"])
-    except subprocess.CalledProcessError:
-        log_error("Failed to update package lists. Skipping ZFS configuration.")
-        return
-    try:
         run_command(
             ["apt", "install", "-y", "dpkg-dev", "linux-headers-generic", "linux-image-generic"]
         )
-    except subprocess.CalledProcessError:
-        log_error("Failed to install prerequisites. Skipping ZFS configuration.")
-        return
-    try:
         run_command(["apt", "install", "-y", "zfs-dkms", "zfsutils-linux"], check=True)
-    except subprocess.CalledProcessError:
-        log_error("Failed to install ZFS packages. Skipping ZFS configuration.")
+        log_info("Prerequisites and ZFS packages installed successfully.")
+    except subprocess.CalledProcessError as e:
+        log_error(f"Failed to install prerequisites or ZFS packages: {e}")
         return
 
-    # Enable ZFS services; continue even if these steps fail
-    try:
-        run_command(["systemctl", "enable", "zfs-import-cache.service"])
-    except subprocess.CalledProcessError:
-        log_warn("Could not enable zfs-import-cache.service.")
-    try:
-        run_command(["systemctl", "enable", "zfs-mount.service"])
-    except subprocess.CalledProcessError:
-        log_warn("Could not enable zfs-mount.service.")
+    # Enable ZFS services (import and mount)
+    for service in ["zfs-import-cache.service", "zfs-mount.service"]:
+        try:
+            run_command(["systemctl", "enable", service])
+            log_info(f"Enabled {service}.")
+        except subprocess.CalledProcessError:
+            log_warn(f"Could not enable {service}.")
 
-    # Attempt to list or import the ZFS pool
+    # Ensure the mount point directory exists
+    if not os.path.isdir(mount_point):
+        try:
+            os.makedirs(mount_point, exist_ok=True)
+            log_info(f"Created mount point directory: {mount_point}")
+        except Exception as e:
+            log_warn(f"Failed to create mount point directory {mount_point}: {e}")
+
+    # Import the pool if it is not already imported
     pool_imported = False
     try:
         subprocess.run(
@@ -1229,17 +1234,44 @@ def install_configure_zfs() -> None:
             log_info(f"Imported ZFS pool '{zpool_name}'.")
             pool_imported = True
         except subprocess.CalledProcessError:
-            log_warn(
-                f"ZFS pool '{zpool_name}' not found or failed to import. Skipping mountpoint configuration."
-            )
+            log_warn(f"ZFS pool '{zpool_name}' not found or failed to import.")
 
-    # Set the mount point if the pool was imported successfully
-    if pool_imported:
-        try:
-            run_command(["zfs", "set", f"mountpoint={mount_point}", zpool_name])
-            log_info(f"Mountpoint for pool '{zpool_name}' set to '{mount_point}'.")
-        except subprocess.CalledProcessError:
-            log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}'.")
+    if not pool_imported:
+        log_warn(f"ZFS pool '{zpool_name}' could not be imported. Skipping further configuration.")
+        return
+
+    # Set the mountpoint property on the pool/dataset
+    try:
+        run_command(["zfs", "set", f"mountpoint={mount_point}", zpool_name])
+        log_info(f"Set mountpoint for pool '{zpool_name}' to '{mount_point}'.")
+    except subprocess.CalledProcessError as e:
+        log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}': {e}")
+
+    # Update the pool cachefile so it is recorded for auto-import at boot
+    try:
+        run_command(["zpool", "set", f"cachefile={cache_file}", zpool_name])
+        log_info(f"Updated cachefile for pool '{zpool_name}' to '{cache_file}'.")
+    except subprocess.CalledProcessError as e:
+        log_warn(f"Failed to update cachefile for ZFS pool '{zpool_name}': {e}")
+
+    # Attempt to mount all ZFS datasets
+    try:
+        run_command(["zfs", "mount", "-a"])
+        log_info("Mounted all ZFS datasets.")
+    except subprocess.CalledProcessError as e:
+        log_warn(f"Failed to mount ZFS datasets: {e}")
+
+    # Verify that the pool is mounted at the desired mount point
+    try:
+        mounts = subprocess.check_output(["zfs", "list", "-o", "name,mountpoint", "-H"], text=True)
+        if any(mount_point in line for line in mounts.splitlines()):
+            log_info(f"ZFS pool '{zpool_name}' is successfully mounted at '{mount_point}'.")
+        else:
+            log_warn(
+                f"ZFS pool '{zpool_name}' is not mounted at '{mount_point}'. Please check manually."
+            )
+    except Exception as e:
+        log_warn(f"Error verifying mount status for ZFS pool '{zpool_name}': {e}")
 
 
 def configure_fail2ban() -> None:
@@ -1640,6 +1672,48 @@ timeshift --create --scripted --comments "Automated daily snapshot" --tags D
         log_warn(f"Failed to create auto snapshot cron job: {e}")
 
 
+def configure_unattended_upgrades() -> None:
+    """
+    Install and configure unattended-upgrades for automatic security updates.
+    """
+    print_section("Unattended Upgrades Configuration")
+    try:
+        run_command(["apt", "install", "-y", "unattended-upgrades"])
+        # You could also copy or write a custom configuration file to /etc/apt/apt.conf.d/50unattended-upgrades
+        log_info(
+            "Unattended-upgrades installed. Please review /etc/apt/apt.conf.d/50unattended-upgrades for customization."
+        )
+    except subprocess.CalledProcessError as e:
+        log_warn(f"Failed to install unattended-upgrades: {e}")
+
+
+def cleanup_system() -> None:
+    """
+    Clean up temporary files, remove unused packages, and clear apt cache.
+    """
+    print_section("System Cleanup")
+    try:
+        run_command(["apt", "autoremove", "-y"])
+        run_command(["apt", "clean"])
+        log_info("System cleanup completed: unused packages removed and apt cache cleared.")
+    except subprocess.CalledProcessError as e:
+        log_warn(f"System cleanup failed: {e}")
+
+
+def configure_apparmor() -> None:
+    """
+    Install and enable AppArmor along with its utilities.
+    """
+    print_section("AppArmor Configuration")
+    try:
+        run_command(["apt", "install", "-y", "apparmor", "apparmor-utils"])
+        run_command(["systemctl", "enable", "apparmor"])
+        run_command(["systemctl", "start", "apparmor"])
+        log_info("AppArmor installed and started successfully.")
+    except subprocess.CalledProcessError as e:
+        log_warn(f"Failed to install or start AppArmor: {e}")
+
+
 def prompt_reboot() -> None:
     """
     Prompt the user for a system reboot to apply changes.
@@ -1695,6 +1769,9 @@ def main() -> None:
     install_brave_browser()
     install_flatpak_and_apps()
     install_configure_caddy()
+    configure_unattended_upgrades()
+    configure_apparmor()
+    cleanup_system()
     configure_wayland()
     final_checks()
 
