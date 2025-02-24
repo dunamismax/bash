@@ -19,6 +19,10 @@ export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
+# Wayland
+export QT_QPA_PLATFORM=wayland
+export XDG_SESSION_TYPE=wayland
+
 # Set default editor and pager (prefer nvim > vim > nano)
 if command -v nvim >/dev/null 2>&1; then
     export EDITOR="nvim"

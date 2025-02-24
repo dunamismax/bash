@@ -122,7 +122,7 @@ def setup_logging():
     """Configure logging to both file and console with color support."""
     if not os.path.exists(os.path.dirname(LOG_FILE)):
         os.makedirs(os.path.dirname(LOG_FILE), mode=0o700, exist_ok=True)
-    
+
     logger = logging.getLogger("ubuntu_setup")
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s', "%Y-%m-%d %H:%M:%S")
@@ -175,7 +175,7 @@ def log_debug(message: str) -> None:
 def run_command(cmd, check=True, capture_output=False, text=True, **kwargs):
     """
     Execute a shell command.
-    
+
     :param cmd: Command to execute as a list or string.
     :param check: If True, raise CalledProcessError on non-zero exit.
     :param capture_output: Capture stdout and stderr if True.
@@ -192,7 +192,7 @@ def command_exists(cmd: str) -> bool:
 def backup_file(file_path: str) -> None:
     """
     Create a backup of a file with a timestamp suffix.
-    
+
     :param file_path: Path of the file to backup.
     """
     if os.path.isfile(file_path):
@@ -209,7 +209,7 @@ def backup_file(file_path: str) -> None:
 def print_section(title: str) -> None:
     """
     Log a section header to improve readability of log output.
-    
+
     :param title: Section title.
     """
     border = "─" * 60
@@ -220,7 +220,7 @@ def print_section(title: str) -> None:
 def handle_error(msg: str, code: int = 1) -> None:
     """
     Log an error message and exit the script.
-    
+
     :param msg: Error message to log.
     :param code: Exit code.
     """
@@ -265,20 +265,20 @@ def update_system() -> None:
         run_command(["apt", "update", "-qq"])
     except subprocess.CalledProcessError:
         handle_error("Failed to update package repositories.")
-    
+
     log_info("Upgrading system packages...")
     try:
         run_command(["apt", "upgrade", "-y"])
     except subprocess.CalledProcessError:
         handle_error("Failed to upgrade packages.")
-    
+
     log_info("System update and upgrade complete.")
 
 def install_packages() -> None:
     """Install all missing essential packages (and their recommended packages) in a single batch."""
     print_section("Essential Package Installation")
     log_info("Checking for required packages...")
-    
+
     missing_packages = []
     for pkg in PACKAGES:
         try:
@@ -291,7 +291,7 @@ def install_packages() -> None:
             log_info(f"Package already installed: {pkg}")
         except subprocess.CalledProcessError:
             missing_packages.append(pkg)
-    
+
     if missing_packages:
         log_info(f"Installing missing packages: {' '.join(missing_packages)}")
         try:
@@ -310,7 +310,7 @@ def install_packages() -> None:
 def configure_timezone() -> None:
     """
     Configure the system timezone.
-    
+
     This function sets the timezone to a specified value by creating a symbolic link to the appropriate timezone file.
     """
     print_section("Timezone Configuration")
@@ -335,7 +335,7 @@ def configure_timezone() -> None:
 def setup_repos() -> None:
     """
     Set up GitHub repositories in the user's home directory.
-    
+
     Clones or updates a predefined list of repositories.
     """
     print_section("GitHub Repositories Setup")
@@ -367,7 +367,7 @@ def setup_repos() -> None:
 def copy_shell_configs() -> None:
     """
     Update the user's shell configuration files (.bashrc and .profile) from a repository source.
-    
+
     Performs a backup if needed and applies new configurations.
     """
     print_section("Shell Configuration Update")
@@ -398,7 +398,7 @@ def copy_shell_configs() -> None:
 def set_bash_shell() -> None:
     """
     Ensure that /bin/bash is set as the default shell for the specified user.
-    
+
     Installs bash if not present and updates /etc/shells.
     """
     print_section("Default Shell Configuration")
@@ -433,7 +433,7 @@ def set_bash_shell() -> None:
 def configure_ssh() -> None:
     """
     Configure and secure the OpenSSH server.
-    
+
     Installs OpenSSH server if not present, backs up and updates the sshd_config file, and restarts SSH.
     """
     print_section("SSH Configuration")
@@ -491,7 +491,7 @@ def configure_ssh() -> None:
 def setup_sudoers() -> None:
     """
     Ensure the specified user has sudo privileges.
-    
+
     Checks the user's groups and adds them to the sudo group if necessary.
     """
     print_section("Sudo Configuration")
@@ -579,7 +579,7 @@ def configure_firewall() -> None:
 def install_plex() -> None:
     """
     Install and configure Plex Media Server.
-    
+
     Downloads the Plex .deb package, installs it, configures the service to run as the specified user,
     and enables the service.
     """
@@ -640,7 +640,7 @@ def install_plex() -> None:
 def install_fastfetch() -> None:
     """
     Install Fastfetch, a system information tool.
-    
+
     Downloads the Fastfetch .deb package, installs it, and fixes dependencies if necessary.
     """
     print_section("Fastfetch Installation")
@@ -672,7 +672,7 @@ def install_fastfetch() -> None:
 def docker_config() -> None:
     """
     Install and configure Docker and Docker Compose.
-    
+
     Installs Docker if not present, adds the user to the docker group, updates Docker daemon configuration,
     and installs Docker Compose.
     """
@@ -750,7 +750,7 @@ def docker_config() -> None:
 def deploy_user_scripts() -> None:
     """
     Deploy user scripts from the repository to the user's bin directory.
-    
+
     Uses rsync to synchronize scripts and sets executable permissions.
     """
     print_section("Deploying User Scripts")
@@ -769,7 +769,7 @@ def deploy_user_scripts() -> None:
 def configure_periodic() -> None:
     """
     Set up a daily cron job for system maintenance.
-    
+
     Creates a cron script that updates and cleans the system.
     """
     print_section("Periodic Maintenance Setup")
@@ -796,7 +796,7 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
 def backup_configs() -> None:
     """
     Backup critical system configuration files.
-    
+
     Copies configuration files to a timestamped backup directory.
     """
     print_section("Configuration Backups")
@@ -836,7 +836,7 @@ def rotate_logs() -> None:
 def system_health_check() -> None:
     """
     Perform basic system health checks and log the results.
-    
+
     Checks uptime, disk usage, memory usage, and logs CPU and network interface details.
     """
     print_section("System Health Check")
@@ -861,7 +861,7 @@ def system_health_check() -> None:
 def verify_firewall_rules() -> None:
     """
     Verify that specific ports are accessible as expected.
-    
+
     Uses netcat to check connectivity on predefined ports.
     """
     print_section("Firewall Rules Verification")
@@ -875,7 +875,7 @@ def verify_firewall_rules() -> None:
 def update_ssl_certificates() -> None:
     """
     Update SSL certificates using certbot.
-    
+
     Installs certbot if necessary and renews certificates.
     """
     print_section("SSL Certificates Update")
@@ -895,7 +895,7 @@ def update_ssl_certificates() -> None:
 def tune_system() -> None:
     """
     Apply performance tuning settings to the system.
-    
+
     Updates /etc/sysctl.conf with network performance parameters and applies them immediately.
     """
     print_section("Performance Tuning")
@@ -930,7 +930,7 @@ net.ipv4.tcp_wmem=4096 16384 4194304
 def final_checks() -> None:
     """
     Perform final system checks and log system information.
-    
+
     Verifies kernel version, uptime, disk usage, memory usage, CPU details, network interfaces, and load averages.
     """
     print_section("Final System Checks")
@@ -980,7 +980,7 @@ def final_checks() -> None:
 def home_permissions() -> None:
     """
     Ensure correct ownership and permissions for the user's home directory.
-    
+
     Sets ownership, applies the setgid bit to directories, and applies default ACLs if setfacl is available.
     """
     print_section("Home Directory Permissions")
@@ -1063,11 +1063,11 @@ def install_configure_zfs() -> None:
             log_info(f"Mountpoint for pool '{zpool_name}' set to '{mount_point}'.")
         except subprocess.CalledProcessError:
             log_warn(f"Failed to set mountpoint for ZFS pool '{zpool_name}'.")
-            
+
 def configure_fail2ban() -> None:
     """
     Configure and enable fail2ban with a secure basic default configuration.
-    
+
     This function creates (or backs up and overwrites) the /etc/fail2ban/jail.local file
     with settings that protect SSH by default, then enables and restarts the fail2ban service.
     """
@@ -1094,14 +1094,14 @@ maxretry = 3
     # Backup existing configuration if present
     if os.path.isfile(jail_local):
         backup_file(jail_local)
-    
+
     try:
         with open(jail_local, "w") as f:
             f.write(config_content)
         log_info("Fail2ban configuration written to /etc/fail2ban/jail.local.")
     except Exception as e:
         log_warn(f"Failed to write Fail2ban configuration: {e}")
-    
+
     # Enable and restart fail2ban service to apply the new configuration
     try:
         run_command(["systemctl", "enable", "fail2ban"])
@@ -1113,7 +1113,7 @@ maxretry = 3
 def prompt_reboot() -> None:
     """
     Prompt the user for a system reboot to apply changes.
-    
+
     If the user confirms, the system will be rebooted.
     """
     print_section("Reboot Prompt")
