@@ -1623,52 +1623,36 @@ def install_configure_caddy() -> None:
         handle_error(f"Failed to start Caddy service: {e}")
 
 
-def install_and_configure_timeshift() -> None:
+def create_system_zfs_snapshot() -> None:
     """
-    Install Timeshift, create an initial system snapshot, and configure automated daily snapshots.
+    Create a ZFS snapshot of the system's root dataset.
 
-    This function installs Timeshift via apt, runs a scripted command to create an initial snapshot,
-    and then writes a cron job in /etc/cron.daily to perform daily snapshots.
+    This function attempts to create a snapshot for the system.
+    It first checks for the existence of "rpool/ROOT/ubuntu" (the typical dataset for Ubuntu's root).
+    If that dataset is not found, it falls back to using "rpool".
+
+    The snapshot is named with a timestamp for uniqueness (e.g., rpool/ROOT/ubuntu@backup_20250224075900).
     """
-    print_section("Timeshift Installation and Snapshot Configuration")
+    print_section("System ZFS Snapshot Backup")
 
-    # Install Timeshift
+    # Attempt to use the typical Ubuntu system dataset.
+    system_dataset = "rpool/ROOT/ubuntu"
     try:
-        run_command(["apt", "install", "-y", "timeshift"])
-        log_info("Timeshift installed successfully.")
+        run_command(["zfs", "list", system_dataset])
+        log_info(f"System dataset '{system_dataset}' found.")
     except subprocess.CalledProcessError:
-        handle_error("Failed to install Timeshift.")
+        # Fallback if the expected dataset is not present.
+        system_dataset = "rpool"
+        log_warn("Dataset 'rpool/ROOT/ubuntu' not found. Using 'rpool' for snapshot.")
 
-    # Create an initial snapshot using Timeshift
-    try:
-        run_command(
-            [
-                "timeshift",
-                "--create",
-                "--comments",
-                "Initial system snapshot",
-                "--tags",
-                "D",
-                "--scripted",
-            ]
-        )
-        log_info("Initial system snapshot created successfully using Timeshift.")
-    except subprocess.CalledProcessError:
-        log_warn("Failed to create initial system snapshot with Timeshift.")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    snapshot_name = f"{system_dataset}@backup_{timestamp}"
 
-    # Configure auto snapshots via a daily cron job.
-    cron_file = "/etc/cron.daily/timeshift_auto_snapshot"
-    cron_content = """#!/bin/sh
-# Timeshift Auto Snapshot - Daily Snapshot
-timeshift --create --scripted --comments "Automated daily snapshot" --tags D
-"""
     try:
-        with open(cron_file, "w") as f:
-            f.write(cron_content)
-        os.chmod(cron_file, 0o755)
-        log_info(f"Auto snapshot cron job created at {cron_file}.")
-    except Exception as e:
-        log_warn(f"Failed to create auto snapshot cron job: {e}")
+        run_command(["zfs", "snapshot", snapshot_name])
+        log_info(f"Created system ZFS snapshot: {snapshot_name}")
+    except subprocess.CalledProcessError as e:
+        log_warn(f"Failed to create system ZFS snapshot for '{system_dataset}': {e}")
 
 
 def configure_unattended_upgrades() -> None:
@@ -1855,7 +1839,7 @@ def main() -> None:
     check_root()
     check_network()
     save_config_snapshot()
-    install_and_configure_timeshift()
+    create_system_zfs_snapshot()
     update_system()
     install_packages()
     configure_timezone()
