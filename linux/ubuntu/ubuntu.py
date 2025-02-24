@@ -1110,6 +1110,109 @@ maxretry = 3
     except subprocess.CalledProcessError:
         log_warn("Failed to enable or restart the Fail2ban service.")
 
+def configure_wayland() -> None:
+    """
+    Configure environment variables to enable Wayland for default applications.
+
+    This function updates the system-wide environment file (/etc/environment)
+    and creates a user-specific environment file at ~/.config/environment.d/myenvvars.conf
+    with the following variables:
+      - GDK_BACKEND=wayland
+      - QT_QPA_PLATFORM=wayland
+      - SDL_VIDEODRIVER=wayland
+
+    These settings ensure that GUI applications using GTK, Qt, or SDL default to Wayland.
+    """
+    print_section("Wayland Environment Configuration")
+
+    # Desired environment variables for Wayland support
+    env_vars = {
+        "GDK_BACKEND": "wayland",
+        "QT_QPA_PLATFORM": "wayland",
+        "SDL_VIDEODRIVER": "wayland"
+    }
+
+    # ----------------------------
+    # Update /etc/environment
+    # ----------------------------
+    etc_env_file = "/etc/environment"
+    try:
+        # Read existing content, or use empty list if file doesn't exist
+        if os.path.isfile(etc_env_file):
+            backup_file(etc_env_file)
+            with open(etc_env_file, "r") as f:
+                lines = f.readlines()
+        else:
+            lines = []
+
+        # Build a dictionary from existing assignments (if any)
+        current_vars = {}
+        for line in lines:
+            if "=" in line:
+                key, val = line.strip().split("=", 1)
+                current_vars[key] = val
+
+        # Flag to determine if we need to write the file back
+        updated = False
+
+        # Update or append each desired variable
+        for key, value in env_vars.items():
+            desired_assignment = f"{key}={value}"
+            if key in current_vars:
+                if current_vars[key] != value:
+                    # Update the assignment in the list
+                    for i, line in enumerate(lines):
+                        if line.strip().startswith(f"{key}="):
+                            lines[i] = desired_assignment + "\n"
+                    log_info(f"Updated {key} in {etc_env_file}.")
+                    updated = True
+                else:
+                    log_info(f"{key} already set to {value} in {etc_env_file}.")
+            else:
+                lines.append(desired_assignment + "\n")
+                log_info(f"Added {key} to {etc_env_file}.")
+                updated = True
+
+        if updated:
+            with open(etc_env_file, "w") as f:
+                f.writelines(lines)
+            log_info(f"{etc_env_file} updated with Wayland environment variables.")
+        else:
+            log_info(f"No changes needed for {etc_env_file}.")
+    except Exception as e:
+        log_warn(f"Failed to update {etc_env_file}: {e}")
+
+    # ----------------------------
+    # Create/Update User-Specific Environment File
+    # ----------------------------
+    user_env_dir = os.path.join(USER_HOME, ".config", "environment.d")
+    user_env_file = os.path.join(user_env_dir, "myenvvars.conf")
+    try:
+        os.makedirs(user_env_dir, exist_ok=True)
+        # Build the desired content string
+        content_lines = [f"{key}={value}\n" for key, value in env_vars.items()]
+        desired_content = "".join(content_lines)
+
+        if os.path.isfile(user_env_file):
+            with open(user_env_file, "r") as f:
+                current_content = f.read()
+            if current_content.strip() == desired_content.strip():
+                log_info(f"{user_env_file} already contains the desired Wayland settings.")
+            else:
+                backup_file(user_env_file)
+                with open(user_env_file, "w") as f:
+                    f.write(desired_content)
+                log_info(f"Updated {user_env_file} with Wayland environment variables.")
+        else:
+            with open(user_env_file, "w") as f:
+                f.write(desired_content)
+            log_info(f"Created {user_env_file} with Wayland environment variables.")
+
+        # Ensure proper ownership for the user-specific file
+        run_command(["chown", f"{USERNAME}:{USERNAME}", user_env_file])
+    except Exception as e:
+        log_warn(f"Failed to update user environment file {user_env_file}: {e}")
+
 def prompt_reboot() -> None:
     """
     Prompt the user for a system reboot to apply changes.
@@ -1169,6 +1272,7 @@ def main() -> None:
     home_permissions()
     configure_fail2ban()
     install_configure_zfs()
+    configure_wayland()
     final_checks()
 
     prompt_reboot()
