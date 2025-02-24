@@ -1570,7 +1570,7 @@ def install_configure_caddy() -> None:
          https://github.com/caddyserver/caddy/releases/download/v2.9.1/caddy_2.9.1_linux_amd64.deb
       2. Install Caddy using dpkg and fix dependency issues if necessary.
       3. Remove the temporary deb file.
-      4. Copy the custom Caddyfile from /home/sawyer/github/linux/ubuntu/dotfiles/Caddyfile
+      4. Copy the custom Caddyfile from /home/sawyer/github/bash/linux/ubuntu/dotfiles/Caddyfile
          to the default location (/etc/caddy/Caddyfile), backing up any existing file.
       5. Enable the Caddy service and restart it.
     """
@@ -1609,7 +1609,7 @@ def install_configure_caddy() -> None:
         log_warn(f"Failed to remove temporary file {temp_deb}: {e}")
 
     # Copy the custom Caddyfile
-    source_caddyfile = "/home/sawyer/github/linux/ubuntu/dotfiles/Caddyfile"
+    source_caddyfile = "/home/sawyer/github/bash/linux/ubuntu/dotfiles/Caddyfile"
     dest_caddyfile = "/etc/caddy/Caddyfile"
     if not os.path.isfile(source_caddyfile):
         log_warn(
