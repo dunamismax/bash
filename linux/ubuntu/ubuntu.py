@@ -1601,7 +1601,8 @@ def install_configure_caddy() -> None:
       3. Remove the temporary deb file.
       4. Copy the custom Caddyfile from /home/sawyer/github/bash/linux/ubuntu/dotfiles/Caddyfile
          to the default location (/etc/caddy/Caddyfile), backing up any existing file.
-      5. Enable the Caddy service and restart it.
+      5. Ensure the Caddy log directory and all required log files exist with correct permissions.
+      6. Enable and restart the Caddy service.
     """
     print_section("Caddy Installation and Configuration")
     log_info("Installing Caddy web server...")
@@ -1652,6 +1653,33 @@ def install_configure_caddy() -> None:
             log_info(f"Copied {source_caddyfile} to {dest_caddyfile}.")
         except Exception as e:
             log_warn(f"Failed to copy Caddyfile: {e}")
+
+    # Ensure Caddy log directory and log files are created with correct permissions
+    log_dir = "/var/log/caddy"
+    try:
+        os.makedirs(log_dir, mode=0o755, exist_ok=True)
+        log_info(f"Log directory {log_dir} is ready.")
+    except Exception as e:
+        log_warn(f"Failed to create log directory {log_dir}: {e}")
+
+    log_files = [
+        os.path.join(log_dir, "caddy.log"),
+        os.path.join(log_dir, "dunamismax_access.log"),
+        os.path.join(log_dir, "messenger_access.log"),
+        os.path.join(log_dir, "ai_agents_access.log"),
+        os.path.join(log_dir, "file_converter_access.log"),
+        os.path.join(log_dir, "notes_access.log"),
+    ]
+    for lf in log_files:
+        try:
+            # Create the log file if it doesn't exist and update its timestamp
+            with open(lf, "a"):
+                os.utime(lf, None)
+            # Set permissions (e.g., rw-r--r--)
+            os.chmod(lf, 0o644)
+            log_info(f"Prepared log file: {lf}")
+        except Exception as e:
+            log_warn(f"Failed to prepare log file {lf}: {e}")
 
     # Enable the Caddy service
     try:
