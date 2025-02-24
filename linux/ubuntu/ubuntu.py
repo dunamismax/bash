@@ -334,6 +334,46 @@ def check_network() -> None:
         handle_error("No network connectivity. Please verify your network settings.")
 
 
+def save_config_snapshot() -> None:
+    """
+    Create a compressed archive of key configuration files as a snapshot backup
+    before making any changes. This function packages files such as SSH, firewall,
+    system tuning, and other critical configuration files into a tar.gz archive.
+    """
+    print_section("Configuration Snapshot Backup")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    backup_dir = "/var/backups"
+    snapshot_file = os.path.join(backup_dir, f"config_snapshot_{timestamp}.tar.gz")
+    os.makedirs(backup_dir, exist_ok=True)
+
+    # List of configuration files to include in the snapshot.
+    config_files = [
+        "/etc/ssh/sshd_config",
+        "/etc/ufw/user.rules",
+        "/etc/ntp.conf",
+        "/etc/sysctl.conf",
+        "/etc/environment",
+        "/etc/fail2ban/jail.local",
+        "/etc/docker/daemon.json",
+        "/etc/caddy/Caddyfile",
+    ]
+
+    try:
+        import tarfile
+
+        with tarfile.open(snapshot_file, "w:gz") as tar:
+            for cfg in config_files:
+                if os.path.isfile(cfg):
+                    # Add file with its basename so the archive is not cluttered with full paths.
+                    tar.add(cfg, arcname=os.path.basename(cfg))
+                    log_info(f"Included {cfg} in snapshot.")
+                else:
+                    log_warn(f"Configuration file {cfg} not found; skipping.")
+        log_info(f"Configuration snapshot saved as {snapshot_file}.")
+    except Exception as e:
+        log_warn(f"Failed to create configuration snapshot: {e}")
+
+
 # ----------------------------
 # System Update & Package Installation
 # ----------------------------
@@ -1552,6 +1592,54 @@ def install_configure_caddy() -> None:
         handle_error(f"Failed to start Caddy service: {e}")
 
 
+def install_and_configure_timeshift() -> None:
+    """
+    Install Timeshift, create an initial system snapshot, and configure automated daily snapshots.
+
+    This function installs Timeshift via apt, runs a scripted command to create an initial snapshot,
+    and then writes a cron job in /etc/cron.daily to perform daily snapshots.
+    """
+    print_section("Timeshift Installation and Snapshot Configuration")
+
+    # Install Timeshift
+    try:
+        run_command(["apt", "install", "-y", "timeshift"])
+        log_info("Timeshift installed successfully.")
+    except subprocess.CalledProcessError:
+        handle_error("Failed to install Timeshift.")
+
+    # Create an initial snapshot using Timeshift
+    try:
+        run_command(
+            [
+                "timeshift",
+                "--create",
+                "--comments",
+                "Initial system snapshot",
+                "--tags",
+                "D",
+                "--scripted",
+            ]
+        )
+        log_info("Initial system snapshot created successfully using Timeshift.")
+    except subprocess.CalledProcessError:
+        log_warn("Failed to create initial system snapshot with Timeshift.")
+
+    # Configure auto snapshots via a daily cron job.
+    cron_file = "/etc/cron.daily/timeshift_auto_snapshot"
+    cron_content = """#!/bin/sh
+# Timeshift Auto Snapshot - Daily Snapshot
+timeshift --create --scripted --comments "Automated daily snapshot" --tags D
+"""
+    try:
+        with open(cron_file, "w") as f:
+            f.write(cron_content)
+        os.chmod(cron_file, 0o755)
+        log_info(f"Auto snapshot cron job created at {cron_file}.")
+    except Exception as e:
+        log_warn(f"Failed to create auto snapshot cron job: {e}")
+
+
 def prompt_reboot() -> None:
     """
     Prompt the user for a system reboot to apply changes.
@@ -1579,6 +1667,8 @@ def main() -> None:
     """Main function executing the entire setup process."""
     check_root()
     check_network()
+    save_config_snapshot()
+    install_and_configure_timeshift()
     update_system()
     install_packages()
     configure_timezone()
