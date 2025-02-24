@@ -1917,17 +1917,14 @@ Icon=vscode
         log_warn(f"Failed to modify local desktop file: {e}")
 
 
-def install_nala_and_set_aliases() -> None:
+def install_nala() -> None:
     """
-    Install Nala (an apt front-end) and configure shell aliases so that
-    all apt commands are replaced with nala. This function performs the following steps:
-      1. Checks if Nala is installed; if not, it installs Nala.
-      2. Appends alias definitions to the user's .bashrc and the root user's .bashrc,
-         so that commands like 'apt', 'apt-get', and 'apt-cache' invoke nala.
+    Install Nala (an apt front-end) if it's not already installed.
+    
+    This function checks whether Nala is available and, if not, updates
+    apt repositories and installs Nala.
     """
-    print_section("Nala Installation and Apt Alias Configuration")
-
-    # Step 1: Install Nala if it's not already installed.
+    print_section("Nala Installation")
     if not command_exists("nala"):
         log_info("Nala is not installed. Installing Nala...")
         try:
@@ -1938,42 +1935,6 @@ def install_nala_and_set_aliases() -> None:
             handle_error(f"Failed to install Nala: {e}")
     else:
         log_info("Nala is already installed.")
-
-    # Step 2: Define alias block to replace apt commands with nala.
-    alias_block = (
-        "\n# Ubuntu setup: Replace apt commands with nala\n"
-        "alias apt='nala'\n"
-        "alias apt-get='nala'\n"
-        "alias apt-cache='nala'\n"
-    )
-
-    # Update the non-root user's .bashrc
-    user_bashrc = os.path.join(USER_HOME, ".bashrc")
-    try:
-        with open(user_bashrc, "r") as f:
-            bashrc_content = f.read()
-        if "alias apt='nala'" in bashrc_content:
-            log_info("Apt aliases are already present in the user .bashrc.")
-        else:
-            with open(user_bashrc, "a") as f:
-                f.write(alias_block)
-            log_info("Apt aliases added to the user .bashrc.")
-    except Exception as e:
-        log_warn(f"Failed to update {user_bashrc}: {e}")
-
-    # Optionally update the root user's .bashrc as well.
-    root_bashrc = "/root/.bashrc"
-    try:
-        with open(root_bashrc, "r") as f:
-            root_bashrc_content = f.read()
-        if "alias apt='nala'" in root_bashrc_content:
-            log_info("Apt aliases are already present in the root .bashrc.")
-        else:
-            with open(root_bashrc, "a") as f:
-                f.write(alias_block)
-            log_info("Apt aliases added to the root .bashrc.")
-    except Exception as e:
-        log_warn(f"Failed to update {root_bashrc}: {e}")
 
 
 def prompt_reboot() -> None:
@@ -2036,7 +1997,7 @@ def main() -> None:
     configure_apparmor()
     cleanup_system()
     configure_wayland()
-    install_nala_and_set_aliases()
+    install_nala()
     install_configure_caddy()
     final_checks()
 
