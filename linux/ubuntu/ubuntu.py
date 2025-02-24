@@ -506,51 +506,71 @@ def setup_sudoers() -> None:
     except subprocess.CalledProcessError:
         log_warn(f"Failed to add {USERNAME} to sudo group.")
 
-# ----------------------------
-# Firewall (UFW) Configuration
-# ----------------------------
-
 def configure_firewall() -> None:
     """
     Configure the UFW firewall.
-    
-    Sets default policies, allows specific ports, and enables the firewall.
+
+    This function sets default policies, allows specific TCP ports,
+    checks if UFW is active, and if not, enables it. It also ensures
+    the UFW service is enabled and started via systemctl.
     """
     print_section("Firewall Configuration")
-    log_info("Configuring firewall with ufw...")
+    log_info("Configuring firewall using UFW...")
+
     ufw_cmd = "/usr/sbin/ufw"
-    if not os.path.isfile(ufw_cmd) or not os.access(ufw_cmd, os.X_OK):
-        handle_error("ufw command not found. Please install ufw.")
-    try:
-        run_command([ufw_cmd, "default", "deny", "incoming"])
-    except subprocess.CalledProcessError:
-        log_warn("Failed to set default deny incoming.")
-    try:
-        run_command([ufw_cmd, "default", "allow", "outgoing"])
-    except subprocess.CalledProcessError:
-        log_warn("Failed to set default allow outgoing.")
-    for port in ["22", "80", "443", "32400"]:
+    # Verify that the ufw command exists and is executable
+    if not (os.path.isfile(ufw_cmd) and os.access(ufw_cmd, os.X_OK)):
+        handle_error("UFW command not found. Please install UFW.")
+
+    # Set default policies
+    default_commands = [
+        ([ufw_cmd, "default", "deny", "incoming"], "set default deny for incoming traffic"),
+        ([ufw_cmd, "default", "allow", "outgoing"], "set default allow for outgoing traffic")
+    ]
+    for cmd, description in default_commands:
+        try:
+            run_command(cmd)
+            log_info(f"Successfully {description}.")
+        except subprocess.CalledProcessError:
+            log_warn(f"Failed to {description}.")
+
+    # Allow necessary ports (TCP only)
+    allowed_ports = ["22", "80", "443", "32400"]
+    for port in allowed_ports:
         try:
             run_command([ufw_cmd, "allow", f"{port}/tcp"])
+            log_info(f"Allowed TCP port {port}.")
         except subprocess.CalledProcessError:
-            log_warn(f"Failed to allow port {port}.")
+            log_warn(f"Failed to allow TCP port {port}.")
+
+    # Check UFW status and enable if inactive
     try:
-        result = run_command([ufw_cmd, "status"], capture_output=True)
-        if "inactive" in result.stdout:
-            run_command([ufw_cmd, "--force", "enable"])
+        # Ensure text output for reliable string comparison
+        result = run_command([ufw_cmd, "status"], capture_output=True, text=True)
+        if "inactive" in result.stdout.lower():
+            try:
+                run_command([ufw_cmd, "--force", "enable"])
+                log_info("UFW firewall has been enabled.")
+            except subprocess.CalledProcessError:
+                handle_error("Failed to enable UFW firewall.")
         else:
-            log_info("ufw firewall is already enabled.")
+            log_info("UFW firewall is already active.")
     except subprocess.CalledProcessError:
-        handle_error("Failed to check/enable ufw firewall.")
-    try:
-        run_command(["systemctl", "enable", "ufw"])
-    except subprocess.CalledProcessError:
-        log_warn("Failed to enable ufw service.")
-    try:
-        run_command(["systemctl", "start", "ufw"])
-    except subprocess.CalledProcessError:
-        log_warn("Failed to start ufw service.")
-    log_info("Firewall configured and enabled.")
+        handle_error("Failed to retrieve UFW status.")
+
+    # Ensure ufw service is enabled and started via systemctl
+    service_commands = [
+        (["systemctl", "enable", "ufw"], "enable ufw service"),
+        (["systemctl", "start", "ufw"], "start ufw service")
+    ]
+    for cmd, description in service_commands:
+        try:
+            run_command(cmd)
+            log_info(f"Successfully executed: {' '.join(cmd)}.")
+        except subprocess.CalledProcessError:
+            log_warn(f"Failed to {description}.")
+
+    log_info("Firewall configuration completed successfully.")
 
 # ----------------------------
 # Service Installation and Configuration
