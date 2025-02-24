@@ -1713,6 +1713,120 @@ def configure_apparmor() -> None:
         log_warn(f"Failed to install or start AppArmor: {e}")
 
 
+def install_configure_vscode_insiders() -> None:
+    """
+    Install Visual Studio Code - Insiders and configure it to run natively on Wayland.
+
+    This function performs the following steps:
+      1. Downloads the VS Code Insiders .deb package from the provided URL.
+      2. Installs the package (fixing dependencies if necessary).
+      3. Overwrites the system-wide desktop file (/usr/share/applications/code-insiders.desktop)
+         with custom content.
+      4. Copies the .desktop file to the user's local applications directory so updates won’t overwrite it.
+      5. Modifies the local copy to ensure the Exec line includes Wayland flags and sets StartupWMClass to "code-insiders".
+    """
+    print_section("Visual Studio Code - Insiders Installation and Configuration")
+    vscode_url = (
+        "https://vscode.download.prss.microsoft.com/dbazure/download/insider/"
+        "fa907e1b4967c7db216f988d9ae551c2d8e0edd5/code-insiders_1.98.0-1740394558_amd64.deb"
+    )
+    deb_path = "/tmp/code-insiders.deb"
+
+    # Step 1: Download VS Code Insiders
+    try:
+        log_info("Downloading VS Code Insiders...")
+        run_command(["curl", "-L", "-o", deb_path, vscode_url])
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to download VS Code Insiders: {e}")
+        return
+
+    # Step 2: Install VS Code Insiders
+    try:
+        log_info("Installing VS Code Insiders...")
+        run_command(["dpkg", "-i", deb_path])
+    except subprocess.CalledProcessError:
+        log_warn("dpkg installation encountered issues. Attempting to fix dependencies...")
+        try:
+            run_command(["apt", "install", "-f", "-y"])
+        except subprocess.CalledProcessError as e:
+            handle_error(f"Failed to fix dependencies for VS Code Insiders: {e}")
+
+    # Clean up the downloaded .deb file
+    try:
+        os.remove(deb_path)
+    except Exception:
+        pass
+
+    # Step 3: Overwrite system-wide .desktop file
+    desktop_file_path = "/usr/share/applications/code-insiders.desktop"
+    desktop_content = """[Desktop Entry]
+Name=Visual Studio Code - Insiders
+Comment=Code Editing. Redefined.
+GenericName=Text Editor
+Exec=/usr/share/code-insiders/code-insiders --enable-features=UseOzonePlatform --ozone-platform=wayland %F
+Icon=vscode-insiders
+Type=Application
+StartupNotify=false
+StartupWMClass=Code - Insiders
+Categories=TextEditor;Development;IDE;
+MimeType=application/x-code-insiders-workspace;
+Actions=new-empty-window;
+Keywords=vscode;
+
+[Desktop Action new-empty-window]
+Name=New Empty Window
+Name[de]=Neues leeres Fenster
+Name[es]=Nueva ventana vacía
+Name[fr]=Nouvelle fenêtre vide
+Name[it]=Nuova finestra vuota
+Name[ja]=新しい空のウィンドウ
+Name[ko]=새 빈 창
+Name[ru]=Новое пустое окно
+Name[zh_CN]=新建空窗口
+Name[zh_TW]=開新空視窗
+Exec=/usr/share/code-insiders/code-insiders --new-window %F
+Icon=vscode-insiders
+"""
+    try:
+        with open(desktop_file_path, "w") as f:
+            f.write(desktop_content)
+        log_info(f"Updated system-wide desktop file: {desktop_file_path}")
+    except Exception as e:
+        log_warn(f"Failed to update system-wide desktop file: {e}")
+
+    # Step 4: Copy desktop file to local applications directory
+    local_app_dir = os.path.expanduser("~/.local/share/applications")
+    local_desktop_file = os.path.join(local_app_dir, "code-insiders.desktop")
+    try:
+        os.makedirs(local_app_dir, exist_ok=True)
+        shutil.copy2(desktop_file_path, local_desktop_file)
+        log_info(f"Copied desktop file to local directory: {local_desktop_file}")
+    except Exception as e:
+        log_warn(f"Failed to copy desktop file to local applications directory: {e}")
+
+    # Step 5: Modify the local desktop file for Wayland and proper icon handling
+    try:
+        with open(local_desktop_file, "r") as f:
+            lines = f.readlines()
+        new_lines = []
+        for line in lines:
+            if line.startswith("Exec="):
+                # Ensure the Exec line includes Wayland flags
+                new_lines.append(
+                    "Exec=/usr/share/code-insiders/code-insiders --enable-features=UseOzonePlatform --ozone-platform=wayland %F\n"
+                )
+            elif line.startswith("StartupWMClass="):
+                # Adjust StartupWMClass to prevent duplicate icons
+                new_lines.append("StartupWMClass=code-insiders\n")
+            else:
+                new_lines.append(line)
+        with open(local_desktop_file, "w") as f:
+            f.writelines(new_lines)
+        log_info(f"Local desktop file updated for Wayland compatibility: {local_desktop_file}")
+    except Exception as e:
+        log_warn(f"Failed to modify local desktop file: {e}")
+
+
 def prompt_reboot() -> None:
     """
     Prompt the user for a system reboot to apply changes.
@@ -1768,6 +1882,7 @@ def main() -> None:
     install_brave_browser()
     install_flatpak_and_apps()
     install_configure_caddy()
+    install_configure_vscode_insiders()
     configure_unattended_upgrades()
     configure_apparmor()
     cleanup_system()
