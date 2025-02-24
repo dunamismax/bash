@@ -603,6 +603,37 @@ def set_bash_shell() -> None:
         log_warn(f"Failed to set default shell for {USERNAME}.")
 
 
+def copy_config_folders() -> None:
+    """
+    Locate all subdirectories within /home/sawyer/github/bash/linux/ubuntu/dotfiles/
+    and copy them into the /home/sawyer/.config directory.
+    """
+    print_section("Copying Config Folders")
+
+    source_dir = "/home/sawyer/github/bash/linux/ubuntu/dotfiles/"
+    dest_dir = os.path.join(USER_HOME, ".config")
+
+    # Ensure the destination directory exists
+    os.makedirs(dest_dir, exist_ok=True)
+    log_info(f"Destination directory ensured: {dest_dir}")
+
+    try:
+        # Iterate over all items in the source directory
+        for item in os.listdir(source_dir):
+            src_path = os.path.join(source_dir, item)
+            # Check if the item is a directory (config folder)
+            if os.path.isdir(src_path):
+                dest_path = os.path.join(dest_dir, item)
+                try:
+                    # Copy the directory; dirs_exist_ok=True allows merging if destination exists
+                    shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
+                    log_info(f"Copied '{src_path}' to '{dest_path}'.")
+                except Exception as e:
+                    log_warn(f"Failed to copy '{src_path}' to '{dest_path}': {e}")
+    except Exception as e:
+        log_warn(f"Error scanning source directory '{source_dir}': {e}")
+
+
 # ----------------------------
 # SSH and Sudo Security Configuration
 # ----------------------------
@@ -1920,6 +1951,7 @@ def main() -> None:
     configure_timezone()
     setup_repos()
     copy_shell_configs()
+    copy_config_folders()
     set_bash_shell()
     configure_ssh()
     setup_sudoers()
