@@ -97,6 +97,8 @@ PACKAGES = [
     "zsh",
     "htop",
     "btop",
+    "foot",
+    "foot-themes",
     "tree",
     "ncdu",
     "neofetch",
@@ -1575,6 +1577,7 @@ def install_flatpak_and_apps() -> None:
         "tv.plex.PlexDesktop",
         "org.filezillaproject.Filezilla",
         "com.github.k4zmu2a.spacecadetpinball",
+        "org.virt_manager.virt-manager",
         "org.raspberrypi.rpi-imager",
     ]
 
