@@ -1,5 +1,5 @@
 ###############################################################################
-# ~/.bashrc – Enhanced Ubuntu Bash Configuration
+# ~/.bashrc – Enhanced Ubuntu Bash Configuration with Nala Aliases
 ###############################################################################
 
 # 0. Exit if not running in an interactive shell
@@ -13,13 +13,13 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/
 # Enable useful Bash options
 shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify 2>/dev/null || true
 
-# Set XDG Base Directories (for configuration, data, cache, and state)
+# XDG Base Directories (for configuration, data, cache, and state)
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-# Wayland
+# Wayland settings
 export QT_QPA_PLATFORM=wayland
 export XDG_SESSION_TYPE=wayland
 
@@ -39,7 +39,7 @@ else
 fi
 export PAGER="less"
 
-# Locale, Timezone, and Terminal Settings
+# Locale and Terminal settings
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
 export TZ="America/New_York"
@@ -61,7 +61,7 @@ NORD14="\[\033[38;2;163;190;140m\]"
 NORD15="\[\033[38;2;180;142;173m\]"
 RESET="\[\e[0m\]"
 
-# Customize LESS (pager) colors using the Nord palette
+# Customize LESS colors with the Nord palette
 export LESS="-R -X -F -i -J --mouse"
 export LESS_TERMCAP_mb=$'\e[38;2;191;97;106m'
 export LESS_TERMCAP_md=$'\e[38;2;136;192;208m'
@@ -81,7 +81,6 @@ export HISTTIMEFORMAT="%F %T "
 
 # 4. System Information & Greeting
 # ------------------------------------------------------------------------------
-# Display system info using fastfetch if installed
 if command -v fastfetch >/dev/null 2>&1; then
     echo -e "\n"
     fastfetch
@@ -90,7 +89,6 @@ fi
 
 # 5. Development Environment Setup
 # ------------------------------------------------------------------------------
-# Initialize pyenv if it exists in the home directory
 if [ -d "$HOME/.pyenv" ]; then
     export PYENV_ROOT="$HOME/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
@@ -104,16 +102,10 @@ if command -v lesspipe >/dev/null 2>&1; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
-# 7. Prompt Customization – Clean Nord-Themed Prompt (without Git info)
+# 7. Prompt Customization – (Do Not Modify the PS1 Prompt)
 # ------------------------------------------------------------------------------
-# Define prompt colors for user, host, and working directory
-USER_COLOR="${NORD7}"
-HOST_COLOR="${NORD7}"
-DIR_COLOR="${NORD9}"
-PROMPT_ICON="${NORD10}> "
-
-# A clean prompt that shows user, host, and working directory only.
-export PS1="[${USER_COLOR}\u${RESET}@${HOST_COLOR}\h${RESET}] [${DIR_COLOR}\w${RESET}] ${PROMPT_ICON}${NORD6} "
+# PS1 prompt is defined below and remains unchanged.
+export PS1="[${NORD7}\u${RESET}@${NORD7}\h${RESET}] [${NORD9}\w${RESET}] ${NORD10}> ${NORD6} "
 
 # 8. Colorized Output and Common Command Aliases
 # ------------------------------------------------------------------------------
@@ -121,33 +113,34 @@ alias ls='ls --color=auto'
 alias ll='ls -lah'
 alias la='ls -A'
 alias l='ls -CF'
-
-# Colorize grep and (if available) use colordiff for diff comparisons
 alias grep='grep --color=auto'
-# Uncomment if colordiff is installed:
+# Uncomment the following line if colordiff is installed:
 # alias diff='colordiff'
 
-# 9. Handy Navigation, Package Management, and Safety Aliases
+# 9. Navigation and Package Management Aliases
 # ------------------------------------------------------------------------------
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 alias .....='cd ../../../..'
 
-# Ubuntu package management via apt
-alias update='sudo apt update && sudo apt upgrade -y'
-alias install='sudo apt install'
-alias remove='sudo apt remove'
-alias autoremove='sudo apt autoremove'
-alias search='apt search'
+# Package Management Aliases using Nala (if installed)
+alias apt='nala'
+alias apt-get='nala'
+alias apt-cache='nala'
+alias update='sudo nala update && sudo nala upgrade -y'
+alias install='sudo nala install'
+alias remove='sudo nala remove'
+alias autoremove='sudo nala autoremove'
+alias search='nala search'
 
-# Safety aliases to prevent accidental removal/move operations
+# Safety Aliases
 alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
 alias mkdir='mkdir -p'
 
-# Git command shortcuts (without prompt integration)
+# Git command shortcuts
 alias gs='git status'
 alias ga='git add'
 alias gc='git commit'
@@ -167,15 +160,15 @@ alias mem='top'
 alias disk='df -h'
 alias watch='watch'
 
-# Docker shortcuts (if installed)
+# Docker shortcuts
 alias d='docker'
 alias dc='docker-compose'
 alias dps='docker ps'
 alias di='docker images'
 
-# 10. Enhanced Functions and Utility Scripts
+# 10. Functions and Utility Scripts
 # ------------------------------------------------------------------------------
-# Create and activate a Python virtual environment, then install dependencies if available
+# Virtual Environment Setup
 setup_venv() {
     local venv_name="${1:-.venv}"
     if type deactivate &>/dev/null; then
@@ -191,7 +184,7 @@ setup_venv() {
 }
 alias venv='setup_venv'
 
-# A universal extract function for many archive types
+# Universal extract function for archives
 extract() {
     if [ -z "$1" ]; then
         echo "Usage: extract <archive>"
@@ -219,7 +212,7 @@ extract() {
     esac
 }
 
-# Additional useful functions
+# Additional helper functions
 mkcd() { mkdir -p "$1" && cd "$1" || return 1; }
 ff() { find . -type f -iname "*$1*"; }
 fd() { find . -type d -iname "*$1*"; }
@@ -248,7 +241,6 @@ fi
 
 # 12. Local Customizations
 # ------------------------------------------------------------------------------
-# Source local custom settings if available
 [ -f "$HOME/.bashrc.local" ] && source "$HOME/.bashrc.local"
 
 # Auto-load additional scripts from ~/.bashrc.d/
@@ -264,7 +256,6 @@ fi
 
 # 14. Final PROMPT_COMMAND Consolidation
 # ------------------------------------------------------------------------------
-# Append each command’s history and log a timestamped session record
 export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
 
 ###############################################################################
