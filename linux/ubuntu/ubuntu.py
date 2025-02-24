@@ -498,31 +498,46 @@ def copy_shell_configs() -> None:
     Update the user's shell configuration files (.bashrc and .profile) from a repository source.
 
     Performs a backup if needed and applies new configurations.
+    Additionally, copies both files to the root user's home folder (/root)
+    so that 'sudo' or 'su' sessions also source these configuration files.
     """
     print_section("Shell Configuration Update")
     source_dir = os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles")
-    dest_dir = USER_HOME
+    # Define destination directories: the normal user's home and the root's home.
+    destination_dirs = [USER_HOME, "/root"]
+
     for file in [".bashrc", ".profile"]:
         src = os.path.join(source_dir, file)
-        dest = os.path.join(dest_dir, file)
-        if os.path.isfile(src):
-            copy = True
+        if not os.path.isfile(src):
+            log_warn(f"Source file {src} not found; skipping.")
+            continue
+
+        for dest_dir in destination_dirs:
+            dest = os.path.join(dest_dir, file)
+            copy_needed = True
             if os.path.isfile(dest) and filecmp.cmp(src, dest):
                 log_info(f"File {dest} is already up-to-date.")
-                copy = False
-            if copy:
+                copy_needed = False
+            if copy_needed:
                 try:
                     shutil.copy2(src, dest)
-                    run_command(["chown", f"{USERNAME}:{USERNAME}", dest])
+                    # Adjust ownership only for the non-root user's home folder.
+                    if dest_dir == USER_HOME:
+                        run_command(["chown", f"{USERNAME}:{USERNAME}", dest])
+                    else:
+                        # Ensure the file in /root is owned by root
+                        run_command(["chown", "root:root", dest])
                     log_info(f"Copied {src} to {dest}.")
                 except Exception as e:
-                    log_warn(f"Failed to copy {src}: {e}")
+                    log_warn(f"Failed to copy {src} to {dest}: {e}")
+
+    # Log a note regarding sourcing (for informational purposes only)
+    for dest_dir in destination_dirs:
+        bashrc_path = os.path.join(dest_dir, ".bashrc")
+        if os.path.isfile(bashrc_path):
+            log_info(f"Sourcing {bashrc_path} is not applicable in Python.")
         else:
-            log_warn(f"Source file {src} not found; skipping.")
-    if os.path.isfile(os.path.join(dest_dir, ".bashrc")):
-        log_info(f"Sourcing {os.path.join(dest_dir, '.bashrc')} is not applicable in Python.")
-    else:
-        log_warn(f"No .bashrc found in {dest_dir}; skipping source.")
+            log_warn(f"No .bashrc found in {dest_dir}; skipping source.")
 
 
 def set_bash_shell() -> None:
