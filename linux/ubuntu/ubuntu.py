@@ -67,6 +67,7 @@ PACKAGES = [
     "mc",
     "zsh",
     "htop",
+    "btop",
     "tree",
     "ncdu",
     "neofetch",
