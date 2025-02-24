@@ -1507,7 +1507,6 @@ def install_flatpak_and_apps() -> None:
         "com.github.tchx84.Flatseal",
         "net.lutris.Lutris",
         "net.davidotek.pupgui2",
-        "com.visualstudio.code",
         "org.gimp.GIMP",
         "org.qbittorrent.qBittorrent",
         "com.github.Matoking.protontricks",
