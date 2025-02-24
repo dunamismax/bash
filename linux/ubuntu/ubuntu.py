@@ -1,21 +1,50 @@
 #!/usr/bin/env python3
 """
-Ubuntu System Initialization & Hardening Script
+Ubuntu Server Initialization, Hardening & Maintenance Utility
 
-This production-ready automation script bootstraps, configures, and hardens an Ubuntu server.
-It performs a comprehensive set of system configuration tasks including:
-  - System update and essential package installation
-  - Timezone configuration
-  - GitHub repository setup and shell configuration updates
-  - SSH hardening and sudo configuration
-  - Firewall (ufw) setup and verification
-  - Installation and configuration of services (Plex, Fastfetch, Docker)
-  - Deployment of user scripts and dotfiles
-  - Periodic maintenance tasks and performance tuning
-  - ZFS pool configuration and final system health checks
+This comprehensive automation script bootstraps, configures, secures, and maintains an Ubuntu server
+for production environments. It performs a wide range of tasks including:
+
+  - Pre-flight checks: Verifying root privileges, network connectivity, and creating configuration
+    snapshots (including ZFS system snapshots) before any changes.
+  
+  - System update & package installation: Refreshing repositories and installing essential packages.
+  
+  - Timezone & locale configuration: Setting the system timezone and ensuring proper locale settings.
+  
+  - Repository and shell setup: Cloning/updating GitHub repositories, synchronizing shell dotfiles,
+    and setting the default shell.
+  
+  - Security hardening:
+      • Configuring and securing SSH access and sudo privileges.
+      • Establishing UFW firewall rules with port-specific allowances.
+      • Configuring fail2ban to protect against brute-force attacks.
+  
+  - Service deployment:
+      • Installing and configuring services such as Plex Media Server, Fastfetch, and Docker (with Docker Compose).
+      • Deploying user scripts and synchronizing dotfiles.
+  
+  - Maintenance & performance:
+      • Scheduling periodic maintenance tasks via cron, backing up critical configurations,
+        and performing log rotation.
+      • Applying system tuning via sysctl and ensuring proper home directory permissions.
+  
+  - Advanced features:
+      • Installing and configuring ZFS pools for storage management.
+      • Setting up Wayland environment variables for modern GUI support.
+      • Installing additional applications including Brave browser.
+      • Installing Flatpak, adding the Flathub repository, and deploying a suite of Flatpak applications.
+      • Installing and configuring the Caddy web server.
+      • Installing and configuring Visual Studio Code - Insiders with Wayland support.
+      • Configuring unattended upgrades for automatic security updates.
+      • Enabling AppArmor for enhanced system security.
+  
+  - Finalization:
+      • Running comprehensive system health checks and cleanup routines.
+      • Prompting for a system reboot to apply all changes.
 
 Usage:
-  Run this script as root to fully initialize and secure your Ubuntu system:
+  Run this script with root privileges to fully initialize, harden, and optimize your Ubuntu server:
       sudo ./ubuntu_setup.py
 
 Disclaimer:
