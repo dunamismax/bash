@@ -7,28 +7,28 @@ for production environments. It performs a wide range of tasks including:
 
   - Pre-flight checks: Verifying root privileges, network connectivity, and creating configuration
     snapshots (including ZFS system snapshots) before any changes.
-  
+
   - System update & package installation: Refreshing repositories and installing essential packages.
-  
+
   - Timezone & locale configuration: Setting the system timezone and ensuring proper locale settings.
-  
+
   - Repository and shell setup: Cloning/updating GitHub repositories, synchronizing shell dotfiles,
     and setting the default shell.
-  
+
   - Security hardening:
       • Configuring and securing SSH access and sudo privileges.
       • Establishing UFW firewall rules with port-specific allowances.
       • Configuring fail2ban to protect against brute-force attacks.
-  
+
   - Service deployment:
       • Installing and configuring services such as Plex Media Server, Fastfetch, and Docker (with Docker Compose).
       • Deploying user scripts and synchronizing dotfiles.
-  
+
   - Maintenance & performance:
       • Scheduling periodic maintenance tasks via cron, backing up critical configurations,
         and performing log rotation.
       • Applying system tuning via sysctl and ensuring proper home directory permissions.
-  
+
   - Advanced features:
       • Installing and configuring ZFS pools for storage management.
       • Setting up Wayland environment variables for modern GUI support.
@@ -38,7 +38,7 @@ for production environments. It performs a wide range of tasks including:
       • Installing and configuring Visual Studio Code - Insiders with Wayland support.
       • Configuring unattended upgrades for automatic security updates.
       • Enabling AppArmor for enhanced system security.
-  
+
   - Finalization:
       • Running comprehensive system health checks and cleanup routines.
       • Prompting for a system reboot to apply all changes.
