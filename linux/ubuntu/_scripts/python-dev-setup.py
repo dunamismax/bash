@@ -6,14 +6,13 @@ Prepares an Ubuntu system with essential development tools:
   - Installs/updates APT dependencies.
   - Installs/updates pyenv (for managing Python versions).
   - Installs the latest stable Python via pyenv.
-  - Installs or upgrades pipx and a curated set of pipx‑managed CLI tools.
 
 IMPORTANT: Do NOT run this script with sudo! It must be run as a standard non‑root user.
 Usage Examples:
   ./python_dev_setup.py [-d|--debug] [-q|--quiet]
   ./python_dev_setup.py -h|--help
 
-Author: Your Name | License: MIT | Version: 2.1
+Author: Your Name | License: MIT | Version: 1.0
 """
 
 import os
@@ -38,13 +37,6 @@ QUIET_MODE = False  # When true, suppress console output
 
 # pyenv configuration
 PYENV_ROOT = os.path.join(HOME, ".pyenv")
-
-# List of pipx‑managed tools to install/upgrade
-PIPX_TOOLS = [
-    "ansible-core", "black", "cookiecutter", "coverage", "flake8", "isort",
-    "ipython", "mypy", "pip-tools", "pylint", "pyupgrade", "pytest",
-    "rich-cli", "tldr", "tox", "twine", "poetry", "pre-commit"
-]
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
@@ -145,10 +137,6 @@ def check_non_root():
     if os.geteuid() == 0:
         handle_error("Do NOT run this script as root. Please run as your normal user.")
 
-def command_exists(cmd: str) -> bool:
-    from shutil import which
-    return which(cmd) is not None
-
 def enable_debug():
     global LOG_LEVEL
     LOG_LEVEL = "DEBUG"
@@ -164,7 +152,7 @@ def show_help():
 
 Description:
   Prepares an Ubuntu system with essential development tools,
-  installs/updates pyenv, the latest stable Python, and pipx‑managed CLI tools.
+  installs/updates pyenv, and installs the latest stable Python.
   IMPORTANT: Do NOT run this script with sudo.
 
 Options:
@@ -274,8 +262,6 @@ def install_or_update_pyenv():
     # Ensure pyenv is available in this session.
     os.environ["PYENV_ROOT"] = PYENV_ROOT
     os.environ["PATH"] = os.path.join(PYENV_ROOT, "bin") + os.pathsep + os.environ.get("PATH", "")
-    # Note: In a shell script, one would eval "$(pyenv init -)". Here we assume that
-    # subsequent pyenv commands use the proper environment variables.
 
 # ------------------------------------------------------------------------------
 # FUNCTION: Install the Latest Stable Python via pyenv
@@ -328,6 +314,7 @@ def install_latest_python() -> bool:
         new_python_installed = True
     else:
         log("INFO", f"Python {latest_py3} is already installed and set as global.")
+
     # Refresh shell environment (if needed)
     try:
         subprocess.run(["pyenv", "init", "-"], check=True)
@@ -335,75 +322,6 @@ def install_latest_python() -> bool:
         pass
 
     return new_python_installed
-
-# ------------------------------------------------------------------------------
-# FUNCTION: Install or Upgrade pipx and Its Managed Tools
-# ------------------------------------------------------------------------------
-def install_or_upgrade_pipx_and_tools(new_python_installed: bool):
-    print_section("pipx Installation and Tools Update")
-    # Install pipx if it does not exist.
-    if not command_exists("pipx"):
-        log("INFO", "pipx not found. Installing pipx...")
-        try:
-            subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], check=True)
-            subprocess.run([sys.executable, "-m", "pip", "install", "--user", "pipx"], check=True)
-        except subprocess.CalledProcessError:
-            handle_error("Failed to install pipx.")
-
-    # Ensure ~/.local/bin is in PATH; update ~/.bashrc if necessary.
-    bashrc = os.path.join(HOME, ".bashrc")
-    try:
-        with open(bashrc, "r") as f:
-            bashrc_content = f.read()
-    except Exception:
-        bashrc_content = ""
-    if '.local/bin' not in bashrc_content:
-        log("INFO", "Adding ~/.local/bin to PATH in ~/.bashrc...")
-        try:
-            with open(bashrc, "a") as f:
-                f.write('\nexport PATH="$HOME/.local/bin:$PATH"\n')
-        except Exception as e:
-            log("WARN", f"Failed to update ~/.bashrc: {e}")
-    os.environ["PATH"] = os.path.join(HOME, ".local", "bin") + os.pathsep + os.environ.get("PATH", "")
-
-    log("INFO", "Upgrading pipx...")
-    try:
-        subprocess.run(["pipx", "upgrade", "pipx"], check=True)
-    except subprocess.CalledProcessError:
-        pass
-
-    if new_python_installed:
-        log("INFO", "New Python version detected; running pipx reinstall-all...")
-        try:
-            subprocess.run(["pipx", "reinstall-all"], check=True)
-        except subprocess.CalledProcessError:
-            pass
-    else:
-        log("INFO", "Upgrading all pipx packages...")
-        try:
-            subprocess.run(["pipx", "upgrade-all"], check=True)
-        except subprocess.CalledProcessError:
-            pass
-
-    log("INFO", "Ensuring pipx-managed tools are installed and up to date...")
-    try:
-        result = subprocess.run(["pipx", "list"], capture_output=True, text=True, check=True)
-        pipx_list = result.stdout
-    except subprocess.CalledProcessError:
-        pipx_list = ""
-    for tool in PIPX_TOOLS:
-        if tool in pipx_list:
-            log("INFO", f"Upgrading {tool}...")
-            try:
-                subprocess.run(["pipx", "upgrade", tool], check=True)
-            except subprocess.CalledProcessError:
-                pass
-        else:
-            log("INFO", f"Installing {tool}...")
-            try:
-                subprocess.run(["pipx", "install", tool], check=True)
-            except subprocess.CalledProcessError:
-                pass
 
 # ------------------------------------------------------------------------------
 # Print a styled section header using Nord accent colors
@@ -421,23 +339,20 @@ def main():
     parse_args(sys.argv[1:])
     check_non_root()
 
-    log("INFO", "Starting Ubuntu development setup script...")
+    log("INFO", "Starting Ubuntu Python setup script...")
 
-    # 1. Install APT-based dependencies (using sudo for system packages).
+    # 1. Install APT-based dependencies.
     install_apt_dependencies()
 
     # 2. Install or update pyenv.
     install_or_update_pyenv()
 
-    # 3. Install the latest Python via pyenv (if needed) and update pipx tools.
+    # 3. Install the latest Python via pyenv (if needed).
     new_python_installed = install_latest_python()
-    install_or_upgrade_pipx_and_tools(new_python_installed)
 
     log("INFO", "=================================================")
-    log("INFO", " SUCCESS! Your system is now prepared with:")
-    log("INFO", "   - The latest stable Python (via pyenv)")
-    log("INFO", "   - pipx (re)installed and updated")
-    log("INFO", "   - A curated set of pipx-managed CLI tools")
+    log("INFO", " SUCCESS! Your system is now configured with:")
+    log("INFO", "   - The latest stable Python installed via pyenv")
     log("INFO", "=================================================")
     log("INFO", "Happy coding!")
 
