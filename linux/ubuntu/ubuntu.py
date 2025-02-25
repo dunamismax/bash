@@ -1,26 +1,58 @@
 #!/usr/bin/env python3
 """
-Ubuntu Server Setup & Hardening Script
-========================================
+Ubuntu Server Initialization, Hardening & Maintenance Utility
 
-Automates the initialization, security hardening, and maintenance of an Ubuntu server for production. 
+This comprehensive automation script bootstraps, configures, secures, and maintains an Ubuntu server
+for production environments. It performs a wide range of tasks including:
 
-Key features:
-  • Pre-flight checks: Root access, network connectivity, and configuration backups.
-  • System update, package installation, and timezone/locale setup.
-  • Git repository cloning and shell configuration.
-  • Security enhancements: SSH hardening, UFW firewall rules, and fail2ban setup.
-  • Service deployment: Plex, Docker, Fastfetch, and more.
-  • Advanced features: ZFS management, Wayland configuration, AppArmor, and unattended upgrades.
-  • Routine maintenance: Log rotation, system tuning, and cleanup tasks.
+  - Pre-flight checks: Verifying root privileges, network connectivity, and creating configuration
+    snapshots (including ZFS system snapshots) before any changes.
+
+  - System update & package installation: Refreshing repositories and installing essential packages.
+
+  - Timezone & locale configuration: Setting the system timezone and ensuring proper locale settings.
+
+  - Repository and shell setup: Cloning/updating GitHub repositories, synchronizing shell dotfiles,
+    and setting the default shell.
+
+  - Security hardening:
+      • Configuring and securing SSH access and sudo privileges.
+      • Establishing UFW firewall rules with port-specific allowances.
+      • Configuring fail2ban to protect against brute-force attacks.
+
+  - Service deployment:
+      • Installing and configuring services such as Plex Media Server, Fastfetch, and Docker (with Docker Compose).
+      • Deploying user scripts and synchronizing dotfiles.
+
+  - Maintenance & performance:
+      • Scheduling periodic maintenance tasks via cron, backing up critical configurations,
+        and performing log rotation.
+      • Applying system tuning via sysctl and ensuring proper home directory permissions.
+
+  - Advanced features:
+      • Installing and configuring ZFS pools for storage management.
+      • Setting up Wayland environment variables for modern GUI support.
+      • Installing additional applications including Brave browser.
+      • Installing Flatpak, adding the Flathub repository, and deploying a suite of Flatpak applications.
+      • Installing and configuring the Caddy web server.
+      • Installing and configuring Visual Studio Code - Insiders with Wayland support.
+      • Configuring unattended upgrades for automatic security updates.
+      • Enabling AppArmor for enhanced system security.
+
+  - Finalization:
+      • Running comprehensive system health checks and cleanup routines.
+      • Prompting for a system reboot to apply all changes.
 
 Usage:
-  sudo ./ubuntu_setup.py
+  Run this script with root privileges to fully initialize, harden, and optimize your Ubuntu server:
+      sudo ./ubuntu_setup.py
 
 Disclaimer:
-  Use at your own risk. This script is provided "as is" without warranty.
+  THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 
-Author: dunamismax | Version: 4.2.0 | Date: 2025-02-24
+Author: dunamismax
+Version: 4.2.0
+Date: 2025-02-22
 """
 
 import atexit
@@ -640,7 +672,7 @@ def configure_ssh() -> None:
     ssh_settings = {
         "Port": "22",
         "PermitRootLogin": "no",
-        "PasswordAuthentication": "yes",
+        "PasswordAuthentication": "no",
         "PermitEmptyPasswords": "no",
         "ChallengeResponseAuthentication": "no",
         "Protocol": "2",
@@ -1905,33 +1937,33 @@ def install_nala() -> None:
         log_info("Nala is already installed.")
 
 
-def install_tailscale() -> None:
+def install_enable_tailscale() -> None:
     """
-    Install and enable Tailscale on Ubuntu.
-
-    This function installs Tailscale using its official install script if it is not already installed,
-    then enables and starts the Tailscale daemon.
+    Install and enable Tailscale on the server.
+    
+    This function installs Tailscale using the official installation script:
+        curl -fsSL https://tailscale.com/install.sh | sh
+    It then enables and starts the Tailscale service via systemctl.
     """
-    print_section("Tailscale Installation")
-    log_info("Installing Tailscale...")
-
+    print_section("Tailscale Installation and Enablement")
+    
+    # Check if Tailscale is already installed
     if command_exists("tailscale"):
         log_info("Tailscale is already installed; skipping installation.")
     else:
+        log_info("Installing Tailscale...")
         try:
-            # Execute the Tailscale install script via shell to handle the pipe
-            run_command("curl -fsSL https://tailscale.com/install.sh | sh", shell=True)
+            run_command(["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"])
             log_info("Tailscale installed successfully.")
         except subprocess.CalledProcessError as e:
             handle_error(f"Failed to install Tailscale: {e}")
-
+    
+    # Enable and start the Tailscale service
     try:
-        # Enable and start the Tailscale daemon
         run_command(["systemctl", "enable", "--now", "tailscaled"])
         log_info("Tailscale service enabled and started.")
     except subprocess.CalledProcessError as e:
         handle_error(f"Failed to enable/start Tailscale service: {e}")
-
 
 
 def prompt_reboot() -> None:
@@ -1962,7 +1994,7 @@ def main() -> None:
     check_root()
     check_network()
     save_config_snapshot()
-    # create_system_zfs_snapshot()
+    create_system_zfs_snapshot()
     update_system()
     install_packages()
     configure_timezone()
@@ -1986,7 +2018,7 @@ def main() -> None:
     tune_system()
     home_permissions()
     configure_fail2ban()
-    # install_configure_zfs()
+    install_configure_zfs()
     install_brave_browser()
     # install_flatpak_and_apps()
     install_configure_vscode_stable()
@@ -1995,7 +2027,7 @@ def main() -> None:
     cleanup_system()
     configure_wayland()
     install_nala()
-    install_tailscale()
+    install_enable_tailscale()
     # install_configure_caddy()
     final_checks()
 
