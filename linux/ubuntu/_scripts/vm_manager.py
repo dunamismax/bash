@@ -5,7 +5,7 @@ A production-ready Ubuntu/Linux VM manager that can list, create, start, stop, p
 delete VMs, monitor resource usage, connect to the console, and manage snapshots.
 License: MIT
 Author: Your Name
-Version: 4.1
+Version: 4.2
 """
 
 import os
@@ -29,7 +29,6 @@ DEFAULT_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 # Default directories for VM images and ISOs
 VM_IMAGE_DIR = "/var/lib/libvirt/images"
 ISO_DIR = "/var/lib/libvirt/boot"
-TMP_ISO = "/tmp/vm_install.iso"
 
 # Ensure required directories exist
 os.makedirs(ISO_DIR, exist_ok=True)
@@ -154,23 +153,78 @@ def run_command(command, capture_output=False, check=True):
         logging.error(f"Command '{' '.join(command)}' failed: {e}")
         return False
 
+def get_vm_list():
+    """
+    Retrieve a list of VMs by parsing the output of 'virsh list --all'.
+    Returns a list of dictionaries with keys: 'id', 'name', 'state'.
+    """
+    output = run_command(["virsh", "list", "--all"], capture_output=True)
+    vms = []
+    if output:
+        lines = output.strip().splitlines()
+        # Find index of separator (dashed line)
+        sep_index = None
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith('---'):
+                sep_index = i + 1
+                break
+        if sep_index is None:
+            logging.error("Unexpected output format from 'virsh list'.")
+            return vms
+        for line in lines[sep_index:]:
+            if not line.strip():
+                continue
+            parts = line.split()
+            # Expect at least 2 columns: id and name; the rest is state.
+            if len(parts) >= 2:
+                vm_id = parts[0]
+                vm_name = parts[1]
+                vm_state = " ".join(parts[2:]) if len(parts) > 2 else ""
+                vms.append({"id": vm_id, "name": vm_name, "state": vm_state})
+    return vms
+
+def select_vm(prompt="Select a VM by number: "):
+    """
+    Display a numbered list of VMs and prompt the user to select one.
+    Returns the selected VM's name or None if no VMs are available.
+    """
+    vms = get_vm_list()
+    if not vms:
+        logging.error("No VMs found.")
+        return None
+    print_header("Virtual Machines")
+    for i, vm in enumerate(vms, start=1):
+        print(f"{NORD14}[{i}]{NC} {vm['name']} - {vm['state']}")
+    while True:
+        choice = input(prompt).strip()
+        try:
+            index = int(choice) - 1
+            if 0 <= index < len(vms):
+                return vms[index]["name"]
+            else:
+                print("Invalid selection. Please enter a number corresponding to a VM.")
+        except ValueError:
+            print("Please enter a valid number.")
+
 # ------------------------------------------------------------------------------
 # VM MANAGEMENT FUNCTIONS
 # ------------------------------------------------------------------------------
 def list_vms():
     print_header("Current Virtual Machines")
-    logging.info("Listing virtual machines...")
-    output = run_command(["virsh", "list", "--all"], capture_output=True)
-    if output:
-        print(output)
+    vms = get_vm_list()
+    if vms:
+        for i, vm in enumerate(vms, start=1):
+            print(f"{NORD14}[{i}]{NC} {vm['name']} - {vm['state']}")
     else:
-        logging.error("Failed to list VMs.")
+        logging.error("No VMs found.")
     prompt_enter()
 
 def start_vm():
     print_header("Start Virtual Machine")
-    list_vms()
-    vm_name = input("Enter the VM name to start: ").strip()
+    vm_name = select_vm("Select a VM to start by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     if run_command(["virsh", "start", vm_name]):
         logging.info(f"VM '{vm_name}' started successfully.")
     else:
@@ -179,8 +233,10 @@ def start_vm():
 
 def stop_vm():
     print_header("Stop Virtual Machine")
-    list_vms()
-    vm_name = input("Enter the VM name to stop (graceful shutdown): ").strip()
+    vm_name = select_vm("Select a VM to stop by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     if run_command(["virsh", "shutdown", vm_name]):
         logging.info(f"Shutdown signal sent to VM '{vm_name}'.")
     else:
@@ -189,8 +245,10 @@ def stop_vm():
 
 def pause_vm():
     print_header("Pause Virtual Machine")
-    list_vms()
-    vm_name = input("Enter the VM name to pause: ").strip()
+    vm_name = select_vm("Select a VM to pause by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     if run_command(["virsh", "suspend", vm_name]):
         logging.info(f"VM '{vm_name}' paused successfully.")
     else:
@@ -199,8 +257,10 @@ def pause_vm():
 
 def resume_vm():
     print_header("Resume Virtual Machine")
-    list_vms()
-    vm_name = input("Enter the VM name to resume: ").strip()
+    vm_name = select_vm("Select a VM to resume by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     if run_command(["virsh", "resume", vm_name]):
         logging.info(f"VM '{vm_name}' resumed successfully.")
     else:
@@ -209,8 +269,10 @@ def resume_vm():
 
 def delete_vm():
     print_header("Delete Virtual Machine")
-    list_vms()
-    vm_name = input("Enter the VM name to delete: ").strip()
+    vm_name = select_vm("Select a VM to delete by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     confirm = input(f"Are you sure you want to delete VM '{vm_name}'? This will undefine the VM. (y/n): ").strip().lower()
     if confirm != 'y':
         logging.warning("Deletion cancelled.")
@@ -245,8 +307,10 @@ def delete_vm():
 
 def monitor_vm():
     print_header("Monitor Virtual Machine Resources")
-    list_vms()
-    vm_name = input("Enter the VM name to monitor: ").strip()
+    vm_name = select_vm("Select a VM to monitor by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     logging.info(f"Monitoring VM '{vm_name}'. Press Ctrl+C to exit.")
     try:
         while True:
@@ -266,8 +330,10 @@ def monitor_vm():
 
 def remote_console():
     print_header("Remote Console Access")
-    list_vms()
-    vm_name = input("Enter the VM name to connect to its console: ").strip()
+    vm_name = select_vm("Select a VM for console access by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     logging.info(f"Connecting to console of VM '{vm_name}'. Press Ctrl+] to exit.")
     try:
         subprocess.run(["virsh", "console", vm_name])
@@ -305,7 +371,6 @@ def download_iso():
 def create_vm():
     print_header("Create a New Virtual Machine")
     vm_name = input("Enter VM name: ").strip()
-    # Validate that VM name is not empty
     if not vm_name:
         logging.error("VM name cannot be empty.")
         prompt_enter()
@@ -320,7 +385,6 @@ def create_vm():
         prompt_enter()
         return
 
-    # Check if disk image already exists
     disk_image = os.path.join(VM_IMAGE_DIR, f"{vm_name}.qcow2")
     if os.path.exists(disk_image):
         logging.error(f"Disk image {disk_image} already exists. Choose a different VM name or remove the existing image.")
@@ -367,7 +431,6 @@ def create_vm():
         "--vcpus", str(vcpus),
         "--disk", f"path={disk_image},size={disk_size},format=qcow2",
         "--cdrom", iso_path,
-        "--os-type", "linux",
         "--os-variant", "ubuntu20.04",
         "--graphics", "none",
         "--console", "pty,target_type=serial",
@@ -384,7 +447,10 @@ def create_vm():
 # ------------------------------------------------------------------------------
 def list_snapshots():
     print_header("List Snapshots")
-    vm_name = input("Enter the VM name to list snapshots: ").strip()
+    vm_name = select_vm("Select a VM to list snapshots by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     output = run_command(["virsh", "snapshot-list", vm_name], capture_output=True)
     if output:
         print(output)
@@ -394,7 +460,10 @@ def list_snapshots():
 
 def create_snapshot():
     print_header("Create Snapshot")
-    vm_name = input("Enter the VM name to create a snapshot for: ").strip()
+    vm_name = select_vm("Select a VM to snapshot by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     snapshot_name = input("Enter snapshot name: ").strip()
     description = input("Enter snapshot description (optional): ").strip()
     cmd = ["virsh", "snapshot-create-as", vm_name, snapshot_name]
@@ -408,7 +477,10 @@ def create_snapshot():
 
 def revert_snapshot():
     print_header("Revert Snapshot")
-    vm_name = input("Enter the VM name to revert snapshot for: ").strip()
+    vm_name = select_vm("Select a VM to revert snapshot by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     snapshot_name = input("Enter snapshot name to revert to: ").strip()
     if run_command(["virsh", "snapshot-revert", vm_name, snapshot_name]):
         logging.info(f"VM '{vm_name}' reverted to snapshot '{snapshot_name}'.")
@@ -418,7 +490,10 @@ def revert_snapshot():
 
 def delete_snapshot():
     print_header("Delete Snapshot")
-    vm_name = input("Enter the VM name to delete a snapshot from: ").strip()
+    vm_name = select_vm("Select a VM to delete a snapshot by number: ")
+    if not vm_name:
+        prompt_enter()
+        return
     snapshot_name = input("Enter snapshot name to delete: ").strip()
     if run_command(["virsh", "snapshot-delete", vm_name, snapshot_name]):
         logging.info(f"Snapshot '{snapshot_name}' deleted from VM '{vm_name}'.")
