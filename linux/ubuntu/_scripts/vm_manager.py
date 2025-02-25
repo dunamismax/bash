@@ -2,10 +2,11 @@
 """
 Advanced VM Manager Tool
 A production-ready Ubuntu/Linux VM manager that can list, create, start, stop, pause, resume,
-delete VMs, monitor resource usage, connect to the console, and manage snapshots.
+delete VMs (along with their disk images), monitor resource usage, connect to the console,
+and manage snapshots.
 License: MIT
 Author: Your Name
-Version: 4.2
+Version: 4.3
 """
 
 import os
@@ -175,7 +176,6 @@ def get_vm_list():
             if not line.strip():
                 continue
             parts = line.split()
-            # Expect at least 2 columns: id and name; the rest is state.
             if len(parts) >= 2:
                 vm_id = parts[0]
                 vm_name = parts[1]
@@ -268,6 +268,12 @@ def resume_vm():
     prompt_enter()
 
 def delete_vm():
+    """
+    Delete a virtual machine and its associated disk image.
+    The function lets you select a VM, undefines it, and then automatically
+    removes the disk image. If the VM XML does not provide a disk image path,
+    it also checks for a default disk image named <vm_name>.qcow2.
+    """
     print_header("Delete Virtual Machine")
     vm_name = select_vm("Select a VM to delete by number: ")
     if not vm_name:
@@ -287,10 +293,18 @@ def delete_vm():
         if match:
             disk = match.group(1)
 
+    # If disk image not found via XML, try default naming convention
+    if not disk:
+        default_disk = os.path.join(VM_IMAGE_DIR, f"{vm_name}.qcow2")
+        if os.path.exists(default_disk):
+            disk = default_disk
+
     # Force shutdown if VM is running
     running_vms = run_command(["virsh", "list", "--state-running"], capture_output=True)
     if running_vms and vm_name in running_vms:
         run_command(["virsh", "destroy", vm_name])
+    
+    # Undefine the VM
     if run_command(["virsh", "undefine", vm_name]):
         logging.info(f"VM '{vm_name}' undefined successfully.")
         if disk:
@@ -299,9 +313,12 @@ def delete_vm():
                 logging.info(f"Disk image '{disk}' removed successfully.")
             except Exception as e:
                 logging.warning(f"Failed to remove disk image '{disk}': {e}")
+        else:
+            logging.warning("No associated disk image found to remove.")
     else:
         logging.error(f"Failed to delete VM '{vm_name}'.")
     prompt_enter()
+
 def monitor_vm():
     print_header("Monitor Virtual Machine Resources")
     vm_name = select_vm("Select a VM to monitor by number: ")
@@ -522,6 +539,55 @@ def snapshot_menu():
             time.sleep(1)
 
 # ------------------------------------------------------------------------------
+# DISK IMAGE MANAGEMENT FUNCTION
+# ------------------------------------------------------------------------------
+def delete_disk_image():
+    """
+    Manually delete a VM disk image.
+    Lists all .qcow2 files in VM_IMAGE_DIR and lets you select one to delete.
+    """
+    print_header("Delete Disk Image")
+    try:
+        disks = [d for d in os.listdir(VM_IMAGE_DIR) if d.endswith('.qcow2')]
+    except Exception as e:
+        logging.error(f"Failed to list disk images: {e}")
+        prompt_enter()
+        return
+    if not disks:
+        logging.info("No disk images found in the directory.")
+        prompt_enter()
+        return
+
+    print("Available Disk Images:")
+    for idx, disk in enumerate(sorted(disks), start=1):
+        print(f"{NORD14}[{idx}]{NC} {disk}")
+
+    while True:
+        choice = input("Select a disk image to delete by number: ").strip()
+        try:
+            index = int(choice) - 1
+            if 0 <= index < len(disks):
+                selected_disk = disks[index]
+                break
+            else:
+                print("Invalid selection. Please enter a valid number.")
+        except ValueError:
+            print("Please enter a valid number.")
+
+    full_disk_path = os.path.join(VM_IMAGE_DIR, selected_disk)
+    confirm = input(f"Are you sure you want to delete disk image '{selected_disk}'? (y/n): ").strip().lower()
+    if confirm != 'y':
+        logging.info("Disk image deletion cancelled.")
+        prompt_enter()
+        return
+    try:
+        os.remove(full_disk_path)
+        logging.info(f"Disk image '{selected_disk}' deleted successfully.")
+    except Exception as e:
+        logging.error(f"Failed to delete disk image '{selected_disk}': {e}")
+    prompt_enter()
+
+# ------------------------------------------------------------------------------
 # INTERACTIVE MAIN MENU
 # ------------------------------------------------------------------------------
 def interactive_menu():
@@ -538,6 +604,7 @@ def interactive_menu():
         print(f"{NORD14}[9]{NC} Resume Virtual Machine")
         print(f"{NORD14}[a]{NC} List Available ISOs")
         print(f"{NORD14}[s]{NC} Snapshot Management")
+        print(f"{NORD14}[x]{NC} Delete Disk Image")
         print(f"{NORD14}[q]{NC} Quit")
         print("-" * 60)
         choice = input("Enter your choice: ").strip().lower()
@@ -563,6 +630,8 @@ def interactive_menu():
             list_isos()
         elif choice == "s":
             snapshot_menu()
+        elif choice == "x":
+            delete_disk_image()
         elif choice == "q":
             logging.info("Goodbye!")
             sys.exit(0)
