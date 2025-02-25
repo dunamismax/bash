@@ -41,23 +41,48 @@ RESTIC_PASSWORD = "your_unified_restic_password"
 
 # Backup Source Directory and Exclusions
 SYSTEM_SOURCE = "/"  # Backup the entire system
+
 SYSTEM_EXCLUDES = [
+    # Virtual / dynamic filesystems – always exclude these.
     "/proc/*",
     "/sys/*",
     "/dev/*",
     "/run/*",
+    
+    # Temporary directories (often changing, transient, or recreated on boot)
     "/tmp/*",
+    "/var/tmp/*",
+    
+    # Mount points and removable media (to avoid backing up external or transient mounts)
     "/mnt/*",
     "/media/*",
-    "/swapfile",
-    "/lost+found",
-    "/var/tmp/*",
+    
+    # Common cache directories that need not be backed up
     "/var/cache/*",
     "/var/log/*",
-    "*.iso",
+    # User-level cache folders (if you wish to exclude them; adjust as needed)
+    "/home/*/.cache/*",
+    
+    # Swap file, lost+found, and other system artifacts
+    "/swapfile",
+    "/lost+found",
+    
+    # Exclude VM disk images (common locations and file extensions)
+    "*.vmdk",     # VMware disk image
+    "*.vdi",      # VirtualBox disk image
+    "*.qcow2",    # QEMU/KVM disk image
+    "*.img",      # Generic disk image (use with caution if you also have valid .img files)
+    
+    # Other large, transient files
+    "*.iso",      # Disc images
     "*.tmp",
     "*.swap.img",
+    
+    # Exclude specific directories known to store ephemeral or large nonessential data
+    "/var/lib/docker/*",  # Docker images/containers (if not intended to be backed up)
+    "/var/lib/lxc/*",     # LXC containers (if not intended to be backed up)
 ]
+
 
 # Retention policy (keep snapshots within this many days)
 RETENTION_DAYS = 7
