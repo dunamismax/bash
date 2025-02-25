@@ -1,59 +1,33 @@
 #!/usr/bin/env python3
 """
-Ubuntu Server Initialization, Hardening & Maintenance Utility
+ubuntu-desktop.py
 
-This comprehensive automation script bootstraps, configures, secures, and maintains an Ubuntu server
-for production environments. It performs a wide range of tasks including:
+Ubuntu Desktop Initialization & Maintenance Utility
 
-  - Pre-flight checks: Verifying root privileges, network connectivity, and creating configuration
-    snapshots (including ZFS system snapshots) before any changes.
+This automation script configures and optimizes an Ubuntu Desktop environment by performing the following tasks:
 
-  - System update & package installation: Refreshing repositories and installing essential packages.
-
-  - Timezone & locale configuration: Setting the system timezone and ensuring proper locale settings.
-
-  - Repository and shell setup: Cloning/updating GitHub repositories, synchronizing shell dotfiles,
-    and setting the default shell.
-
-  - Security hardening:
-      • Configuring and securing SSH access and sudo privileges.
-      • Establishing UFW firewall rules with port-specific allowances.
-      • Configuring fail2ban to protect against brute-force attacks.
-
-  - Service deployment:
-      • Installing and configuring services such as Plex Media Server, Fastfetch, and Docker (with Docker Compose).
-      • Deploying user scripts and synchronizing dotfiles.
-
-  - Maintenance & performance:
-      • Scheduling periodic maintenance tasks via cron, backing up critical configurations,
-        and performing log rotation.
-      • Applying system tuning via sysctl and ensuring proper home directory permissions.
-
-  - Advanced features:
-      • Installing and configuring ZFS pools for storage management.
-      • Setting up Wayland environment variables for modern GUI support.
-      • Installing additional applications including Brave browser.
-      • Installing Flatpak, adding the Flathub repository, and deploying a suite of Flatpak applications.
-      • Installing and configuring the Caddy web server.
-      • Installing and configuring Visual Studio Code - Insiders with Wayland support.
-      • Configuring unattended upgrades for automatic security updates.
-      • Enabling AppArmor for enhanced system security.
-
-  - Finalization:
-      • Running comprehensive system health checks and cleanup routines.
-      • Prompting for a system reboot to apply all changes.
+  - Pre-flight checks: Verify root privileges and network connectivity.
+  - System update: Refresh repositories and upgrade installed packages.
+  - Package installation: Install essential applications and utilities.
+  - Desktop configuration: Set timezone, update user settings, and configure desktop preferences.
+  - Security hardening: Secure SSH, configure UFW firewall, and set up fail2ban.
+  - Service deployment: Install and configure key services (e.g., Plex, Docker) and desktop applications.
+  - Maintenance routines: Schedule cron jobs, rotate logs, and perform system health checks.
+  - Advanced features: Configure ZFS storage, Wayland settings, and additional security measures.
+  - Final steps: Clean up temporary files and prompt for system reboot.
 
 Usage:
-  Run this script with root privileges to fully initialize, harden, and optimize your Ubuntu server:
-      sudo ./ubuntu_setup.py
+  Run this script with root privileges to initialize and optimize your Ubuntu Desktop:
+      sudo ./ubuntu-desktop.py
 
 Disclaimer:
   THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
 
 Author: dunamismax
 Version: 4.2.0
-Date: 2025-02-22
+Date: 2025-02-25
 """
+
 
 import atexit
 import datetime
@@ -1990,47 +1964,71 @@ def prompt_reboot() -> None:
 
 
 def main() -> None:
-    """Main function executing the entire setup process."""
+    """Main function executing the entire setup process in logical phases."""
+    # Phase 1: Pre-flight Checks & Backups
     check_root()
     check_network()
     save_config_snapshot()
-    # create_system_zfs_snapshot()
+    create_system_zfs_snapshot()
+
+    # Phase 2: System Update & Basic Configuration
     update_system()
     install_packages()
     configure_timezone()
+
+    # Phase 3: Repository & Shell Setup
     setup_repos()
     copy_shell_configs()
     copy_config_folders()
     set_bash_shell()
+
+    # Phase 4: Security Hardening
     configure_ssh()
     setup_sudoers()
     configure_firewall()
-    # install_plex()
-    install_fastfetch()
+    configure_fail2ban()
+
+    # Phase 5: Essential Service Installation
     docker_config()
+    install_plex()
+    install_fastfetch()
+
+    # Phase 6: User Customization & Script Deployment
     deploy_user_scripts()
+
+    # Phase 7: Maintenance & Monitoring Tasks
     configure_periodic()
     backup_configs()
     rotate_logs()
     system_health_check()
     verify_firewall_rules()
+
+    # Phase 8: Certificates & Performance Tuning
     update_ssl_certificates()
     tune_system()
+
+    # Phase 9: Permissions & Advanced Storage Setup
     home_permissions()
-    configure_fail2ban()
-    # install_configure_zfs()
+    install_configure_zfs()
+
+    # Phase 10: Additional Applications & Tools
     install_brave_browser()
-    # install_flatpak_and_apps()
+    install_flatpak_and_apps()
     install_configure_vscode_stable()
+
+    # Phase 11: Automatic Updates & Additional Security
     configure_unattended_upgrades()
     configure_apparmor()
+
+    # Phase 12: Cleanup & Final Configurations
     cleanup_system()
-    # configure_wayland()
+    configure_wayland()
     install_nala()
     install_enable_tailscale()
-    # install_configure_caddy()
-    final_checks()
+    install_configure_caddy()
 
+    # Phase 13: Final System Checks & Reboot Prompt
+    final_checks()
     prompt_reboot()
 
 
