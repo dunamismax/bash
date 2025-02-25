@@ -1998,7 +1998,7 @@ def main() -> None:
     cleanup_system()
     configure_wayland()
     install_nala()
-    install_configure_caddy()
+    # install_configure_caddy()
     final_checks()
 
     prompt_reboot()
