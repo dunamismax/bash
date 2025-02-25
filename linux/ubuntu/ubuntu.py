@@ -1905,6 +1905,35 @@ def install_nala() -> None:
         log_info("Nala is already installed.")
 
 
+def install_tailscale() -> None:
+    """
+    Install and enable Tailscale on Ubuntu.
+
+    This function installs Tailscale using its official install script if it is not already installed,
+    then enables and starts the Tailscale daemon.
+    """
+    print_section("Tailscale Installation")
+    log_info("Installing Tailscale...")
+
+    if command_exists("tailscale"):
+        log_info("Tailscale is already installed; skipping installation.")
+    else:
+        try:
+            # Execute the Tailscale install script via shell to handle the pipe
+            run_command("curl -fsSL https://tailscale.com/install.sh | sh", shell=True)
+            log_info("Tailscale installed successfully.")
+        except subprocess.CalledProcessError as e:
+            handle_error(f"Failed to install Tailscale: {e}")
+
+    try:
+        # Enable and start the Tailscale daemon
+        run_command(["systemctl", "enable", "--now", "tailscaled"])
+        log_info("Tailscale service enabled and started.")
+    except subprocess.CalledProcessError as e:
+        handle_error(f"Failed to enable/start Tailscale service: {e}")
+
+
+
 def prompt_reboot() -> None:
     """
     Prompt the user for a system reboot to apply changes.
@@ -1966,6 +1995,7 @@ def main() -> None:
     cleanup_system()
     configure_wayland()
     install_nala()
+    install_tailscale()
     # install_configure_caddy()
     final_checks()
 
