@@ -273,7 +273,7 @@ def delete_vm():
     if not vm_name:
         prompt_enter()
         return
-    confirm = input(f"Are you sure you want to delete VM '{vm_name}'? This will undefine the VM. (y/n): ").strip().lower()
+    confirm = input(f"Are you sure you want to delete VM '{vm_name}'? This will undefine the VM and delete its disk image. (y/n): ").strip().lower()
     if confirm != 'y':
         logging.warning("Deletion cancelled.")
         prompt_enter()
@@ -294,17 +294,14 @@ def delete_vm():
     if run_command(["virsh", "undefine", vm_name]):
         logging.info(f"VM '{vm_name}' undefined successfully.")
         if disk:
-            remove_disk = input(f"Do you want to remove its disk image at {disk}? (y/n): ").strip().lower()
-            if remove_disk == 'y':
-                try:
-                    os.remove(disk)
-                    logging.info("Disk image removed.")
-                except Exception as e:
-                    logging.warning(f"Failed to remove disk image: {e}")
+            try:
+                os.remove(disk)
+                logging.info(f"Disk image '{disk}' removed successfully.")
+            except Exception as e:
+                logging.warning(f"Failed to remove disk image '{disk}': {e}")
     else:
         logging.error(f"Failed to delete VM '{vm_name}'.")
     prompt_enter()
-
 def monitor_vm():
     print_header("Monitor Virtual Machine Resources")
     vm_name = select_vm("Select a VM to monitor by number: ")
