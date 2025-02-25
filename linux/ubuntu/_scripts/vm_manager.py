@@ -6,7 +6,7 @@ delete VMs (along with their disk images), monitor resource usage, connect to th
 and manage snapshots.
 License: MIT
 Author: Your Name
-Version: 4.3
+Version: 4.4
 """
 
 import os
@@ -205,6 +205,48 @@ def select_vm(prompt="Select a VM by number: "):
                 print("Invalid selection. Please enter a number corresponding to a VM.")
         except ValueError:
             print("Please enter a valid number.")
+
+def select_iso():
+    """
+    Allows the user to select an ISO file from the ISO directory or enter a custom path.
+    Returns the full path to the selected ISO, or None if not found.
+    """
+    print_header("Select Installation ISO")
+    try:
+        available_isos = [iso for iso in os.listdir(ISO_DIR)
+                          if os.path.isfile(os.path.join(ISO_DIR, iso))]
+    except Exception as e:
+        logging.error(f"Error listing ISOs: {e}")
+        available_isos = []
+    if available_isos:
+        print("Available ISO files:")
+        for i, iso in enumerate(sorted(available_isos), start=1):
+            print(f"{NORD14}[{i}]{NC} {iso}")
+        print(f"{NORD14}[0]{NC} Enter a custom ISO path")
+        while True:
+            choice = input("Select an ISO by number or 0 for custom: ").strip()
+            try:
+                index = int(choice)
+                if index == 0:
+                    custom_path = input("Enter the full path to the ISO file: ").strip()
+                    if os.path.isfile(custom_path):
+                        return custom_path
+                    else:
+                        print("File not found. Please try again.")
+                elif 1 <= index <= len(available_isos):
+                    return os.path.join(ISO_DIR, sorted(available_isos)[index - 1])
+                else:
+                    print("Invalid selection, please try again.")
+            except ValueError:
+                print("Please enter a valid number.")
+    else:
+        print("No ISO files found in the ISO directory.")
+        custom_path = input("Enter the full path to the ISO file: ").strip()
+        if os.path.isfile(custom_path):
+            return custom_path
+        else:
+            print("File not found. Operation cancelled.")
+            return None
 
 # ------------------------------------------------------------------------------
 # VM MANAGEMENT FUNCTIONS
@@ -411,9 +453,9 @@ def create_vm():
     iso_choice = input("Enter your choice (1 or 2): ").strip()
     iso_path = ""
     if iso_choice == "1":
-        iso_path = input("Enter full path to ISO file: ").strip()
-        if not os.path.isfile(iso_path):
-            logging.error(f"ISO file not found at {iso_path}.")
+        iso_path = select_iso()
+        if not iso_path:
+            logging.error("No valid ISO selected. Cancelling VM creation.")
             prompt_enter()
             return
     elif iso_choice == "2":
