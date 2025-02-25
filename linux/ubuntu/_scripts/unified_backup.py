@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 """
-Unified Backup Script
----------------------
+Unified Backup Script for System Backup to Backblaze B2
+--------------------------------------------------------
 Description:
-  This script uses restic to perform four separate backups:
-    1. System backup to a local WD repository.
-    2. Plex backup to a local WD repository.
-    3. System backup to a Backblaze B2 repository.
-    4. Plex backup to a Backblaze B2 repository.
-
+  This script uses restic to perform a system backup directly to a Backblaze B2 repository.
+  The repository is automatically named after the hostname of the system on which the script is run.
+  If the repository does not exist, it is automatically initialized.
   After backup, a retention policy is enforced (removing snapshots older than a specified number of days).
 
 Usage:
   sudo ./unified_backup.py
 
-Author: Your Name | License: MIT | Version: 2.1.0
+Author: Your Name | License: MIT | Version: 2.2.0
 """
 
 import atexit
@@ -22,34 +19,28 @@ import logging
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 
 # ------------------------------------------------------------------------------
 # Environment Configuration (Modify these settings as needed)
 # ------------------------------------------------------------------------------
-# Local WD Backup Repositories
-WD_BASE_PATH = "/media/WD_BLACK/ubuntu_backups"
-WD_REPO_SYSTEM = os.path.join(WD_BASE_PATH, "system")
-WD_REPO_PLEX = os.path.join(WD_BASE_PATH, "plex")
-
-# Backblaze B2 Backup Repositories and Credentials
+# Backblaze B2 Backup Repository Credentials and Bucket
 B2_ACCOUNT_ID = "your_b2_account_id"
 B2_ACCOUNT_KEY = "your_b2_account_key"
 B2_BUCKET_SYSTEM = "your_b2_system_bucket"
-B2_BUCKET_PLEX = "your_b2_plex_bucket"
-# restic repository strings for B2 take the format: b2:bucket:directory
-B2_REPO_SYSTEM = f"b2:{B2_BUCKET_SYSTEM}:system"
-B2_REPO_PLEX = f"b2:{B2_BUCKET_PLEX}:plex"
+
+# Determine the hostname to uniquely name the repository
+HOSTNAME = socket.gethostname()
+# Restic repository string for B2 follows the format: b2:bucket:directory
+B2_REPO_SYSTEM = f"b2:{B2_BUCKET_SYSTEM}:{HOSTNAME}"
 
 # Unified Restic Repository Password (use one strong, secure password everywhere)
 RESTIC_PASSWORD = "your_unified_restic_password"
 
-# Backup Source Directories
+# Backup Source Directory and Exclusions
 SYSTEM_SOURCE = "/"  # Backup the entire system
-PLEX_SOURCE = "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/"
-
-# Exclude patterns for the system backup (restic accepts --exclude flags)
 SYSTEM_EXCLUDES = [
     "/proc/*",
     "/sys/*",
@@ -175,35 +166,12 @@ def main():
 
     logging.info("Unified backup script started.")
 
-    # Ensure the WD mount point exists.
-    if not os.path.isdir(WD_BASE_PATH):
-        logging.error(f"WD backup path '{WD_BASE_PATH}' does not exist. Aborting.")
-        sys.exit(1)
-
     backup_tasks = [
-        {
-            "description": "Backup System to WD Repository",
-            "repo": WD_REPO_SYSTEM,
-            "source": SYSTEM_SOURCE,
-            "excludes": SYSTEM_EXCLUDES,
-        },
-        {
-            "description": "Backup Plex to WD Repository",
-            "repo": WD_REPO_PLEX,
-            "source": PLEX_SOURCE,
-            "excludes": [],
-        },
         {
             "description": "Backup System to Backblaze B2 Repository",
             "repo": B2_REPO_SYSTEM,
             "source": SYSTEM_SOURCE,
             "excludes": SYSTEM_EXCLUDES,
-        },
-        {
-            "description": "Backup Plex to Backblaze B2 Repository",
-            "repo": B2_REPO_PLEX,
-            "source": PLEX_SOURCE,
-            "excludes": [],
         },
     ]
 
@@ -215,18 +183,10 @@ def main():
             logging.error(f"{task['description']} failed with error: {e}")
             sys.exit(e.returncode)
 
-    cleanup_tasks = [
-        ("WD System Repository", WD_REPO_SYSTEM),
-        ("WD Plex Repository", WD_REPO_PLEX),
-        ("B2 System Repository", B2_REPO_SYSTEM),
-        ("B2 Plex Repository", B2_REPO_PLEX),
-    ]
-
     print_section("Cleaning Up Old Snapshots (Retention Policy)")
     try:
-        for desc, repo in cleanup_tasks:
-            logging.info(f"Cleaning {desc}...")
-            cleanup_repo(repo, RESTIC_PASSWORD, RETENTION_DAYS)
+        logging.info("Cleaning Backblaze B2 System Repository...")
+        cleanup_repo(B2_REPO_SYSTEM, RESTIC_PASSWORD, RETENTION_DAYS)
     except subprocess.CalledProcessError as e:
         logging.error(f"Cleanup failed: {e}")
         sys.exit(e.returncode)
