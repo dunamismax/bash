@@ -14,7 +14,7 @@ Description:
 Usage:
   sudo ./unified_backup.py
 
-Author: Your Name | License: MIT | Version: 2.0.0
+Author: Your Name | License: MIT | Version: 2.1.0
 """
 
 import atexit
@@ -76,10 +76,6 @@ LOG_FILE = "/var/log/unified_backup.log"
 DEFAULT_LOG_LEVEL = "INFO"
 # ------------------------------------------------------------------------------
 
-
-# ------------------------------------------------------------------------------
-# Logging Setup
-# ------------------------------------------------------------------------------
 def setup_logging():
     log_dir = os.path.dirname(LOG_FILE)
     if not os.path.isdir(log_dir):
@@ -95,9 +91,7 @@ def setup_logging():
     except Exception as e:
         logging.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
 
-
 setup_logging()
-
 
 def print_section(title: str):
     border = "─" * 60
@@ -105,73 +99,61 @@ def print_section(title: str):
     logging.info(f"  {title}")
     logging.info(border)
 
-
-# ------------------------------------------------------------------------------
-# Signal Handling and Cleanup
-# ------------------------------------------------------------------------------
 def signal_handler(signum, frame):
     logging.error("Script interrupted by signal.")
     sys.exit(130)
 
-
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-
 def cleanup():
     logging.info("Performing cleanup tasks before exit.")
-    # Add any additional cleanup tasks here
-
+    # Additional cleanup tasks can be added here.
 
 atexit.register(cleanup)
 
-
-# ------------------------------------------------------------------------------
-# Dependency Check
-# ------------------------------------------------------------------------------
 def check_dependencies():
     if not shutil.which("restic"):
-        logging.error(
-            "The 'restic' binary is not found in your PATH. Please install restic and try again."
-        )
+        logging.error("The 'restic' binary is not found in your PATH. Please install restic and try again.")
         sys.exit(1)
 
-
-# ------------------------------------------------------------------------------
-# Helper Functions for Restic Operations
-# ------------------------------------------------------------------------------
 def run_restic(repo: str, password: str, *args):
-    """
-    Executes a restic command with the given repository and password.
-    If the repository is on B2, ensures that B2 credentials are set.
-    """
     env = os.environ.copy()
     env["RESTIC_PASSWORD"] = password
     if repo.startswith("b2:"):
         env["B2_ACCOUNT_ID"] = B2_ACCOUNT_ID
         env["B2_ACCOUNT_KEY"] = B2_ACCOUNT_KEY
     cmd = ["restic", "--repo", repo] + list(args)
-    logging.info("Running restic command: " + " ".join(cmd))
+    logging.info(f"Running restic command: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, env=env)
 
+def is_local_repo(repo: str) -> bool:
+    """Determine if the repository is local (i.e., not a B2 repo)."""
+    return not repo.startswith("b2:")
 
 def ensure_repo_initialized(repo: str, password: str):
     """
-    Checks if the restic repository is already initialized.
-    If not, it initializes the repository.
+    Ensures that a restic repository is initialized.
+    For local repositories, check if the 'config' file exists.
+    For B2 repositories, attempt a snapshots command.
     """
-    try:
-        run_restic(repo, password, "snapshots")
-    except subprocess.CalledProcessError:
-        logging.info(f"Repository {repo} not initialized. Initializing...")
-        run_restic(repo, password, "init")
-
+    if is_local_repo(repo):
+        config_path = os.path.join(repo, "config")
+        if os.path.exists(config_path):
+            logging.info(f"Repository '{repo}' already initialized.")
+            return
+        else:
+            logging.info(f"Repository '{repo}' not initialized. Initializing...")
+            run_restic(repo, password, "init")
+    else:
+        try:
+            run_restic(repo, password, "snapshots")
+            logging.info(f"Repository '{repo}' already initialized.")
+        except subprocess.CalledProcessError:
+            logging.info(f"Repository '{repo}' not initialized. Initializing...")
+            run_restic(repo, password, "init")
 
 def backup_repo(repo: str, password: str, source: str, excludes: list = None):
-    """
-    Performs a restic backup of the given source directory.
-    Additional --exclude flags are added if provided.
-    """
     if excludes is None:
         excludes = []
     ensure_repo_initialized(repo, password)
@@ -180,18 +162,10 @@ def backup_repo(repo: str, password: str, source: str, excludes: list = None):
         cmd_args.extend(["--exclude", pattern])
     run_restic(repo, password, *cmd_args)
 
-
 def cleanup_repo(repo: str, password: str, retention_days: int):
-    """
-    Removes snapshots older than the specified retention period.
-    """
     ensure_repo_initialized(repo, password)
     run_restic(repo, password, "forget", "--prune", "--keep-within", f"{retention_days}d")
 
-
-# ------------------------------------------------------------------------------
-# Main Backup Procedure
-# ------------------------------------------------------------------------------
 def main():
     check_dependencies()
 
@@ -201,12 +175,11 @@ def main():
 
     logging.info("Unified backup script started.")
 
-    # Verify that the WD mount point exists
+    # Ensure the WD mount point exists.
     if not os.path.isdir(WD_BASE_PATH):
         logging.error(f"WD backup path '{WD_BASE_PATH}' does not exist. Aborting.")
         sys.exit(1)
 
-    # Define backup tasks
     backup_tasks = [
         {
             "description": "Backup System to WD Repository",
@@ -234,7 +207,6 @@ def main():
         },
     ]
 
-    # Execute backup tasks
     for task in backup_tasks:
         print_section(task["description"])
         try:
@@ -243,7 +215,6 @@ def main():
             logging.error(f"{task['description']} failed with error: {e}")
             sys.exit(e.returncode)
 
-    # Define cleanup tasks (repositories to enforce retention policy)
     cleanup_tasks = [
         ("WD System Repository", WD_REPO_SYSTEM),
         ("WD Plex Repository", WD_REPO_PLEX),
@@ -261,7 +232,6 @@ def main():
         sys.exit(e.returncode)
 
     logging.info("Unified backup script completed successfully.")
-
 
 if __name__ == "__main__":
     try:
