@@ -2,7 +2,7 @@
 """
 ubuntu_server_setup.py
 
-Ubuntu Server Initialization & Hardening Utility – Refactored
+Ubuntu Server Initialization & Hardening Utility – Production Ready
 
 This script automates the setup, configuration, and maintenance of an Ubuntu server.
 It is organized into logical phases:
@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -325,13 +326,14 @@ class SystemUpdater:
         has_nala = Utils.command_exists("nala")
         try:
             if has_nala:
-                Utils.run_command(["nala", "update", "-y"])
+                # nala update does not support -y; omit it.
+                Utils.run_command(["nala", "update"])
             else:
                 Utils.run_command(["apt", "update", "-qq"])
             if full_upgrade:
-                cmd = ["nala", "upgrade", "-y"] if has_nala else ["apt", "full-upgrade", "-y"]
+                cmd = ["nala", "upgrade"] if has_nala else ["apt", "full-upgrade", "-y"]
             else:
-                cmd = ["nala", "upgrade", "-y"] if has_nala else ["apt", "upgrade", "-y"]
+                cmd = ["nala", "upgrade"] if has_nala else ["apt", "upgrade", "-y"]
             Utils.run_command(cmd)
             logger.info("System update and upgrade completed.")
             return True
@@ -353,7 +355,7 @@ class SystemUpdater:
                 logger.debug(f"Package already installed: {pkg}")
         if missing:
             logger.info(f"Missing {len(missing)} packages; installing in batches...")
-            installer = ["nala", "install", "-y"] if Utils.command_exists("nala") else ["apt", "install", "-y"]
+            installer = ["nala", "install"] if Utils.command_exists("nala") else ["apt", "install", "-y"]
             try:
                 batch_size = 20
                 for i in range(0, len(missing), batch_size):
@@ -463,17 +465,18 @@ class UserEnvironment:
 
     def copy_shell_configs(self) -> bool:
         logger.info("Updating shell configuration files...")
+        # Only copy files that we expect to have.
+        files_to_copy = [".bashrc", ".profile"]
         source_dir = os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles")
         if not os.path.isdir(source_dir):
-            logger.warning(f"Source directory {source_dir} not found. Run setup_repos() first?")
+            logger.warning(f"Source directory {source_dir} not found. Skipping shell config update.")
             return False
         destination_dirs = [USER_HOME, "/root"]
         all_successful = True
-        files_to_copy = [".bashrc", ".profile", ".bash_aliases", ".bash_functions"]
         for file in files_to_copy:
             src = os.path.join(source_dir, file)
             if not os.path.isfile(src):
-                logger.warning(f"Source file {src} not found; skipping.")
+                logger.debug(f"Source file {src} not found; skipping.")
                 continue
             for dest_dir in destination_dirs:
                 dest = os.path.join(dest_dir, file)
@@ -637,7 +640,7 @@ class SecurityHardener:
                 f.write("Defaults timestamp_timeout=15\n")
                 f.write("Defaults requiretty\n")
             os.chmod(sudoers_file, 0o440)
-            logger.info(f"Created secure sudoers configuration for {USERNAME}.")
+            logger.info(f"Secure sudoers configuration created for {USERNAME}.")
             Utils.run_command(["visudo", "-c"], check=True)
             logger.info("Sudoers syntax verified.")
             return True
@@ -659,8 +662,8 @@ class SecurityHardener:
         except subprocess.CalledProcessError:
             logger.warning("Failed to reset UFW configuration.")
         for cmd, desc in [
-            ([ufw_cmd, "default", "deny", "incoming"], "default deny for incoming traffic"),
-            ([ufw_cmd, "default", "allow", "outgoing"], "default allow for outgoing traffic")
+            ([ufw_cmd, "default", "deny", "incoming"], "set default deny for incoming traffic"),
+            ([ufw_cmd, "default", "allow", "outgoing"], "set default allow for outgoing traffic")
         ]:
             try:
                 Utils.run_command(cmd)
@@ -772,9 +775,15 @@ logpath = /var/log/auth.log
             status = Utils.run_command(["systemctl", "is-active", "apparmor"],
                                        capture_output=True, text=True, check=False)
             if status.stdout.strip() == "active":
-                logger.info("AppArmor is active. Updating profiles...")
-                Utils.run_command(["aa-update-profiles"], check=False)
-                logger.info("AppArmor profiles updated.")
+                logger.info("AppArmor is active.")
+                if Utils.command_exists("aa-update-profiles"):
+                    try:
+                        Utils.run_command(["aa-update-profiles"], check=False)
+                        logger.info("AppArmor profiles updated.")
+                    except Exception as e:
+                        logger.warning(f"Failed to update AppArmor profiles: {e}")
+                else:
+                    logger.warning("aa-update-profiles command not found; skipping profile update.")
                 return True
             else:
                 logger.warning("AppArmor may not be running correctly.")
@@ -1280,11 +1289,8 @@ class SystemTuner:
             marker = "# Performance tuning settings for Ubuntu"
             if marker in content:
                 logger.info("Performance tuning settings already exist. Updating settings...")
-                parts = content.split(marker)
-                content = parts[0]
-                if len(parts) > 1 and "\n#" in parts[1]:
-                    next_section = parts[1].find("\n#")
-                    content += parts[1][next_section:]
+                # Remove existing tuning block
+                content = re.split(marker, content)[0]
             content += f"\n{marker}\n"
             for key, value in tuning_settings.items():
                 content += f"{key} = {value}\n"
@@ -1363,15 +1369,16 @@ class FinalChecker:
         try:
             with open("/proc/loadavg", "r") as f:
                 load = f.read().strip().split()[:3]
-                logger.info(f"Load averages: {', '.join(load)}")
-                health_data["load"] = {"1min": float(load[0]), "5min": float(load[1]), "15min": float(load[2])}
-                cpu_count = os.cpu_count() or 1
-                if float(load[1]) > cpu_count:
-                    logger.warning(f"High 5min load ({load[1]}) > CPU count ({cpu_count})")
+            logger.info(f"Load averages: {', '.join(load)}")
+            health_data["load"] = {"1min": float(load[0]), "5min": float(load[1]), "15min": float(load[2])}
+            cpu_count = os.cpu_count() or 1
+            if float(load[1]) > cpu_count:
+                logger.warning(f"High 5min load ({load[1]}) exceeds CPU count ({cpu_count})")
         except Exception as e:
             logger.warning(f"Failed to get load averages: {e}")
         try:
-            dmesg = subprocess.check_output(["dmesg", "--level=err,crit,alert,emerg"], text=True, stderr=subprocess.DEVNULL).strip()
+            dmesg = subprocess.check_output(["dmesg", "--level=err,crit,alert,emerg"],
+                                              text=True, stderr=subprocess.DEVNULL).strip()
             if dmesg:
                 logger.warning("Recent kernel errors detected:")
                 for line in dmesg.splitlines()[-5:]:
@@ -1383,9 +1390,10 @@ class FinalChecker:
         except Exception as e:
             logger.warning(f"Failed to check kernel errors: {e}")
         try:
-            updates = subprocess.check_output(["apt", "list", "--upgradable"], text=True, stderr=subprocess.DEVNULL).strip().splitlines()
+            updates = subprocess.check_output(["apt", "list", "--upgradable"],
+                                              text=True, stderr=subprocess.DEVNULL).strip().splitlines()
             security_updates = sum(1 for line in updates if "security" in line.lower())
-            total_updates = len(updates) - 1
+            total_updates = len(updates) - 1  # subtract header
             if total_updates > 0:
                 logger.info(f"Available updates: {total_updates} total, {security_updates} security")
                 if security_updates > 0:
@@ -1427,7 +1435,8 @@ class FinalChecker:
                 logger.warning(f"Failed to check port {port}: {e}")
                 all_correct = False
         try:
-            route = subprocess.check_output(["ip", "-o", "-4", "route", "show", "default"], text=True).strip()
+            route = subprocess.check_output(["ip", "-o", "-4", "route", "show", "default"],
+                                              text=True).strip()
             interface = route.split()[4]
             interface_ip = subprocess.check_output(["ip", "-o", "-4", "addr", "show", "dev", interface],
                                                    text=True).strip().split()[3].split('/')[0]
@@ -1489,7 +1498,8 @@ class FinalChecker:
                     logger.warning(f"Warning: 5min load average ({load_avg[1]}) exceeds CPU count ({cpu_count}).")
             services_to_check = ["ssh", "ufw", "fail2ban", "caddy", "docker", "tailscaled", "unattended-upgrades"]
             for service in services_to_check:
-                status = subprocess.run(["systemctl", "is-active", service], text=True, capture_output=True, check=False)
+                status = subprocess.run(["systemctl", "is-active", service],
+                                        text=True, capture_output=True, check=False)
                 status_str = status.stdout.strip()
                 if status_str == "active":
                     logger.info(f"{service}: active")
@@ -1506,33 +1516,17 @@ class FinalChecker:
                         all_passed = False
             except Exception:
                 logger.debug("Unable to check for security updates.")
-            if all_passed:
-                logger.info("All final checks passed successfully.")
-            else:
-                logger.warning("Some final checks failed. Please review logs for details.")
             return all_passed
         except Exception as e:
             logger.error(f"Error during final checks: {e}")
             return False
-
-    def prompt_reboot(self) -> None:
-        logger.info("Prompting for system reboot...")
-        answer = input(f"{NORD14}Would you like to reboot now? [y/N]: {NC}").strip().lower()
-        if answer == "y":
-            logger.info("Rebooting system now...")
-            try:
-                Utils.run_command(["shutdown", "-r", "now"])
-            except subprocess.CalledProcessError as e:
-                logger.warning(f"Failed to reboot system: {e}")
-        else:
-            logger.info("Reboot canceled. Please reboot later (e.g. with: sudo reboot).")
 
     def cleanup_system(self) -> bool:
         logger.info("Performing system cleanup...")
         success = True
         try:
             if Utils.command_exists("nala"):
-                Utils.run_command(["nala", "autoremove", "-y"])
+                Utils.run_command(["nala", "autoremove"])
             else:
                 Utils.run_command(["apt", "autoremove", "-y"])
             if Utils.command_exists("nala"):
@@ -1541,6 +1535,9 @@ class FinalChecker:
                 Utils.run_command(["apt", "clean"])
             try:
                 current = subprocess.check_output(["uname", "-r"], text=True).strip()
+                # Only remove kernels that are NOT the running kernel.
+                running_image = f"linux-image-{current}"
+                running_headers = f"linux-headers-{current}"
                 installed = subprocess.check_output(["dpkg", "--list", "linux-image-*", "linux-headers-*"],
                                                     text=True).strip().splitlines()
                 old_kernel_packages = []
@@ -1548,11 +1545,15 @@ class FinalChecker:
                     if line.startswith("ii"):
                         parts = line.split()
                         package = parts[1]
-                        version = parts[2]
-                        if (current in package and current in version) or "-generic" not in package:
+                        # Skip removal if the package matches the running kernel.
+                        if package == running_image or package == running_headers:
+                            continue
+                        # Only consider generic packages.
+                        if "generic" not in package:
                             continue
                         old_kernel_packages.append(package)
                 if len(old_kernel_packages) > 1:
+                    # Keep the most recent old kernel; remove others.
                     old_kernel_packages.sort()
                     to_remove = old_kernel_packages[:-1]
                     if to_remove:
@@ -1565,8 +1566,7 @@ class FinalChecker:
             if Utils.command_exists("journalctl"):
                 logger.info("Clearing systemd journal logs older than 7 days...")
                 Utils.run_command(["journalctl", "--vacuum-time=7d"])
-            tmp_dirs = ["/tmp", "/var/tmp"]
-            for tmp_dir in tmp_dirs:
+            for tmp_dir in ["/tmp", "/var/tmp"]:
                 logger.info(f"Cleaning {tmp_dir} directory...")
                 try:
                     Utils.run_command(["find", tmp_dir, "-type", "f", "-atime", "+7", "-not", "-path", "*/\\.*", "-delete"])
@@ -1587,6 +1587,18 @@ class FinalChecker:
         except Exception as e:
             logger.error(f"System cleanup failed: {e}")
             return False
+
+    def prompt_reboot(self) -> None:
+        logger.info("Prompting for system reboot...")
+        answer = input(f"{NORD14}Would you like to reboot now? [y/N]: {NC}").strip().lower()
+        if answer == "y":
+            logger.info("Rebooting system now...")
+            try:
+                Utils.run_command(["shutdown", "-r", "now"])
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Failed to reboot system: {e}")
+        else:
+            logger.info("Reboot canceled. Please reboot later (e.g. with: sudo reboot).")
 
 # ----------------------------
 # Cleanup Registration
