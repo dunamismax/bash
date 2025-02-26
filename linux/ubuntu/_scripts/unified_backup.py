@@ -10,18 +10,20 @@ Description:
 
   Each backup is stored in a separate repository within the same B2 bucket.
   All repositories are named with the hostname prefix for organization.
-  The script automatically initializes repositories as needed, forces unlocks before backup,
+  The script automatically checks repositories, forces unlocks before backup,
   and enforces retention policies.
 
 Usage:
   sudo ./unified_backup.py
 
-Author: Your Name | License: MIT | Version: 3.1.0
+Author: Your Name | License: MIT | Version: 3.2.0
 """
 
 import atexit
+import json
 import logging
 import os
+import re
 import shutil
 import signal
 import socket
@@ -29,13 +31,14 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 # ------------------------------------------------------------------------------
 # Environment Configuration (Modify these settings as needed)
 # ------------------------------------------------------------------------------
 # Backblaze B2 Backup Repository Credentials and Bucket
-B2_ACCOUNT_ID = "your_b2_account_id"
-B2_ACCOUNT_KEY = "your_b2_account_key"
+B2_ACCOUNT_ID = "12345678"
+B2_ACCOUNT_KEY = "12345678"
 B2_BUCKET = "sawyer-backups"
 
 # Determine the hostname to uniquely name the repositories
@@ -47,7 +50,7 @@ B2_REPO_VM = f"b2:{B2_BUCKET}:{HOSTNAME}/vm-backups"
 B2_REPO_PLEX = f"b2:{B2_BUCKET}:{HOSTNAME}/plex-media-server-backup"
 
 # Unified Restic Repository Password (use one strong, secure password everywhere)
-RESTIC_PASSWORD = "password"
+RESTIC_PASSWORD = "12345678"
 
 # Backup Source Directories and Exclusions
 # System Backup
@@ -115,6 +118,12 @@ RETENTION_DAYS = 7
 # Maximum age for a lock to be considered stale (in hours)
 STALE_LOCK_HOURS = 2
 
+# Maximum number of retries for operations
+MAX_RETRIES = 3
+
+# Delay between retries (in seconds)
+RETRY_DELAY_BASE = 5  # Will be multiplied by retry attempt number for backoff
+
 # Status tracking for reporting
 BACKUP_STATUS = {
     "system": {"status": "pending", "message": ""},
@@ -178,6 +187,11 @@ class NordColorFormatter(logging.Formatter):
 def setup_logging():
     """
     Set up logging with console and file handlers, using Nord color theme.
+    Sets up logging with console and file handlers using the Nord color theme.
+    Applies appropriate formatting and handles permissions for log files.
+
+    Returns:
+        logging.Logger: Configured logger instance
     """
     log_dir = os.path.dirname(LOG_FILE)
     if not os.path.isdir(log_dir):
@@ -203,14 +217,25 @@ def setup_logging():
     file_formatter = logging.Formatter(
         fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
 
     try:
+        # Create a new log file with a rotation suffix if it exceeds 10MB
+        log_path = Path(LOG_FILE)
+        if log_path.exists() and log_path.stat().st_size > 10 * 1024 * 1024:  # 10MB
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            backup_log = f"{LOG_FILE}.{timestamp}"
+            shutil.move(LOG_FILE, backup_log)
+            logging.info(f"Rotated previous log to {backup_log}")
+
+        file_handler = logging.FileHandler(LOG_FILE)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
+        # Set secure permissions
         os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        logger.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
+        logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
+        logger.warning("Continuing with console logging only")
 
     return logger
 
@@ -218,6 +243,9 @@ def setup_logging():
 def print_section(title: str):
     """
     Print a section header with Nord theme styling.
+
+    Args:
+        title (str): The title to display in the section header
     """
     if not DISABLE_COLORS:
         border = "─" * 60
@@ -239,30 +267,52 @@ def print_section(title: str):
 def signal_handler(signum, frame):
     """
     Handle termination signals gracefully.
+
+    Args:
+        signum (int): Signal number
+        frame: Current stack frame
     """
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
+    logging.error(f"Script interrupted by {sig_name}.")
+
+    # Do cleanup before exit
+    try:
+        cleanup()
+    except Exception as e:
+        logging.error(f"Error during cleanup after signal: {e}")
+
+    # Exit with appropriate code
     if signum == signal.SIGINT:
-        logging.error("Script interrupted by SIGINT (Ctrl+C).")
         sys.exit(130)
     elif signum == signal.SIGTERM:
-        logging.error("Script terminated by SIGTERM.")
         sys.exit(143)
     else:
-        logging.error(f"Script interrupted by signal {signum}.")
         sys.exit(128 + signum)
 
 
+# Register signal handlers for common termination signals
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGHUP, signal_handler)
 
 
 def cleanup():
     """
     Perform cleanup tasks before exit.
+    Prints a final status report and performs any necessary cleanup operations.
     """
     logging.info("Performing cleanup tasks before exit.")
-    # Print final status report if the script is exiting gracefully
+
+    # Print final status report if the script has started any operations
     if any(item["status"] != "pending" for item in BACKUP_STATUS.values()):
         print_status_report()
+
+    # You could add additional cleanup tasks here if needed
+    # For example, removing temporary files or releasing resources
 
 
 atexit.register(cleanup)
@@ -275,6 +325,10 @@ atexit.register(cleanup)
 def check_dependencies():
     """
     Check for required dependencies.
+    Verifies that all required external commands are available in the system PATH.
+
+    Raises:
+        SystemExit: If any required dependency is missing
     """
     dependencies = ["restic"]
     missing_deps = []
@@ -290,10 +344,27 @@ def check_dependencies():
     else:
         logging.debug("All required dependencies are installed.")
 
+    # Check restic version to ensure compatibility
+    try:
+        result = subprocess.run(
+            ["restic", "version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        version_output = result.stdout.strip()
+        logging.info(f"Using {version_output}")
+    except subprocess.CalledProcessError as e:
+        logging.warning(f"Could not determine restic version: {e}")
+
 
 def check_root():
     """
     Ensure the script is run with root privileges.
+
+    Raises:
+        SystemExit: If the script is not run as root
     """
     if os.geteuid() != 0:
         logging.error("This script must be run as root.")
@@ -307,7 +378,12 @@ def check_root():
 
 
 def run_restic(
-    repo: str, password: str, *args, check=True, capture_output=False, max_retries=3
+    repo: str,
+    password: str,
+    *args,
+    check=True,
+    capture_output=False,
+    max_retries=MAX_RETRIES,
 ):
     """
     Run a restic command with appropriate environment variables and retry logic.
@@ -322,6 +398,9 @@ def run_restic(
 
     Returns:
         subprocess.CompletedProcess: The command result if capture_output is True, else None
+
+    Raises:
+        subprocess.CalledProcessError: If the command fails and check=True
     """
     env = os.environ.copy()
     env["RESTIC_PASSWORD"] = password
@@ -340,6 +419,8 @@ def run_restic(
     logging.info(f"Running restic command: {' '.join(cmd_safe)}")
 
     retries = 0
+    last_error = None
+
     while retries <= max_retries:
         try:
             if capture_output:
@@ -355,8 +436,10 @@ def run_restic(
             else:
                 subprocess.run(cmd, check=check, env=env)
                 return None
+
         except subprocess.CalledProcessError as e:
-            error_msg = e.stderr if hasattr(e, "stderr") else str(e)
+            last_error = e
+            error_msg = e.stderr if hasattr(e, "stderr") and e.stderr else str(e)
 
             # Check for transient errors that we can retry
             transient_errors = [
@@ -366,17 +449,25 @@ def run_restic(
                 "connection refused",
                 "network error",
                 "429 Too Many Requests",
+                "500 Internal Server Error",
+                "503 Service Unavailable",
+                "temporarily unavailable",
             ]
 
-            is_transient = (
-                any(err in error_msg for err in transient_errors)
-                if error_msg
-                else False
+            is_transient = any(
+                err.lower() in error_msg.lower() for err in transient_errors
             )
+
+            # Special handling for init errors when repository already exists
+            if "init" in args and "already initialized" in error_msg:
+                logging.info("Repository is already initialized, continuing.")
+                return None
 
             if is_transient and retries < max_retries:
                 retries += 1
-                retry_delay = 5 * retries  # Exponential backoff
+                retry_delay = RETRY_DELAY_BASE * (
+                    2 ** (retries - 1)
+                )  # Exponential backoff
                 logging.warning(
                     f"Transient error detected, retrying in {retry_delay} seconds ({retries}/{max_retries})..."
                 )
@@ -387,50 +478,96 @@ def run_restic(
                     logging.error(f"Command failed after {retries} retries.")
                 raise e
 
+    # If we've exhausted retries, raise the last error
+    if last_error:
+        raise last_error
 
-def is_local_repo(repo: str) -> bool:
+    return None
+
+
+def is_repo_initialized(repo: str, password: str) -> bool:
     """
-    Determine if the repository is local (i.e., not a B2 repo).
+    Check if a repository is already initialized.
 
     Args:
         repo (str): The repository path to check
+        password (str): The repository password
 
     Returns:
-        bool: True if the repository is local, False otherwise
+        bool: True if the repository is initialized, False otherwise
     """
-    return not repo.startswith("b2:")
+    logging.info(f"Checking if repository '{repo}' is initialized...")
+
+    try:
+        # Using snapshots with --no-lock is a reliable way to check if a repo exists
+        run_restic(
+            repo, password, "snapshots", "--no-lock", "--json", capture_output=True
+        )
+        logging.info(f"Repository '{repo}' is initialized.")
+        return True
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr if hasattr(e, "stderr") else str(e)
+
+        # Check for specific error messages that indicate the repo is initialized but has other issues
+        if any(
+            msg in error_msg
+            for msg in [
+                "config is already initialized",
+                "already initialized",
+                "repository master key and config already initialized",
+            ]
+        ):
+            logging.info(f"Repository '{repo}' is initialized but had access issues.")
+            return True
+
+        logging.info(f"Repository '{repo}' is not initialized.")
+        return False
 
 
 def ensure_repo_initialized(repo: str, password: str):
     """
     Ensures that a restic repository is initialized.
-    For local repositories, check if the 'config' file exists.
-    For B2 repositories, attempt a snapshots command.
+    Checks if a repository exists first, and only initializes if needed.
 
     Args:
         repo (str): The repository path to check
         password (str): The repository password
+
+    Returns:
+        bool: True if the repository is ready to use
+
+    Raises:
+        RuntimeError: If repository initialization fails after retries
     """
     logging.info(f"Ensuring repository '{repo}' is initialized...")
 
-    if is_local_repo(repo):
-        config_path = os.path.join(repo, "config")
-        if os.path.exists(config_path):
-            logging.info(f"Repository '{repo}' already initialized.")
-            return
-        else:
-            logging.info(f"Repository '{repo}' not initialized. Initializing...")
-            run_restic(repo, password, "init")
-            logging.info(f"Repository '{repo}' successfully initialized.")
-    else:
-        try:
-            # Use --no-lock to prevent this check from creating a lock itself
-            run_restic(repo, password, "snapshots", "--no-lock", "--limit", "1")
-            logging.info(f"Repository '{repo}' already initialized.")
-        except subprocess.CalledProcessError:
-            logging.info(f"Repository '{repo}' not initialized. Initializing...")
-            run_restic(repo, password, "init")
-            logging.info(f"Repository '{repo}' successfully initialized.")
+    # First check if the repository is already initialized
+    if is_repo_initialized(repo, password):
+        logging.info(f"Repository '{repo}' is already initialized and accessible.")
+        return True
+
+    # If not initialized, try to initialize it
+    logging.info(
+        f"Repository '{repo}' not initialized or not accessible. Initializing..."
+    )
+
+    try:
+        run_restic(repo, password, "init")
+        logging.info(f"Repository '{repo}' successfully initialized.")
+        return True
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr if hasattr(e, "stderr") else str(e)
+
+        # Check if the error is because the repository is already initialized
+        if "already initialized" in error_msg:
+            logging.info(
+                f"Repository '{repo}' is already initialized (discovered during init)."
+            )
+            return True
+
+        # Otherwise, it's a real error
+        logging.error(f"Failed to initialize repository: {error_msg}")
+        raise RuntimeError(f"Failed to initialize repository: {error_msg}")
 
 
 def force_unlock_repo(repo: str, password: str):
@@ -445,13 +582,92 @@ def force_unlock_repo(repo: str, password: str):
         bool: True if successful, False otherwise
     """
     logging.warning(f"Forcing unlock of repository '{repo}'")
+
     try:
+        # First check if the repository is initialized
+        if not is_repo_initialized(repo, password):
+            logging.warning(
+                f"Cannot unlock repository '{repo}' as it is not initialized."
+            )
+            return False
+
+        # Try to unlock
         run_restic(repo, password, "unlock", "--remove-all")
         logging.info("Repository unlocked successfully.")
         return True
     except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to force unlock repository: {e}")
+        error_msg = e.stderr if hasattr(e, "stderr") else str(e)
+
+        # Ignore already unlocked errors
+        if "no locks to remove" in error_msg:
+            logging.info("Repository was already unlocked.")
+            return True
+
+        logging.error(f"Failed to force unlock repository: {error_msg}")
         return False
+
+
+def get_repo_stats(repo: str, password: str):
+    """
+    Get repository statistics including size, number of snapshots, etc.
+
+    Args:
+        repo (str): The repository path
+        password (str): The repository password
+
+    Returns:
+        dict: Repository statistics or empty dict if statistics cannot be retrieved
+    """
+    stats = {"snapshots": 0, "total_size": "unknown", "latest_snapshot": "never"}
+
+    if not is_repo_initialized(repo, password):
+        return stats
+
+    # Get snapshot count and dates
+    try:
+        result = run_restic(repo, password, "snapshots", "--json", capture_output=True)
+        if result and result.stdout:
+            snapshots = json.loads(result.stdout)
+            stats["snapshots"] = len(snapshots)
+
+            if snapshots:
+                # Sort by time and get the most recent
+                sorted_snapshots = sorted(
+                    snapshots, key=lambda x: x.get("time", ""), reverse=True
+                )
+                latest = sorted_snapshots[0]
+                stats["latest_snapshot"] = latest.get("time", "unknown")[
+                    :19
+                ]  # Truncate to date and time only
+    except Exception as e:
+        logging.warning(f"Could not get snapshot information: {e}")
+
+    # Get repository size
+    try:
+        result = run_restic(repo, password, "stats", "--json", capture_output=True)
+        if result and result.stdout:
+            repo_stats = json.loads(result.stdout)
+            total_size_bytes = repo_stats.get("total_size", 0)
+            # Convert to human-readable format
+            stats["total_size"] = format_size(total_size_bytes)
+    except Exception as e:
+        logging.warning(f"Could not get repository size information: {e}")
+
+    return stats
+
+
+def format_size(size_bytes):
+    """Convert bytes to human-readable format"""
+    if size_bytes == 0:
+        return "0 B"
+
+    size_names = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while size_bytes >= 1024 and i < len(size_names) - 1:
+        size_bytes /= 1024
+        i += 1
+
+    return f"{size_bytes:.2f} {size_names[i]}"
 
 
 # ------------------------------------------------------------------------------
@@ -460,7 +676,7 @@ def force_unlock_repo(repo: str, password: str):
 
 
 def backup_repo(
-    repo: str, password: str, source: str, excludes: list = None, task_name: str = None
+    repo: str, password: str, source, excludes: list = None, task_name: str = None
 ):
     """
     Perform backup to a repository, with force unlock.
@@ -471,6 +687,9 @@ def backup_repo(
         source (str or list): The source path(s) to backup
         excludes (list): Patterns to exclude from backup
         task_name (str): Name of the task for status tracking
+
+    Returns:
+        bool: True if the backup was successful, False otherwise
     """
     if excludes is None:
         excludes = []
@@ -490,14 +709,14 @@ def backup_repo(
         logging.error(error_msg)
         if task_name:
             BACKUP_STATUS[task_name] = {"status": "failed", "message": error_msg}
-        raise
+        return False
 
     # Always force unlock the repository
     if not force_unlock_repo(repo, password):
         error_msg = "Failed to unlock repository before backup"
         if task_name:
             BACKUP_STATUS[task_name] = {"status": "failed", "message": error_msg}
-        raise RuntimeError(error_msg)
+        return False
 
     # Prepare backup command
     cmd_args = ["backup"]
@@ -533,6 +752,8 @@ def backup_repo(
                     ):
                         logging.info(f"Summary: {line.strip()}")
 
+        return True
+
     except subprocess.CalledProcessError as e:
         elapsed_time = time.time() - start_time
         error_output = e.stderr if hasattr(e, "stderr") else "Unknown error"
@@ -545,14 +766,33 @@ def backup_repo(
             if force_unlock_repo(repo, password):
                 logging.info("Retrying backup after force unlock...")
                 try:
-                    run_restic(repo, password, *cmd_args)
-                    success_msg = f"Backup completed successfully after retry in {time.time() - start_time:.1f} seconds"
+                    result = run_restic(repo, password, *cmd_args, capture_output=True)
+                    total_time = time.time() - start_time
+                    success_msg = f"Backup completed successfully after retry in {total_time:.1f} seconds"
                     logging.info(success_msg)
+
                     if task_name:
                         BACKUP_STATUS[task_name] = {
                             "status": "success",
                             "message": success_msg,
                         }
+
+                    # Log summary info
+                    if result and result.stdout:
+                        for line in result.stdout.splitlines():
+                            if any(
+                                x in line
+                                for x in [
+                                    "Files:",
+                                    "Added to the",
+                                    "processed",
+                                    "snapshot",
+                                ]
+                            ):
+                                logging.info(f"Summary: {line.strip()}")
+
+                    return True
+
                 except Exception as retry_e:
                     error_msg = f"Backup failed after retry: {str(retry_e)}"
                     logging.error(error_msg)
@@ -561,7 +801,7 @@ def backup_repo(
                             "status": "failed",
                             "message": error_msg,
                         }
-                    raise
+                    return False
             else:
                 error_msg = f"Failed to unlock repository for retry after {elapsed_time:.1f} seconds"
                 logging.error(error_msg)
@@ -570,7 +810,7 @@ def backup_repo(
                         "status": "failed",
                         "message": error_msg,
                     }
-                raise RuntimeError(error_msg)
+                return False
         else:
             error_msg = (
                 f"Backup failed after {elapsed_time:.1f} seconds: {error_output}"
@@ -578,7 +818,7 @@ def backup_repo(
             logging.error(error_msg)
             if task_name:
                 BACKUP_STATUS[task_name] = {"status": "failed", "message": error_msg}
-            raise e
+            return False
 
 
 def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str = None):
@@ -591,6 +831,9 @@ def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str =
         password (str): The repository password
         retention_days (int): Days to keep snapshots
         task_name (str): Name of the task for status tracking
+
+    Returns:
+        bool: True if cleanup was successful, False otherwise
     """
     if task_name:
         BACKUP_STATUS[task_name] = {
@@ -600,20 +843,25 @@ def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str =
 
     # Ensure repository is initialized
     try:
-        ensure_repo_initialized(repo, password)
+        if not is_repo_initialized(repo, password):
+            msg = f"Repository '{repo}' is not initialized or accessible. Skipping cleanup."
+            logging.warning(msg)
+            if task_name:
+                BACKUP_STATUS[task_name] = {"status": "skipped", "message": msg}
+            return False
     except Exception as e:
-        error_msg = f"Failed to initialize repository for cleanup: {str(e)}"
+        error_msg = f"Failed to check repository status for cleanup: {str(e)}"
         logging.error(error_msg)
         if task_name:
             BACKUP_STATUS[task_name] = {"status": "failed", "message": error_msg}
-        raise
+        return False
 
     # Always force unlock the repository
     if not force_unlock_repo(repo, password):
         error_msg = "Failed to unlock repository before cleanup"
         if task_name:
             BACKUP_STATUS[task_name] = {"status": "failed", "message": error_msg}
-        raise RuntimeError(error_msg)
+        return False
 
     # Run cleanup command
     start_time = time.time()
@@ -642,6 +890,8 @@ def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str =
                 ):
                     logging.info(f"Cleanup: {line.strip()}")
 
+        return True
+
     except subprocess.CalledProcessError as e:
         elapsed_time = time.time() - start_time
         error_output = e.stderr if hasattr(e, "stderr") else "Unknown error"
@@ -654,21 +904,41 @@ def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str =
             if force_unlock_repo(repo, password):
                 logging.info("Retrying cleanup after force unlock...")
                 try:
-                    run_restic(
+                    result = run_restic(
                         repo,
                         password,
                         "forget",
                         "--prune",
                         "--keep-within",
                         f"{retention_days}d",
+                        capture_output=True,
                     )
-                    success_msg = f"Cleanup completed successfully after retry in {time.time() - start_time:.1f} seconds"
+                    total_time = time.time() - start_time
+                    success_msg = f"Cleanup completed successfully after retry in {total_time:.1f} seconds"
                     logging.info(success_msg)
+
                     if task_name:
                         BACKUP_STATUS[task_name] = {
                             "status": "success",
                             "message": success_msg,
                         }
+
+                    # Log summary info
+                    if result and result.stdout:
+                        for line in result.stdout.splitlines():
+                            if any(
+                                x in line
+                                for x in [
+                                    "snapshots",
+                                    "removing",
+                                    "remaining",
+                                    "deleted",
+                                ]
+                            ):
+                                logging.info(f"Cleanup: {line.strip()}")
+
+                    return True
+
                 except Exception as retry_e:
                     error_msg = f"Cleanup failed after retry: {str(retry_e)}"
                     logging.error(error_msg)
@@ -677,7 +947,7 @@ def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str =
                             "status": "failed",
                             "message": error_msg,
                         }
-                    raise
+                    return False
             else:
                 error_msg = f"Failed to unlock repository for cleanup retry after {elapsed_time:.1f} seconds"
                 logging.error(error_msg)
@@ -686,7 +956,7 @@ def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str =
                         "status": "failed",
                         "message": error_msg,
                     }
-                raise RuntimeError(error_msg)
+                return False
         else:
             error_msg = (
                 f"Cleanup failed after {elapsed_time:.1f} seconds: {error_output}"
@@ -694,7 +964,7 @@ def cleanup_repo(repo: str, password: str, retention_days: int, task_name: str =
             logging.error(error_msg)
             if task_name:
                 BACKUP_STATUS[task_name] = {"status": "failed", "message": error_msg}
-            raise e
+            return False
 
 
 # ------------------------------------------------------------------------------
@@ -713,6 +983,7 @@ def print_status_report():
         "failed": "✗" if not DISABLE_COLORS else "[FAILED]",
         "pending": "?" if not DISABLE_COLORS else "[PENDING]",
         "in_progress": "⋯" if not DISABLE_COLORS else "[IN PROGRESS]",
+        "skipped": "⏭" if not DISABLE_COLORS else "[SKIPPED]",
     }
 
     status_colors = {
@@ -720,6 +991,7 @@ def print_status_report():
         "failed": NORD11,  # Red
         "pending": NORD13,  # Yellow
         "in_progress": NORD8,  # Light blue
+        "skipped": NORD9,  # Light blue
     }
 
     # Map task names to human-readable descriptions
@@ -749,6 +1021,30 @@ def print_status_report():
             logging.info(f"{status_icon} {task_desc}: {status.upper()} - {message}")
 
 
+def print_repository_info():
+    """
+    Print information about all repositories.
+    """
+    print_section("Repository Information")
+
+    repos = [("System", B2_REPO_SYSTEM), ("VM", B2_REPO_VM), ("Plex", B2_REPO_PLEX)]
+
+    for name, repo in repos:
+        try:
+            stats = get_repo_stats(repo, RESTIC_PASSWORD)
+
+            if stats["snapshots"] > 0:
+                logging.info(f"{name} Repository: {repo}")
+                logging.info(f"  • Snapshots: {stats['snapshots']}")
+                logging.info(f"  • Size: {stats['total_size']}")
+                logging.info(f"  • Latest snapshot: {stats['latest_snapshot']}")
+            else:
+                logging.info(f"{name} Repository: {repo}")
+                logging.info(f"  • No snapshots found")
+        except Exception as e:
+            logging.warning(f"Could not get information for {name} repository: {e}")
+
+
 # ------------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
@@ -762,6 +1058,7 @@ def main():
     check_dependencies()
     check_root()
 
+    start_time = time.time()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("=" * 80)
     logging.info(f"UNIFIED BACKUP STARTED AT {now}")
@@ -771,6 +1068,10 @@ def main():
     print_section("System Information")
     logging.info(f"Hostname: {HOSTNAME}")
     logging.info(f"Running as user: {os.environ.get('USER', 'unknown')}")
+    logging.info(f"Python version: {sys.version.split()[0]}")
+
+    # Print repository information
+    print_repository_info()
 
     # Force unlock all repositories before starting
     print_section("Force Unlocking All Repositories")
@@ -780,61 +1081,59 @@ def main():
 
     # System Backup
     print_section("System Backup to Backblaze B2")
-    try:
-        backup_repo(
-            B2_REPO_SYSTEM, RESTIC_PASSWORD, SYSTEM_SOURCE, SYSTEM_EXCLUDES, "system"
-        )
-    except Exception as e:
-        logging.error(f"System backup failed: {e}")
-        # Continue with other backups
+    system_success = backup_repo(
+        B2_REPO_SYSTEM, RESTIC_PASSWORD, SYSTEM_SOURCE, SYSTEM_EXCLUDES, "system"
+    )
 
     # VM Backup
     print_section("VM Backup to Backblaze B2")
-    try:
-        backup_repo(B2_REPO_VM, RESTIC_PASSWORD, VM_SOURCES, VM_EXCLUDES, "vm")
-    except Exception as e:
-        logging.error(f"VM backup failed: {e}")
-        # Continue with other backups
+    vm_success = backup_repo(B2_REPO_VM, RESTIC_PASSWORD, VM_SOURCES, VM_EXCLUDES, "vm")
 
     # Plex Backup
     print_section("Plex Media Server Backup to Backblaze B2")
-    try:
-        backup_repo(B2_REPO_PLEX, RESTIC_PASSWORD, PLEX_SOURCES, PLEX_EXCLUDES, "plex")
-    except Exception as e:
-        logging.error(f"Plex backup failed: {e}")
-        # Continue with other backups
+    plex_success = backup_repo(
+        B2_REPO_PLEX, RESTIC_PASSWORD, PLEX_SOURCES, PLEX_EXCLUDES, "plex"
+    )
 
     # Clean up old snapshots for all repositories
     print_section("Cleaning Up Old Snapshots (Retention Policy)")
 
     # System Cleanup
     logging.info("Cleaning System Backup Repository")
-    try:
-        cleanup_repo(B2_REPO_SYSTEM, RESTIC_PASSWORD, RETENTION_DAYS, "cleanup_system")
-    except Exception as e:
-        logging.error(f"System backup cleanup failed: {e}")
+    cleanup_repo(B2_REPO_SYSTEM, RESTIC_PASSWORD, RETENTION_DAYS, "cleanup_system")
 
     # VM Cleanup
     logging.info("Cleaning VM Backup Repository")
-    try:
-        cleanup_repo(B2_REPO_VM, RESTIC_PASSWORD, RETENTION_DAYS, "cleanup_vm")
-    except Exception as e:
-        logging.error(f"VM backup cleanup failed: {e}")
+    cleanup_repo(B2_REPO_VM, RESTIC_PASSWORD, RETENTION_DAYS, "cleanup_vm")
 
     # Plex Cleanup
     logging.info("Cleaning Plex Backup Repository")
-    try:
-        cleanup_repo(B2_REPO_PLEX, RESTIC_PASSWORD, RETENTION_DAYS, "cleanup_plex")
-    except Exception as e:
-        logging.error(f"Plex backup cleanup failed: {e}")
+    cleanup_repo(B2_REPO_PLEX, RESTIC_PASSWORD, RETENTION_DAYS, "cleanup_plex")
 
     # Print final status report
     print_status_report()
 
     # Finish up
+    elapsed_time = time.time() - start_time
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("=" * 80)
-    logging.info(f"UNIFIED BACKUP COMPLETED AT {now}")
+    success_count = sum(
+        1 for item in BACKUP_STATUS.values() if item["status"] == "success"
+    )
+    failed_count = sum(
+        1 for item in BACKUP_STATUS.values() if item["status"] == "failed"
+    )
+    status_summary = (
+        "SUCCESS"
+        if failed_count == 0
+        else "PARTIAL SUCCESS"
+        if success_count > 0
+        else "FAILED"
+    )
+
+    logging.info(
+        f"UNIFIED BACKUP COMPLETED WITH {status_summary} AT {now} (took {elapsed_time:.1f} seconds)"
+    )
     logging.info("=" * 80)
 
 
