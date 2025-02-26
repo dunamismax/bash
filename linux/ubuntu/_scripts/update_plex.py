@@ -1,60 +1,51 @@
 #!/usr/bin/env python3
 """
-Script Name: deploy_scripts.py
+Script Name: update_plex.py
 --------------------------------------------------------
 Description:
-  Deploys user scripts from a source directory to a target directory
-  on Ubuntu Linux. Ensures proper ownership, performs a dry-run, and
-  sets executable permissions using a Nord-themed enhanced template for
-  robust error handling and logging.
+  A robust, visually engaging script that downloads and installs the
+  latest Plex Media Server package, fixes dependency issues, cleans up
+  temporary files, and restarts the Plex service.
 
 Usage:
-  sudo ./deploy_scripts.py
+  sudo ./update_plex.py
 
-Author: Your Name | License: MIT | Version: 3.0.0
+Author: Your Name | License: MIT | Version: 1.0.0
 """
 
 import atexit
 import logging
 import os
-import pwd
+import re
+import shutil
 import signal
 import subprocess
 import sys
-import shutil
 from datetime import datetime
 
 # ------------------------------------------------------------------------------
 # Environment Configuration (Modify these settings as needed)
 # ------------------------------------------------------------------------------
-LOG_FILE = "/var/log/deploy-scripts.log"
+PLEX_URL = (
+    "https://downloads.plex.tv/plex-media-server-new/"
+    "1.41.4.9463-630c9f557/debian/plexmediaserver_1.41.4.9463-630c9f557_amd64.deb"
+)
+TEMP_DEB = "/tmp/plexmediaserver.deb"
+LOG_FILE = "/var/log/update_plex.log"
 DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
-
-# Deployment-specific configuration
-SCRIPT_SOURCE = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
-SCRIPT_TARGET = "/home/sawyer/bin"
-EXPECTED_OWNER = "sawyer"
+DEFAULT_LOG_LEVEL = "INFO"
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
 NORD0 = "\033[38;2;46;52;64m"  # Polar Night (dark)
 NORD1 = "\033[38;2;59;66;82m"  # Polar Night (darker than NORD0)
-NORD2 = "\033[38;2;67;76;94m"  # Polar Night (darker than NORD1)
-NORD3 = "\033[38;2;76;86;106m"  # Polar Night (darker than NORD2)
-NORD4 = "\033[38;2;216;222;233m"  # Snow Storm (lightest)
-NORD5 = "\033[38;2;229;233;240m"  # Snow Storm (middle)
-NORD6 = "\033[38;2;236;239;244m"  # Snow Storm (darkest)
-NORD7 = "\033[38;2;143;188;187m"  # Frost
 NORD8 = "\033[38;2;136;192;208m"  # Frost (light blue)
 NORD9 = "\033[38;2;129;161;193m"  # Bluish (DEBUG)
 NORD10 = "\033[38;2;94;129;172m"  # Accent Blue (section headers)
 NORD11 = "\033[38;2;191;97;106m"  # Reddish (ERROR/CRITICAL)
-NORD12 = "\033[38;2;208;135;112m"  # Aurora (orange)
 NORD13 = "\033[38;2;235;203;139m"  # Yellowish (WARN)
 NORD14 = "\033[38;2;163;190;140m"  # Greenish (INFO)
-NORD15 = "\033[38;2;180;142;173m"  # Purple
 NC = "\033[0m"  # Reset / No Color
 
 # ------------------------------------------------------------------------------
@@ -99,8 +90,7 @@ def setup_logging():
 
     # Create logger
     logger = logging.getLogger()
-    numeric_level = getattr(logging, LOG_LEVEL, logging.INFO)
-    logger.setLevel(numeric_level)
+    logger.setLevel(logging.INFO)
 
     # Clear any existing handlers
     for handler in list(logger.handlers):
@@ -175,7 +165,12 @@ def cleanup():
     Perform cleanup tasks before exit.
     """
     logging.info("Performing cleanup tasks before exit.")
-    # Additional cleanup tasks can be added here
+    if os.path.exists(TEMP_DEB):
+        try:
+            os.remove(TEMP_DEB)
+            logging.info(f"Removed temporary file: {TEMP_DEB}")
+        except Exception as e:
+            logging.warning(f"Failed to remove temporary file {TEMP_DEB}: {e}")
 
 
 atexit.register(cleanup)
@@ -189,7 +184,7 @@ def check_dependencies():
     """
     Check for required dependencies.
     """
-    required_commands = ["rsync", "find"]
+    required_commands = ["curl", "dpkg", "apt-get", "systemctl"]
     for cmd in required_commands:
         if not shutil.which(cmd):
             logging.error(
@@ -212,69 +207,89 @@ def check_root():
         sys.exit(1)
 
 
-# ------------------------------------------------------------------------------
-# DEPLOYMENT FUNCTION
-# ------------------------------------------------------------------------------
-
-
-def deploy_user_scripts():
+def run_command(cmd, check=True, capture_output=False, text=True, **kwargs):
     """
-    Deploy user scripts from source to target directory.
-    """
-    print_section("Deploying User Scripts")
-    logging.info("Starting deployment of user scripts...")
+    Run a shell command and log its execution.
 
-    # 1. Check ownership of source directory.
+    Args:
+        cmd: Command to run (list or string)
+        check: Whether to check the return code
+        capture_output: Whether to capture the command output
+        text: Whether to return text output instead of bytes
+
+    Returns:
+        subprocess.CompletedProcess object
+    """
+    log_cmd = " ".join(cmd) if isinstance(cmd, list) else cmd
+    logging.debug(f"Executing command: {log_cmd}")
+
     try:
-        stat_info = os.stat(SCRIPT_SOURCE)
-        source_owner = pwd.getpwuid(stat_info.st_uid).pw_name
-    except Exception as e:
-        logging.error(f"Failed to stat source directory: {SCRIPT_SOURCE}. Error: {e}")
-        sys.exit(1)
-
-    if source_owner != EXPECTED_OWNER:
-        logging.error(
-            f"Invalid script source ownership for '{SCRIPT_SOURCE}' (Owner: {source_owner}). Expected: {EXPECTED_OWNER}"
+        result = subprocess.run(
+            cmd, check=check, capture_output=capture_output, text=text, **kwargs
         )
-        sys.exit(1)
-
-    # 2. Perform a dry-run deployment.
-    logging.info("Performing dry-run for script deployment...")
-    dry_run_cmd = [
-        "rsync",
-        "--dry-run",
-        "-ah",
-        "--delete",
-        f"{SCRIPT_SOURCE}/",
-        SCRIPT_TARGET,
-    ]
-    try:
-        result = subprocess.run(dry_run_cmd, check=True, capture_output=True, text=True)
-        logging.debug(f"Dry-run output: {result.stdout}")
+        return result
     except subprocess.CalledProcessError as e:
-        logging.error(f"Dry-run failed for script deployment: {e.stderr}")
-        sys.exit(1)
+        logging.error(f"Command failed with return code {e.returncode}: {log_cmd}")
+        if capture_output and e.stdout:
+            logging.debug(f"Command stdout: {e.stdout}")
+        if capture_output and e.stderr:
+            logging.error(f"Command stderr: {e.stderr}")
+        if check:
+            raise
+        return e
 
-    # 3. Actual deployment.
-    logging.info(f"Deploying scripts from '{SCRIPT_SOURCE}' to '{SCRIPT_TARGET}'...")
-    deploy_cmd = ["rsync", "-ah", "--delete", f"{SCRIPT_SOURCE}/", SCRIPT_TARGET]
+
+# ------------------------------------------------------------------------------
+# PLEX UPDATE FUNCTIONS
+# ------------------------------------------------------------------------------
+
+
+def download_plex():
+    """
+    Download the Plex Media Server package.
+    """
+    print_section("Downloading Plex Media Server Package")
+    logging.info("Downloading Plex Media Server package...")
     try:
-        result = subprocess.run(deploy_cmd, check=True, capture_output=True, text=True)
-        logging.debug(f"Deployment output: {result.stdout}")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Script deployment failed: {e.stderr}")
+        run_command(["curl", "-L", "-o", TEMP_DEB, PLEX_URL])
+        logging.info("Plex package downloaded successfully.")
+    except subprocess.CalledProcessError:
+        logging.error("Failed to download Plex package.")
         sys.exit(1)
 
-    # 4. Set executable permissions on deployed scripts.
-    logging.info("Setting executable permissions on deployed scripts...")
-    chmod_cmd = f"find {SCRIPT_TARGET} -type f -exec chmod 755 {{}} \\;"
+
+def install_plex():
+    """
+    Install the Plex Media Server package and handle any dependency issues.
+    """
+    print_section("Installing Plex Media Server")
+    logging.info("Installing Plex Media Server...")
     try:
-        subprocess.run(chmod_cmd, shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to update script permissions in '{SCRIPT_TARGET}': {e}")
-        sys.exit(1)
+        run_command(["dpkg", "-i", TEMP_DEB])
+    except subprocess.CalledProcessError:
+        logging.warning("Dependency issues detected. Attempting to fix dependencies...")
+        try:
+            run_command(["apt-get", "install", "-f", "-y"])
+            # Try installing again after fixing dependencies
+            run_command(["dpkg", "-i", TEMP_DEB])
+        except subprocess.CalledProcessError:
+            logging.error("Failed to resolve dependencies for Plex.")
+            sys.exit(1)
+    logging.info("Plex Media Server installed successfully.")
 
-    logging.info("Script deployment completed successfully.")
+
+def restart_plex():
+    """
+    Restart the Plex Media Server service.
+    """
+    print_section("Restarting Plex Media Server Service")
+    logging.info("Restarting Plex Media Server service...")
+    try:
+        run_command(["systemctl", "restart", "plexmediaserver"])
+        logging.info("Plex Media Server service restarted successfully.")
+    except subprocess.CalledProcessError:
+        logging.error("Failed to restart Plex Media Server service.")
+        sys.exit(1)
 
 
 # ------------------------------------------------------------------------------
@@ -286,41 +301,24 @@ def main():
     """
     Main entry point for the script.
     """
-    # Ensure the log directory exists before we attempt to log anything
-    log_dir = os.path.dirname(LOG_FILE)
-    if not os.path.isdir(log_dir):
-        try:
-            os.makedirs(log_dir, exist_ok=True)
-        except Exception as e:
-            print(f"Failed to create log directory: {log_dir}. Error: {e}")
-            sys.exit(1)
-
-    try:
-        with open(LOG_FILE, "a"):
-            pass
-        os.chmod(LOG_FILE, 0o600)
-    except Exception as e:
-        print(
-            f"Failed to create or set permissions on log file: {LOG_FILE}. Error: {e}"
-        )
-        sys.exit(1)
-
     setup_logging()
-    check_root()
     check_dependencies()
+    check_root()
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("=" * 80)
-    logging.info(f"SCRIPT STARTED AT {now}")
+    logging.info(f"PLEX UPDATE STARTED AT {now}")
     logging.info("=" * 80)
 
-    # Execute main function
-    deploy_user_scripts()
+    # Execute main functions
+    download_plex()
+    install_plex()
+    restart_plex()
 
     # Finish up
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("=" * 80)
-    logging.info(f"SCRIPT COMPLETED SUCCESSFULLY AT {now}")
+    logging.info(f"PLEX UPDATE COMPLETED SUCCESSFULLY AT {now}")
     logging.info("=" * 80)
 
 
@@ -328,9 +326,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as ex:
-        # This catches any unhandled exceptions
-        if "logging" in sys.modules:
-            logging.error(f"Unhandled exception: {ex}")
-        else:
-            print(f"Unhandled exception: {ex}")
+        logging.error(f"Unhandled exception: {ex}")
         sys.exit(1)

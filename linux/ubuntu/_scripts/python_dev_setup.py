@@ -1,39 +1,41 @@
 #!/usr/bin/env python3
 """
 Python Dev Setup Script
-------------------------
-Prepares an Ubuntu system with essential development tools:
-  - Installs/updates APT dependencies.
-  - Installs/updates pyenv (for managing Python versions).
-  - Installs the latest stable Python via pyenv.
+--------------------------------------------------------
+Description:
+  A robust, visually engaging script that prepares an Ubuntu system
+  with essential Python development tools:
+  - Installs/updates APT dependencies
+  - Installs/updates pyenv (for managing Python versions)
+  - Installs the latest stable Python via pyenv
+  - Installs uv package manager
+  - Installs ruff linter
 
-IMPORTANT: Do NOT run this script with sudo! It must be run as a standard non‑root user.
-Usage Examples:
-  ./python_dev_setup.py [-d|--debug] [-q|--quiet]
-  ./python_dev_setup.py -h|--help
+IMPORTANT: Do NOT run this script with sudo! It must be run as a standard non-root user.
 
-Author: Your Name | License: MIT | Version: 1.0
+Usage:
+  ./python_dev_setup.py
+
+Author: Your Name | License: MIT | Version: 2.0.0
 """
 
-import os
-import sys
-import subprocess
-import signal
 import atexit
+import logging
+import os
 import re
+import shutil
+import signal
+import subprocess
+import sys
 from datetime import datetime
 
 # ------------------------------------------------------------------------------
-# GLOBAL VARIABLES & CONFIGURATION
+# Environment Configuration (Modify these settings as needed)
 # ------------------------------------------------------------------------------
 HOME = os.path.expanduser("~")
-LOG_FILE = os.path.join(HOME, ".python_dev_setup.log")  # Log file in user's home directory
+LOG_FILE = os.path.join(HOME, ".python_dev_setup.log")
 DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 DEFAULT_LOG_LEVEL = "INFO"
-LOG_LEVEL = os.environ.get("LOG_LEVEL", DEFAULT_LOG_LEVEL)
-SCRIPT_NAME = os.path.basename(sys.argv[0])
-SCRIPT_DIR = os.path.dirname(os.path.realpath(sys.argv[0]))
-QUIET_MODE = False  # When true, suppress console output
 
 # pyenv configuration
 PYENV_ROOT = os.path.join(HOME, ".pyenv")
@@ -41,323 +43,464 @@ PYENV_ROOT = os.path.join(HOME, ".pyenv")
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-NORD9  = '\033[38;2;129;161;193m'   # Bluish (DEBUG)
-NORD10 = '\033[38;2;94;129;172m'    # Accent Blue (section headers)
-NORD11 = '\033[38;2;191;97;106m'    # Reddish (ERROR/CRITICAL)
-NORD13 = '\033[38;2;235;203;139m'   # Yellowish (WARN)
-NORD14 = '\033[38;2;163;190;140m'   # Greenish (INFO)
-NC     = '\033[0m'                 # Reset / No Color
+NORD0 = "\033[38;2;46;52;64m"  # Polar Night (dark)
+NORD1 = "\033[38;2;59;66;82m"  # Polar Night (darker than NORD0)
+NORD8 = "\033[38;2;136;192;208m"  # Frost (light blue)
+NORD9 = "\033[38;2;129;161;193m"  # Bluish (DEBUG)
+NORD10 = "\033[38;2;94;129;172m"  # Accent Blue (section headers)
+NORD11 = "\033[38;2;191;97;106m"  # Reddish (ERROR/CRITICAL)
+NORD13 = "\033[38;2;235;203;139m"  # Yellowish (WARN)
+NORD14 = "\033[38;2;163;190;140m"  # Greenish (INFO)
+NC = "\033[0m"  # Reset / No Color
 
 # ------------------------------------------------------------------------------
-# LOG LEVEL CONVERSION FUNCTION
+# CUSTOM LOGGING
 # ------------------------------------------------------------------------------
-def get_log_level_num(level: str) -> int:
-    level = level.upper()
-    if level in ("VERBOSE", "V"):
-        return 0
-    elif level in ("DEBUG", "D"):
-        return 1
-    elif level in ("INFO", "I"):
-        return 2
-    elif level in ("WARN", "WARNING", "W"):
-        return 3
-    elif level in ("ERROR", "E"):
-        return 4
-    elif level in ("CRITICAL", "C"):
-        return 5
-    else:
-        return 2  # default to INFO if unknown
 
-# ------------------------------------------------------------------------------
-# LOGGING FUNCTION
-# ------------------------------------------------------------------------------
-def log(level: str, message: str):
-    global QUIET_MODE
-    upper_level = level.upper()
-    msg_level = get_log_level_num(upper_level)
-    current_level = get_log_level_num(LOG_LEVEL)
-    if msg_level < current_level:
-        return
 
-    color = NC
-    if not DISABLE_COLORS:
-        if upper_level == "DEBUG":
-            color = NORD9
-        elif upper_level == "INFO":
-            color = NORD14
-        elif upper_level in ("WARN", "WARNING"):
-            color = NORD13
-        elif upper_level in ("ERROR", "CRITICAL"):
-            color = NORD11
+class NordColorFormatter(logging.Formatter):
+    """
+    A custom formatter that applies Nord color theme to log messages.
+    """
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = f"[{timestamp}] [{upper_level}] {message}"
+    def __init__(self, fmt=None, datefmt=None, use_colors=True):
+        super().__init__(fmt, datefmt)
+        self.use_colors = use_colors and not DISABLE_COLORS
 
-    # Append plain log entry to log file (without color codes)
+    def format(self, record):
+        levelname = record.levelname
+        msg = super().format(record)
+
+        if not self.use_colors:
+            return msg
+
+        if levelname == "DEBUG":
+            return f"{NORD9}{msg}{NC}"
+        elif levelname == "INFO":
+            return f"{NORD14}{msg}{NC}"
+        elif levelname == "WARNING":
+            return f"{NORD13}{msg}{NC}"
+        elif levelname in ("ERROR", "CRITICAL"):
+            return f"{NORD11}{msg}{NC}"
+        return msg
+
+
+def setup_logging():
+    """
+    Set up logging with console and file handlers, using Nord color theme.
+    """
+    log_dir = os.path.dirname(LOG_FILE)
+    if not os.path.exists(log_dir) and log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+
+    # Create logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Clear any existing handlers
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+
+    # Console handler with colors
+    console_formatter = NordColorFormatter(
+        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+
+    # File handler (no colors in file)
+    file_formatter = logging.Formatter(
+        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    file_handler = logging.FileHandler(LOG_FILE)
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
     try:
-        with open(LOG_FILE, "a") as f:
-            f.write(log_entry + "\n")
+        os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        sys.stderr.write(f"Failed to write to log file: {e}\n")
+        logger.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
 
-    # Print colorized log entry to stderr if not in quiet mode
-    if not QUIET_MODE:
-        sys.stderr.write(f"{color}{log_entry}{NC}\n")
+    return logger
+
+
+def print_section(title: str):
+    """
+    Print a section header with Nord theme styling.
+    """
+    if not DISABLE_COLORS:
+        border = "─" * 60
+        logging.info(f"{NORD10}{border}{NC}")
+        logging.info(f"{NORD10}  {title}{NC}")
+        logging.info(f"{NORD10}{border}{NC}")
+    else:
+        border = "─" * 60
+        logging.info(border)
+        logging.info(f"  {title}")
+        logging.info(border)
+
 
 # ------------------------------------------------------------------------------
-# ERROR HANDLING & CLEANUP FUNCTIONS
+# SIGNAL HANDLING & CLEANUP
 # ------------------------------------------------------------------------------
-def handle_error(error_message="An unknown error occurred", exit_code=1, lineno=None, func="main"):
-    lineno = lineno if lineno is not None else sys._getframe().f_lineno
-    log("ERROR", f"{error_message} (Exit Code: {exit_code})")
-    log("ERROR", f"Error in function '{func}' at line {lineno}.")
-    sys.stderr.write(f"{NORD11}ERROR: {error_message} (Exit Code: {exit_code}){NC}\n")
-    sys.exit(exit_code)
 
-def cleanup():
-    log("INFO", "Performing cleanup tasks before exit.")
-    # Insert any necessary cleanup tasks here
-
-atexit.register(cleanup)
 
 def signal_handler(signum, frame):
+    """
+    Handle termination signals gracefully.
+    """
     if signum == signal.SIGINT:
-        handle_error("Script interrupted by user.", 130, func="signal_handler")
+        logging.error("Script interrupted by SIGINT (Ctrl+C).")
+        sys.exit(130)
     elif signum == signal.SIGTERM:
-        handle_error("Script terminated.", 143, func="signal_handler")
+        logging.error("Script terminated by SIGTERM.")
+        sys.exit(143)
+    else:
+        logging.error(f"Script interrupted by signal {signum}.")
+        sys.exit(128 + signum)
+
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
+
+def cleanup():
+    """
+    Perform cleanup tasks before exit.
+    """
+    logging.info("Performing cleanup tasks before exit.")
+    # Additional cleanup tasks can be added here
+
+
+atexit.register(cleanup)
+
+# ------------------------------------------------------------------------------
+# DEPENDENCY CHECKING
+# ------------------------------------------------------------------------------
+
+
+def check_dependencies():
+    """
+    Check for required dependencies.
+    """
+    required_commands = ["curl", "git"]
+    for cmd in required_commands:
+        if not shutil.which(cmd):
+            logging.error(
+                f"The '{cmd}' command is not found in your PATH. Please install it and try again."
+            )
+            sys.exit(1)
+
+
 # ------------------------------------------------------------------------------
 # HELPER & UTILITY FUNCTIONS
 # ------------------------------------------------------------------------------
+
+
 def check_non_root():
-    # Ensure the script is run as a non-root user.
+    """
+    Ensure the script is run as a non-root user.
+    """
     if os.geteuid() == 0:
-        handle_error("Do NOT run this script as root. Please run as your normal user.")
+        logging.error(
+            "This script must be run as a non-root user. Please do not use sudo."
+        )
+        sys.exit(1)
 
-def enable_debug():
-    global LOG_LEVEL
-    LOG_LEVEL = "DEBUG"
-    log("DEBUG", "Debug mode enabled: Verbose logging activated.")
 
-def enable_quiet_mode():
-    global QUIET_MODE
-    QUIET_MODE = True
-    log("INFO", "Quiet mode enabled: Console output suppressed.")
+def run_command(command, check=True, capture_output=False, shell=False, cwd=None):
+    """
+    Run a shell command with proper error handling.
 
-def show_help():
-    help_text = f"""Usage: {SCRIPT_NAME} [OPTIONS]
+    Args:
+        command: Command to run (list or string)
+        check: Whether to check for non-zero exit code
+        capture_output: Whether to capture command output
+        shell: Whether to run command in shell
+        cwd: Directory to run command in
 
-Description:
-  Prepares an Ubuntu system with essential development tools,
-  installs/updates pyenv, and installs the latest stable Python.
-  IMPORTANT: Do NOT run this script with sudo.
+    Returns:
+        CompletedProcess instance
 
-Options:
-  -d, --debug   Enable debug (verbose) logging.
-  -q, --quiet   Suppress console output.
-  -h, --help    Show this help message and exit.
+    Raises:
+        SystemExit on command failure if check=True
+    """
+    try:
+        result = subprocess.run(
+            command,
+            check=check,
+            capture_output=capture_output,
+            text=capture_output,
+            shell=shell,
+            cwd=cwd,
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        cmd_str = command if isinstance(command, str) else " ".join(command)
+        logging.error(f"Command failed: {cmd_str}")
+        logging.error(f"Exit code: {e.returncode}")
+        if capture_output and e.stderr:
+            logging.error(f"Error output: {e.stderr}")
+        if check:
+            sys.exit(1)
+        raise
 
-Examples:
-  {SCRIPT_NAME} --debug
-  {SCRIPT_NAME} --quiet
-  {SCRIPT_NAME} -h
-"""
-    print(help_text)
-
-def parse_args(args):
-    # A simple manual parser for command‑line options.
-    while args:
-        arg = args.pop(0)
-        if arg in ("-d", "--debug"):
-            enable_debug()
-        elif arg in ("-q", "--quiet"):
-            enable_quiet_mode()
-        elif arg in ("-h", "--help"):
-            show_help()
-            sys.exit(0)
-        else:
-            log("WARN", f"Unknown option: {arg}")
 
 # ------------------------------------------------------------------------------
-# FUNCTION: Install APT-based Dependencies (using sudo where required)
+# APT DEPENDENCIES INSTALLATION
 # ------------------------------------------------------------------------------
+
+
 def install_apt_dependencies():
-    print_section("APT Dependencies Installation")
-    log("INFO", "Refreshing package repositories...")
-    try:
-        subprocess.run(["sudo", "apt-get", "update", "-qq"], check=True)
-    except subprocess.CalledProcessError:
-        handle_error("Failed to refresh package repositories.")
+    """
+    Install required APT dependencies.
+    """
+    print_section("Installing APT Dependencies")
 
-    log("INFO", "Upgrading existing packages...")
-    try:
-        subprocess.run(["sudo", "apt-get", "upgrade", "-y"], check=True)
-    except subprocess.CalledProcessError:
-        handle_error("Failed to upgrade packages.")
+    logging.info("Refreshing package repositories...")
+    run_command(["sudo", "apt-get", "update", "-qq"])
 
-    log("INFO", "Installing required dependencies...")
-    apt_install_cmd = [
-        "sudo", "apt-get", "install", "-y", "build-essential", "git", "curl",
-        "wget", "vim", "tmux", "unzip", "zip", "ca-certificates",
-        "libssl-dev", "libffi-dev", "zlib1g-dev", "libbz2-dev", "libreadline-dev",
-        "libsqlite3-dev", "libncurses5-dev", "libgdbm-dev", "libnss3-dev",
-        "liblzma-dev", "xz-utils", "libxml2-dev", "libxmlsec1-dev", "tk-dev",
-        "llvm", "gnupg", "lsb-release", "jq"
+    logging.info("Upgrading existing packages...")
+    run_command(["sudo", "apt-get", "upgrade", "-y"])
+
+    logging.info("Installing required dependencies...")
+    apt_packages = [
+        "build-essential",
+        "git",
+        "curl",
+        "wget",
+        "vim",
+        "tmux",
+        "unzip",
+        "zip",
+        "ca-certificates",
+        "libssl-dev",
+        "libffi-dev",
+        "zlib1g-dev",
+        "libbz2-dev",
+        "libreadline-dev",
+        "libsqlite3-dev",
+        "libncurses5-dev",
+        "libgdbm-dev",
+        "libnss3-dev",
+        "liblzma-dev",
+        "xz-utils",
+        "libxml2-dev",
+        "libxmlsec1-dev",
+        "tk-dev",
+        "llvm",
+        "gnupg",
+        "lsb-release",
+        "jq",
     ]
-    try:
-        subprocess.run(apt_install_cmd, check=True)
-    except subprocess.CalledProcessError:
-        handle_error("Failed to install required dependencies.")
+    run_command(["sudo", "apt-get", "install", "-y"] + apt_packages)
 
-    log("INFO", "Cleaning up package caches...")
-    try:
-        subprocess.run(["sudo", "apt-get", "clean"], check=True)
-    except subprocess.CalledProcessError:
-        log("WARN", "Failed to clean package caches.")
+    logging.info("Cleaning up package caches...")
+    run_command(["sudo", "apt-get", "clean"])
+
 
 # ------------------------------------------------------------------------------
-# FUNCTION: Install or Update pyenv
+# PYENV INSTALLATION
 # ------------------------------------------------------------------------------
+
+
 def install_or_update_pyenv():
-    print_section("pyenv Installation/Update")
-    if not os.path.isdir(PYENV_ROOT):
-        log("INFO", "pyenv not found. Installing pyenv...")
-        try:
-            subprocess.run(["git", "clone", "https://github.com/pyenv/pyenv.git", PYENV_ROOT], check=True)
-        except subprocess.CalledProcessError:
-            handle_error("Failed to clone pyenv.")
+    """
+    Install or update pyenv for Python version management.
+    """
+    print_section("Installing/Updating pyenv")
 
+    if not os.path.isdir(PYENV_ROOT):
+        logging.info("pyenv not found. Installing pyenv...")
+        run_command(["git", "clone", "https://github.com/pyenv/pyenv.git", PYENV_ROOT])
+
+        # Add pyenv to bashrc if not already present
         bashrc = os.path.join(HOME, ".bashrc")
         try:
             with open(bashrc, "r") as f:
                 content = f.read()
         except Exception:
             content = ""
+
         if "export PYENV_ROOT" not in content:
-            log("INFO", "Adding pyenv initialization to ~/.bashrc...")
+            logging.info("Adding pyenv initialization to ~/.bashrc...")
             init_block = (
                 "\n# >>> pyenv initialization >>>\n"
                 'export PYENV_ROOT="$HOME/.pyenv"\n'
                 'export PATH="$PYENV_ROOT/bin:$PATH"\n'
-                'if command -v pyenv 1>/dev/null 2>&1; then\n'
+                "if command -v pyenv 1>/dev/null 2>&1; then\n"
                 '    eval "$(pyenv init -)"\n'
-                'fi\n'
+                "fi\n"
                 "# <<< pyenv initialization <<<\n"
             )
             try:
                 with open(bashrc, "a") as f:
                     f.write(init_block)
+                logging.info("Successfully updated ~/.bashrc with pyenv initialization")
             except Exception as e:
-                log("WARN", f"Failed to update ~/.bashrc: {e}")
+                logging.warning(f"Failed to update ~/.bashrc: {e}")
     else:
-        log("INFO", "pyenv is already installed. Updating pyenv...")
-        try:
-            subprocess.run(["git", "pull", "--ff-only"], cwd=PYENV_ROOT, check=True)
-        except subprocess.CalledProcessError:
-            handle_error("Failed to update pyenv.")
+        logging.info("pyenv is already installed. Updating pyenv...")
+        run_command(["git", "pull", "--ff-only"], cwd=PYENV_ROOT)
 
-    # Ensure pyenv is available in this session.
+    # Ensure pyenv is available in this session
     os.environ["PYENV_ROOT"] = PYENV_ROOT
-    os.environ["PATH"] = os.path.join(PYENV_ROOT, "bin") + os.pathsep + os.environ.get("PATH", "")
+    os.environ["PATH"] = (
+        os.path.join(PYENV_ROOT, "bin") + os.pathsep + os.environ.get("PATH", "")
+    )
+
 
 # ------------------------------------------------------------------------------
-# FUNCTION: Install the Latest Stable Python via pyenv
+# PYTHON INSTALLATION
 # ------------------------------------------------------------------------------
-def install_latest_python() -> bool:
-    print_section("Python Installation via pyenv")
-    log("INFO", "Searching for the latest stable Python 3.x version via pyenv...")
-    try:
-        result = subprocess.run(["pyenv", "install", "-l"], capture_output=True, text=True, check=True)
-        lines = result.stdout.splitlines()
-    except subprocess.CalledProcessError:
-        handle_error("Failed to determine available Python versions from pyenv.")
 
+
+def install_latest_python():
+    """
+    Install the latest stable Python version via pyenv.
+    """
+    print_section("Installing Latest Python via pyenv")
+
+    logging.info("Searching for the latest stable Python 3.x version...")
+    result = run_command(["pyenv", "install", "-l"], capture_output=True)
+    lines = result.stdout.splitlines()
+
+    # Find the latest Python 3 version
     latest_py3 = None
     pattern = re.compile(r"^\s*(3\.\d+\.\d+)$")
     for line in lines:
         match = pattern.match(line)
         if match:
-            latest_py3 = match.group(1)  # the last matching version
-    if not latest_py3:
-        handle_error("Could not determine the latest Python 3.x version from pyenv.")
+            latest_py3 = match.group(1)  # The last matching version will be stored
 
+    if not latest_py3:
+        logging.error("Could not determine the latest Python 3.x version from pyenv.")
+        sys.exit(1)
+
+    # Check current Python version
     try:
-        result = subprocess.run(["pyenv", "global"], capture_output=True, text=True)
+        result = run_command(["pyenv", "global"], capture_output=True)
         current_py3 = result.stdout.strip()
     except Exception:
         current_py3 = ""
 
-    log("INFO", f"Latest Python 3.x version available: {latest_py3}")
-    log("INFO", f"Currently active pyenv Python version: {current_py3 if current_py3 else 'None'}")
+    logging.info(f"Latest Python 3.x version available: {latest_py3}")
+    logging.info(
+        f"Currently active pyenv Python version: {current_py3 if current_py3 else 'None'}"
+    )
 
-    new_python_installed = False
+    # Install if needed
     if current_py3 != latest_py3:
         try:
-            result = subprocess.run(["pyenv", "versions", "--bare"], capture_output=True, text=True, check=True)
+            result = run_command(["pyenv", "versions", "--bare"], capture_output=True)
             versions = result.stdout.splitlines()
-        except subprocess.CalledProcessError:
+        except Exception:
             versions = []
-        if latest_py3 not in versions:
-            log("INFO", f"Installing Python {latest_py3} via pyenv...")
-            try:
-                subprocess.run(["pyenv", "install", latest_py3], check=True)
-            except subprocess.CalledProcessError:
-                handle_error(f"Failed to install Python {latest_py3}.")
-        log("INFO", f"Setting Python {latest_py3} as the global version...")
-        try:
-            subprocess.run(["pyenv", "global", latest_py3], check=True)
-        except subprocess.CalledProcessError:
-            handle_error(f"Failed to set Python {latest_py3} as global.")
-        new_python_installed = True
-    else:
-        log("INFO", f"Python {latest_py3} is already installed and set as global.")
 
-    # Refresh shell environment (if needed)
+        if latest_py3 not in versions:
+            logging.info(f"Installing Python {latest_py3} via pyenv...")
+            run_command(["pyenv", "install", latest_py3])
+
+        logging.info(f"Setting Python {latest_py3} as the global version...")
+        run_command(["pyenv", "global", latest_py3])
+        logging.info(f"Successfully installed and configured Python {latest_py3}")
+    else:
+        logging.info(f"Python {latest_py3} is already installed and set as global.")
+
+    # Refresh shell environment
     try:
-        subprocess.run(["pyenv", "init", "-"], check=True)
-    except subprocess.CalledProcessError:
+        run_command(["pyenv", "init", "-"])
+    except Exception:
         pass
 
-    return new_python_installed
 
 # ------------------------------------------------------------------------------
-# Print a styled section header using Nord accent colors
+# UV INSTALLATION
 # ------------------------------------------------------------------------------
-def print_section(title: str):
-    border = "─" * 60
-    log("INFO", f"{NORD10}{border}{NC}")
-    log("INFO", f"{NORD10}  {title}{NC}")
-    log("INFO", f"{NORD10}{border}{NC}")
+
+
+def install_uv():
+    """
+    Install the uv package manager.
+    """
+    print_section("Installing UV Package Manager")
+
+    logging.info("Downloading and installing uv...")
+    run_command("curl -LsSf https://astral.sh/uv/install.sh | sh", shell=True)
+    logging.info("UV package manager installation completed.")
+
+
+# ------------------------------------------------------------------------------
+# RUFF INSTALLATION
+# ------------------------------------------------------------------------------
+
+
+def install_ruff():
+    """
+    Install the ruff linter.
+    """
+    print_section("Installing Ruff Linter")
+
+    logging.info("Downloading and installing ruff...")
+    run_command("curl -LsSf https://astral.sh/ruff/install.sh | sh", shell=True)
+    logging.info("Ruff linter installation completed.")
+
 
 # ------------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
+
+
 def main():
-    parse_args(sys.argv[1:])
+    """
+    Main entry point for the script.
+    """
+    setup_logging()
+    check_dependencies()
     check_non_root()
 
-    log("INFO", "Starting Ubuntu Python setup script...")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logging.info("=" * 80)
+    logging.info(f"PYTHON DEV SETUP STARTED AT {now}")
+    logging.info("=" * 80)
 
-    # 1. Install APT-based dependencies.
+    # Install APT dependencies
     install_apt_dependencies()
 
-    # 2. Install or update pyenv.
+    # Install or update pyenv
     install_or_update_pyenv()
 
-    # 3. Install the latest Python via pyenv (if needed).
-    new_python_installed = install_latest_python()
+    # Install the latest Python version
+    install_latest_python()
 
-    log("INFO", "=================================================")
-    log("INFO", " SUCCESS! Your system is now configured with:")
-    log("INFO", "   - The latest stable Python installed via pyenv")
-    log("INFO", "=================================================")
-    log("INFO", "Happy coding!")
+    # Install uv package manager
+    install_uv()
+
+    # Install ruff linter
+    install_ruff()
+
+    # Finish up
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logging.info("=" * 80)
+    logging.info(f"PYTHON DEV SETUP COMPLETED SUCCESSFULLY AT {now}")
+    logging.info("=" * 80)
+
+    logging.info("Your system is now configured with:")
+    logging.info("  - Essential development packages")
+    logging.info("  - The latest stable Python installed via pyenv")
+    logging.info("  - UV package manager for Python dependencies")
+    logging.info("  - Ruff linter for code quality")
+    logging.info("")
+    logging.info("NOTE: To apply pyenv changes to your current shell, run:")
+    logging.info("  source ~/.bashrc")
+    logging.info("")
+    logging.info("Happy coding!")
+
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:
-        handle_error(f"Unhandled exception: {e}", exit_code=1, func="main")
+    except Exception as ex:
+        logging.error(f"Unhandled exception: {ex}")
+        sys.exit(1)

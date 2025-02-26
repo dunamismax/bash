@@ -1,259 +1,391 @@
 #!/usr/bin/env python3
 """
-Universal Downloader Tool
--------------------------
-Advanced auto-download tool that lets the user choose between downloading
-with wget or yt-dlp on Ubuntu.
+Script Name: universal_downloader.py
+--------------------------------------------------------
+Description:
+  A robust universal downloader tool that lets the user choose between
+  downloading with wget or yt-dlp on Ubuntu.
 
-For yt-dlp:
-  - Prompts for a YouTube (video/playlist) link and a target download folder,
-    creates it if needed, and downloads the media in highest quality,
-    merging audio and video into an mp4 via ffmpeg.
-For wget:
-  - Downloads the file into the specified directory.
+  For yt-dlp:
+    - Prompts for a YouTube (video/playlist) link and a target download folder,
+      creates it if needed, and downloads the media in highest quality,
+      merging audio and video into an mp4 via ffmpeg.
+  For wget:
+    - Downloads the file into the specified directory.
 
-Additional features include:
-  - Command-line options for non-interactive use.
-  - Dry-run mode to simulate actions.
-  - Verbose and quiet logging.
-  - Automatic installation of missing dependencies via apt.
+Usage:
+  sudo ./universal_downloader.py
 
-Author: Your Name | License: MIT | Version: 2.2
+Author: YourName | License: MIT | Version: 3.0.0
 """
 
-import os
-import sys
-import subprocess
-import argparse
-import signal
 import atexit
-import time
+import logging
+import os
+import shutil
+import signal
+import subprocess
+import sys
 from datetime import datetime
 
 # ------------------------------------------------------------------------------
-# GLOBAL VARIABLES & CONFIGURATION
+# Environment Configuration (Modify these settings as needed)
 # ------------------------------------------------------------------------------
-LOG_FILE = "/var/log/media_downloader.log"
+LOG_FILE = "/var/log/universal_downloader.log"
 DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 DEFAULT_LOG_LEVEL = "INFO"
-LOG_LEVEL = DEFAULT_LOG_LEVEL
-QUIET_MODE = False
-DRY_RUN = False
 
 # ------------------------------------------------------------------------------
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
-NORD8  = '\033[38;2;136;192;208m'  # Accent (for banner)
-NORD9  = '\033[38;2;129;161;193m'  # Blue (DEBUG)
-NORD11 = '\033[38;2;191;97;106m'   # Red (ERROR)
-NORD13 = '\033[38;2;235;203;139m'  # Yellow (WARN)
-NORD14 = '\033[38;2;163;190;140m'  # Green (INFO)
-NC     = '\033[0m'                # Reset / No Color
+NORD0 = "\033[38;2;46;52;64m"  # Polar Night (dark)
+NORD1 = "\033[38;2;59;66;82m"  # Polar Night (darker than NORD0)
+NORD8 = "\033[38;2;136;192;208m"  # Frost (light blue)
+NORD9 = "\033[38;2;129;161;193m"  # Bluish (DEBUG)
+NORD10 = "\033[38;2;94;129;172m"  # Accent Blue (section headers)
+NORD11 = "\033[38;2;191;97;106m"  # Reddish (ERROR/CRITICAL)
+NORD13 = "\033[38;2;235;203;139m"  # Yellowish (WARN)
+NORD14 = "\033[38;2;163;190;140m"  # Greenish (INFO)
+NC = "\033[0m"  # Reset / No Color
 
 # ------------------------------------------------------------------------------
-# LOGGING FUNCTIONS
+# CUSTOM LOGGING
 # ------------------------------------------------------------------------------
-def get_log_level_num(level: str) -> int:
-    level = level.upper()
-    if level in ("VERBOSE", "V"):
-        return 0
-    elif level in ("DEBUG", "D"):
-        return 1
-    elif level in ("INFO", "I"):
-        return 2
-    elif level in ("WARN", "WARNING", "W"):
-        return 3
-    elif level in ("ERROR", "E"):
-        return 4
-    elif level in ("CRITICAL", "C"):
-        return 5
-    else:
-        return 2
 
-def log(level: str, message: str):
-    upper_level = level.upper()
-    if get_log_level_num(upper_level) < get_log_level_num(LOG_LEVEL):
-        return
 
-    color = NC
-    if not DISABLE_COLORS:
-        if upper_level == "DEBUG":
-            color = NORD9
-        elif upper_level == "INFO":
-            color = NORD14
-        elif upper_level in ("WARN", "WARNING"):
-            color = NORD13
-        elif upper_level in ("ERROR", "CRITICAL"):
-            color = NORD11
+class NordColorFormatter(logging.Formatter):
+    """
+    A custom formatter that applies Nord color theme to log messages.
+    """
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_entry = f"[{timestamp}] [{upper_level}] {message}"
+    def __init__(self, fmt=None, datefmt=None, use_colors=True):
+        super().__init__(fmt, datefmt)
+        self.use_colors = use_colors and not DISABLE_COLORS
+
+    def format(self, record):
+        levelname = record.levelname
+        msg = super().format(record)
+
+        if not self.use_colors:
+            return msg
+
+        if levelname == "DEBUG":
+            return f"{NORD9}{msg}{NC}"
+        elif levelname == "INFO":
+            return f"{NORD14}{msg}{NC}"
+        elif levelname == "WARNING":
+            return f"{NORD13}{msg}{NC}"
+        elif levelname in ("ERROR", "CRITICAL"):
+            return f"{NORD11}{msg}{NC}"
+        return msg
+
+
+def setup_logging():
+    """
+    Set up logging with console and file handlers, using Nord color theme.
+    """
+    log_dir = os.path.dirname(LOG_FILE)
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+
+    # Create logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Clear any existing handlers
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+
+    # Console handler with colors
+    console_formatter = NordColorFormatter(
+        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+
+    # File handler (no colors in file)
+    file_formatter = logging.Formatter(
+        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    file_handler = logging.FileHandler(LOG_FILE)
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
     try:
-        with open(LOG_FILE, "a") as f:
-            f.write(log_entry + "\n")
+        os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        sys.stderr.write(f"Log file write error: {e}\n")
-    if not QUIET_MODE:
-        sys.stderr.write(f"{color}{log_entry}{NC}\n")
+        logger.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
 
-def handle_error(error_message="Unknown error occurred", exit_code=1):
-    log("ERROR", f"{error_message} (Exit Code: {exit_code})")
-    sys.exit(exit_code)
+    return logger
 
-def cleanup():
-    log("INFO", "Cleanup: Exiting script.")
-    # Add any additional cleanup tasks here.
 
-atexit.register(cleanup)
+def print_section(title: str):
+    """
+    Print a section header with Nord theme styling.
+    """
+    if not DISABLE_COLORS:
+        border = "─" * 60
+        logging.info(f"{NORD10}{border}{NC}")
+        logging.info(f"{NORD10}  {title}{NC}")
+        logging.info(f"{NORD10}{border}{NC}")
+    else:
+        border = "─" * 60
+        logging.info(border)
+        logging.info(f"  {title}")
+        logging.info(border)
+
+
+# ------------------------------------------------------------------------------
+# SIGNAL HANDLING & CLEANUP
+# ------------------------------------------------------------------------------
+
 
 def signal_handler(signum, frame):
-    if signum in (signal.SIGINT, signal.SIGTERM):
-        handle_error("Script interrupted by user.", exit_code=130)
+    """
+    Handle termination signals gracefully.
+    """
+    if signum == signal.SIGINT:
+        logging.error("Script interrupted by SIGINT (Ctrl+C).")
+        sys.exit(130)
+    elif signum == signal.SIGTERM:
+        logging.error("Script terminated by SIGTERM.")
+        sys.exit(143)
+    else:
+        logging.error(f"Script interrupted by signal {signum}.")
+        sys.exit(128 + signum)
+
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
+
+def cleanup():
+    """
+    Perform cleanup tasks before exit.
+    """
+    logging.info("Performing cleanup tasks before exit.")
+    # Additional cleanup tasks can be added here
+
+
+atexit.register(cleanup)
+
 # ------------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# DEPENDENCY CHECKING
 # ------------------------------------------------------------------------------
-def run_cmd(cmd, capture_output=False, check=True):
-    """Run a shell command with optional dry-run."""
-    log("DEBUG", f"Executing: {' '.join(cmd)}")
-    if DRY_RUN:
-        log("INFO", f"DRY RUN: Would execute: {' '.join(cmd)}")
-        return None
+
+
+def check_dependencies():
+    """
+    Check for required dependencies.
+    """
+    required_commands = ["wget", "yt-dlp", "ffmpeg"]
+    missing_commands = []
+
+    for cmd in required_commands:
+        if not shutil.which(cmd):
+            missing_commands.append(cmd)
+
+    if missing_commands:
+        logging.warning(f"Missing dependencies: {', '.join(missing_commands)}")
+        install_prerequisites(missing_commands)
+    else:
+        logging.info("All required dependencies are installed.")
+
+
+def install_prerequisites(missing_commands=None):
+    """
+    Install missing dependencies.
+    """
+    if missing_commands is None:
+        missing_commands = ["wget", "yt-dlp", "ffmpeg"]
+
+    logging.info(f"Installing required tools: {', '.join(missing_commands)}")
+
     try:
-        result = subprocess.run(cmd, capture_output=capture_output, text=True, check=check)
+        subprocess.run(["sudo", "apt", "update"], check=True, capture_output=True)
+        subprocess.run(
+            ["sudo", "apt", "install", "-y"] + missing_commands,
+            check=True,
+            capture_output=True,
+        )
+        logging.info("Required tools installed successfully.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to install dependencies: {e}")
+        sys.exit(1)
+
+
+# ------------------------------------------------------------------------------
+# HELPER & UTILITY FUNCTIONS
+# ------------------------------------------------------------------------------
+
+
+def run_command(cmd, capture_output=False, check=True):
+    """
+    Run a shell command and handle errors.
+    """
+    logging.debug(f"Executing: {' '.join(cmd)}")
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=capture_output, text=True, check=check
+        )
         return result
     except subprocess.CalledProcessError as e:
-        handle_error(f"Command failed: {' '.join(cmd)}\nError: {e}", exit_code=e.returncode)
+        logging.error(f"Command failed: {' '.join(cmd)}\nError: {e}")
+        sys.exit(e.returncode)
 
-def ensure_directory(path: str):
+
+def ensure_directory(path):
+    """
+    Ensure the specified directory exists, creating it if necessary.
+    """
     if not os.path.isdir(path):
         try:
             os.makedirs(path)
-            log("INFO", f"Created directory: {path}")
+            logging.info(f"Created directory: {path}")
         except Exception as e:
-            handle_error(f"Failed to create directory '{path}': {e}")
+            logging.error(f"Failed to create directory '{path}': {e}")
+            sys.exit(1)
 
-# ------------------------------------------------------------------------------
-# INSTALL PREREQUISITES
-# ------------------------------------------------------------------------------
-def install_prerequisites():
-    log("INFO", "Installing required tools...")
-    run_cmd(["sudo", "apt", "update"])
-    run_cmd(["sudo", "apt", "install", "-y", "wget", "yt-dlp", "ffmpeg"])
-    log("INFO", "Required tools installed.")
 
 # ------------------------------------------------------------------------------
 # DOWNLOAD FUNCTIONS
 # ------------------------------------------------------------------------------
-def download_with_yt_dlp(yt_link: str = None, download_dir: str = None):
-    # Prompt for YouTube link if not provided
+
+
+def download_with_yt_dlp():
+    """
+    Download media using yt-dlp.
+    """
+    print_section("YouTube Downloader (yt-dlp)")
+
+    # Prompt for YouTube link
+    yt_link = input("\nEnter YouTube link (video or playlist): ").strip()
     if not yt_link:
-        yt_link = input("\nEnter YouTube link (video or playlist): ").strip()
-        if not yt_link:
-            handle_error("YouTube link cannot be empty.")
-    # Prompt for download directory if not provided
+        logging.error("YouTube link cannot be empty.")
+        return
+
+    # Prompt for download directory
+    download_dir = input("Enter target download directory: ").strip()
     if not download_dir:
-        download_dir = input("Enter target download directory: ").strip()
-        if not download_dir:
-            handle_error("Download directory cannot be empty.")
+        logging.error("Download directory cannot be empty.")
+        return
+
     ensure_directory(download_dir)
+
     # Build yt-dlp command
     cmd = [
-        "yt-dlp", "-f", "bestvideo+bestaudio", "--merge-output-format", "mp4",
-        "-o", f"{download_dir}/%(title)s.%(ext)s", yt_link
+        "yt-dlp",
+        "-f",
+        "bestvideo+bestaudio",
+        "--merge-output-format",
+        "mp4",
+        "-o",
+        f"{download_dir}/%(title)s.%(ext)s",
+        yt_link,
     ]
-    log("INFO", "Starting download via yt-dlp...")
-    run_cmd(cmd)
-    log("INFO", "yt-dlp download completed.")
 
-def download_with_wget(url: str = None, download_dir: str = None):
-    # Prompt for URL if not provided
+    logging.info("Starting download via yt-dlp...")
+    run_command(cmd)
+    logging.info("yt-dlp download completed successfully.")
+
+
+def download_with_wget():
+    """
+    Download file using wget.
+    """
+    print_section("File Downloader (wget)")
+
+    # Prompt for URL
+    url = input("\nEnter URL to download: ").strip()
     if not url:
-        url = input("\nEnter URL to download: ").strip()
-        if not url:
-            handle_error("URL cannot be empty.")
-    # Prompt for download directory if not provided
+        logging.error("URL cannot be empty.")
+        return
+
+    # Prompt for download directory
+    download_dir = input("Enter output directory: ").strip()
     if not download_dir:
-        download_dir = input("Enter output directory: ").strip()
-        if not download_dir:
-            handle_error("Download directory cannot be empty.")
+        logging.error("Download directory cannot be empty.")
+        return
+
     ensure_directory(download_dir)
+
     # Build wget command
-    cmd = ["wget", "-q", "-P", download_dir, url]
-    log("INFO", "Starting download via wget...")
-    run_cmd(cmd)
-    log("INFO", "wget download completed.")
+    cmd = ["wget", "-P", download_dir, url]
+
+    logging.info("Starting download via wget...")
+    run_command(cmd)
+    logging.info("wget download completed successfully.")
+
 
 # ------------------------------------------------------------------------------
 # INTERACTIVE MENU
 # ------------------------------------------------------------------------------
-def interactive_menu():
-    print(f"\n{NORD8}=== Universal Downloader ==={NC}")
-    print("Select Download Method:")
-    print("  1) wget")
-    print("  2) yt-dlp\n")
-    choice = input("Enter your choice (1 or 2): ").strip()
-    if choice == "1":
-        log("INFO", "User selected wget.")
-        download_with_wget()
-    elif choice == "2":
-        log("INFO", "User selected yt-dlp.")
-        download_with_yt_dlp()
-    else:
-        handle_error("Invalid selection. Please run the script again and choose 1 or 2.", exit_code=1)
 
-# ------------------------------------------------------------------------------
-# ARGUMENT PARSING
-# ------------------------------------------------------------------------------
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description="Universal Downloader Tool",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument("--method", choices=["wget", "yt-dlp"],
-                        help="Download method to use.")
-    parser.add_argument("--url", type=str, help="URL (or YouTube link) to download.")
-    parser.add_argument("--dest", type=str, help="Target download directory.")
-    parser.add_argument("--install-prereqs", action="store_true",
-                        help="Install missing prerequisites using apt.")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Simulate downloads without executing commands.")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Enable verbose (DEBUG) logging.")
-    parser.add_argument("--quiet", action="store_true",
-                        help="Suppress console output.")
-    parser.add_argument("--version", action="version", version="Universal Downloader v2.2")
-    return parser.parse_args()
+
+def display_menu():
+    """
+    Display the interactive menu.
+    """
+    print_section("Universal Downloader")
+
+    print("\nSelect Download Method:")
+    if not DISABLE_COLORS:
+        print(f"{NORD8}  1) wget - Download files from the web{NC}")
+        print(f"{NORD8}  2) yt-dlp - Download YouTube videos or playlists{NC}")
+        print(f"{NORD8}  q) Quit the application{NC}\n")
+    else:
+        print("  1) wget - Download files from the web")
+        print("  2) yt-dlp - Download YouTube videos or playlists")
+        print("  q) Quit the application\n")
+
+    while True:
+        choice = input("Enter your choice (1, 2, or q): ").strip().lower()
+
+        if choice == "1":
+            logging.info("User selected wget.")
+            download_with_wget()
+            break
+        elif choice == "2":
+            logging.info("User selected yt-dlp.")
+            download_with_yt_dlp()
+            break
+        elif choice in ("q", "quit", "exit"):
+            logging.info("User chose to quit.")
+            sys.exit(0)
+        else:
+            logging.warning("Invalid selection. Please choose 1, 2, or q.")
+
 
 # ------------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
+
+
 def main():
-    global DRY_RUN, LOG_LEVEL, QUIET_MODE
-    args = parse_arguments()
-    if args.verbose:
-        LOG_LEVEL = "DEBUG"
-    if args.quiet:
-        QUIET_MODE = True
-    if args.dry_run:
-        DRY_RUN = True
-        log("INFO", "Dry-run mode activated. No downloads will be executed.")
-    if args.install_prereqs:
-        install_prerequisites()
-    # If method is provided non-interactively, use that
-    if args.method:
-        if args.method == "wget":
-            log("INFO", "Using wget method (non-interactive).")
-            download_with_wget(url=args.url, download_dir=args.dest)
-        elif args.method == "yt-dlp":
-            log("INFO", "Using yt-dlp method (non-interactive).")
-            download_with_yt_dlp(yt_link=args.url, download_dir=args.dest)
-    else:
-        # Otherwise, run interactive menu
-        interactive_menu()
+    """
+    Main entry point for the script.
+    """
+    setup_logging()
+    check_dependencies()
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logging.info("=" * 80)
+    logging.info(f"UNIVERSAL DOWNLOADER STARTED AT {now}")
+    logging.info("=" * 80)
+
+    display_menu()
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logging.info("=" * 80)
+    logging.info(f"UNIVERSAL DOWNLOADER COMPLETED SUCCESSFULLY AT {now}")
+    logging.info("=" * 80)
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as ex:
+        logging.error(f"Unhandled exception: {ex}")
+        sys.exit(1)
