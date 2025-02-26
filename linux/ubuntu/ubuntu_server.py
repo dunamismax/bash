@@ -923,6 +923,39 @@ class SystemUpdater:
         )
         return True
 
+    def configure_timezone(self, timezone: str = "America/New_York") -> bool:
+        """
+        Set the system timezone.
+
+        Args:
+            timezone: Timezone to set
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Setting timezone to {timezone}...")
+        tz_file = f"/usr/share/zoneinfo/{timezone}"
+
+        if not os.path.isfile(tz_file):
+            logger.warning(f"Timezone file for {timezone} not found.")
+            return False
+
+        try:
+            if Utils.command_exists("timedatectl"):
+                Utils.run_command(["timedatectl", "set-timezone", timezone])
+            else:
+                if os.path.exists("/etc/localtime"):
+                    os.remove("/etc/localtime")
+                os.symlink(tz_file, "/etc/localtime")
+                with open("/etc/timezone", "w") as f:
+                    f.write(f"{timezone}\n")
+
+            logger.info("Timezone configured successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set timezone: {e}")
+            return False
+
 
 # ------------------------------------------------------------------------------
 # Phase 3: User Environment Setup
@@ -2695,7 +2728,7 @@ class UbuntuServerSetup:
 
     def run(self) -> int:
         """
-        Run the entire setup process.
+        Run the entire setup process with improved error handling.
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -2716,189 +2749,441 @@ class UbuntuServerSetup:
 
             # Phase 1: Pre-flight Checks
             print_section("Phase 1: Pre-flight Checks")
-            run_with_progress(
-                "Running Pre-flight Checks...",
-                self.preflight.check_root,
-                task_name="preflight",
-            )
+            try:
+                run_with_progress(
+                    "Running Pre-flight Checks...",
+                    self.preflight.check_root,
+                    task_name="preflight",
+                )
 
-            if not self.preflight.check_network():
-                self.logger.error("Network connectivity check failed. Aborting.")
-                SETUP_STATUS["preflight"] = {
-                    "status": "failed",
-                    "message": "Network connectivity check failed",
-                }
-                sys.exit(1)
+                if not self.preflight.check_network():
+                    self.logger.error("Network connectivity check failed. Aborting.")
+                    SETUP_STATUS["preflight"] = {
+                        "status": "failed",
+                        "message": "Network connectivity check failed",
+                    }
+                    sys.exit(1)
 
-            if not self.preflight.check_os_version():
-                self.logger.warning("OS version check failed; proceeding with caution.")
+                if not self.preflight.check_os_version():
+                    self.logger.warning(
+                        "OS version check failed; proceeding with caution."
+                    )
 
-            self.preflight.save_config_snapshot()
+                self.preflight.save_config_snapshot()
+            except AttributeError as e:
+                self.logger.error(f"Method error in preflight phase: {e}")
+                self.success = False
+            except Exception as e:
+                self.logger.error(f"Error in preflight phase: {e}")
+                self.success = False
 
             # Phase 2: Install Nala first to ensure subsequent commands use it
             print_section("Phase 2: Installing Nala Package Manager")
-            if not run_with_progress(
-                "Installing Nala...",
-                self.services.install_nala,
-                task_name="nala_install",
-            ):
-                self.logger.error("Nala installation failed. Aborting.")
-                sys.exit(1)
+            try:
+                if not run_with_progress(
+                    "Installing Nala...",
+                    self.services.install_nala,
+                    task_name="nala_install",
+                ):
+                    self.logger.error(
+                        "Nala installation failed. Proceeding with caution."
+                    )
+                    self.success = False
+            except AttributeError as e:
+                self.logger.error(f"Method error in Nala installation phase: {e}")
+                self.success = False
+            except Exception as e:
+                self.logger.error(f"Error in Nala installation phase: {e}")
+                self.success = False
 
             # Phase 3: System Update & Basic Configuration
             print_section("Phase 3: System Update & Basic Configuration")
-            if not run_with_progress(
-                "Updating system...",
-                self.updater.update_system,
-                task_name="system_update",
-            ):
-                self.logger.warning("System update failed; continuing.")
+            try:
+                if not run_with_progress(
+                    "Updating system...",
+                    self.updater.update_system,
+                    task_name="system_update",
+                ):
+                    self.logger.warning("System update failed; continuing.")
+                    self.success = False
+            except AttributeError as e:
+                self.logger.error(f"Method error in system update: {e}")
+                self.success = False
+            except Exception as e:
+                self.logger.error(f"Error in system update: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Installing packages...",
-                self.updater.install_packages,
-                task_name="packages_install",
-            ):
-                self.logger.warning("Package installation encountered issues.")
+            try:
+                if not run_with_progress(
+                    "Installing packages...",
+                    self.updater.install_packages,
+                    task_name="packages_install",
+                ):
+                    self.logger.warning("Package installation encountered issues.")
+                    self.success = False
+            except AttributeError as e:
+                self.logger.error(f"Method error in package installation: {e}")
+                self.success = False
+            except Exception as e:
+                self.logger.error(f"Error in package installation: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Configuring timezone...", self.updater.configure_timezone
-            ):
-                self.logger.warning("Timezone configuration failed.")
+            try:
+                if hasattr(self.updater, "configure_timezone"):
+                    if not run_with_progress(
+                        "Configuring timezone...", self.updater.configure_timezone
+                    ):
+                        self.logger.warning("Timezone configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "configure_timezone method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in timezone configuration: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Configuring locale...", self.updater.configure_locale
-            ):
-                self.logger.warning("Locale configuration failed.")
+            try:
+                if hasattr(self.updater, "configure_locale"):
+                    if not run_with_progress(
+                        "Configuring locale...", self.updater.configure_locale
+                    ):
+                        self.logger.warning("Locale configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("configure_locale method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in locale configuration: {e}")
                 self.success = False
 
             # Phase 4: User Environment Setup
             print_section("Phase 4: User Environment Setup")
-            if not run_with_progress(
-                "Setting up user repositories...",
-                self.user_env.setup_repos,
-                task_name="user_env",
-            ):
-                self.logger.warning("Repository setup failed.")
+            try:
+                if hasattr(self.user_env, "setup_repos"):
+                    if not run_with_progress(
+                        "Setting up user repositories...",
+                        self.user_env.setup_repos,
+                        task_name="user_env",
+                    ):
+                        self.logger.warning("Repository setup failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("setup_repos method not found, skipping.")
+                    SETUP_STATUS["user_env"] = {
+                        "status": "skipped",
+                        "message": "setup_repos method not found",
+                    }
+            except Exception as e:
+                self.logger.error(f"Error in repository setup: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Copying shell configs...", self.user_env.copy_shell_configs
-            ):
-                self.logger.warning("Shell configuration update failed.")
+            try:
+                if hasattr(self.user_env, "copy_shell_configs"):
+                    if not run_with_progress(
+                        "Copying shell configs...", self.user_env.copy_shell_configs
+                    ):
+                        self.logger.warning("Shell configuration update failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "copy_shell_configs method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in shell configuration: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Copying config folders...", self.user_env.copy_config_folders
-            ):
-                self.logger.warning("Copying configuration folders failed.")
+            try:
+                if hasattr(self.user_env, "copy_config_folders"):
+                    if not run_with_progress(
+                        "Copying config folders...", self.user_env.copy_config_folders
+                    ):
+                        self.logger.warning("Copying configuration folders failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "copy_config_folders method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in copying config folders: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Setting default shell...", self.user_env.set_bash_shell
-            ):
-                self.logger.warning("Default shell update failed.")
+            try:
+                if hasattr(self.user_env, "set_bash_shell"):
+                    if not run_with_progress(
+                        "Setting default shell...", self.user_env.set_bash_shell
+                    ):
+                        self.logger.warning("Default shell update failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("set_bash_shell method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in setting bash shell: {e}")
                 self.success = False
 
             # Phase 5: Security & Access Hardening
             print_section("Phase 5: Security & Access Hardening")
-            if not run_with_progress(
-                "Configuring SSH...", self.security.configure_ssh, task_name="security"
-            ):
-                self.logger.warning("SSH configuration failed.")
+            try:
+                if hasattr(self.security, "configure_ssh"):
+                    if not run_with_progress(
+                        "Configuring SSH...",
+                        self.security.configure_ssh,
+                        task_name="security",
+                    ):
+                        self.logger.warning("SSH configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("configure_ssh method not found, skipping.")
+                    SETUP_STATUS["security"] = {
+                        "status": "skipped",
+                        "message": "configure_ssh method not found",
+                    }
+            except Exception as e:
+                self.logger.error(f"Error in SSH configuration: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Configuring sudoers...", self.security.setup_sudoers
-            ):
-                self.logger.warning("Sudoers configuration failed.")
+            try:
+                if hasattr(self.security, "setup_sudoers"):
+                    if not run_with_progress(
+                        "Configuring sudoers...", self.security.setup_sudoers
+                    ):
+                        self.logger.warning("Sudoers configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("setup_sudoers method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in sudoers configuration: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Configuring firewall...", self.security.configure_firewall
-            ):
-                self.logger.warning("Firewall configuration failed.")
+            try:
+                if hasattr(self.security, "configure_firewall"):
+                    if not run_with_progress(
+                        "Configuring firewall...", self.security.configure_firewall
+                    ):
+                        self.logger.warning("Firewall configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "configure_firewall method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in firewall configuration: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Configuring Fail2ban...", self.security.configure_fail2ban
-            ):
-                self.logger.warning("Fail2ban configuration failed.")
+            try:
+                if hasattr(self.security, "configure_fail2ban"):
+                    if not run_with_progress(
+                        "Configuring Fail2ban...", self.security.configure_fail2ban
+                    ):
+                        self.logger.warning("Fail2ban configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "configure_fail2ban method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in Fail2ban configuration: {e}")
                 self.success = False
 
-            if not run_with_progress(
-                "Configuring AppArmor...", self.security.configure_apparmor
-            ):
-                self.logger.warning("AppArmor configuration failed.")
+            try:
+                if hasattr(self.security, "configure_apparmor"):
+                    if not run_with_progress(
+                        "Configuring AppArmor...", self.security.configure_apparmor
+                    ):
+                        self.logger.warning("AppArmor configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "configure_apparmor method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in AppArmor configuration: {e}")
                 self.success = False
 
             # Phase 6: Service Installations
             print_section("Phase 6: Service Installations")
-            if not run_with_progress(
-                "Installing Fastfetch...",
-                self.services.install_fastfetch,
-                task_name="services",
-            ):
-                self.logger.warning("Fastfetch installation failed.")
+            try:
+                if hasattr(self.services, "install_fastfetch"):
+                    if not run_with_progress(
+                        "Installing Fastfetch...",
+                        self.services.install_fastfetch,
+                        task_name="services",
+                    ):
+                        self.logger.warning("Fastfetch installation failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("install_fastfetch method not found, skipping.")
+                    SETUP_STATUS["services"] = {
+                        "status": "skipped",
+                        "message": "install_fastfetch method not found",
+                    }
+            except Exception as e:
+                self.logger.error(f"Error in Fastfetch installation: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Configuring Docker...", self.services.docker_config
-            ):
-                self.logger.warning("Docker configuration failed.")
+            try:
+                if hasattr(self.services, "docker_config"):
+                    if not run_with_progress(
+                        "Configuring Docker...", self.services.docker_config
+                    ):
+                        self.logger.warning("Docker configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("docker_config method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in Docker configuration: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Installing Tailscale...", self.services.install_enable_tailscale
-            ):
-                self.logger.warning("Tailscale installation failed.")
+            try:
+                if hasattr(self.services, "install_enable_tailscale"):
+                    if not run_with_progress(
+                        "Installing Tailscale...",
+                        self.services.install_enable_tailscale,
+                    ):
+                        self.logger.warning("Tailscale installation failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "install_enable_tailscale method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in Tailscale installation: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Installing Caddy...", self.services.install_configure_caddy
-            ):
-                self.logger.warning("Caddy installation failed.")
+            try:
+                if hasattr(self.services, "install_configure_caddy"):
+                    if not run_with_progress(
+                        "Installing Caddy...", self.services.install_configure_caddy
+                    ):
+                        self.logger.warning("Caddy installation failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "install_configure_caddy method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in Caddy installation: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Installing VS Code...", self.services.install_configure_vscode_stable
-            ):
-                self.logger.warning("VS Code installation failed.")
+            try:
+                if hasattr(self.services, "install_configure_vscode_stable"):
+                    if not run_with_progress(
+                        "Installing VS Code...",
+                        self.services.install_configure_vscode_stable,
+                    ):
+                        self.logger.warning("VS Code installation failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "install_configure_vscode_stable method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in VS Code installation: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Deploying user scripts...", self.services.deploy_user_scripts
-            ):
-                self.logger.warning("User scripts deployment failed.")
+            try:
+                if hasattr(self.services, "deploy_user_scripts"):
+                    if not run_with_progress(
+                        "Deploying user scripts...", self.services.deploy_user_scripts
+                    ):
+                        self.logger.warning("User scripts deployment failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "deploy_user_scripts method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in user scripts deployment: {e}")
+                self.success = False
 
             # Phase 7: Maintenance Tasks
             print_section("Phase 7: Maintenance Tasks")
-            if not run_with_progress(
-                "Configuring periodic maintenance...",
-                self.maintenance.configure_periodic,
-                task_name="maintenance",
-            ):
-                self.logger.warning("Periodic maintenance configuration failed.")
+            try:
+                if hasattr(self.maintenance, "configure_periodic"):
+                    if not run_with_progress(
+                        "Configuring periodic maintenance...",
+                        self.maintenance.configure_periodic,
+                        task_name="maintenance",
+                    ):
+                        self.logger.warning(
+                            "Periodic maintenance configuration failed."
+                        )
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "configure_periodic method not found, skipping."
+                    )
+                    SETUP_STATUS["maintenance"] = {
+                        "status": "skipped",
+                        "message": "configure_periodic method not found",
+                    }
+            except Exception as e:
+                self.logger.error(f"Error in periodic maintenance configuration: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Backing up configurations...", self.maintenance.backup_configs
-            ):
-                self.logger.warning("Configuration backup failed.")
+            try:
+                if hasattr(self.maintenance, "backup_configs"):
+                    if not run_with_progress(
+                        "Backing up configurations...", self.maintenance.backup_configs
+                    ):
+                        self.logger.warning("Configuration backup failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("backup_configs method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in configuration backup: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Updating SSL certificates...", self.maintenance.update_ssl_certificates
-            ):
-                self.logger.warning("SSL certificate update failed.")
+            try:
+                if hasattr(self.maintenance, "update_ssl_certificates"):
+                    if not run_with_progress(
+                        "Updating SSL certificates...",
+                        self.maintenance.update_ssl_certificates,
+                    ):
+                        self.logger.warning("SSL certificate update failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "update_ssl_certificates method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in SSL certificate update: {e}")
+                self.success = False
 
             # Phase 8: System Tuning & Permissions
             print_section("Phase 8: System Tuning & Permissions")
-            if not run_with_progress(
-                "Applying system tuning...", self.tuner.tune_system, task_name="tuning"
-            ):
-                self.logger.warning("System tuning failed.")
+            try:
+                if hasattr(self.tuner, "tune_system"):
+                    if not run_with_progress(
+                        "Applying system tuning...",
+                        self.tuner.tune_system,
+                        task_name="tuning",
+                    ):
+                        self.logger.warning("System tuning failed.")
+                        self.success = False
+                else:
+                    self.logger.warning("tune_system method not found, skipping.")
+                    SETUP_STATUS["tuning"] = {
+                        "status": "skipped",
+                        "message": "tune_system method not found",
+                    }
+            except Exception as e:
+                self.logger.error(f"Error in system tuning: {e}")
+                self.success = False
 
-            if not run_with_progress(
-                "Setting home permissions...", self.tuner.home_permissions
-            ):
-                self.logger.warning("Home directory permission configuration failed.")
+            try:
+                if hasattr(self.tuner, "home_permissions"):
+                    if not run_with_progress(
+                        "Setting home permissions...", self.tuner.home_permissions
+                    ):
+                        self.logger.warning(
+                            "Home directory permission configuration failed."
+                        )
+                        self.success = False
+                else:
+                    self.logger.warning("home_permissions method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in home permissions setup: {e}")
+                self.success = False
 
             # Phase 9: Final Checks & Cleanup
             print_section("Phase 9: Final Checks & Cleanup")
@@ -2908,13 +3193,49 @@ class UbuntuServerSetup:
                 "message": "Running final checks...",
             }
 
-            self.final_checker.system_health_check()
+            try:
+                if hasattr(self.final_checker, "system_health_check"):
+                    self.final_checker.system_health_check()
+                else:
+                    self.logger.warning(
+                        "system_health_check method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in system health check: {e}")
+                self.success = False
 
-            if not self.final_checker.verify_firewall_rules():
-                self.logger.warning("Firewall rule verification failed.")
+            try:
+                if hasattr(self.final_checker, "verify_firewall_rules"):
+                    if not self.final_checker.verify_firewall_rules():
+                        self.logger.warning("Firewall rule verification failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "verify_firewall_rules method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in firewall rule verification: {e}")
+                self.success = False
 
-            final_result = self.final_checker.final_checks()
-            self.final_checker.cleanup_system()
+            final_result = True
+            try:
+                if hasattr(self.final_checker, "final_checks"):
+                    final_result = self.final_checker.final_checks()
+                else:
+                    self.logger.warning("final_checks method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in final checks: {e}")
+                self.success = False
+                final_result = False
+
+            try:
+                if hasattr(self.final_checker, "cleanup_system"):
+                    self.final_checker.cleanup_system()
+                else:
+                    self.logger.warning("cleanup_system method not found, skipping.")
+            except Exception as e:
+                self.logger.error(f"Error in system cleanup: {e}")
+                self.success = False
 
             duration = time.time() - self.start_time
             minutes, seconds = divmod(duration, 60)
@@ -2937,10 +3258,21 @@ class UbuntuServerSetup:
                 }
 
             # Print final status report
-            print_status_report()
+            try:
+                print_status_report()
+            except Exception as e:
+                self.logger.error(f"Error printing status report: {e}")
 
-            # Prompt for reboot
-            self.final_checker.prompt_reboot()
+            # Prompt for reboot if configured
+            try:
+                if hasattr(self.final_checker, "prompt_reboot"):
+                    self.final_checker.prompt_reboot()
+                else:
+                    self.logger.debug(
+                        "prompt_reboot method not found, skipping reboot prompt."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in reboot prompt: {e}")
 
             return 0 if self.success and final_result else 1
 
