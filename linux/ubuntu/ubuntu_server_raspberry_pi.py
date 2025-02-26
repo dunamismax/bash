@@ -191,7 +191,9 @@ machine = uname_info.machine.lower()  # expected to be 'aarch64' on ARM
 DOCKER_COMPOSE_URL = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{system}-{machine}"
 
 VSCODE_VERSION = "1.97.2-1739406807"
-VSCODE_URL = f"https://update.code.visualstudio.com/{VSCODE_VERSION}/linux-deb-arm64/stable"
+VSCODE_URL = (
+    f"https://update.code.visualstudio.com/{VSCODE_VERSION}/linux-deb-arm64/stable"
+)
 
 CADDY_VERSION = "2.9.1"
 CADDY_URL = f"https://github.com/caddyserver/caddy/releases/download/v{CADDY_VERSION}/caddy_{CADDY_VERSION}_linux_arm64.deb"
@@ -1283,32 +1285,32 @@ Icon=vscode
             return caddy_installed
 
     def install_nala(self) -> bool:
-    logger.info("Installing Nala (apt frontend)...")
-    if Utils.command_exists("nala"):
-        logger.info("Nala is already installed.")
-        return True
-    try:
-        logger.info("Updating package lists...")
-        Utils.run_command(["apt", "update"], check=True)
-        logger.info("Installing Nala via apt...")
-        Utils.run_command(["apt", "install", "-y", "nala"], check=True)
+        logger.info("Installing Nala (apt frontend)...")
         if Utils.command_exists("nala"):
-            logger.info("Nala installed successfully.")
-            try:
-                Utils.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
-                logger.info("Configured faster mirrors with Nala.")
-            except subprocess.CalledProcessError:
-                logger.warning("Failed to configure mirrors with Nala.")
+            logger.info("Nala is already installed.")
             return True
-        else:
-            logger.error("Nala installation verification failed.")
+        try:
+            logger.info("Updating package lists...")
+            Utils.run_command(["apt", "update"], check=True)
+            logger.info("Installing Nala via apt...")
+            Utils.run_command(["apt", "install", "-y", "nala"], check=True)
+            if Utils.command_exists("nala"):
+                logger.info("Nala installed successfully.")
+                try:
+                    Utils.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
+                    logger.info("Configured faster mirrors with Nala.")
+                except subprocess.CalledProcessError:
+                    logger.warning("Failed to configure mirrors with Nala.")
+                return True
+            else:
+                logger.error("Nala installation verification failed.")
+                return False
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Nala installation failed: {e}")
             return False
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Nala installation failed: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error during Nala installation: {e}")
-        return False
+        except Exception as e:
+            logger.error(f"Unexpected error during Nala installation: {e}")
+            return False
 
     def install_enable_tailscale(self) -> bool:
         logger.info("Installing and configuring Tailscale...")
@@ -1552,7 +1554,9 @@ class SystemTuner:
                 content = f.read()
             marker = "# Performance tuning settings for Ubuntu"
             if marker in content:
-                logger.info("Performance tuning settings already exist. Updating settings...")
+                logger.info(
+                    "Performance tuning settings already exist. Updating settings..."
+                )
                 content = re.split(marker, content)[0]
             content += f"\n{marker}\n"
             for key, value in tuning_settings.items():
@@ -1822,7 +1826,9 @@ class FinalChecker:
             logger.info("Active network interfaces:")
             for line in interfaces.splitlines():
                 logger.info(line)
-            netstat = subprocess.check_output(["ss", "-tuln"], text=True).splitlines()[:10]
+            netstat = subprocess.check_output(["ss", "-tuln"], text=True).splitlines()[
+                :10
+            ]
             logger.info("Active network connections:")
             for line in netstat:
                 logger.info(line)
@@ -1865,7 +1871,9 @@ class FinalChecker:
                     stderr=subprocess.STDOUT,
                 )
                 for line in unattended_output.splitlines():
-                    if ("Packages that will be upgraded:" in line) and ("0 upgrades" not in line):
+                    if ("Packages that will be upgraded:" in line) and (
+                        "0 upgrades" not in line
+                    ):
                         logger.warning("Pending security updates detected!")
                         all_passed = False
             except Exception:
@@ -1975,7 +1983,9 @@ class FinalChecker:
             except subprocess.CalledProcessError as e:
                 logger.warning(f"Failed to reboot system: {e}")
         else:
-            logger.info("Reboot canceled. Please reboot later (e.g. with: sudo reboot).")
+            logger.info(
+                "Reboot canceled. Please reboot later (e.g. with: sudo reboot)."
+            )
 
 
 # ------------------------------------------------------------------------------
@@ -2148,6 +2158,7 @@ class UbuntuServerSetup:
         except Exception as e:
             self.logger.error(f"Unhandled exception: {e}")
             import traceback
+
             self.logger.error(traceback.format_exc())
             return 1
 
