@@ -4,9 +4,9 @@ Script Name: vm_manager.py
 --------------------------------------------------------
 Description:
   A production-ready Ubuntu/Linux VM manager that can list, create, start, stop,
-  pause, resume, delete VMs (along with their disk images), monitor resource usage,
+  pause, resume, and delete VMs (along with their disk images), monitor resource usage,
   connect to the console, and manage snapshots. Uses the Nord color theme for
-  visually engaging output with robust error handling and logging.
+  visually engaging output with robust error handling, logging, and progress feedback.
 
 Usage:
   sudo ./vm_manager.py
@@ -25,15 +25,26 @@ import sys
 import time
 import urllib.request
 from datetime import datetime
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
+from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TimeElapsedColumn,
+)
 
 # ------------------------------------------------------------------------------
-# ENVIRONMENT CONFIGURATION (Modify these settings as needed)
+# ENVIRONMENT CONFIGURATION
 # ------------------------------------------------------------------------------
 LOG_FILE = "/var/log/vm_manager.log"
 DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 DEFAULT_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
-# Default directories for VM images and ISOs
+# Directories for VM images and ISOs
 VM_IMAGE_DIR = "/var/lib/libvirt/images"
 ISO_DIR = "/var/lib/libvirt/boot"
 
@@ -41,7 +52,7 @@ ISO_DIR = "/var/lib/libvirt/boot"
 # NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
 NORD0 = "\033[38;2;46;52;64m"  # Polar Night (dark)
-NORD1 = "\033[38;2;59;66;82m"  # Polar Night (darker than NORD0)
+NORD1 = "\033[38;2;59;66;82m"  # Polar Night (darker)
 NORD8 = "\033[38;2;136;192;208m"  # Frost (light blue)
 NORD9 = "\033[38;2;129;161;193m"  # Bluish (DEBUG)
 NORD10 = "\033[38;2;94;129;172m"  # Accent Blue (section headers)
@@ -51,13 +62,17 @@ NORD14 = "\033[38;2;163;190;140m"  # Greenish (INFO)
 NC = "\033[0m"  # Reset / No Color
 
 # ------------------------------------------------------------------------------
+# SETUP RICH CONSOLE
+# ------------------------------------------------------------------------------
+console = Console()
+
+
+# ------------------------------------------------------------------------------
 # CUSTOM LOGGING
 # ------------------------------------------------------------------------------
-
-
 class NordColorFormatter(logging.Formatter):
     """
-    A custom formatter that applies Nord color theme to log messages.
+    Custom formatter that applies Nord color theme to log messages.
     """
 
     def __init__(self, fmt=None, datefmt=None, use_colors=True):
@@ -65,41 +80,34 @@ class NordColorFormatter(logging.Formatter):
         self.use_colors = use_colors and not DISABLE_COLORS
 
     def format(self, record):
-        levelname = record.levelname
         msg = super().format(record)
-
         if not self.use_colors:
             return msg
-
-        if levelname == "DEBUG":
+        level = record.levelname
+        if level == "DEBUG":
             return f"{NORD9}{msg}{NC}"
-        elif levelname == "INFO":
+        elif level == "INFO":
             return f"{NORD14}{msg}{NC}"
-        elif levelname == "WARNING":
+        elif level == "WARNING":
             return f"{NORD13}{msg}{NC}"
-        elif levelname in ("ERROR", "CRITICAL"):
+        elif level in ("ERROR", "CRITICAL"):
             return f"{NORD11}{msg}{NC}"
         return msg
 
 
 def setup_logging():
     """
-    Set up logging with console and file handlers, using Nord color theme.
+    Set up logging with console and file handlers using the Nord color theme.
     """
     log_dir = os.path.dirname(LOG_FILE)
-    if not os.path.isdir(log_dir):
-        os.makedirs(log_dir, exist_ok=True)
-
-    # Create logger
+    os.makedirs(log_dir, exist_ok=True)
     logger = logging.getLogger()
-    level = getattr(logging, DEFAULT_LOG_LEVEL, logging.INFO)
-    logger.setLevel(level)
+    logger.setLevel(getattr(logging, DEFAULT_LOG_LEVEL, logging.INFO))
 
-    # Clear any existing handlers
+    # Remove existing handlers
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
 
-    # Console handler with colors
     console_formatter = NordColorFormatter(
         fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
@@ -107,60 +115,110 @@ def setup_logging():
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # File handler (no colors in file)
     file_formatter = logging.Formatter(
         fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-
     try:
+        file_handler = logging.FileHandler(LOG_FILE)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
         os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        logger.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
-
+        logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
     return logger
 
 
 def print_section(title: str):
     """
-    Print a section header with Nord theme styling.
+    Print a section header with Nord-themed styling.
     """
+    border = "─" * 60
     if not DISABLE_COLORS:
-        border = "─" * 60
         logging.info(f"{NORD10}{border}{NC}")
         logging.info(f"{NORD10}  {title}{NC}")
         logging.info(f"{NORD10}{border}{NC}")
     else:
-        border = "─" * 60
         logging.info(border)
         logging.info(f"  {title}")
         logging.info(border)
 
 
 # ------------------------------------------------------------------------------
+# PROGRESS HELPER (using rich)
+# ------------------------------------------------------------------------------
+def run_with_progress(description: str, func, *args, **kwargs):
+    """
+    Run a blocking function in a background thread while displaying a progress spinner.
+    """
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task(description, total=None)
+            while not future.done():
+                time.sleep(0.1)
+                progress.refresh()
+            return future.result()
+
+
+def download_file(
+    url: str, output_path: str, description: str = "Downloading ISO..."
+) -> str:
+    """
+    Download a file from a URL with a progress bar.
+
+    Returns the output path if successful, otherwise raises an exception.
+    """
+    try:
+        with urllib.request.urlopen(url) as response:
+            total = int(response.getheader("Content-Length", 0))
+            chunk_size = 8192
+            with (
+                open(output_path, "wb") as f,
+                Progress(
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    "[progress.percentage]{task.percentage:>3.0f}%",
+                    TimeElapsedColumn(),
+                ) as progress,
+            ):
+                task = progress.add_task(description, total=total)
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    progress.update(task, advance=len(chunk))
+        return output_path
+    except Exception as e:
+        logging.error(f"Download failed: {e}")
+        raise
+
+
+# ------------------------------------------------------------------------------
 # SIGNAL HANDLING & CLEANUP
 # ------------------------------------------------------------------------------
-
-
 def signal_handler(signum, frame):
     """
     Handle termination signals gracefully.
     """
+    sig_name = f"signal {signum}"
+    logging.error(f"Script interrupted by {sig_name}.")
+    cleanup()
     if signum == signal.SIGINT:
-        logging.error("Script interrupted by SIGINT (Ctrl+C).")
         sys.exit(130)
     elif signum == signal.SIGTERM:
-        logging.error("Script terminated by SIGTERM.")
         sys.exit(143)
     else:
-        logging.error(f"Script interrupted by signal {signum}.")
         sys.exit(128 + signum)
 
 
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+for sig in (signal.SIGINT, signal.SIGTERM):
+    signal.signal(sig, signal_handler)
 
 
 def cleanup():
@@ -168,32 +226,25 @@ def cleanup():
     Perform cleanup tasks before exit.
     """
     logging.info("Performing cleanup tasks before exit.")
-    # Additional cleanup tasks can be added here
 
 
 atexit.register(cleanup)
 
-# ------------------------------------------------------------------------------
-# DEPENDENCY CHECKING
-# ------------------------------------------------------------------------------
 
-
+# ------------------------------------------------------------------------------
+# DEPENDENCY & PRIVILEGE CHECKS
+# ------------------------------------------------------------------------------
 def check_dependencies():
     """
-    Check for required dependencies.
+    Check for required commands.
     """
     required_commands = ["virsh", "virt-install", "qemu-img", "wget"]
     for cmd in required_commands:
         if not shutil.which(cmd):
             logging.error(
-                f"The '{cmd}' command is not found in your PATH. Please install it and try again."
+                f"Dependency '{cmd}' is missing. Please install it and try again."
             )
             sys.exit(1)
-
-
-# ------------------------------------------------------------------------------
-# HELPER & UTILITY FUNCTIONS
-# ------------------------------------------------------------------------------
 
 
 def check_root():
@@ -214,61 +265,55 @@ def clear_screen():
 
 def prompt_enter():
     """
-    Prompt user to press Enter to continue.
+    Prompt the user to press Enter to continue.
     """
     input("Press Enter to continue...")
 
 
 def print_header(title="Advanced VM Manager Tool"):
     """
-    Print a header with a title.
+    Print a header with the given title.
     """
     clear_screen()
     print_section(title)
 
 
-def run_command(command, capture_output=False, check=True):
+# ------------------------------------------------------------------------------
+# COMMAND EXECUTION HELPER
+# ------------------------------------------------------------------------------
+def run_command(command: list, capture_output: bool = False, check: bool = True):
     """
-    Run a shell command.
+    Execute a shell command.
 
-    Parameters:
-    command (list): Command to run as a list of strings
-    capture_output (bool): Whether to capture and return stdout
-    check (bool): Whether to check if command succeeded
-
-    Returns:
-    If capture_output is True, return the command's stdout (as a string) on success.
-    Otherwise, return True if successful or False on error.
+    Returns captured stdout if requested, else True on success or False on error.
     """
     try:
         result = subprocess.run(
             command, capture_output=capture_output, text=True, check=check
         )
-        if capture_output:
-            return result.stdout
-        return True
+        return result.stdout if capture_output else True
     except subprocess.CalledProcessError as e:
         logging.error(f"Command '{' '.join(command)}' failed: {e}")
         return False
 
 
-def get_vm_list():
+# ------------------------------------------------------------------------------
+# VM LISTING & SELECTION
+# ------------------------------------------------------------------------------
+def get_vm_list() -> list:
     """
     Retrieve a list of VMs by parsing the output of 'virsh list --all'.
 
-    Returns:
-    list: A list of dictionaries with keys: 'id', 'name', 'state'.
+    Returns a list of dictionaries with keys: 'id', 'name', and 'state'.
     """
     output = run_command(["virsh", "list", "--all"], capture_output=True)
     vms = []
     if output:
         lines = output.strip().splitlines()
-        # Find index of separator (dashed line)
-        sep_index = None
-        for i, line in enumerate(lines):
-            if line.lstrip().startswith("---"):
-                sep_index = i + 1
-                break
+        sep_index = next(
+            (i + 1 for i, line in enumerate(lines) if line.lstrip().startswith("---")),
+            None,
+        )
         if sep_index is None:
             logging.error("Unexpected output format from 'virsh list'.")
             return vms
@@ -284,15 +329,11 @@ def get_vm_list():
     return vms
 
 
-def select_vm(prompt="Select a VM by number: "):
+def select_vm(prompt_text="Select a VM by number: ") -> str:
     """
     Display a numbered list of VMs and prompt the user to select one.
 
-    Parameters:
-    prompt (str): The prompt to display to the user
-
-    Returns:
-    str: The selected VM's name or None if no VMs are available.
+    Returns the selected VM's name or None if no VMs are available.
     """
     vms = get_vm_list()
     if not vms:
@@ -302,23 +343,25 @@ def select_vm(prompt="Select a VM by number: "):
     for i, vm in enumerate(vms, start=1):
         print(f"{NORD14}[{i}]{NC} {vm['name']} - {vm['state']}")
     while True:
-        choice = input(prompt).strip()
+        choice = input(prompt_text).strip()
         try:
             index = int(choice) - 1
             if 0 <= index < len(vms):
                 return vms[index]["name"]
             else:
-                print("Invalid selection. Please enter a number corresponding to a VM.")
+                print("Invalid selection. Please enter a valid number.")
         except ValueError:
             print("Please enter a valid number.")
 
 
-def select_iso():
+# ------------------------------------------------------------------------------
+# ISO SELECTION & DOWNLOAD
+# ------------------------------------------------------------------------------
+def select_iso() -> str:
     """
-    Allows the user to select an ISO file from the ISO directory or enter a custom path.
+    Allow the user to select an ISO file from the ISO directory or enter a custom path.
 
-    Returns:
-    str: The full path to the selected ISO, or None if not found.
+    Returns the full path to the selected ISO.
     """
     print_header("Select Installation ISO")
     try:
@@ -361,11 +404,29 @@ def select_iso():
             return None
 
 
+def download_iso() -> str:
+    """
+    Download an ISO file from a user-provided URL.
+
+    Returns the path to the downloaded ISO file or None if the download fails.
+    """
+    iso_url = input("Enter the URL for the installation ISO: ").strip()
+    iso_filename = input("Enter the desired filename (e.g., ubuntu.iso): ").strip()
+    iso_path = os.path.join(ISO_DIR, iso_filename)
+    logging.info(f"Starting download of ISO to {iso_path}...")
+    try:
+        # Run download with progress bar
+        run_with_progress("Downloading ISO...", download_file, iso_url, iso_path)
+        logging.info("ISO downloaded successfully.")
+        return iso_path
+    except Exception as e:
+        logging.error(f"Failed to download ISO: {e}")
+        return None
+
+
 # ------------------------------------------------------------------------------
 # VM MANAGEMENT FUNCTIONS
 # ------------------------------------------------------------------------------
-
-
 def list_vms():
     """
     List all virtual machines.
@@ -447,10 +508,6 @@ def resume_vm():
 def delete_vm():
     """
     Delete a virtual machine and its associated disk image.
-
-    The function lets you select a VM, undefines it, and then automatically
-    removes the disk image. If the VM XML does not provide a disk image path,
-    it also checks for a default disk image named <vm_name>.qcow2.
     """
     print_header("Delete Virtual Machine")
     vm_name = select_vm("Select a VM to delete by number: ")
@@ -474,12 +531,10 @@ def delete_vm():
         ["virsh", "dumpxml", vm_name], capture_output=True, check=False
     )
     disk = None
-    if xml_output and isinstance(xml_output, str):
+    if xml_output:
         match = re.search(r'source file="([^"]+)"', xml_output)
         if match:
             disk = match.group(1)
-
-    # If disk image not found via XML, try default naming convention
     if not disk:
         default_disk = os.path.join(VM_IMAGE_DIR, f"{vm_name}.qcow2")
         if os.path.exists(default_disk):
@@ -490,7 +545,6 @@ def delete_vm():
     if running_vms and vm_name in running_vms:
         run_command(["virsh", "destroy", vm_name])
 
-    # Undefine the VM
     if run_command(["virsh", "undefine", vm_name]):
         logging.info(f"VM '{vm_name}' undefined successfully.")
         if disk:
@@ -567,30 +621,6 @@ def list_isos():
     prompt_enter()
 
 
-def download_iso():
-    """
-    Download an ISO file from a URL.
-
-    Returns:
-    str: The path to the downloaded ISO file, or None if download failed.
-    """
-    iso_url = input("Enter the URL for the installation ISO: ").strip()
-    iso_filename = input("Enter the desired filename (e.g., ubuntu.iso): ").strip()
-    iso_path = os.path.join(ISO_DIR, iso_filename)
-    logging.info(f"Downloading ISO to {iso_path}...")
-    try:
-        with (
-            urllib.request.urlopen(iso_url) as response,
-            open(iso_path, "wb") as out_file,
-        ):
-            out_file.write(response.read())
-        logging.info("ISO downloaded successfully.")
-        return iso_path
-    except Exception as e:
-        logging.error(f"Failed to download ISO: {e}")
-        return None
-
-
 def create_vm():
     """
     Create a new virtual machine with specified parameters.
@@ -607,7 +637,7 @@ def create_vm():
         ram = int(input("Enter RAM in MB: ").strip())
         disk_size = int(input("Enter disk size in GB: ").strip())
     except ValueError:
-        logging.error("Invalid input. vCPUs, RAM and disk size must be numeric values.")
+        logging.error("Invalid input. vCPUs, RAM, and disk size must be numeric.")
         prompt_enter()
         return
 
@@ -632,7 +662,7 @@ def create_vm():
             return
     elif iso_choice == "2":
         iso_path = download_iso()
-        if iso_path is None:
+        if not iso_path:
             prompt_enter()
             return
     else:
@@ -644,7 +674,7 @@ def create_vm():
     if not run_command(
         ["qemu-img", "create", "-f", "qcow2", disk_image, f"{disk_size}G"]
     ):
-        logging.error("Failed to create disk image. Cleaning up if necessary.")
+        logging.error("Failed to create disk image. Cleaning up.")
         if os.path.exists(disk_image):
             try:
                 os.remove(disk_image)
@@ -684,11 +714,9 @@ def create_vm():
 # ------------------------------------------------------------------------------
 # SNAPSHOT MANAGEMENT FUNCTIONS
 # ------------------------------------------------------------------------------
-
-
 def list_snapshots():
     """
-    List snapshots for a virtual machine.
+    List snapshots for a selected virtual machine.
     """
     print_header("List Snapshots")
     vm_name = select_vm("Select a VM to list snapshots by number: ")
@@ -726,7 +754,7 @@ def create_snapshot():
 
 def revert_snapshot():
     """
-    Revert a virtual machine to a snapshot.
+    Revert a virtual machine to a specified snapshot.
     """
     print_header("Revert Snapshot")
     vm_name = select_vm("Select a VM to revert snapshot by number: ")
@@ -743,7 +771,7 @@ def revert_snapshot():
 
 def delete_snapshot():
     """
-    Delete a snapshot of a virtual machine.
+    Delete a snapshot from a virtual machine.
     """
     print_header("Delete Snapshot")
     vm_name = select_vm("Select a VM to delete a snapshot by number: ")
@@ -786,15 +814,11 @@ def snapshot_menu():
 
 
 # ------------------------------------------------------------------------------
-# DISK IMAGE MANAGEMENT FUNCTION
+# DISK IMAGE MANAGEMENT
 # ------------------------------------------------------------------------------
-
-
 def delete_disk_image():
     """
-    Manually delete a VM disk image.
-
-    Lists all .qcow2 files in VM_IMAGE_DIR and lets you select one to delete.
+    Manually delete a VM disk image from the VM_IMAGE_DIR.
     """
     print_header("Delete Disk Image")
     try:
@@ -811,7 +835,6 @@ def delete_disk_image():
     print("Available Disk Images:")
     for idx, disk in enumerate(sorted(disks), start=1):
         print(f"{NORD14}[{idx}]{NC} {disk}")
-
     while True:
         choice = input("Select a disk image to delete by number: ").strip()
         try:
@@ -820,10 +843,9 @@ def delete_disk_image():
                 selected_disk = disks[index]
                 break
             else:
-                print("Invalid selection. Please enter a valid number.")
+                print("Invalid selection. Please try again.")
         except ValueError:
             print("Please enter a valid number.")
-
     full_disk_path = os.path.join(VM_IMAGE_DIR, selected_disk)
     confirm = (
         input(f"Are you sure you want to delete disk image '{selected_disk}'? (y/n): ")
@@ -845,8 +867,6 @@ def delete_disk_image():
 # ------------------------------------------------------------------------------
 # INTERACTIVE MAIN MENU
 # ------------------------------------------------------------------------------
-
-
 def interactive_menu():
     """
     Display the interactive main menu for VM management.
@@ -903,36 +923,26 @@ def interactive_menu():
 # ------------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
-
-
 def main():
     """
-    Main entry point for the script.
+    Main entry point for the VM manager script.
     """
-    # Check Python version
     if sys.version_info < (3, 6):
         print("This script requires Python 3.6 or higher.")
         sys.exit(1)
-
     check_root()
     check_dependencies()
-
-    # Create log directory if it doesn't exist
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-    # Create ISO directory if it doesn't exist
+    os.makedirs(Path(LOG_FILE).parent, exist_ok=True)
     os.makedirs(ISO_DIR, exist_ok=True)
-
+    os.makedirs(VM_IMAGE_DIR, exist_ok=True)
     # Touch log file if missing
-    with open(LOG_FILE, "a"):
-        pass
-
+    Path(LOG_FILE).touch(exist_ok=True)
     setup_logging()
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("=" * 80)
     logging.info(f"VM MANAGER STARTED AT {now}")
     logging.info("=" * 80)
-
     interactive_menu()
 
 

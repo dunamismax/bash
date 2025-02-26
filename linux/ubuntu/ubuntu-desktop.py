@@ -1,31 +1,19 @@
 #!/usr/bin/env python3
 """
-ubuntu_desktop.py
-
 Ubuntu Desktop Initialization & Maintenance Utility
-
-This automation script configures and optimizes an Ubuntu Desktop environment by performing the following tasks:
-
-  - Pre-flight checks: Verify root privileges and network connectivity.
-  - System update: Refresh repositories and upgrade installed packages.
-  - Package installation: Install essential applications and utilities.
-  - Desktop configuration: Set timezone, update user settings, and configure desktop preferences.
-  - Security hardening: Secure SSH, configure UFW firewall, and set up fail2ban.
-  - Service deployment: Install and configure key services (e.g., Plex, Docker) and desktop applications.
-  - Maintenance routines: Schedule cron jobs, rotate logs, and perform system health checks.
-  - Advanced features: Configure ZFS storage, Wayland settings, and additional security measures.
-  - Final steps: Clean up temporary files and prompt for system reboot.
+-----------------------------------------------------
+This automation script configures and optimizes an Ubuntu Desktop environment.
+It performs pre-flight checks, system updates, package installations, desktop
+configuration, security hardening, service deployments, maintenance tasks,
+advanced setups (e.g. ZFS, Wayland), and final cleanups – all with visually
+engaging output via the rich library and a unified Nord-themed terminal style.
 
 Usage:
-  Run this script with root privileges to initialize and optimize your Ubuntu Desktop:
-      sudo ./ubuntu_desktop.py
-
-Disclaimer:
-  THIS SCRIPT IS PROVIDED "AS IS" WITHOUT ANY WARRANTY. USE AT YOUR OWN RISK.
+  sudo ./ubuntu_desktop.py
 
 Author: dunamismax (improved by Claude)
-Version: 5.0.0
-Date: 2025-02-25
+Version: 5.0.0 | Date: 2025-02-25
+License: MIT
 """
 
 import atexit
@@ -37,78 +25,282 @@ import logging
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-# ----------------------------
-# Configuration Class
-# ----------------------------
+# ------------------------------------------------------------------------------
+# Global Nord Color Palette and Logging Settings
+# ------------------------------------------------------------------------------
+DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
+
+NORD0 = "\033[38;2;46;52;64m"
+NORD1 = "\033[38;2;59;66;82m"
+NORD8 = "\033[38;2;136;192;208m"
+NORD9 = "\033[38;2;129;161;193m"
+NORD10 = "\033[38;2;94;129;172m"
+NORD11 = "\033[38;2;191;97;106m"
+NORD13 = "\033[38;2;235;203;139m"
+NORD14 = "\033[38;2;163;190;140m"
+NC = "\033[0m"
+
+console = Console()
+
+
+# ------------------------------------------------------------------------------
+# Custom Nord Color Formatter for Logging
+# ------------------------------------------------------------------------------
+class NordColorFormatter(logging.Formatter):
+    def __init__(self, fmt=None, datefmt=None, use_colors=True):
+        super().__init__(fmt, datefmt)
+        self.use_colors = use_colors and not DISABLE_COLORS
+
+    def format(self, record):
+        msg = super().format(record)
+        if not self.use_colors:
+            return msg
+        level = record.levelname
+        if level == "DEBUG":
+            return f"{NORD9}{msg}{NC}"
+        elif level == "INFO":
+            return f"{NORD14}{msg}{NC}"
+        elif level == "WARNING":
+            return f"{NORD13}{msg}{NC}"
+        elif level in ("ERROR", "CRITICAL"):
+            return f"{NORD11}{msg}{NC}"
+        return msg
+
+
+def setup_logging(log_file: str) -> logging.Logger:
+    log_dir = os.path.dirname(log_file)
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+    logger = logging.getLogger("ubuntu_setup")
+    logger.setLevel(logging.DEBUG)
+    # Remove pre-existing handlers
+    for h in list(logger.handlers):
+        logger.removeHandler(h)
+    formatter = NordColorFormatter(
+        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    ch = logging.StreamHandler(sys.stderr)
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    # File handler
+    fh = logging.FileHandler(log_file)
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
+        )
+    )
+    logger.addHandler(fh)
+    try:
+        os.chmod(log_file, 0o600)
+    except Exception as e:
+        logger.warning(f"Could not set permissions on log file {log_file}: {e}")
+    return logger
+
+
+# ------------------------------------------------------------------------------
+# Signal Handling & Cleanup
+# ------------------------------------------------------------------------------
+def signal_handler(signum, frame):
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
+    logger = logging.getLogger("ubuntu_setup")
+    logger.error(f"Script interrupted by {sig_name}. Initiating cleanup.")
+    try:
+        cleanup()
+    except Exception as e:
+        logger.error(f"Error during cleanup after signal: {e}")
+    if signum == signal.SIGINT:
+        sys.exit(130)
+    elif signum == signal.SIGTERM:
+        sys.exit(143)
+    else:
+        sys.exit(128 + signum)
+
+
+for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(s, signal_handler)
+
+
+def cleanup():
+    logger = logging.getLogger("ubuntu_setup")
+    logger.info("Performing global cleanup tasks before exit.")
+
+
+atexit.register(cleanup)
+
+
+# ------------------------------------------------------------------------------
+# Progress Helper (using rich)
+# ------------------------------------------------------------------------------
+def run_with_progress(description: str, func, *args, **kwargs):
+    """
+    Run a blocking function in a background thread while displaying a progress spinner.
+    """
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task(description, total=None)
+            while not future.done():
+                progress.refresh()
+            return future.result()
+
+
+# ------------------------------------------------------------------------------
+# Configuration Dataclass
+# ------------------------------------------------------------------------------
 @dataclass
 class Config:
     """Configuration class to store all global settings."""
-    # Software versions and download URLs
+
+    # Software versions and URLs
     PLEX_VERSION: str = "1.41.3.9314-a0bfb8370"
     FASTFETCH_VERSION: str = "2.36.1"
     DOCKER_COMPOSE_VERSION: str = "2.20.2"
-
-    # Constructed URLs
     PLEX_URL: str = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_amd64.deb"
     FASTFETCH_URL: str = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-amd64.deb"
-
-    # System information
     UNAME: Any = platform.uname()
     DOCKER_COMPOSE_URL: str = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{UNAME.system}-{UNAME.machine}"
 
-    # Logging and user configuration  
+    # Logging and user config
     LOG_FILE: str = "/var/log/ubuntu_setup.log"
     USERNAME: str = "sawyer"
-    USER_HOME: Path = Path(f"/home/{USERNAME}")
+    USER_HOME: Path = Path(f"/home/sawyer")
 
-    # Directories and files
+    # Directories for dotfiles and configuration
     CONFIG_SRC_DIR: Path = USER_HOME / "github/bash/linux/ubuntu/dotfiles"
     CONFIG_DEST_DIR: Path = USER_HOME / ".config"
 
     # ZFS configuration
     ZFS_POOL_NAME: str = "WD_BLACK"
-    ZFS_MOUNT_POINT: Path = Path(f"/media/{ZFS_POOL_NAME}")
+    ZFS_MOUNT_POINT: Path = Path(f"/media/WD_BLACK")
 
-    # Terminal color definitions (Nord theme)
-    NORD9: str = "\033[38;2;129;161;193m"    # Debug messages
-    NORD10: str = "\033[38;2;94;129;172m"     # Secondary info
-    NORD11: str = "\033[38;2;191;97;106m"     # Error messages
-    NORD13: str = "\033[38;2;235;203;139m"    # Warning messages
-    NORD14: str = "\033[38;2;163;190;140m"    # Info messages
-    NC: str = "\033[0m"                       # Reset color
+    # Nord color definitions (for use in UI output)
+    NORD9: str = NORD9
+    NORD10: str = NORD10
+    NORD11: str = NORD11
+    NORD13: str = NORD13
+    NORD14: str = NORD14
+    NC: str = NC
 
     # Essential packages to install
     PACKAGES: List[str] = [
-        "bash", "vim", "nano", "screen", "tmux", "mc", "zsh", "htop", "btop", 
-        "foot", "foot-themes", "tree", "ncdu", "neofetch",
-        "build-essential", "cmake", "ninja-build", "meson", "gettext", "git", 
+        "bash",
+        "vim",
+        "nano",
+        "screen",
+        "tmux",
+        "mc",
+        "zsh",
+        "htop",
+        "btop",
+        "foot",
+        "foot-themes",
+        "tree",
+        "ncdu",
+        "neofetch",
+        "build-essential",
+        "cmake",
+        "ninja-build",
+        "meson",
+        "gettext",
+        "git",
         "pkg-config",
-        "openssh-server", "ufw", "curl", "wget", "rsync", "sudo", "bash-completion",
-        "python3", "python3-dev", "python3-pip", "python3-venv", "libssl-dev", 
-        "libffi-dev", "zlib1g-dev", "libreadline-dev", "libbz2-dev", "tk-dev", 
-        "xz-utils", "libncurses5-dev", "libgdbm-dev", "libnss3-dev", "liblzma-dev", 
-        "libxml2-dev", "libxmlsec1-dev",
-        "ca-certificates", "software-properties-common", "apt-transport-https", 
-        "gnupg", "lsb-release",
-        "clang", "llvm", "netcat-openbsd", "lsof", "unzip", "zip",
-        "xorg", "x11-xserver-utils", "xterm", "alacritty", "fonts-dejavu-core",
-        "net-tools", "nmap", "iftop", "iperf3", "tcpdump", "lynis", "traceroute", "mtr",
-        "iotop", "glances",
-        "golang-go", "gdb", "cargo",
-        "john", "hydra", "aircrack-ng", "nikto", "fail2ban", "rkhunter", "chkrootkit",
-        "postgresql-client", "mysql-client", "redis-server",
-        "ruby", "rustc", "jq", "yq", "certbot",
+        "openssh-server",
+        "ufw",
+        "curl",
+        "wget",
+        "rsync",
+        "sudo",
+        "bash-completion",
+        "python3",
+        "python3-dev",
+        "python3-pip",
+        "python3-venv",
+        "libssl-dev",
+        "libffi-dev",
+        "zlib1g-dev",
+        "libreadline-dev",
+        "libbz2-dev",
+        "tk-dev",
+        "xz-utils",
+        "libncurses5-dev",
+        "libgdbm-dev",
+        "libnss3-dev",
+        "liblzma-dev",
+        "libxml2-dev",
+        "libxmlsec1-dev",
+        "ca-certificates",
+        "software-properties-common",
+        "apt-transport-https",
+        "gnupg",
+        "lsb-release",
+        "clang",
+        "llvm",
+        "netcat-openbsd",
+        "lsof",
+        "unzip",
+        "zip",
+        "xorg",
+        "x11-xserver-utils",
+        "xterm",
+        "alacritty",
+        "fonts-dejavu-core",
+        "net-tools",
+        "nmap",
+        "iftop",
+        "iperf3",
+        "tcpdump",
+        "lynis",
+        "traceroute",
+        "mtr",
+        "iotop",
+        "glances",
+        "golang-go",
+        "gdb",
+        "cargo",
+        "john",
+        "hydra",
+        "aircrack-ng",
+        "nikto",
+        "fail2ban",
+        "rkhunter",
+        "chkrootkit",
+        "postgresql-client",
+        "mysql-client",
+        "redis-server",
+        "ruby",
+        "rustc",
+        "jq",
+        "yq",
+        "certbot",
         "p7zip-full",
-        "qemu-system", "libvirt-clients", "libvirt-daemon-system", "virt-manager", 
+        "qemu-system",
+        "libvirt-clients",
+        "libvirt-daemon-system",
+        "virt-manager",
         "qemu-user-static",
     ]
 
@@ -190,85 +382,56 @@ class Config:
     ]
 
 
-# ----------------------------
+# ------------------------------------------------------------------------------
 # Main Setup Class
-# ----------------------------
+# ------------------------------------------------------------------------------
 class UbuntuDesktopSetup:
     def __init__(self, config: Config = Config()):
         self.config = config
-        self.logger = self.setup_logging(self.config.LOG_FILE)
+        self.logger = setup_logging(self.config.LOG_FILE)
 
-    # ----------------------------
-    # Logging Setup
-    # ----------------------------
-    def setup_logging(self, log_file: str) -> logging.Logger:
-        """Configure logging to both file and console with color support."""
-        log_dir = os.path.dirname(log_file)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, mode=0o700, exist_ok=True)
-
-        logger_obj = logging.getLogger("ubuntu_setup")
-        logger_obj.setLevel(logging.DEBUG)
-        formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
-        fh = logging.FileHandler(log_file)
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(formatter)
-        logger_obj.addHandler(fh)
-
-        # Define custom color formatter for console
-        class ColorFormatter(logging.Formatter):
-            def __init__(self, fmt=None, datefmt=None, config=None):
-                super().__init__(fmt, datefmt)
-                self.config = config or self.config
-                self.COLORS = {
-                    "DEBUG": self.config.NORD9,
-                    "INFO": self.config.NORD14,
-                    "WARNING": self.config.NORD13,
-                    "ERROR": self.config.NORD11,
-                    "CRITICAL": self.config.NORD11,
-                }
-            def format(self, record):
-                color = self.COLORS.get(record.levelname, "")
-                message = super().format(record)
-                return f"{color}{message}{self.config.NC}"
-
-        if sys.stderr.isatty():
-            ch = logging.StreamHandler()
-            ch.setLevel(logging.DEBUG)
-            ch.setFormatter(ColorFormatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S", self.config))
-            logger_obj.addHandler(ch)
-        return logger_obj
-
-    # ----------------------------
+    # --------------------------------------------------------------------------
     # Utility Methods
-    # ----------------------------
-    def run_command(self, cmd: Union[List[str], str],
-                    check: bool = True,
-                    capture_output: bool = False,
-                    text: bool = True,
-                    **kwargs) -> subprocess.CompletedProcess:
+    # --------------------------------------------------------------------------
+    def print_section(self, title: str) -> None:
+        """Print a formatted section header for log readability."""
+        border = "─" * 60
+        self.logger.info(f"{NORD10}{border}{NC}")
+        self.logger.info(f"{NORD10}  {title}{NC}")
+        self.logger.info(f"{NORD10}{border}{NC}")
+
+    def run_command(
+        self,
+        cmd: Union[List[str], str],
+        check: bool = True,
+        capture_output: bool = False,
+        text: bool = True,
+        **kwargs,
+    ) -> subprocess.CompletedProcess:
         """Execute a shell command with logging and error handling."""
-        cmd_str = ' '.join(cmd) if isinstance(cmd, list) else cmd
+        cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
         self.logger.debug(f"Executing command: {cmd_str}")
         try:
-            result = subprocess.run(cmd, check=check, capture_output=capture_output, text=text, **kwargs)
+            result = subprocess.run(
+                cmd, check=check, capture_output=capture_output, text=text, **kwargs
+            )
             return result
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Command failed with exit code {e.returncode}: {cmd_str}")
+            self.logger.error(f"Command failed ({cmd_str}): {e}")
             if e.stdout:
-                self.logger.error(f"Command stdout: {e.stdout}")
+                self.logger.error(f"Stdout: {e.stdout}")
             if e.stderr:
-                self.logger.error(f"Command stderr: {e.stderr}")
+                self.logger.error(f"Stderr: {e.stderr}")
             if check:
                 raise
             return e
 
     def command_exists(self, cmd: str) -> bool:
-        """Check if a command exists in the system's PATH."""
+        """Check if a command exists in the system PATH."""
         return shutil.which(cmd) is not None
 
     def backup_file(self, file_path: Union[str, Path]) -> Optional[str]:
-        """Create a backup of a file with a timestamp suffix."""
+        """Backup a file by appending a timestamp suffix."""
         file_path = Path(file_path)
         if file_path.is_file():
             timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -283,112 +446,30 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"File {file_path} not found; skipping backup.")
         return None
 
-    def print_section(self, title: str) -> None:
-        """Log a section header to improve readability of log output."""
-        border = "─" * 60
-        self.logger.info(f"{self.config.NORD10}{border}{self.config.NC}")
-        self.logger.info(f"{self.config.NORD10}  {title}{self.config.NC}")
-        self.logger.info(f"{self.config.NORD10}{border}{self.config.NC}")
-
     def handle_error(self, msg: str, code: int = 1) -> None:
         """Log an error message and exit the script."""
         self.logger.error(f"{msg} (Exit Code: {code})")
         sys.exit(code)
 
-    def cleanup(self) -> None:
-        """Perform any necessary cleanup tasks before the script exits."""
-        self.logger.info("Performing cleanup tasks before exit.")
-        # Additional cleanup tasks can be added here
-
-    def create_symlink(self, source: Union[str, Path], target: Union[str, Path], backup: bool = True) -> bool:
-        """Create a symbolic link with optional backup of the target if it exists."""
-        source, target = Path(source), Path(target)
-        if not source.exists():
-            self.logger.warning(f"Source file {source} does not exist, cannot create symlink.")
-            return False
-        if target.exists() or target.is_symlink():
-            if backup:
-                self.backup_file(target)
-            try:
-                target.unlink()
-            except Exception as e:
-                self.logger.warning(f"Failed to remove existing target {target}: {e}")
-                return False
-        target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            target.symlink_to(source)
-            self.logger.info(f"Created symlink from {source} to {target}")
-            return True
-        except Exception as e:
-            self.logger.warning(f"Failed to create symlink from {source} to {target}: {e}")
-            return False
-
-    def copy_with_backup(self, src: Union[str, Path], dest: Union[str, Path]) -> bool:
-        """Copy a file with automatic backup of the destination if it exists."""
-        src, dest = Path(src), Path(dest)
-        if not src.exists():
-            self.logger.warning(f"Source file {src} does not exist, cannot copy.")
-            return False
-        if dest.exists():
-            self.backup_file(dest)
-        try:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-            self.logger.info(f"Copied {src} to {dest}")
-            return True
-        except Exception as e:
-            self.logger.warning(f"Failed to copy {src} to {dest}: {e}")
-            return False
-
-    def download_file(self, url: str, dest_path: Union[str, Path], show_progress: bool = False) -> bool:
-        """Download a file from a URL with optional progress indicator."""
-        dest_path = Path(dest_path)
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        cmd = ["curl", "-L"]
-        if not show_progress:
-            cmd.append("-s")
-        cmd.extend(["-o", str(dest_path), url])
-        try:
-            self.run_command(cmd)
-            if dest_path.exists():
-                self.logger.info(f"Downloaded {url} to {dest_path}")
-                return True
-            else:
-                self.logger.warning(f"Download command succeeded but file {dest_path} does not exist")
-                return False
-        except subprocess.CalledProcessError:
-            self.logger.warning(f"Failed to download {url}")
-            return False
-
-    def ensure_directory(self, path: Union[str, Path], mode: int = 0o755, owner: Optional[str] = None) -> bool:
-        """Ensure a directory exists with the specified permissions and ownership."""
-        path = Path(path)
-        try:
-            path.mkdir(mode=mode, parents=True, exist_ok=True)
-            self.logger.info(f"Ensured directory exists: {path}")
-            if owner:
-                self.run_command(["chown", owner, str(path)])
-                self.logger.info(f"Set ownership of {path} to {owner}")
-            return True
-        except Exception as e:
-            self.logger.warning(f"Failed to create or set permissions on directory {path}: {e}")
-            return False
-
-    def has_internet_connection(self) -> bool:
-        """Check if the system has an active internet connection."""
-        try:
-            self.run_command(["ping", "-c", "1", "-W", "5", "8.8.8.8"], capture_output=True, check=False)
-            return True
-        except Exception:
-            return False
-
-    # ----------------------------
-    # Pre-requisites and System Checks
-    # ----------------------------
+    # --------------------------------------------------------------------------
+    # Pre-flight Checks & Backups
+    # --------------------------------------------------------------------------
     def check_root(self) -> None:
         """Ensure the script is run as root."""
         if os.geteuid() != 0:
             self.handle_error("Script must be run as root. Exiting.")
+
+    def has_internet_connection(self) -> bool:
+        """Check if the system has an active internet connection."""
+        try:
+            self.run_command(
+                ["ping", "-c", "1", "-W", "5", "8.8.8.8"],
+                capture_output=True,
+                check=False,
+            )
+            return True
+        except Exception:
+            return False
 
     def check_network(self) -> None:
         """Verify network connectivity by pinging a reliable host."""
@@ -397,12 +478,11 @@ class UbuntuDesktopSetup:
         if self.has_internet_connection():
             self.logger.info("Network connectivity verified.")
         else:
-            self.handle_error("No network connectivity. Please verify your network settings.")
+            self.handle_error("No network connectivity. Check your network settings.")
 
     def save_config_snapshot(self) -> Optional[str]:
         """
-        Create a compressed archive of key configuration files as a snapshot backup
-        before making any changes.
+        Create a compressed archive snapshot of key configuration files.
         """
         self.print_section("Configuration Snapshot Backup")
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -413,40 +493,67 @@ class UbuntuDesktopSetup:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_dir_path = Path(temp_dir)
                 files_added = 0
-                for cfg_path in self.config.CONFIG_BACKUP_FILES:
-                    cfg_path = Path(cfg_path)
+                for cfg in self.config.CONFIG_BACKUP_FILES:
+                    cfg_path = Path(cfg)
                     if cfg_path.is_file():
-                        dest = temp_dir_path / cfg_path.name
-                        shutil.copy2(cfg_path, dest)
+                        shutil.copy2(cfg_path, temp_dir_path / cfg_path.name)
                         self.logger.info(f"Included {cfg_path} in snapshot.")
                         files_added += 1
                     else:
-                        self.logger.warning(f"Configuration file {cfg_path} not found; skipping.")
+                        self.logger.warning(f"{cfg_path} not found; skipping.")
                 if files_added > 0:
                     with tarfile.open(snapshot_file, "w:gz") as tar:
                         tar.add(temp_dir, arcname=".")
-                    self.logger.info(f"Configuration snapshot saved as {snapshot_file}.")
+                    self.logger.info(f"Configuration snapshot saved: {snapshot_file}")
                     return str(snapshot_file)
                 else:
-                    self.logger.warning("No configuration files were found to include in the snapshot.")
+                    self.logger.warning("No configuration files found for snapshot.")
                     return None
         except Exception as e:
-            self.logger.warning(f"Failed to create configuration snapshot: {e}")
+            self.logger.warning(f"Failed to create config snapshot: {e}")
             return None
 
-    # ----------------------------
+    def create_system_zfs_snapshot(self) -> Optional[str]:
+        """
+        Create a ZFS snapshot of the system's root dataset.
+        """
+        self.print_section("System ZFS Snapshot Backup")
+        system_dataset = "rpool/ROOT/ubuntu"
+        try:
+            self.run_command(["zfs", "list", system_dataset], capture_output=True)
+            self.logger.info(f"Dataset '{system_dataset}' found.")
+        except subprocess.CalledProcessError:
+            system_dataset = "rpool"
+            self.logger.warning("Dataset 'rpool/ROOT/ubuntu' not found; using 'rpool'.")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        snapshot_name = f"{system_dataset}@backup_{timestamp}"
+        try:
+            self.run_command(["zfs", "snapshot", snapshot_name])
+            self.logger.info(f"Created ZFS snapshot: {snapshot_name}")
+            return snapshot_name
+        except subprocess.CalledProcessError as e:
+            self.logger.warning(f"Failed to create ZFS snapshot: {e}")
+            return None
+
+    # --------------------------------------------------------------------------
     # System Update & Package Installation
-    # ----------------------------
+    # --------------------------------------------------------------------------
     def update_system(self) -> bool:
         """
         Update package repositories and upgrade installed packages.
         """
         self.print_section("System Update & Upgrade")
         try:
-            self.logger.info("Updating package repositories...")
-            self.run_command(["apt", "update", "-qq"])
-            self.logger.info("Upgrading system packages...")
-            self.run_command(["apt", "upgrade", "-y"])
+            run_with_progress(
+                "Updating package repositories...",
+                self.run_command,
+                ["apt", "update", "-qq"],
+            )
+            run_with_progress(
+                "Upgrading system packages...",
+                self.run_command,
+                ["apt", "upgrade", "-y"],
+            )
             self.logger.info("System update and upgrade complete.")
             return True
         except subprocess.CalledProcessError as e:
@@ -455,109 +562,127 @@ class UbuntuDesktopSetup:
 
     def install_packages(self) -> Tuple[List[str], List[str]]:
         """
-        Install specified packages if they are not already installed.
+        Install specified packages that are missing.
+        Returns a tuple of (successful, failed) package lists.
         """
         self.print_section("Essential Package Installation")
         self.logger.info("Checking for required packages...")
-        missing_packages = []
-        success_packages = []
-        failed_packages = []
+        missing = []
+        success = []
+        failed = []
         for pkg in self.config.PACKAGES:
             try:
-                subprocess.run(["dpkg", "-s", pkg],
-                               check=True,
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["dpkg", "-s", pkg],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 self.logger.info(f"Package already installed: {pkg}")
-                success_packages.append(pkg)
+                success.append(pkg)
             except subprocess.CalledProcessError:
-                missing_packages.append(pkg)
-        if missing_packages:
-            self.logger.info(f"Installing missing packages: {' '.join(missing_packages)}")
+                missing.append(pkg)
+        if missing:
+            self.logger.info(f"Installing missing packages: {' '.join(missing)}")
             try:
-                self.run_command(["apt", "install", "-y"] + missing_packages)
-                self.logger.info("All missing packages installed successfully.")
-                success_packages.extend(missing_packages)
+                self.run_command(["apt", "install", "-y"] + missing)
+                self.logger.info("Missing packages installed successfully.")
+                success.extend(missing)
             except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to install one or more packages: {e}")
-                for pkg in missing_packages:
+                self.logger.error(f"Failed to install packages: {e}")
+                for pkg in missing:
                     try:
-                        subprocess.run(["dpkg", "-s", pkg],
-                                       check=True,
-                                       stdout=subprocess.DEVNULL,
-                                       stderr=subprocess.DEVNULL)
-                        success_packages.append(pkg)
+                        subprocess.run(
+                            ["dpkg", "-s", pkg],
+                            check=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        success.append(pkg)
                     except subprocess.CalledProcessError:
-                        failed_packages.append(pkg)
+                        failed.append(pkg)
         else:
-            self.logger.info("All required packages are already installed.")
-        return success_packages, failed_packages
+            self.logger.info("All required packages are installed.")
+        return success, failed
 
     def configure_timezone(self, timezone: str = "America/New_York") -> bool:
         """
-        Configure the system timezone.
+        Set the system timezone.
         """
         self.print_section("Timezone Configuration")
         self.logger.info(f"Setting timezone to {timezone}...")
-        timezone_path = Path(f"/usr/share/zoneinfo/{timezone}")
-        localtime_path = Path("/etc/localtime")
-        if not timezone_path.is_file():
-            self.logger.warning(f"Timezone file for {timezone} not found.")
+        tz_file = Path(f"/usr/share/zoneinfo/{timezone}")
+        localtime = Path("/etc/localtime")
+        if not tz_file.is_file():
+            self.logger.warning(f"Timezone file not found: {tz_file}")
             return False
         try:
-            if localtime_path.exists() or localtime_path.is_symlink():
-                localtime_path.unlink()
-            localtime_path.symlink_to(timezone_path)
+            if localtime.exists() or localtime.is_symlink():
+                localtime.unlink()
+            localtime.symlink_to(tz_file)
             self.logger.info(f"Timezone set to {timezone}.")
             return True
         except Exception as e:
             self.logger.warning(f"Failed to set timezone: {e}")
             return False
 
-    # ----------------------------
-    # Repository and Shell Setup
-    # ----------------------------
+    # --------------------------------------------------------------------------
+    # Repository & Shell Setup
+    # --------------------------------------------------------------------------
     def setup_repos(self) -> List[str]:
         """
-        Set up GitHub repositories in the user's home directory.
+        Clone or update GitHub repositories for the user.
         """
         self.print_section("GitHub Repositories Setup")
-        self.logger.info(f"Setting up GitHub repositories for user '{self.config.USERNAME}'...")
         gh_dir = self.config.USER_HOME / "github"
         gh_dir.mkdir(exist_ok=True)
-        successful_repos = []
+        successful = []
         for repo in self.config.GITHUB_REPOS:
             repo_dir = gh_dir / repo
             if (repo_dir / ".git").is_dir():
-                self.logger.info(f"Repository '{repo}' already exists. Pulling latest changes...")
+                self.logger.info(f"Repository '{repo}' exists; pulling updates...")
                 try:
                     self.run_command(["git", "-C", str(repo_dir), "pull"])
-                    successful_repos.append(repo)
+                    successful.append(repo)
                 except subprocess.CalledProcessError:
                     self.logger.warning(f"Failed to update repository '{repo}'.")
             else:
-                self.logger.info(f"Cloning repository '{repo}' into '{repo_dir}'...")
+                self.logger.info(f"Cloning repository '{repo}'...")
                 try:
-                    self.run_command(["git", "clone", f"https://github.com/dunamismax/{repo}.git", str(repo_dir)])
-                    self.logger.info(f"Repository '{repo}' cloned successfully.")
-                    successful_repos.append(repo)
+                    self.run_command(
+                        [
+                            "git",
+                            "clone",
+                            f"https://github.com/dunamismax/{repo}.git",
+                            str(repo_dir),
+                        ]
+                    )
+                    self.logger.info(f"Repository '{repo}' cloned.")
+                    successful.append(repo)
                 except subprocess.CalledProcessError:
                     self.logger.warning(f"Failed to clone repository '{repo}'.")
         try:
-            self.run_command(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(gh_dir)])
-            self.logger.info(f"Ownership of '{gh_dir}' set to '{self.config.USERNAME}'.")
+            self.run_command(
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(gh_dir),
+                ]
+            )
+            self.logger.info(f"Ownership of {gh_dir} set to {self.config.USERNAME}.")
         except subprocess.CalledProcessError:
-            self.logger.warning(f"Failed to set ownership of '{gh_dir}'.")
-        return successful_repos
+            self.logger.warning(f"Failed to set ownership of {gh_dir}.")
+        return successful
 
-    def copy_shell_configs(self) -> Dict[str, bool]:
+    def copy_shell_configs(self) -> bool:
         """
-        Update shell configuration files from a repository source.
+        Update shell configuration files (.bashrc, .profile) from a source repository.
         """
         self.print_section("Shell Configuration Update")
         source_dir = self.config.USER_HOME / "github/bash/linux/ubuntu/dotfiles"
         destination_dirs = [self.config.USER_HOME, Path("/root")]
-        results = {}
+        overall = True
         for file_name in [".bashrc", ".profile"]:
             src = source_dir / file_name
             if not src.is_file():
@@ -565,26 +690,54 @@ class UbuntuDesktopSetup:
                 continue
             for dest_dir in destination_dirs:
                 dest = dest_dir / file_name
-                results[str(dest)] = False
                 if dest.is_file() and filecmp.cmp(src, dest):
                     self.logger.info(f"File {dest} is already up-to-date.")
-                    results[str(dest)] = True
-                    continue
+                else:
+                    try:
+                        shutil.copy2(src, dest)
+                        owner = (
+                            f"{self.config.USERNAME}:{self.config.USERNAME}"
+                            if dest_dir == self.config.USER_HOME
+                            else "root:root"
+                        )
+                        self.run_command(["chown", owner, str(dest)])
+                        self.logger.info(f"Copied {src} to {dest}.")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to copy {src} to {dest}: {e}")
+                        overall = False
+        return overall
+
+    def copy_config_folders(self) -> bool:
+        """
+        Copy subdirectories from the dotfiles repository to the .config directory.
+        """
+        self.print_section("Copying Config Folders")
+        src = self.config.CONFIG_SRC_DIR
+        dest = self.config.CONFIG_DEST_DIR
+        dest.mkdir(exist_ok=True)
+        overall = True
+        for item in src.iterdir():
+            if item.is_dir():
+                dest_path = dest / item.name
                 try:
-                    shutil.copy2(src, dest)
-                    if dest_dir == self.config.USER_HOME:
-                        self.run_command(["chown", f"{self.config.USERNAME}:{self.config.USERNAME}", str(dest)])
-                    else:
-                        self.run_command(["chown", "root:root", str(dest)])
-                    self.logger.info(f"Copied {src} to {dest}.")
-                    results[str(dest)] = True
+                    shutil.copytree(item, dest_path, dirs_exist_ok=True)
+                    self.run_command(
+                        [
+                            "chown",
+                            "-R",
+                            f"{self.config.USERNAME}:{self.config.USERNAME}",
+                            str(dest_path),
+                        ]
+                    )
+                    self.logger.info(f"Copied {item} to {dest_path}.")
                 except Exception as e:
-                    self.logger.warning(f"Failed to copy {src} to {dest}: {e}")
-        return results
+                    self.logger.warning(f"Failed to copy {item} to {dest_path}: {e}")
+                    overall = False
+        return overall
 
     def set_bash_shell(self) -> bool:
         """
-        Ensure that /bin/bash is set as the default shell for the specified user.
+        Ensure /bin/bash is set as the default shell for the specified user.
         """
         self.print_section("Default Shell Configuration")
         if not self.command_exists("bash"):
@@ -594,17 +747,16 @@ class UbuntuDesktopSetup:
             except subprocess.CalledProcessError:
                 self.logger.warning("Bash installation failed.")
                 return False
+        shells_file = Path("/etc/shells")
         try:
-            shells_path = Path("/etc/shells")
-            if shells_path.exists():
-                with open(shells_path, "r") as f:
-                    shells_content = f.read()
-                if "/bin/bash" not in shells_content:
-                    with open(shells_path, "a") as f:
+            if shells_file.exists():
+                content = shells_file.read_text()
+                if "/bin/bash" not in content:
+                    with open(shells_file, "a") as f:
                         f.write("/bin/bash\n")
                     self.logger.info("Added /bin/bash to /etc/shells.")
             else:
-                with open(shells_path, "w") as f:
+                with open(shells_file, "w") as f:
                     f.write("/bin/bash\n")
                 self.logger.info("Created /etc/shells with /bin/bash.")
         except Exception as e:
@@ -612,53 +764,31 @@ class UbuntuDesktopSetup:
             return False
         try:
             self.run_command(["chsh", "-s", "/bin/bash", self.config.USERNAME])
-            self.logger.info(f"Default shell for {self.config.USERNAME} set to /bin/bash.")
+            self.logger.info(
+                f"Default shell for {self.config.USERNAME} set to /bin/bash."
+            )
             return True
         except subprocess.CalledProcessError:
-            self.logger.warning(f"Failed to set default shell for {self.config.USERNAME}.")
+            self.logger.warning(
+                f"Failed to set default shell for {self.config.USERNAME}."
+            )
             return False
 
-    def copy_config_folders(self) -> Dict[str, bool]:
-        """
-        Copy all subdirectories from dotfiles to the .config directory.
-        """
-        self.print_section("Copying Config Folders")
-        source_dir = self.config.CONFIG_SRC_DIR
-        dest_dir = self.config.CONFIG_DEST_DIR
-        dest_dir.mkdir(exist_ok=True)
-        self.logger.info(f"Destination directory ensured: {dest_dir}")
-        results = {}
-        try:
-            for item in source_dir.iterdir():
-                if not item.is_dir():
-                    continue
-                dest_path = dest_dir / item.name
-                results[item.name] = False
-                try:
-                    shutil.copytree(item, dest_path, dirs_exist_ok=True)
-                    self.logger.info(f"Copied '{item}' to '{dest_path}'.")
-                    self.run_command(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(dest_path)])
-                    results[item.name] = True
-                except Exception as e:
-                    self.logger.warning(f"Failed to copy '{item}' to '{dest_path}': {e}")
-        except Exception as e:
-            self.logger.warning(f"Error scanning source directory '{source_dir}': {e}")
-        return results
-
-    # ----------------------------
-    # SSH and Sudo Security Configuration
-    # ----------------------------
+    # --------------------------------------------------------------------------
+    # Security Hardening
+    # --------------------------------------------------------------------------
     def configure_ssh(self) -> bool:
         """
-        Configure and secure the OpenSSH server.
+        Secure and configure the OpenSSH server.
         """
         self.print_section("SSH Configuration")
-        self.logger.info("Configuring OpenSSH Server...")
         try:
-            subprocess.run(["dpkg", "-s", "openssh-server"],
-                           check=True,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["dpkg", "-s", "openssh-server"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except subprocess.CalledProcessError:
             self.logger.info("openssh-server not installed. Installing...")
             try:
@@ -678,19 +808,17 @@ class UbuntuDesktopSetup:
             return False
         self.backup_file(sshd_config)
         try:
-            with open(sshd_config, "r") as f:
-                lines = f.readlines()
-            for key, value in self.config.SSH_SETTINGS.items():
-                found = False
+            lines = sshd_config.read_text().splitlines()
+            for key, val in self.config.SSH_SETTINGS.items():
+                replaced = False
                 for i, line in enumerate(lines):
                     if line.strip().startswith(key):
-                        lines[i] = f"{key} {value}\n"
-                        found = True
+                        lines[i] = f"{key} {val}"
+                        replaced = True
                         break
-                if not found:
-                    lines.append(f"{key} {value}\n")
-            with open(sshd_config, "w") as f:
-                f.writelines(lines)
+                if not replaced:
+                    lines.append(f"{key} {val}")
+            sshd_config.write_text("\n".join(lines) + "\n")
             self.run_command(["systemctl", "restart", "ssh"])
             self.logger.info("SSH configuration updated and service restarted.")
             return True
@@ -703,25 +831,27 @@ class UbuntuDesktopSetup:
         Ensure the specified user has sudo privileges.
         """
         self.print_section("Sudo Configuration")
-        self.logger.info(f"Ensuring user {self.config.USERNAME} has sudo privileges...")
         try:
-            result = self.run_command(["id", "-nG", self.config.USERNAME], capture_output=True, text=True)
+            result = self.run_command(
+                ["id", "-nG", self.config.USERNAME], capture_output=True, text=True
+            )
             if "sudo" in result.stdout.split():
-                self.logger.info(f"User {self.config.USERNAME} is already in the sudo group.")
+                self.logger.info(f"User {self.config.USERNAME} already in sudo group.")
                 return True
             self.run_command(["usermod", "-aG", "sudo", self.config.USERNAME])
             self.logger.info(f"User {self.config.USERNAME} added to sudo group.")
             return True
         except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to manage sudo privileges for {self.config.USERNAME}: {e}")
+            self.logger.warning(
+                f"Failed to set sudo privileges for {self.config.USERNAME}: {e}"
+            )
             return False
 
     def configure_firewall(self, ports: Optional[List[str]] = None) -> bool:
         """
-        Configure the UFW firewall with secure defaults and specified ports.
+        Configure the UFW firewall with secure defaults and allowed ports.
         """
         self.print_section("Firewall Configuration")
-        self.logger.info("Configuring firewall using UFW...")
         if ports is None:
             ports = self.config.FIREWALL_PORTS
         ufw_cmd = "/usr/sbin/ufw"
@@ -730,159 +860,139 @@ class UbuntuDesktopSetup:
             return False
         try:
             self.run_command([ufw_cmd, "default", "deny", "incoming"])
-            self.logger.info("Set default deny for incoming traffic.")
             self.run_command([ufw_cmd, "default", "allow", "outgoing"])
-            self.logger.info("Set default allow for outgoing traffic.")
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to set default UFW policies: {e}")
-            return False
-        for port in ports:
-            try:
+            for port in ports:
                 self.run_command([ufw_cmd, "allow", f"{port}/tcp"])
                 self.logger.info(f"Allowed TCP port {port}.")
-            except subprocess.CalledProcessError as e:
-                self.logger.warning(f"Failed to allow TCP port {port}: {e}")
-        try:
-            result = self.run_command([ufw_cmd, "status"], capture_output=True, text=True)
-            if "inactive" in result.stdout.lower():
+            status = self.run_command(
+                [ufw_cmd, "status"], capture_output=True, text=True
+            )
+            if "inactive" in status.stdout.lower():
                 self.run_command([ufw_cmd, "--force", "enable"])
-                self.logger.info("UFW firewall has been enabled.")
+                self.logger.info("UFW firewall enabled.")
             else:
-                self.logger.info("UFW firewall is already active.")
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to manage UFW status: {e}")
-            return False
-        try:
+                self.logger.info("UFW firewall is active.")
             self.run_command(["systemctl", "enable", "ufw"])
             self.run_command(["systemctl", "start", "ufw"])
             self.logger.info("UFW service enabled and started.")
             return True
         except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to manage UFW service: {e}")
+            self.logger.warning(f"Failed to configure firewall: {e}")
             return False
 
     def configure_fail2ban(self) -> bool:
         """
-        Configure and enable fail2ban with a secure basic default configuration.
+        Configure fail2ban with a basic secure default.
         """
         self.print_section("Fail2ban Configuration")
         jail_local = Path("/etc/fail2ban/jail.local")
-        config_content = """[DEFAULT]
-# Ban IPs for 10 minutes after reaching max retries
-bantime  = 600
-# Look for failed attempts within 10 minutes
-findtime = 600
-# Ban an IP after 3 failed login attempts
-maxretry = 3
-# Use systemd for reading logs on modern systems
-backend  = systemd
-# Resolve DNS only if necessary; warn if issues occur
-usedns   = warn
-
-[sshd]
-enabled  = true
-port     = ssh
-logpath  = /var/log/auth.log
-maxretry = 3
-"""
+        config_content = (
+            "[DEFAULT]\n"
+            "bantime  = 600\n"
+            "findtime = 600\n"
+            "maxretry = 3\n"
+            "backend  = systemd\n"
+            "usedns   = warn\n\n"
+            "[sshd]\n"
+            "enabled  = true\n"
+            "port     = ssh\n"
+            "logpath  = /var/log/auth.log\n"
+            "maxretry = 3\n"
+        )
         if jail_local.is_file():
             self.backup_file(jail_local)
         try:
-            with open(jail_local, "w") as f:
-                f.write(config_content)
-            self.logger.info("Fail2ban configuration written to /etc/fail2ban/jail.local.")
-        except Exception as e:
-            self.logger.warning(f"Failed to write Fail2ban configuration: {e}")
-            return False
-        try:
+            jail_local.write_text(config_content)
+            self.logger.info("Fail2ban configuration written.")
             self.run_command(["systemctl", "enable", "fail2ban"])
             self.run_command(["systemctl", "restart", "fail2ban"])
-            self.logger.info("Fail2ban service enabled and restarted successfully.")
+            self.logger.info("Fail2ban service enabled and restarted.")
             return True
         except subprocess.CalledProcessError:
-            self.logger.warning("Failed to enable or restart the Fail2ban service.")
+            self.logger.warning("Failed to manage fail2ban service.")
             return False
 
-    # ----------------------------
-    # Service Installation and Configuration
-    # ----------------------------
+    # --------------------------------------------------------------------------
+    # Service Installation & Configuration
+    # --------------------------------------------------------------------------
     def docker_config(self) -> bool:
         """
         Install and configure Docker and Docker Compose.
         """
         self.print_section("Docker Configuration")
-        self.logger.info("Installing Docker...")
         if self.command_exists("docker"):
-            self.logger.info("Docker is already installed.")
+            self.logger.info("Docker already installed.")
         else:
             try:
                 self.run_command(["apt", "install", "-y", "docker.io"])
-                self.logger.info("Docker installed successfully.")
+                self.logger.info("Docker installed.")
             except subprocess.CalledProcessError:
                 self.logger.error("Failed to install Docker.")
                 return False
         try:
-            result = self.run_command(["id", "-nG", self.config.USERNAME], capture_output=True, text=True)
+            result = self.run_command(
+                ["id", "-nG", self.config.USERNAME], capture_output=True, text=True
+            )
             if "docker" not in result.stdout.split():
                 self.run_command(["usermod", "-aG", "docker", self.config.USERNAME])
-                self.logger.info(f"Added user '{self.config.USERNAME}' to docker group.")
+                self.logger.info(f"User {self.config.USERNAME} added to docker group.")
             else:
-                self.logger.info(f"User '{self.config.USERNAME}' is already in docker group.")
+                self.logger.info(
+                    f"User {self.config.USERNAME} already in docker group."
+                )
         except subprocess.CalledProcessError:
-            self.logger.warning(f"Failed to add {self.config.USERNAME} to docker group.")
-        daemon_json_path = Path("/etc/docker/daemon.json")
-        daemon_json_dir = daemon_json_path.parent
+            self.logger.warning(
+                f"Failed to add {self.config.USERNAME} to docker group."
+            )
+        daemon_json = Path("/etc/docker/daemon.json")
+        daemon_dir = daemon_json.parent
         try:
-            daemon_json_dir.mkdir(exist_ok=True)
+            daemon_dir.mkdir(exist_ok=True)
         except Exception as e:
-            self.logger.error(f"Failed to create {daemon_json_dir}: {e}")
+            self.logger.error(f"Failed to create {daemon_dir}: {e}")
             return False
-        desired_daemon_json = {
+        desired_config = {
             "log-driver": "json-file",
-            "log-opts": {
-                "max-size": "10m",
-                "max-file": "3"
-            },
-            "exec-opts": ["native.cgroupdriver=systemd"]
+            "log-opts": {"max-size": "10m", "max-file": "3"},
+            "exec-opts": ["native.cgroupdriver=systemd"],
         }
         write_config = True
-        if daemon_json_path.is_file():
+        if daemon_json.is_file():
             try:
-                with open(daemon_json_path, "r") as f:
-                    existing_config = json.load(f)
-                if existing_config == desired_daemon_json:
-                    self.logger.info("Docker daemon configuration is already up-to-date.")
+                existing = json.loads(daemon_json.read_text())
+                if existing == desired_config:
+                    self.logger.info("Docker daemon configuration up-to-date.")
                     write_config = False
                 else:
-                    self.backup_file(daemon_json_path)
+                    self.backup_file(daemon_json)
             except Exception as e:
-                self.logger.warning(f"Failed to read {daemon_json_path}: {e}")
-                self.backup_file(daemon_json_path)
+                self.logger.warning(f"Failed to read {daemon_json}: {e}")
+                self.backup_file(daemon_json)
         if write_config:
             try:
-                with open(daemon_json_path, "w") as f:
-                    json.dump(desired_daemon_json, f, indent=2)
-                self.logger.info("Docker daemon configuration updated/created.")
+                with open(daemon_json, "w") as f:
+                    json.dump(desired_config, f, indent=2)
+                self.logger.info("Docker daemon configuration updated.")
             except Exception as e:
-                self.logger.warning(f"Failed to write {daemon_json_path}: {e}")
+                self.logger.warning(f"Failed to write {daemon_json}: {e}")
         try:
             self.run_command(["systemctl", "enable", "docker"])
             self.run_command(["systemctl", "restart", "docker"])
             self.logger.info("Docker service enabled and restarted.")
         except subprocess.CalledProcessError:
-            self.logger.error("Failed to enable or restart Docker service.")
+            self.logger.error("Failed to enable/restart Docker service.")
             return False
         if not self.command_exists("docker-compose"):
             try:
                 compose_path = Path("/usr/local/bin/docker-compose")
                 self.download_file(self.config.DOCKER_COMPOSE_URL, compose_path)
                 compose_path.chmod(0o755)
-                self.logger.info("Docker Compose installed successfully.")
+                self.logger.info("Docker Compose installed.")
             except Exception as e:
                 self.logger.error(f"Failed to install Docker Compose: {e}")
                 return False
         else:
-            self.logger.info("Docker Compose is already installed.")
+            self.logger.info("Docker Compose already installed.")
         return True
 
     def install_plex(self) -> bool:
@@ -890,16 +1000,17 @@ maxretry = 3
         Install and configure Plex Media Server.
         """
         self.print_section("Plex Media Server Installation")
-        self.logger.info("Installing Plex Media Server...")
         if not self.command_exists("curl"):
             self.logger.error("curl is required but not installed.")
             return False
         try:
-            subprocess.run(["dpkg", "-s", "plexmediaserver"],
-                           check=True,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
-            self.logger.info("Plex Media Server is already installed; skipping download and installation.")
+            subprocess.run(
+                ["dpkg", "-s", "plexmediaserver"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.logger.info("Plex Media Server already installed; skipping.")
             return True
         except subprocess.CalledProcessError:
             pass
@@ -908,33 +1019,35 @@ maxretry = 3
             self.download_file(self.config.PLEX_URL, temp_deb)
             self.run_command(["dpkg", "-i", str(temp_deb)])
         except subprocess.CalledProcessError:
-            self.logger.warning("dpkg encountered issues. Attempting to fix missing dependencies...")
+            self.logger.warning("dpkg encountered issues. Fixing dependencies...")
             try:
                 self.run_command(["apt", "install", "-f", "-y"])
             except subprocess.CalledProcessError:
-                self.logger.error("Failed to install dependencies for Plex.")
+                self.logger.error("Failed to fix dependencies for Plex.")
                 return False
         plex_conf = Path("/etc/default/plexmediaserver")
         if plex_conf.is_file():
             try:
-                with open(plex_conf, "r") as f:
-                    conf = f.read()
-                if f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}" in conf:
-                    self.logger.info(f"Plex user is already configured as {self.config.USERNAME}.")
-                else:
+                conf = plex_conf.read_text()
+                if f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}" not in conf:
                     new_conf = []
                     for line in conf.splitlines():
                         if line.startswith("PLEX_MEDIA_SERVER_USER="):
-                            new_conf.append(f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}")
+                            new_conf.append(
+                                f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}"
+                            )
                         else:
                             new_conf.append(line)
-                    with open(plex_conf, "w") as f:
-                        f.write("\n".join(new_conf) + "\n")
-                    self.logger.info(f"Configured Plex to run as {self.config.USERNAME}.")
+                    plex_conf.write_text("\n".join(new_conf) + "\n")
+                    self.logger.info(
+                        f"Configured Plex to run as {self.config.USERNAME}."
+                    )
+                else:
+                    self.logger.info("Plex user already configured.")
             except Exception as e:
-                self.logger.warning(f"Failed to set Plex user in {plex_conf}: {e}")
+                self.logger.warning(f"Failed to update {plex_conf}: {e}")
         else:
-            self.logger.warning(f"{plex_conf} not found; skipping user configuration.")
+            self.logger.warning(f"{plex_conf} not found; skipping user config.")
         try:
             self.run_command(["systemctl", "enable", "plexmediaserver"])
             self.logger.info("Plex service enabled.")
@@ -944,20 +1057,22 @@ maxretry = 3
             temp_deb.unlink()
         except Exception:
             pass
-        self.logger.info("Plex Media Server installed successfully.")
+        self.logger.info("Plex Media Server installation complete.")
         return True
 
     def install_fastfetch(self) -> bool:
         """
-        Install Fastfetch, a system information tool.
+        Install Fastfetch system information tool.
         """
         self.print_section("Fastfetch Installation")
         try:
-            subprocess.run(["dpkg", "-s", "fastfetch"],
-                           check=True,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
-            self.logger.info("Fastfetch is already installed; skipping.")
+            subprocess.run(
+                ["dpkg", "-s", "fastfetch"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.logger.info("Fastfetch already installed; skipping.")
             return True
         except subprocess.CalledProcessError:
             pass
@@ -966,11 +1081,11 @@ maxretry = 3
             self.download_file(self.config.FASTFETCH_URL, temp_deb)
             self.run_command(["dpkg", "-i", str(temp_deb)])
         except subprocess.CalledProcessError:
-            self.logger.warning("fastfetch installation issues; fixing dependencies...")
+            self.logger.warning("Fastfetch installation issues; fixing dependencies...")
             try:
                 self.run_command(["apt", "install", "-f", "-y"])
             except subprocess.CalledProcessError:
-                self.logger.error("Failed to fix dependencies for fastfetch.")
+                self.logger.error("Failed to fix dependencies for Fastfetch.")
                 return False
         try:
             temp_deb.unlink()
@@ -984,25 +1099,34 @@ maxretry = 3
         Deploy user scripts from the repository to the user's bin directory.
         """
         self.print_section("Deploying User Scripts")
-        script_source = self.config.USER_HOME / "github/bash/linux/ubuntu/_scripts"
-        script_target = self.config.USER_HOME / "bin"
-        if not script_source.is_dir():
-            self.logger.error(f"Source directory '{script_source}' does not exist.")
+        src = self.config.USER_HOME / "github/bash/linux/ubuntu/_scripts"
+        target = self.config.USER_HOME / "bin"
+        if not src.is_dir():
+            self.logger.error(f"Script source directory {src} does not exist.")
             return False
-        script_target.mkdir(exist_ok=True)
+        target.mkdir(exist_ok=True)
         try:
-            self.run_command(["rsync", "-ah", "--delete", f"{script_source}/", f"{script_target}/"])
-            self.run_command(["find", str(script_target), "-type", "f", "-exec", "chmod", "755", "{}", ";"])
-            self.run_command(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(script_target)])
+            self.run_command(["rsync", "-ah", "--delete", f"{src}/", f"{target}/"])
+            self.run_command(
+                ["find", str(target), "-type", "f", "-exec", "chmod", "755", "{}", ";"]
+            )
+            self.run_command(
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(target),
+                ]
+            )
             self.logger.info("User scripts deployed successfully.")
             return True
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Script deployment failed: {e}")
             return False
 
-    # ----------------------------
+    # --------------------------------------------------------------------------
     # Maintenance & Monitoring Tasks
-    # ----------------------------
+    # --------------------------------------------------------------------------
     def configure_periodic(self) -> bool:
         """
         Set up a daily cron job for system maintenance.
@@ -1011,20 +1135,19 @@ maxretry = 3
         cron_file = Path("/etc/cron.daily/ubuntu_maintenance")
         marker = "# Ubuntu maintenance script"
         if cron_file.is_file():
-            with open(cron_file, "r") as f:
-                if marker in f.read():
-                    self.logger.info("Daily maintenance cron job already configured.")
-                    return True
+            if marker in cron_file.read_text():
+                self.logger.info("Daily maintenance cron job already configured.")
+                return True
             self.backup_file(cron_file)
-        content = """#!/bin/sh
-# Ubuntu maintenance script
-apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
-"""
+        content = (
+            "#!/bin/sh\n"
+            "# Ubuntu maintenance script\n"
+            "apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y\n"
+        )
         try:
-            with open(cron_file, "w") as f:
-                f.write(content)
+            cron_file.write_text(content)
             cron_file.chmod(0o755)
-            self.logger.info(f"Daily maintenance script created at {cron_file}.")
+            self.logger.info(f"Created daily maintenance script at {cron_file}.")
             return True
         except Exception as e:
             self.logger.warning(f"Failed to create maintenance script: {e}")
@@ -1039,20 +1162,20 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
         backup_dir = Path(f"/var/backups/ubuntu_config_{timestamp}")
         try:
             backup_dir.mkdir(exist_ok=True)
-            files_backed_up = 0
-            for file_path in ["/etc/ssh/sshd_config", "/etc/ufw/user.rules", "/etc/ntp.conf"]:
-                file_path = Path(file_path)
-                if file_path.is_file():
-                    dest_path = backup_dir / file_path.name
-                    try:
-                        shutil.copy2(file_path, dest_path)
-                        self.logger.info(f"Backed up {file_path}")
-                        files_backed_up += 1
-                    except Exception as e:
-                        self.logger.warning(f"Failed to backup {file_path}: {e}")
+            count = 0
+            for file in [
+                "/etc/ssh/sshd_config",
+                "/etc/ufw/user.rules",
+                "/etc/ntp.conf",
+            ]:
+                fpath = Path(file)
+                if fpath.is_file():
+                    shutil.copy2(fpath, backup_dir / fpath.name)
+                    self.logger.info(f"Backed up {fpath}")
+                    count += 1
                 else:
-                    self.logger.warning(f"File {file_path} not found; skipping.")
-            if files_backed_up > 0:
+                    self.logger.warning(f"{fpath} not found; skipping.")
+            if count > 0:
                 self.logger.info(f"Configuration files backed up to {backup_dir}")
                 return str(backup_dir)
             else:
@@ -1060,7 +1183,7 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
                 backup_dir.rmdir()
                 return None
         except Exception as e:
-            self.logger.warning(f"Failed to create backup directory: {e}")
+            self.logger.warning(f"Failed to backup configuration files: {e}")
             return None
 
     def rotate_logs(self, log_file: Optional[str] = None) -> bool:
@@ -1076,13 +1199,12 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
             return False
         try:
             timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-            rotated_file = f"{log_path}.{timestamp}.gz"
-            with open(log_path, "rb") as f_in:
-                with gzip.open(rotated_file, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            rotated = f"{log_path}.{timestamp}.gz"
+            with open(log_path, "rb") as f_in, gzip.open(rotated, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
             with open(log_path, "w"):
                 pass
-            self.logger.info(f"Log rotated to {rotated_file}.")
+            self.logger.info(f"Log rotated to {rotated}.")
             return True
         except Exception as e:
             self.logger.warning(f"Log rotation failed: {e}")
@@ -1090,35 +1212,35 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
 
     def system_health_check(self) -> Dict[str, str]:
         """
-        Perform basic system health checks and log the results.
+        Perform basic system health checks and log the information.
         """
         self.print_section("System Health Check")
-        health_info = {}
+        info = {}
         try:
             uptime = subprocess.check_output(["uptime"], text=True).strip()
             self.logger.info(f"Uptime: {uptime}")
-            health_info["uptime"] = uptime
+            info["uptime"] = uptime
         except Exception as e:
             self.logger.warning(f"Failed to get uptime: {e}")
         try:
-            df_output = subprocess.check_output(["df", "-h", "/"], text=True).strip()
-            for line in df_output.splitlines():
-                self.logger.info(line)
-            health_info["disk_usage"] = df_output
+            df_out = subprocess.check_output(["df", "-h", "/"], text=True).strip()
+            self.logger.info(f"Disk usage:\n{df_out}")
+            info["disk_usage"] = df_out
         except Exception as e:
             self.logger.warning(f"Failed to get disk usage: {e}")
         try:
-            free_output = subprocess.check_output(["free", "-h"], text=True).strip()
-            for line in free_output.splitlines():
-                self.logger.info(line)
-            health_info["memory_usage"] = free_output
+            free_out = subprocess.check_output(["free", "-h"], text=True).strip()
+            self.logger.info(f"Memory usage:\n{free_out}")
+            info["memory_usage"] = free_out
         except Exception as e:
             self.logger.warning(f"Failed to get memory usage: {e}")
-        return health_info
+        return info
 
-    def verify_firewall_rules(self, ports: Optional[List[str]] = None) -> Dict[str, bool]:
+    def verify_firewall_rules(
+        self, ports: Optional[List[str]] = None
+    ) -> Dict[str, bool]:
         """
-        Verify that specific ports are accessible as expected.
+        Verify that specified ports are accessible.
         """
         self.print_section("Firewall Rules Verification")
         if ports is None:
@@ -1126,20 +1248,22 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
         results = {}
         for port in ports:
             try:
-                subprocess.run(["nc", "-z", "-w3", "127.0.0.1", port],
-                               check=True,
-                               stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["nc", "-z", "-w3", "127.0.0.1", port],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 self.logger.info(f"Port {port} is accessible.")
                 results[port] = True
             except subprocess.CalledProcessError:
-                self.logger.warning(f"Port {port} is not accessible. Check ufw rules.")
+                self.logger.warning(f"Port {port} not accessible.")
                 results[port] = False
         return results
 
-    # ----------------------------
+    # --------------------------------------------------------------------------
     # Certificates & Performance Tuning
-    # ----------------------------
+    # --------------------------------------------------------------------------
     def update_ssl_certificates(self) -> bool:
         """
         Update SSL certificates using certbot.
@@ -1148,13 +1272,13 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
         if not self.command_exists("certbot"):
             try:
                 self.run_command(["apt", "install", "-y", "certbot"])
-                self.logger.info("certbot installed successfully.")
+                self.logger.info("certbot installed.")
             except subprocess.CalledProcessError:
                 self.logger.warning("Failed to install certbot.")
                 return False
         try:
             self.run_command(["certbot", "renew"])
-            self.logger.info("SSL certificates updated successfully.")
+            self.logger.info("SSL certificates updated.")
             return True
         except subprocess.CalledProcessError:
             self.logger.warning("Failed to update SSL certificates.")
@@ -1165,81 +1289,115 @@ apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y
         Apply performance tuning settings to the system.
         """
         self.print_section("Performance Tuning")
-        sysctl_conf = Path("/etc/sysctl.conf")
+        sysctl_file = Path("/etc/sysctl.conf")
         marker = "# Performance tuning settings for Ubuntu"
-        if sysctl_conf.is_file():
-            self.backup_file(sysctl_conf)
         try:
-            current_content = sysctl_conf.read_text() if sysctl_conf.is_file() else ""
-            if marker not in current_content:
+            current = sysctl_file.read_text() if sysctl_file.is_file() else ""
+            if marker not in current:
                 tuning = f"""
 {marker}
 net.core.somaxconn=128
 net.ipv4.tcp_rmem=4096 87380 6291456
 net.ipv4.tcp_wmem=4096 16384 4194304
 """
-                with open(sysctl_conf, "a") as f:
+                with open(sysctl_file, "a") as f:
                     f.write(tuning)
                 for setting in [
                     "net.core.somaxconn=128",
                     "net.ipv4.tcp_rmem=4096 87380 6291456",
-                    "net.ipv4.tcp_wmem=4096 16384 4194304"
+                    "net.ipv4.tcp_wmem=4096 16384 4194304",
                 ]:
                     self.run_command(["sysctl", "-w", setting])
                 self.logger.info("Performance tuning applied.")
             else:
-                self.logger.info(f"Performance tuning settings already exist in {sysctl_conf}.")
+                self.logger.info("Performance tuning settings already exist.")
             return True
         except Exception as e:
             self.logger.warning(f"Failed to apply performance tuning: {e}")
             return False
 
-    # ----------------------------
+    # --------------------------------------------------------------------------
     # Permissions & Advanced Storage Setup
-    # ----------------------------
+    # --------------------------------------------------------------------------
     def home_permissions(self) -> bool:
         """
         Ensure correct ownership and permissions for the user's home directory.
         """
         self.print_section("Home Directory Permissions")
-        home_dir = self.config.USER_HOME
         try:
-            self.run_command(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(home_dir)])
-            self.logger.info(f"Ownership of {home_dir} set to {self.config.USERNAME}.")
+            self.run_command(
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(self.config.USER_HOME),
+                ]
+            )
+            self.logger.info(
+                f"Ownership of {self.config.USER_HOME} set to {self.config.USERNAME}."
+            )
         except subprocess.CalledProcessError:
-            self.logger.error(f"Failed to change ownership of {home_dir}.")
+            self.logger.error(f"Failed to change ownership of {self.config.USER_HOME}.")
             return False
         try:
-            self.run_command(["find", str(home_dir), "-type", "d", "-exec", "chmod", "g+s", "{}", ";"])
-            self.logger.info(f"Setgid bit set on directories in {home_dir}.")
+            self.run_command(
+                [
+                    "find",
+                    str(self.config.USER_HOME),
+                    "-type",
+                    "d",
+                    "-exec",
+                    "chmod",
+                    "g+s",
+                    "{}",
+                    ";",
+                ]
+            )
+            self.logger.info("Setgid bit applied on home directories.")
         except subprocess.CalledProcessError:
-            self.logger.warning("Failed to set setgid bit on some directories.")
+            self.logger.warning("Failed to set setgid bit.")
         if self.command_exists("setfacl"):
             try:
-                self.run_command(["setfacl", "-R", "-d", "-m", f"u:{self.config.USERNAME}:rwx", str(home_dir)])
-                self.logger.info(f"Default ACLs applied on {home_dir}.")
+                self.run_command(
+                    [
+                        "setfacl",
+                        "-R",
+                        "-d",
+                        "-m",
+                        f"u:{self.config.USERNAME}:rwx",
+                        str(self.config.USER_HOME),
+                    ]
+                )
+                self.logger.info("Default ACLs applied.")
             except subprocess.CalledProcessError:
                 self.logger.warning("Failed to apply default ACLs.")
         else:
-            self.logger.warning("setfacl not found; skipping default ACL configuration.")
+            self.logger.warning("setfacl not found; skipping ACL configuration.")
         return True
 
     def install_configure_zfs(self) -> bool:
         """
-        Install and configure ZFS for external pool.
+        Install and configure ZFS for an external pool.
         """
         self.print_section("ZFS Installation and Configuration")
-        pool_name = self.config.ZFS_POOL_NAME
-        mount_point = self.config.ZFS_MOUNT_POINT
-        mount_point = Path(mount_point)
-        cache_file = Path("/etc/zfs/zpool.cache")
+        pool = self.config.ZFS_POOL_NAME
+        mount_point = Path(self.config.ZFS_MOUNT_POINT)
         try:
             self.run_command(["apt", "update"])
-            self.run_command(["apt", "install", "-y", "dpkg-dev", "linux-headers-generic", "linux-image-generic"])
+            self.run_command(
+                [
+                    "apt",
+                    "install",
+                    "-y",
+                    "dpkg-dev",
+                    "linux-headers-generic",
+                    "linux-image-generic",
+                ]
+            )
             self.run_command(["apt", "install", "-y", "zfs-dkms", "zfsutils-linux"])
-            self.logger.info("Prerequisites and ZFS packages installed successfully.")
+            self.logger.info("ZFS prerequisites and packages installed.")
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to install prerequisites or ZFS packages: {e}")
+            self.logger.error(f"Failed to install ZFS packages: {e}")
             return False
         for service in ["zfs-import-cache.service", "zfs-mount.service"]:
             try:
@@ -1249,66 +1407,71 @@ net.ipv4.tcp_wmem=4096 16384 4194304
                 self.logger.warning(f"Could not enable {service}.")
         try:
             mount_point.mkdir(parents=True, exist_ok=True)
-            self.logger.info(f"Created mount point directory: {mount_point}")
+            self.logger.info(f"Mount point {mount_point} ensured.")
         except Exception as e:
-            self.logger.warning(f"Failed to create mount point directory {mount_point}: {e}")
+            self.logger.warning(f"Failed to create mount point {mount_point}: {e}")
         pool_imported = False
         try:
-            subprocess.run(["zpool", "list", pool_name],
-                           check=True,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
-            self.logger.info(f"ZFS pool '{pool_name}' is already imported.")
+            subprocess.run(
+                ["zpool", "list", pool],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.logger.info(f"ZFS pool '{pool}' already imported.")
             pool_imported = True
         except subprocess.CalledProcessError:
             try:
-                self.run_command(["zpool", "import", "-f", pool_name])
-                self.logger.info(f"Imported ZFS pool '{pool_name}'.")
+                self.run_command(["zpool", "import", "-f", pool])
+                self.logger.info(f"Imported ZFS pool '{pool}'.")
                 pool_imported = True
             except subprocess.CalledProcessError:
-                self.logger.warning(f"ZFS pool '{pool_name}' not found or failed to import.")
+                self.logger.warning(f"ZFS pool '{pool}' not found or failed to import.")
         if not pool_imported:
-            self.logger.warning(f"ZFS pool '{pool_name}' could not be imported. Skipping further configuration.")
             return False
         try:
-            self.run_command(["zfs", "set", f"mountpoint={mount_point}", pool_name])
-            self.logger.info(f"Set mountpoint for pool '{pool_name}' to '{mount_point}'.")
+            self.run_command(["zfs", "set", f"mountpoint={mount_point}", pool])
+            self.logger.info(f"Set mountpoint for pool '{pool}' to {mount_point}.")
         except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to set mountpoint for ZFS pool '{pool_name}': {e}")
+            self.logger.warning(f"Failed to set mountpoint: {e}")
         try:
-            self.run_command(["zpool", "set", f"cachefile={cache_file}", pool_name])
-            self.logger.info(f"Updated cachefile for pool '{pool_name}' to '{cache_file}'.")
+            cache_file = Path("/etc/zfs/zpool.cache")
+            self.run_command(["zpool", "set", f"cachefile={cache_file}", pool])
+            self.logger.info(f"Cachefile for pool '{pool}' updated to {cache_file}.")
         except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to update cachefile for ZFS pool '{pool_name}': {e}")
+            self.logger.warning(f"Failed to update cachefile: {e}")
         try:
             self.run_command(["zfs", "mount", "-a"])
             self.logger.info("Mounted all ZFS datasets.")
         except subprocess.CalledProcessError as e:
             self.logger.warning(f"Failed to mount ZFS datasets: {e}")
         try:
-            mounts = subprocess.check_output(["zfs", "list", "-o", "name,mountpoint", "-H"], text=True)
+            mounts = subprocess.check_output(
+                ["zfs", "list", "-o", "name,mountpoint", "-H"], text=True
+            )
             if any(str(mount_point) in line for line in mounts.splitlines()):
-                self.logger.info(f"ZFS pool '{pool_name}' is successfully mounted at '{mount_point}'.")
+                self.logger.info(f"ZFS pool '{pool}' mounted at {mount_point}.")
                 return True
             else:
-                self.logger.warning(f"ZFS pool '{pool_name}' is not mounted at '{mount_point}'. Please check manually.")
+                self.logger.warning(f"ZFS pool '{pool}' not mounted at {mount_point}.")
                 return False
         except Exception as e:
-            self.logger.warning(f"Error verifying mount status for ZFS pool '{pool_name}': {e}")
+            self.logger.warning(f"Error verifying ZFS mount status: {e}")
             return False
 
-    # ----------------------------
+    # --------------------------------------------------------------------------
     # Additional Applications & Tools
-    # ----------------------------
+    # --------------------------------------------------------------------------
     def install_brave_browser(self) -> bool:
         """
-        Install the Brave browser on Ubuntu.
+        Install the Brave browser.
         """
         self.print_section("Brave Browser Installation")
-        self.logger.info("Installing Brave browser...")
         try:
-            self.run_command(["sh", "-c", "curl -fsS https://dl.brave.com/install.sh | sh"])
-            self.logger.info("Brave browser installed successfully.")
+            self.run_command(
+                ["sh", "-c", "curl -fsS https://dl.brave.com/install.sh | sh"]
+            )
+            self.logger.info("Brave browser installed.")
             return True
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to install Brave browser: {e}")
@@ -1316,181 +1479,50 @@ net.ipv4.tcp_wmem=4096 16384 4194304
 
     def install_flatpak_and_apps(self) -> Tuple[List[str], List[str]]:
         """
-        Install Flatpak, add the Flathub repository, and install Flatpak applications.
+        Install Flatpak and the specified Flatpak applications.
+        Returns a tuple of (successful_apps, failed_apps).
         """
         self.print_section("Flatpak Installation and Setup")
         apps = self.config.FLATPAK_APPS
-        self.logger.info("Installing Flatpak...")
         try:
             self.run_command(["apt", "install", "-y", "flatpak"])
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to install Flatpak: {e}")
             return [], apps
-        self.logger.info("Installing GNOME Software Flatpak plugin...")
         try:
             self.run_command(["apt", "install", "-y", "gnome-software-plugin-flatpak"])
         except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to install GNOME Software Flatpak plugin: {e}")
-        self.logger.info("Adding Flathub repository...")
+            self.logger.warning(f"Failed to install Flatpak plugin: {e}")
         try:
-            self.run_command(["flatpak", "remote-add", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"])
+            self.run_command(
+                [
+                    "flatpak",
+                    "remote-add",
+                    "--if-not-exists",
+                    "flathub",
+                    "https://dl.flathub.org/repo/flathub.flatpakrepo",
+                ]
+            )
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to add Flathub repository: {e}")
             return [], apps
-        successful_apps = []
-        failed_apps = []
-        self.logger.info("Installing Flatpak applications from Flathub...")
+        successful = []
+        failed = []
         for app in apps:
-            self.logger.info(f"Installing {app}...")
             try:
                 self.run_command(["flatpak", "install", "--assumeyes", "flathub", app])
-                self.logger.info(f"{app} installed successfully.")
-                successful_apps.append(app)
+                self.logger.info(f"Installed Flatpak app: {app}")
+                successful.append(app)
             except subprocess.CalledProcessError:
-                self.logger.warning(f"Failed to install {app}.")
-                failed_apps.append(app)
-        return successful_apps, failed_apps
-
-    def install_configure_caddy(self) -> bool:
-        """
-        Install and configure the Caddy web server.
-        """
-        self.print_section("Caddy Installation and Configuration")
-        self.logger.info("Installing Caddy web server...")
-        caddy_deb_url = "https://github.com/caddyserver/caddy/releases/download/v2.9.1/caddy_2.9.1_linux_amd64.deb"
-        temp_deb = Path("/tmp/caddy_2.9.1_linux_amd64.deb")
-        try:
-            self.download_file(caddy_deb_url, temp_deb)
-        except Exception as e:
-            self.logger.error(f"Failed to download Caddy package: {e}")
-            return False
-        try:
-            self.run_command(["dpkg", "-i", str(temp_deb)])
-        except subprocess.CalledProcessError:
-            self.logger.warning("Dependency issues encountered during Caddy installation. Attempting to fix...")
-            try:
-                self.run_command(["apt", "install", "-f", "-y"])
-            except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to resolve dependencies for Caddy: {e}")
-                return False
-        self.logger.info("Caddy installed successfully.")
-        try:
-            temp_deb.unlink()
-            self.logger.info("Removed temporary Caddy package file.")
-        except Exception as e:
-            self.logger.warning(f"Failed to remove temporary file {temp_deb}: {e}")
-        source_caddyfile = self.config.USER_HOME / "github/bash/linux/ubuntu/dotfiles/Caddyfile"
-        dest_caddyfile = Path("/etc/caddy/Caddyfile")
-        if not source_caddyfile.is_file():
-            self.logger.warning(f"Source Caddyfile not found at {source_caddyfile}. Skipping Caddyfile configuration.")
-        else:
-            if dest_caddyfile.exists():
-                self.backup_file(dest_caddyfile)
-            try:
-                shutil.copy2(source_caddyfile, dest_caddyfile)
-                self.logger.info(f"Copied {source_caddyfile} to {dest_caddyfile}.")
-            except Exception as e:
-                self.logger.warning(f"Failed to copy Caddyfile: {e}")
-        log_dir = Path("/var/log/caddy")
-        log_files = [
-            log_dir / "caddy.log",
-            log_dir / "dunamismax_access.log",
-            log_dir / "messenger_access.log",
-            log_dir / "ai_agents_access.log",
-            log_dir / "file_converter_access.log",
-            log_dir / "notes_access.log",
-        ]
-        try:
-            log_dir.mkdir(mode=0o755, exist_ok=True)
-            self.logger.info(f"Log directory {log_dir} is ready.")
-            for log_file in log_files:
-                with open(log_file, "a"):
-                    os.utime(log_file, None)
-                log_file.chmod(0o644)
-                self.logger.info(f"Prepared log file: {log_file}")
-        except Exception as e:
-            self.logger.warning(f"Failed to prepare log files: {e}")
-        try:
-            self.run_command(["systemctl", "enable", "caddy"])
-            self.logger.info("Caddy service enabled.")
-            self.run_command(["systemctl", "restart", "caddy"])
-            self.logger.info("Caddy service started successfully.")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to enable or start Caddy service: {e}")
-            return False
-
-    def create_system_zfs_snapshot(self) -> Optional[str]:
-        """
-        Create a ZFS snapshot of the system's root dataset.
-        """
-        self.print_section("System ZFS Snapshot Backup")
-        system_dataset = "rpool/ROOT/ubuntu"
-        try:
-            self.run_command(["zfs", "list", system_dataset], capture_output=True)
-            self.logger.info(f"System dataset '{system_dataset}' found.")
-        except subprocess.CalledProcessError:
-            system_dataset = "rpool"
-            self.logger.warning("Dataset 'rpool/ROOT/ubuntu' not found. Using 'rpool' for snapshot.")
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        snapshot_name = f"{system_dataset}@backup_{timestamp}"
-        try:
-            self.run_command(["zfs", "snapshot", snapshot_name])
-            self.logger.info(f"Created system ZFS snapshot: {snapshot_name}")
-            return snapshot_name
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to create system ZFS snapshot for '{system_dataset}': {e}")
-            return None
-
-    def configure_unattended_upgrades(self) -> bool:
-        """
-        Install and configure unattended-upgrades for automatic security updates.
-        """
-        self.print_section("Unattended Upgrades Configuration")
-        try:
-            self.run_command(["apt", "install", "-y", "unattended-upgrades"])
-            self.logger.info("Unattended-upgrades installed. Please review /etc/apt/apt.conf.d/50unattended-upgrades for customization.")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to install unattended-upgrades: {e}")
-            return False
-
-    def cleanup_system(self) -> bool:
-        """
-        Clean up temporary files, remove unused packages, and clear apt cache.
-        """
-        self.print_section("System Cleanup")
-        try:
-            self.run_command(["apt", "autoremove", "-y"])
-            self.logger.info("Unused packages removed.")
-            self.run_command(["apt", "clean"])
-            self.logger.info("Apt cache cleared.")
-            self.logger.info("System cleanup completed successfully.")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"System cleanup failed: {e}")
-            return False
-
-    def configure_apparmor(self) -> bool:
-        """
-        Install and enable AppArmor along with its utilities.
-        """
-        self.print_section("AppArmor Configuration")
-        try:
-            self.run_command(["apt", "install", "-y", "apparmor", "apparmor-utils"])
-            self.run_command(["systemctl", "enable", "apparmor"])
-            self.run_command(["systemctl", "start", "apparmor"])
-            self.logger.info("AppArmor installed and started successfully.")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to install or start AppArmor: {e}")
-            return False
+                self.logger.warning(f"Failed to install Flatpak app: {app}")
+                failed.append(app)
+        return successful, failed
 
     def install_configure_vscode_stable(self) -> bool:
         """
-        Install Visual Studio Code - Stable and configure it to run natively on Wayland.
+        Install Visual Studio Code (Stable) and configure it for Wayland.
         """
-        self.print_section("Visual Studio Code - Stable Installation and Configuration")
+        self.print_section("Visual Studio Code Installation & Configuration")
         vscode_url = (
             "https://vscode.download.prss.microsoft.com/dbazure/download/stable/"
             "e54c774e0add60467559eb0d1e229c6452cf8447/code_1.97.2-1739406807_amd64.deb"
@@ -1500,69 +1532,56 @@ net.ipv4.tcp_wmem=4096 16384 4194304
             self.logger.info("Downloading VS Code Stable...")
             self.download_file(vscode_url, deb_path)
         except Exception as e:
-            self.logger.error(f"Failed to download VS Code Stable: {e}")
+            self.logger.error(f"Failed to download VS Code: {e}")
             return False
         try:
             self.logger.info("Installing VS Code Stable...")
             self.run_command(["dpkg", "-i", str(deb_path)])
         except subprocess.CalledProcessError:
-            self.logger.warning("dpkg installation encountered issues. Attempting to fix dependencies...")
+            self.logger.warning("dpkg issues; fixing dependencies...")
             try:
                 self.run_command(["apt", "install", "-f", "-y"])
             except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to fix dependencies for VS Code Stable: {e}")
+                self.logger.error(f"Failed to fix dependencies for VS Code: {e}")
                 return False
         try:
             deb_path.unlink()
         except Exception:
             pass
-        desktop_file_path = Path("/usr/share/applications/code.desktop")
-        desktop_content = """[Desktop Entry]
-Name=Visual Studio Code
-Comment=Code Editing. Redefined.
-GenericName=Text Editor
-Exec=/usr/share/code/code --enable-features=UseOzonePlatform --ozone-platform=wayland %F
-Icon=vscode
-Type=Application
-StartupNotify=false
-StartupWMClass=Code
-Categories=TextEditor;Development;IDE;
-MimeType=application/x-code-workspace;
-Actions=new-empty-window;
-Keywords=vscode;
-
-[Desktop Action new-empty-window]
-Name=New Empty Window
-Name[de]=Neues leeres Fenster
-Name[es]=Nueva ventana vacía
-Name[fr]=Nouvelle fenêtre vide
-Name[it]=Nuova finestra vuota
-Name[ja]=新しい空のウィンドウ
-Name[ko]=새 빈 창
-Name[ru]=Новое пустое окно
-Name[zh_CN]=新建空窗口
-Name[zh_TW]=開新空視窗
-Exec=/usr/share/code/code --new-window --enable-features=UseOzonePlatform --ozone-platform=wayland %F
-Icon=vscode
-"""
+        desktop_file = Path("/usr/share/applications/code.desktop")
+        desktop_content = (
+            "[Desktop Entry]\n"
+            "Name=Visual Studio Code\n"
+            "Comment=Code Editing. Redefined.\n"
+            "GenericName=Text Editor\n"
+            "Exec=/usr/share/code/code --enable-features=UseOzonePlatform --ozone-platform=wayland %F\n"
+            "Icon=vscode\n"
+            "Type=Application\n"
+            "StartupNotify=false\n"
+            "StartupWMClass=Code\n"
+            "Categories=TextEditor;Development;IDE;\n"
+            "MimeType=application/x-code-workspace;\n"
+            "Actions=new-empty-window;\n\n"
+            "[Desktop Action new-empty-window]\n"
+            "Name=New Empty Window\n"
+            "Exec=/usr/share/code/code --new-window --enable-features=UseOzonePlatform --ozone-platform=wayland %F\n"
+            "Icon=vscode\n"
+        )
         try:
-            with open(desktop_file_path, "w") as f:
-                f.write(desktop_content)
-            self.logger.info(f"Updated system-wide desktop file: {desktop_file_path}")
+            desktop_file.write_text(desktop_content)
+            self.logger.info(f"Updated desktop file: {desktop_file}")
         except Exception as e:
-            self.logger.warning(f"Failed to update system-wide desktop file: {e}")
-        local_app_dir = Path.home() / ".local/share/applications"
-        local_desktop_file = local_app_dir / "code.desktop"
+            self.logger.warning(f"Failed to update desktop file: {e}")
+        local_dir = Path.home() / ".local/share/applications"
+        local_file = local_dir / "code.desktop"
         try:
-            local_app_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(desktop_file_path, local_desktop_file)
-            self.logger.info(f"Copied desktop file to local directory: {local_desktop_file}")
-            with open(local_desktop_file, "r") as f:
-                content = f.read()
-            updated_content = content.replace("StartupWMClass=Code", "StartupWMClass=code")
-            with open(local_desktop_file, "w") as f:
-                f.write(updated_content)
-            self.logger.info(f"Updated local desktop file for Wayland compatibility: {local_desktop_file}")
+            local_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(desktop_file, local_file)
+            self.logger.info(f"Copied desktop file to {local_file}")
+            content = local_file.read_text()
+            updated = content.replace("StartupWMClass=Code", "StartupWMClass=code")
+            local_file.write_text(updated)
+            self.logger.info("Updated local desktop file for Wayland compatibility.")
             return True
         except Exception as e:
             self.logger.warning(f"Failed to update local desktop file: {e}")
@@ -1570,14 +1589,13 @@ Icon=vscode
 
     def install_nala(self) -> bool:
         """
-        Install Nala (an apt front-end) if it's not already installed.
+        Install Nala (an apt front-end) if not already installed.
         """
         self.print_section("Nala Installation")
         if self.command_exists("nala"):
             self.logger.info("Nala is already installed.")
             return True
         try:
-            self.logger.info("Nala is not installed. Installing Nala...")
             self.run_command(["apt", "update"])
             self.run_command(["apt", "install", "-y", "nala"])
             self.logger.info("Nala installed successfully.")
@@ -1588,15 +1606,16 @@ Icon=vscode
 
     def install_enable_tailscale(self) -> bool:
         """
-        Install and enable Tailscale on the server.
+        Install and enable Tailscale.
         """
         self.print_section("Tailscale Installation and Enablement")
         if self.command_exists("tailscale"):
-            self.logger.info("Tailscale is already installed; skipping installation.")
+            self.logger.info("Tailscale already installed; skipping.")
         else:
-            self.logger.info("Installing Tailscale...")
             try:
-                self.run_command(["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"])
+                self.run_command(
+                    ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]
+                )
                 self.logger.info("Tailscale installed successfully.")
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"Failed to install Tailscale: {e}")
@@ -1606,12 +1625,185 @@ Icon=vscode
             self.logger.info("Tailscale service enabled and started.")
             return True
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to enable/start Tailscale service: {e}")
+            self.logger.error(f"Failed to enable Tailscale service: {e}")
             return False
+
+    def install_configure_caddy(self) -> bool:
+        """
+        Install and configure the Caddy web server.
+        """
+        self.print_section("Caddy Installation & Configuration")
+        caddy_url = "https://github.com/caddyserver/caddy/releases/download/v2.9.1/caddy_2.9.1_linux_amd64.deb"
+        temp_deb = Path("/tmp/caddy_2.9.1_linux_amd64.deb")
+        try:
+            self.download_file(caddy_url, temp_deb)
+        except Exception as e:
+            self.logger.error(f"Failed to download Caddy: {e}")
+            return False
+        try:
+            self.run_command(["dpkg", "-i", str(temp_deb)])
+        except subprocess.CalledProcessError:
+            self.logger.warning(
+                "dpkg issues during Caddy installation; fixing dependencies..."
+            )
+            try:
+                self.run_command(["apt", "install", "-f", "-y"])
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Failed to resolve Caddy dependencies: {e}")
+                return False
+        try:
+            temp_deb.unlink()
+        except Exception as e:
+            self.logger.warning(f"Failed to remove temporary Caddy file: {e}")
+        source_caddyfile = (
+            self.config.USER_HOME / "github/bash/linux/ubuntu/dotfiles/Caddyfile"
+        )
+        dest_caddyfile = Path("/etc/caddy/Caddyfile")
+        if source_caddyfile.is_file():
+            if dest_caddyfile.exists():
+                self.backup_file(dest_caddyfile)
+            try:
+                shutil.copy2(source_caddyfile, dest_caddyfile)
+                self.logger.info(f"Copied Caddyfile to {dest_caddyfile}")
+            except Exception as e:
+                self.logger.warning(f"Failed to copy Caddyfile: {e}")
+        else:
+            self.logger.warning(f"Source Caddyfile not found at {source_caddyfile}.")
+        log_dir = Path("/var/log/caddy")
+        try:
+            log_dir.mkdir(mode=0o755, exist_ok=True)
+            for fname in ["caddy.log", "access.log"]:
+                fpath = log_dir / fname
+                with open(fpath, "a"):
+                    os.utime(fpath, None)
+                fpath.chmod(0o644)
+                self.logger.info(f"Prepared log file: {fpath}")
+        except Exception as e:
+            self.logger.warning(f"Failed to prepare Caddy log files: {e}")
+        try:
+            self.run_command(["systemctl", "enable", "caddy"])
+            self.run_command(["systemctl", "restart", "caddy"])
+            self.logger.info("Caddy service enabled and started.")
+            return True
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to manage Caddy service: {e}")
+            return False
+
+    # --------------------------------------------------------------------------
+    # Wayland Environment & Final Checks
+    # --------------------------------------------------------------------------
+    def configure_wayland(self) -> bool:
+        """
+        Configure system and user environment variables to enable Wayland.
+        """
+        self.print_section("Wayland Environment Configuration")
+        etc_env = Path("/etc/environment")
+        updated_system = False
+        try:
+            current = etc_env.read_text() if etc_env.is_file() else ""
+            vars_current = {
+                line.split("=", 1)[0]: line.split("=", 1)[1]
+                for line in current.splitlines()
+                if "=" in line
+            }
+            for key, val in self.config.WAYLAND_ENV_VARS.items():
+                if vars_current.get(key) != val:
+                    vars_current[key] = val
+                    updated_system = True
+            if updated_system:
+                new_content = (
+                    "\n".join(f"{k}={v}" for k, v in vars_current.items()) + "\n"
+                )
+                etc_env.write_text(new_content)
+                self.logger.info(f"{etc_env} updated with Wayland variables.")
+            else:
+                self.logger.info(f"No changes needed in {etc_env}.")
+        except Exception as e:
+            self.logger.warning(f"Failed to update {etc_env}: {e}")
+        user_env_dir = self.config.USER_HOME / ".config/environment.d"
+        user_env_file = user_env_dir / "myenvvars.conf"
+        try:
+            user_env_dir.mkdir(parents=True, exist_ok=True)
+            content = (
+                "\n".join(f"{k}={v}" for k, v in self.config.WAYLAND_ENV_VARS.items())
+                + "\n"
+            )
+            if user_env_file.is_file():
+                if user_env_file.read_text().strip() != content.strip():
+                    self.backup_file(user_env_file)
+                    user_env_file.write_text(content)
+                    self.logger.info(f"Updated {user_env_file} with Wayland variables.")
+            else:
+                user_env_file.write_text(content)
+                self.logger.info(f"Created {user_env_file} with Wayland variables.")
+            self.run_command(
+                [
+                    "chown",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(user_env_file),
+                ]
+            )
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to update {user_env_file}: {e}")
+            return False
+
+    def final_checks(self) -> Dict[str, str]:
+        """
+        Perform final system checks and log system information.
+        """
+        self.print_section("Final System Checks")
+        info = {}
+        try:
+            kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
+            self.logger.info(f"Kernel version: {kernel}")
+            info["kernel"] = kernel
+        except Exception as e:
+            self.logger.warning(f"Failed to get kernel version: {e}")
+        try:
+            uptime = subprocess.check_output(["uptime", "-p"], text=True).strip()
+            self.logger.info(f"System uptime: {uptime}")
+            info["uptime"] = uptime
+        except Exception as e:
+            self.logger.warning(f"Failed to get uptime: {e}")
+        try:
+            df_line = subprocess.check_output(
+                ["df", "-h", "/"], text=True
+            ).splitlines()[1]
+            self.logger.info(f"Disk usage (root): {df_line}")
+            info["disk_usage"] = df_line
+        except Exception as e:
+            self.logger.warning(f"Failed to get disk usage: {e}")
+        try:
+            free_out = subprocess.check_output(["free", "-h"], text=True).splitlines()
+            mem_line = next((l for l in free_out if l.startswith("Mem:")), "")
+            self.logger.info(f"Memory usage: {mem_line}")
+            info["memory"] = mem_line
+        except Exception as e:
+            self.logger.warning(f"Failed to get memory usage: {e}")
+        try:
+            cpu_info = ""
+            for line in subprocess.check_output(["lscpu"], text=True).splitlines():
+                if "Model name" in line:
+                    cpu_info = line.split(":", 1)[1].strip()
+                    break
+            self.logger.info(f"CPU: {cpu_info}")
+            info["cpu"] = cpu_info
+        except Exception as e:
+            self.logger.warning(f"Failed to get CPU info: {e}")
+        try:
+            interfaces = subprocess.check_output(["ip", "-brief", "address"], text=True)
+            self.logger.info("Active network interfaces:")
+            for line in interfaces.splitlines():
+                self.logger.info(f"  {line}")
+            info["network_interfaces"] = interfaces
+        except Exception as e:
+            self.logger.warning(f"Failed to get network interfaces: {e}")
+        return info
 
     def prompt_reboot(self) -> bool:
         """
-        Prompt the user for a system reboot to apply changes.
+        Prompt the user to reboot the system.
         """
         self.print_section("Reboot Prompt")
         answer = input("Would you like to reboot now? [y/N]: ").strip().lower()
@@ -1621,18 +1813,43 @@ Icon=vscode
                 self.run_command(["shutdown", "-r", "now"])
                 return True
             except subprocess.CalledProcessError as e:
-                self.logger.warning(f"Failed to reboot system: {e}")
+                self.logger.warning(f"Failed to reboot: {e}")
                 return False
         else:
-            self.logger.info("Reboot canceled. Please reboot later for all changes to take effect.")
+            self.logger.info(
+                "Reboot canceled. Please reboot later for changes to take effect."
+            )
             return False
 
-    # ----------------------------
+    def download_file(
+        self, url: str, dest_path: Union[str, Path], show_progress: bool = True
+    ) -> bool:
+        """
+        Download a file from a URL to a destination path.
+        """
+        dest_path = Path(dest_path)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd = ["curl", "-L", "-o", str(dest_path), url]
+        if not show_progress:
+            cmd.insert(1, "-s")
+        try:
+            self.run_command(cmd)
+            if dest_path.exists():
+                self.logger.info(f"Downloaded {url} to {dest_path}")
+                return True
+            else:
+                self.logger.warning(f"Download succeeded but {dest_path} not found.")
+                return False
+        except subprocess.CalledProcessError:
+            self.logger.warning(f"Failed to download {url}")
+            return False
+
+    # --------------------------------------------------------------------------
     # Main Execution Flow
-    # ----------------------------
+    # --------------------------------------------------------------------------
     def run(self) -> int:
         """
-        Main function executing the entire setup process in logical phases.
+        Execute the entire setup process in logical phases.
         """
         success_count = 0
         total_steps = 35  # Total number of major steps
@@ -1645,11 +1862,11 @@ Icon=vscode
             # Phase 2: System Update & Basic Configuration
             if self.update_system():
                 success_count += 1
-            installed_pkgs, failed_pkgs = self.install_packages()
-            if len(failed_pkgs) == 0:
+            pkgs_success, pkgs_failed = self.install_packages()
+            if not pkgs_failed:
                 success_count += 1
-            elif len(failed_pkgs) <= len(self.config.PACKAGES) * 0.1:
-                self.logger.warning(f"Some packages failed to install: {', '.join(failed_pkgs)}")
+            elif len(pkgs_failed) <= len(self.config.PACKAGES) * 0.1:
+                self.logger.warning(f"Some packages failed: {', '.join(pkgs_failed)}")
                 success_count += 0.5
             if self.configure_timezone():
                 success_count += 1
@@ -1705,11 +1922,13 @@ Icon=vscode
             # Phase 10: Additional Applications & Tools
             if self.install_brave_browser():
                 success_count += 1
-            successful_apps, failed_apps = self.install_flatpak_and_apps()
-            if len(failed_apps) == 0:
+            apps_success, apps_failed = self.install_flatpak_and_apps()
+            if not apps_failed:
                 success_count += 1
-            elif len(failed_apps) <= len(self.config.FLATPAK_APPS) * 0.1:
-                self.logger.warning(f"Some Flatpak apps failed to install: {', '.join(failed_apps)}")
+            elif len(apps_failed) <= len(self.config.FLATPAK_APPS) * 0.1:
+                self.logger.warning(
+                    f"Some Flatpak apps failed: {', '.join(apps_failed)}"
+                )
                 success_count += 0.5
             if self.install_configure_vscode_stable():
                 success_count += 1
@@ -1733,129 +1952,14 @@ Icon=vscode
             if self.final_checks():
                 success_count += 1
             success_rate = (success_count / total_steps) * 100
-            self.logger.info(f"Setup completed with {success_rate:.1f}% success rate ({success_count}/{total_steps} steps successful)")
+            self.logger.info(
+                f"Setup completed with {success_rate:.1f}% success ({success_count}/{total_steps} steps)."
+            )
             self.prompt_reboot()
             return 0
         except Exception as e:
-            self.logger.critical(f"Setup failed with unhandled exception: {e}", exc_info=True)
+            self.logger.critical(f"Unhandled exception: {e}", exc_info=True)
             return 1
-
-    def configure_wayland(self) -> bool:
-        """
-        Configure environment variables to enable Wayland for default applications.
-        """
-        self.print_section("Wayland Environment Configuration")
-        etc_env_file = Path("/etc/environment")
-        updated_system = False
-        try:
-            if etc_env_file.is_file():
-                self.backup_file(etc_env_file)
-                current_content = etc_env_file.read_text()
-            else:
-                current_content = ""
-            current_vars = {}
-            for line in current_content.splitlines():
-                if "=" in line:
-                    key, val = line.strip().split("=", 1)
-                    current_vars[key] = val
-            for key, value in self.config.WAYLAND_ENV_VARS.items():
-                if key in current_vars and current_vars[key] == value:
-                    self.logger.info(f"{key} already set to {value} in {etc_env_file}.")
-                else:
-                    current_vars[key] = value
-                    updated_system = True
-            if updated_system:
-                new_content = "\n".join([f"{k}={v}" for k, v in current_vars.items()]) + "\n"
-                with open(etc_env_file, "w") as f:
-                    f.write(new_content)
-                self.logger.info(f"{etc_env_file} updated with Wayland environment variables.")
-            else:
-                self.logger.info(f"No changes needed for {etc_env_file}.")
-        except Exception as e:
-            self.logger.warning(f"Failed to update {etc_env_file}: {e}")
-        user_env_dir = self.config.USER_HOME / ".config/environment.d"
-        user_env_file = user_env_dir / "myenvvars.conf"
-        try:
-            user_env_dir.mkdir(parents=True, exist_ok=True)
-            content = "\n".join([f"{k}={v}" for k, v in self.config.WAYLAND_ENV_VARS.items()]) + "\n"
-            updated_user = False
-            if user_env_file.is_file():
-                current_content = user_env_file.read_text()
-                if current_content.strip() == content.strip():
-                    self.logger.info(f"{user_env_file} already contains the desired Wayland settings.")
-                else:
-                    self.backup_file(user_env_file)
-                    updated_user = True
-            else:
-                updated_user = True
-            if updated_user:
-                with open(user_env_file, "w") as f:
-                    f.write(content)
-                self.logger.info(f"{'Updated' if user_env_file.exists() else 'Created'} {user_env_file} with Wayland environment variables.")
-            self.run_command(["chown", f"{self.config.USERNAME}:{self.config.USERNAME}", str(user_env_file)])
-            return True
-        except Exception as e:
-            self.logger.warning(f"Failed to update user environment file {user_env_file}: {e}")
-            return False
-
-    def final_checks(self) -> Dict[str, str]:
-        """
-        Perform final system checks and log system information.
-        """
-        self.print_section("Final System Checks")
-        system_info = {}
-        try:
-            kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
-            self.logger.info(f"Kernel version: {kernel}")
-            system_info["kernel"] = kernel
-        except Exception as e:
-            self.logger.warning(f"Failed to get kernel version: {e}")
-        try:
-            uptime = subprocess.check_output(["uptime", "-p"], text=True).strip()
-            self.logger.info(f"System uptime: {uptime}")
-            system_info["uptime"] = uptime
-        except Exception as e:
-            self.logger.warning(f"Failed to get system uptime: {e}")
-        try:
-            disk_line = subprocess.check_output(["df", "-h", "/"], text=True).splitlines()[1]
-            self.logger.info(f"Disk usage (root partition): {disk_line}")
-            system_info["disk_usage"] = disk_line
-        except Exception as e:
-            self.logger.warning(f"Failed to get disk usage: {e}")
-        try:
-            free_out = subprocess.check_output(["free", "-h"], text=True).splitlines()
-            mem_line = next((line for line in free_out if line.startswith("Mem:")), "")
-            self.logger.info(f"Memory usage: {mem_line}")
-            system_info["memory"] = mem_line
-        except Exception as e:
-            self.logger.warning(f"Failed to get memory usage: {e}")
-        try:
-            cpu_model = subprocess.check_output(["lscpu"], text=True)
-            for line in cpu_model.splitlines():
-                if "Model name" in line:
-                    cpu_info = line.split(':', 1)[1].strip()
-                    self.logger.info(f"CPU: {cpu_info}")
-                    system_info["cpu"] = cpu_info
-                    break
-        except Exception as e:
-            self.logger.warning(f"Failed to get CPU info: {e}")
-        try:
-            interfaces = subprocess.check_output(["ip", "-brief", "address"], text=True)
-            self.logger.info("Active network interfaces:")
-            for line in interfaces.splitlines():
-                self.logger.info(f"  {line}")
-            system_info["network_interfaces"] = interfaces
-        except Exception as e:
-            self.logger.warning(f"Failed to get network interfaces: {e}")
-        try:
-            with open("/proc/loadavg", "r") as f:
-                load_avg = f.read().split()[:3]
-                load_info = f"{', '.join(load_avg)}"
-                self.logger.info(f"Load averages (1, 5, 15 min): {load_info}")
-                system_info["load_avg"] = load_info
-        except Exception as e:
-            self.logger.warning(f"Failed to get load averages: {e}")
-        return system_info
 
 
 if __name__ == "__main__":

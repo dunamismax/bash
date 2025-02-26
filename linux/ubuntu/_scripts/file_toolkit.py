@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Script Name: file_toolkit.py
---------------------------------------------------------
+Advanced File & Security Operations Toolkit
+---------------------------------------------
 Description:
-  An advanced file encryption, decryption, compression, and file
-  management toolkit for Ubuntu. This interactive tool offers a
-  Nord-themed menu for performing a wide range of operations:
-  file copy, move, delete, advanced search, multicore compression
-  (via pigz), password-based encryption/decryption (via OpenSSL), and
-  interactive PGP operations (key management, message encryption/decryption,
-  signing, and verification).
+  An advanced file encryption, decryption, compression, and file management toolkit
+  for Ubuntu. This interactive tool offers a Nord-themed menu with rich integration for:
+    - File copy, move, delete, and advanced search
+    - Multicore compression/decompression (via pigz)
+    - Password-based encryption/decryption (via OpenSSL)
+    - Interactive PGP operations (key generation, message encryption/decryption,
+      signing, and verification)
+    - Checksum calculation (MD5/SHA256)
 
 Usage:
   sudo ./file_toolkit.py
@@ -27,16 +28,23 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+# Global rich console instance for formatted output
+console = Console()
 
 # ------------------------------------------------------------------------------
-# Environment Configuration (Modify these settings as needed)
+# Environment Configuration
 # ------------------------------------------------------------------------------
 LOG_FILE = "/var/log/advanced_file_tool.log"
 DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 DEFAULT_LOG_LEVEL = "INFO"
 
 # ------------------------------------------------------------------------------
-# NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
+# Nord Color Palette (24-bit ANSI escape sequences)
 # ------------------------------------------------------------------------------
 NORD0 = "\033[38;2;46;52;64m"  # Polar Night (dark)
 NORD1 = "\033[38;2;59;66;82m"  # Polar Night (darker than NORD0)
@@ -56,14 +64,13 @@ NORD14 = "\033[38;2;163;190;140m"  # Greenish (INFO)
 NORD15 = "\033[38;2;180;142;173m"  # Purple
 NC = "\033[0m"  # Reset / No Color
 
+
 # ------------------------------------------------------------------------------
 # CUSTOM LOGGING
 # ------------------------------------------------------------------------------
-
-
 class NordColorFormatter(logging.Formatter):
     """
-    A custom formatter that applies Nord color theme to log messages.
+    A custom logging formatter that applies the Nord color theme.
     """
 
     def __init__(self, fmt=None, datefmt=None, use_colors=True):
@@ -71,40 +78,34 @@ class NordColorFormatter(logging.Formatter):
         self.use_colors = use_colors and not DISABLE_COLORS
 
     def format(self, record):
-        levelname = record.levelname
         msg = super().format(record)
-
         if not self.use_colors:
             return msg
-
-        if levelname == "DEBUG":
+        level = record.levelname
+        if level == "DEBUG":
             return f"{NORD9}{msg}{NC}"
-        elif levelname == "INFO":
+        elif level == "INFO":
             return f"{NORD14}{msg}{NC}"
-        elif levelname == "WARNING":
+        elif level == "WARNING":
             return f"{NORD13}{msg}{NC}"
-        elif levelname in ("ERROR", "CRITICAL"):
+        elif level in ("ERROR", "CRITICAL"):
             return f"{NORD11}{msg}{NC}"
         return msg
 
 
 def setup_logging():
     """
-    Set up logging with console and file handlers, using Nord color theme.
+    Set up logging with console and file handlers using the Nord color theme.
     """
     log_dir = os.path.dirname(LOG_FILE)
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir, exist_ok=True)
 
-    # Create logger
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-
-    # Clear any existing handlers
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
 
-    # Console handler with colors
     console_formatter = NordColorFormatter(
         fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
@@ -112,33 +113,30 @@ def setup_logging():
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # File handler (no colors in file)
     file_formatter = logging.Formatter(
         fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-
     try:
+        file_handler = logging.FileHandler(LOG_FILE)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
         os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        logger.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
-
+        logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
+        logger.warning("Continuing with console logging only")
     return logger
 
 
 def print_section(title: str):
     """
-    Print a section header with Nord theme styling.
+    Print a Nord-themed section header.
     """
+    border = "─" * 60
     if not DISABLE_COLORS:
-        border = "─" * 60
         logging.info(f"{NORD10}{border}{NC}")
         logging.info(f"{NORD10}  {title}{NC}")
         logging.info(f"{NORD10}{border}{NC}")
     else:
-        border = "─" * 60
         logging.info(border)
         logging.info(f"  {title}")
         logging.info(border)
@@ -147,30 +145,35 @@ def print_section(title: str):
 # ------------------------------------------------------------------------------
 # SIGNAL HANDLING & CLEANUP
 # ------------------------------------------------------------------------------
-
-
 def signal_handler(signum, frame):
     """
     Handle termination signals gracefully.
     """
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
+    logging.error(f"Script interrupted by {sig_name}.")
+    try:
+        cleanup()
+    except Exception as e:
+        logging.error(f"Error during cleanup after signal: {e}")
     if signum == signal.SIGINT:
-        logging.error("Script interrupted by SIGINT (Ctrl+C).")
         sys.exit(130)
     elif signum == signal.SIGTERM:
-        logging.error("Script terminated by SIGTERM.")
         sys.exit(143)
     else:
-        logging.error(f"Script interrupted by signal {signum}.")
         sys.exit(128 + signum)
 
 
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(sig, signal_handler)
 
 
 def cleanup():
     """
-    Perform cleanup tasks before exit.
+    Perform cleanup tasks before exiting.
     """
     logging.info("Performing cleanup tasks before exit.")
     # Additional cleanup tasks can be added here
@@ -178,104 +181,116 @@ def cleanup():
 
 atexit.register(cleanup)
 
-# ------------------------------------------------------------------------------
-# DEPENDENCY CHECKING
-# ------------------------------------------------------------------------------
 
-
+# ------------------------------------------------------------------------------
+# DEPENDENCY CHECKING & PRIVILEGE VALIDATION
+# ------------------------------------------------------------------------------
 def check_dependencies():
     """
-    Check for required dependencies.
+    Check for required system commands.
     """
     required_commands = ["find", "tar", "pigz", "openssl", "gpg", "md5sum", "sha256sum"]
-
-    missing_commands = []
-    for cmd in required_commands:
-        if not shutil.which(cmd):
-            missing_commands.append(cmd)
-
+    missing_commands = [cmd for cmd in required_commands if not shutil.which(cmd)]
     if missing_commands:
         missing_list = ", ".join(missing_commands)
-        logging.error(
-            f"The following commands are not found in your PATH: {missing_list}"
-        )
-        print(
+        logging.error(f"Missing required commands: {missing_list}")
+        console.print(
             f"{NORD11}The following required commands are missing: {missing_list}{NC}"
         )
-        print(f"{NORD11}Please install them and try again.{NC}")
+        console.print(f"{NORD11}Please install them and try again.{NC}")
         sys.exit(1)
-
-
-# ------------------------------------------------------------------------------
-# HELPER & UTILITY FUNCTIONS
-# ------------------------------------------------------------------------------
 
 
 def check_root():
     """
-    Ensure the script is run with root privileges.
+    Ensure the script is executed with root privileges.
     """
     if os.geteuid() != 0:
         logging.error("This script must be run as root.")
         sys.exit(1)
+    logging.debug("Running with root privileges.")
 
 
+# ------------------------------------------------------------------------------
+# UI HELPER FUNCTIONS
+# ------------------------------------------------------------------------------
 def print_header():
     """
-    Print the application header with Nord styling.
+    Clear the screen and print the application header.
     """
     os.system("clear")
     border = "═" * 60
-    print(f"{NORD8}{border}{NC}")
-    print(f"{NORD8}  Advanced File & Security Operations Tool {NORD10}v4.0{NC}")
-    print(f"{NORD8}{border}{NC}")
+    console.print(f"{NORD8}{border}{NC}")
+    console.print(f"{NORD8}  Advanced File & Security Operations Tool {NORD10}v4.0{NC}")
+    console.print(f"{NORD8}{border}{NC}")
 
 
 def print_divider():
     """
-    Print a visual divider with Nord styling.
+    Print a visual divider.
     """
-    print(f"{NORD8}{'─' * 60}{NC}")
+    console.print(f"{NORD8}{'─' * 60}{NC}")
 
 
 def prompt_enter():
     """
-    Wait for user to press Enter to continue.
+    Wait for the user to press Enter.
     """
     input(f"{NORD13}Press Enter to continue...{NC}")
 
 
 # ------------------------------------------------------------------------------
+# PROGRESS HELPER (using rich)
+# ------------------------------------------------------------------------------
+def run_with_progress(description: str, func, *args, **kwargs):
+    """
+    Execute a blocking function in a background thread while displaying a progress spinner.
+    """
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task(description, total=None)
+            while not future.done():
+                time.sleep(0.1)
+                progress.refresh()
+            return future.result()
+
+
+# ------------------------------------------------------------------------------
 # FILE OPERATIONS FUNCTIONS
 # ------------------------------------------------------------------------------
-
-
 def file_copy():
     """
     Copy a file or directory to a destination.
     """
     print_section("File Copy Operation")
     logging.info("Initiating file copy operation.")
-
     src = input(f"{NORD13}Enter source file/directory: {NC}").strip()
     dest = input(f"{NORD13}Enter destination path: {NC}").strip()
-
     if not os.path.exists(src):
         logging.error(f"Source '{src}' does not exist.")
-        print(f"{NORD11}Error: Source '{src}' does not exist.{NC}")
+        console.print(f"[bold red]Error: Source '{src}' does not exist.[/bold red]")
         return
 
     try:
-        if os.path.isdir(src):
-            # Copy directory recursively
-            shutil.copytree(src, dest, dirs_exist_ok=True)
-        else:
-            shutil.copy2(src, dest)
+
+        def copy_operation():
+            if os.path.isdir(src):
+                shutil.copytree(src, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dest)
+
+        run_with_progress("Copying...", copy_operation)
         logging.info(f"Copied '{src}' to '{dest}' successfully.")
-        print(f"{NORD14}Copy completed successfully.{NC}")
+        console.print(f"[bold green]Copy completed successfully.[/bold green]")
     except Exception as e:
         logging.error(f"Copy failed: {e}")
-        print(f"{NORD11}Error: Copy failed - {e}{NC}")
+        console.print(f"[bold red]Error: Copy failed - {e}[/bold red]")
 
 
 def file_move():
@@ -284,22 +299,24 @@ def file_move():
     """
     print_section("File Move Operation")
     logging.info("Initiating file move operation.")
-
     src = input(f"{NORD13}Enter source file/directory: {NC}").strip()
     dest = input(f"{NORD13}Enter destination path: {NC}").strip()
-
     if not os.path.exists(src):
         logging.error(f"Source '{src}' does not exist.")
-        print(f"{NORD11}Error: Source '{src}' does not exist.{NC}")
+        console.print(f"[bold red]Error: Source '{src}' does not exist.[/bold red]")
         return
 
     try:
-        shutil.move(src, dest)
+
+        def move_operation():
+            shutil.move(src, dest)
+
+        run_with_progress("Moving...", move_operation)
         logging.info(f"Moved '{src}' to '{dest}' successfully.")
-        print(f"{NORD14}Move completed successfully.{NC}")
+        console.print(f"[bold green]Move completed successfully.[/bold green]")
     except Exception as e:
         logging.error(f"Move failed: {e}")
-        print(f"{NORD11}Error: Move failed - {e}{NC}")
+        console.print(f"[bold red]Error: Move failed - {e}[/bold red]")
 
 
 def file_delete():
@@ -308,12 +325,10 @@ def file_delete():
     """
     print_section("File Deletion Operation")
     logging.info("Initiating file deletion operation.")
-
     target = input(f"{NORD13}Enter file/directory to delete: {NC}").strip()
-
     if not os.path.exists(target):
         logging.error(f"Target '{target}' does not exist.")
-        print(f"{NORD11}Error: Target '{target}' does not exist.{NC}")
+        console.print(f"[bold red]Error: Target '{target}' does not exist.[/bold red]")
         return
 
     confirm = (
@@ -321,21 +336,24 @@ def file_delete():
         .strip()
         .lower()
     )
-
     if confirm.startswith("y"):
         try:
-            if os.path.isdir(target):
-                shutil.rmtree(target)
-            else:
-                os.remove(target)
+
+            def delete_operation():
+                if os.path.isdir(target):
+                    shutil.rmtree(target)
+                else:
+                    os.remove(target)
+
+            run_with_progress("Deleting...", delete_operation)
             logging.info(f"Deleted '{target}' successfully.")
-            print(f"{NORD14}Deletion completed successfully.{NC}")
+            console.print(f"[bold green]Deletion completed successfully.[/bold green]")
         except Exception as e:
             logging.error(f"Deletion failed: {e}")
-            print(f"{NORD11}Error: Deletion failed - {e}{NC}")
+            console.print(f"[bold red]Error: Deletion failed - {e}[/bold red]")
     else:
         logging.warning("Deletion cancelled by user.")
-        print(f"{NORD12}Deletion cancelled.{NC}")
+        console.print(f"[bold yellow]Deletion cancelled.[/bold yellow]")
 
 
 def file_search():
@@ -344,66 +362,66 @@ def file_search():
     """
     print_section("Advanced File Search")
     logging.info("Initiating advanced file search.")
-
     search_dir = input(f"{NORD13}Enter directory to search in: {NC}").strip()
     pattern = input(f"{NORD13}Enter filename pattern (e.g., *.txt): {NC}").strip()
-
     if not os.path.isdir(search_dir):
         logging.error(f"Directory '{search_dir}' does not exist.")
-        print(f"{NORD11}Error: Directory '{search_dir}' does not exist.{NC}")
+        console.print(
+            f"[bold red]Error: Directory '{search_dir}' does not exist.[/bold red]"
+        )
         return
 
-    print(f"{NORD14}Search results:{NC}")
+    console.print(f"[bold green]Search results:[/bold green]")
     try:
-        result = subprocess.run(
-            ["find", search_dir, "-type", "f", "-name", pattern],
-            check=True,
-            text=True,
-            capture_output=True,
-        )
-        if result.stdout.strip():
-            print(result.stdout)
+
+        def search_operation():
+            result = subprocess.run(
+                ["find", search_dir, "-type", "f", "-name", pattern],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            return result.stdout.strip()
+
+        output = run_with_progress("Searching...", search_operation)
+        if output:
+            console.print(output)
         else:
-            print(f"{NORD13}No files found matching the pattern.{NC}")
+            console.print(
+                f"[bold yellow]No files found matching the pattern.[/bold yellow]"
+            )
         logging.info(f"Search completed in '{search_dir}' for pattern '{pattern}'.")
     except subprocess.CalledProcessError as e:
         logging.error(f"File search failed: {e}")
-        print(f"{NORD11}Error: File search failed - {e.stderr}{NC}")
+        console.print(f"[bold red]Error: File search failed - {e.stderr}[/bold red]")
 
 
 # ------------------------------------------------------------------------------
 # COMPRESSION / DECOMPRESSION FUNCTIONS (using pigz)
 # ------------------------------------------------------------------------------
-
-
 def compress_file():
     """
     Compress a file or directory using tar and pigz.
     """
     print_section("File Compression")
     logging.info("Initiating compression operation.")
-
     target = input(f"{NORD13}Enter file or directory to compress: {NC}").strip()
-
     if not os.path.exists(target):
         logging.error(f"Target '{target}' does not exist.")
-        print(f"{NORD11}Error: Target '{target}' does not exist.{NC}")
+        console.print(f"[bold red]Error: Target '{target}' does not exist.[/bold red]")
         return
 
     outfile = input(
         f"{NORD13}Enter output archive name (e.g., archive.tar.gz): {NC}"
     ).strip()
-
-    # Build and execute: tar -cf - target | pigz > outfile
     cmd = f"tar -cf - {target} | pigz > {outfile}"
     try:
-        print(f"{NORD13}Compressing... Please wait.{NC}")
-        subprocess.run(cmd, shell=True, check=True)
+        run_with_progress("Compressing...", subprocess.run, cmd, shell=True, check=True)
         logging.info(f"Compressed '{target}' to '{outfile}' successfully.")
-        print(f"{NORD14}Compression completed successfully.{NC}")
+        console.print(f"[bold green]Compression completed successfully.[/bold green]")
     except subprocess.CalledProcessError as e:
         logging.error(f"Compression failed: {e}")
-        print(f"{NORD11}Error: Compression failed - {e}{NC}")
+        console.print(f"[bold red]Error: Compression failed - {e}[/bold red]")
 
 
 def decompress_file():
@@ -412,59 +430,53 @@ def decompress_file():
     """
     print_section("File Decompression")
     logging.info("Initiating decompression operation.")
-
     infile = input(
         f"{NORD13}Enter compressed file (e.g., archive.tar.gz): {NC}"
     ).strip()
-
     if not os.path.isfile(infile):
         logging.error(f"File '{infile}' does not exist.")
-        print(f"{NORD11}Error: File '{infile}' does not exist.{NC}")
+        console.print(f"[bold red]Error: File '{infile}' does not exist.[/bold red]")
         return
 
     outdir = input(f"{NORD13}Enter output directory: {NC}").strip()
-
     try:
         os.makedirs(outdir, exist_ok=True)
     except Exception as e:
         logging.error(f"Failed to create output directory: {e}")
-        print(f"{NORD11}Error: Failed to create output directory - {e}{NC}")
+        console.print(
+            f"[bold red]Error: Failed to create output directory - {e}[/bold red]"
+        )
         return
 
-    # Execute: pigz -dc infile | tar -xf - -C outdir
     cmd = f"pigz -dc {infile} | tar -xf - -C {outdir}"
     try:
-        print(f"{NORD13}Decompressing... Please wait.{NC}")
-        subprocess.run(cmd, shell=True, check=True)
+        run_with_progress(
+            "Decompressing...", subprocess.run, cmd, shell=True, check=True
+        )
         logging.info(f"Decompressed '{infile}' to '{outdir}' successfully.")
-        print(f"{NORD14}Decompression completed successfully.{NC}")
+        console.print(f"[bold green]Decompression completed successfully.[/bold green]")
     except subprocess.CalledProcessError as e:
         logging.error(f"Decompression failed: {e}")
-        print(f"{NORD11}Error: Decompression failed - {e}{NC}")
+        console.print(f"[bold red]Error: Decompression failed - {e}[/bold red]")
 
 
 # ------------------------------------------------------------------------------
-# FILE ENCRYPTION / DECRYPTION (PASSWORD-BASED using OpenSSL)
+# FILE ENCRYPTION / DECRYPTION (using OpenSSL)
 # ------------------------------------------------------------------------------
-
-
 def encrypt_file():
     """
     Encrypt a file using OpenSSL (AES-256-CBC).
     """
     print_section("File Encryption")
     logging.info("Initiating file encryption.")
-
     infile = input(f"{NORD13}Enter file to encrypt: {NC}").strip()
-
     if not os.path.isfile(infile):
         logging.error(f"File '{infile}' does not exist.")
-        print(f"{NORD11}Error: File '{infile}' does not exist.{NC}")
+        console.print(f"[bold red]Error: File '{infile}' does not exist.[/bold red]")
         return
 
     outfile = input(f"{NORD13}Enter output encrypted file name: {NC}").strip()
     password = getpass.getpass(f"{NORD13}Enter password: {NC}")
-
     cmd = [
         "openssl",
         "enc",
@@ -478,13 +490,15 @@ def encrypt_file():
         f"pass:{password}",
     ]
     try:
-        print(f"{NORD13}Encrypting... Please wait.{NC}")
-        subprocess.run(cmd, check=True, capture_output=True)
+        run_with_progress(
+            "Encrypting...", subprocess.run, cmd, check=True, capture_output=True
+        )
         logging.info(f"Encrypted '{infile}' to '{outfile}' successfully.")
-        print(f"{NORD14}File encrypted successfully.{NC}")
+        console.print(f"[bold green]File encrypted successfully.[/bold green]")
     except subprocess.CalledProcessError as e:
         logging.error(f"Encryption failed: {e}")
-        print(f"{NORD11}Error: Encryption failed - {e.stderr.decode()}{NC}")
+        err = e.stderr.decode() if e.stderr else e
+        console.print(f"[bold red]Error: Encryption failed - {err}[/bold red]")
 
 
 def decrypt_file():
@@ -493,17 +507,14 @@ def decrypt_file():
     """
     print_section("File Decryption")
     logging.info("Initiating file decryption.")
-
     infile = input(f"{NORD13}Enter file to decrypt: {NC}").strip()
-
     if not os.path.isfile(infile):
         logging.error(f"File '{infile}' does not exist.")
-        print(f"{NORD11}Error: File '{infile}' does not exist.{NC}")
+        console.print(f"[bold red]Error: File '{infile}' does not exist.[/bold red]")
         return
 
     outfile = input(f"{NORD13}Enter output decrypted file name: {NC}").strip()
     password = getpass.getpass(f"{NORD13}Enter password: {NC}")
-
     cmd = [
         "openssl",
         "enc",
@@ -517,39 +528,44 @@ def decrypt_file():
         f"pass:{password}",
     ]
     try:
-        print(f"{NORD13}Decrypting... Please wait.{NC}")
-        subprocess.run(cmd, check=True, capture_output=True)
+        run_with_progress(
+            "Decrypting...", subprocess.run, cmd, check=True, capture_output=True
+        )
         logging.info(f"Decrypted '{infile}' to '{outfile}' successfully.")
-        print(f"{NORD14}File decrypted successfully.{NC}")
+        console.print(f"[bold green]File decrypted successfully.[/bold green]")
     except subprocess.CalledProcessError as e:
         logging.error(f"Decryption failed: {e}")
-        print(f"{NORD11}Error: Decryption failed - {e.stderr.decode()}{NC}")
-        print(f"{NORD12}Hint: Check if the password is correct.{NC}")
+        err = e.stderr.decode() if e.stderr else e
+        console.print(f"[bold red]Error: Decryption failed - {err}[/bold red]")
+        console.print(
+            f"[bold yellow]Hint: Check if the password is correct.[/bold yellow]"
+        )
 
 
 # ------------------------------------------------------------------------------
-# PGP OPERATIONS FUNCTIONS (using gpg)
+# PGP OPERATIONS (using gpg)
 # ------------------------------------------------------------------------------
-
-
 def pgp_create_key():
     """
     Create a new PGP key pair using GPG.
     """
     print_section("PGP Key Generation")
     logging.info("Starting interactive PGP key generation.")
-
-    print(f"{NORD13}This will launch the interactive GPG key generation wizard.{NC}")
-    print(f"{NORD13}Follow the prompts to create your key.{NC}")
+    console.print(
+        f"[bold cyan]This will launch the interactive GPG key generation wizard. Follow the prompts to create your key.[/bold cyan]"
+    )
     time.sleep(1)
-
     try:
-        subprocess.run(["gpg", "--gen-key"], check=True)
+        run_with_progress(
+            "Generating PGP key...", subprocess.run, ["gpg", "--gen-key"], check=True
+        )
         logging.info("PGP key generation completed.")
-        print(f"{NORD14}PGP key generation completed successfully.{NC}")
+        console.print(
+            f"[bold green]PGP key generation completed successfully.[/bold green]"
+        )
     except subprocess.CalledProcessError as e:
         logging.error(f"PGP key generation failed: {e}")
-        print(f"{NORD11}Error: PGP key generation failed - {e}{NC}")
+        console.print(f"[bold red]Error: PGP key generation failed - {e}[/bold red]")
 
 
 def pgp_encrypt_message():
@@ -558,35 +574,37 @@ def pgp_encrypt_message():
     """
     print_section("PGP Message Encryption")
     logging.info("Initiating PGP message encryption.")
-
     recipient = input(f"{NORD13}Enter recipient's email or key ID: {NC}").strip()
-    print(
-        f"{NORD14}Enter the message to encrypt. End input with a single '.' on a new line.{NC}"
+    console.print(
+        f"[bold green]Enter the message to encrypt. End input with a single '.' on a new line.[/bold green]"
     )
-
     lines = []
     while True:
         line = input()
         if line.strip() == ".":
             break
         lines.append(line)
-
     msg = "\n".join(lines)
-
     try:
-        proc = subprocess.run(
-            ["gpg", "--encrypt", "--armor", "-r", recipient],
-            input=msg,
-            text=True,
-            check=True,
-            capture_output=True,
-        )
-        print(f"{NORD14}Encrypted message:{NC}")
-        print(proc.stdout)
+
+        def encrypt_operation():
+            proc = subprocess.run(
+                ["gpg", "--encrypt", "--armor", "-r", recipient],
+                input=msg,
+                text=True,
+                check=True,
+                capture_output=True,
+            )
+            return proc.stdout
+
+        encrypted_msg = run_with_progress("Encrypting message...", encrypt_operation)
+        console.print(f"[bold green]Encrypted message:[/bold green]")
+        console.print(encrypted_msg)
         logging.info("Message encrypted successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"PGP encryption failed: {e}")
-        print(f"{NORD11}Error: PGP encryption failed - {e.stderr}{NC}")
+        err = e.stderr if e.stderr else e
+        console.print(f"[bold red]Error: PGP encryption failed - {err}[/bold red]")
 
 
 def pgp_decrypt_message():
@@ -595,23 +613,28 @@ def pgp_decrypt_message():
     """
     print_section("PGP Message Decryption")
     logging.info("Initiating PGP message decryption.")
-
     infile = input(
         f"{NORD13}Enter file containing the PGP encrypted message: {NC}"
     ).strip()
-
     if not os.path.isfile(infile):
         logging.error(f"File '{infile}' does not exist.")
-        print(f"{NORD11}Error: File '{infile}' does not exist.{NC}")
+        console.print(f"[bold red]Error: File '{infile}' does not exist.[/bold red]")
         return
-
     try:
-        print(f"{NORD14}Decrypted message:{NC}")
-        subprocess.run(["gpg", "--decrypt", infile], check=True)
+
+        def decrypt_operation():
+            proc = subprocess.run(
+                ["gpg", "--decrypt", infile], check=True, text=True, capture_output=True
+            )
+            return proc.stdout
+
+        decrypted_msg = run_with_progress("Decrypting message...", decrypt_operation)
+        console.print(f"[bold green]Decrypted message:[/bold green]")
+        console.print(decrypted_msg)
         logging.info("PGP decryption completed.")
     except subprocess.CalledProcessError as e:
         logging.error(f"PGP decryption failed: {e}")
-        print(f"{NORD11}Error: PGP decryption failed - {e}{NC}")
+        console.print(f"[bold red]Error: PGP decryption failed - {e}[/bold red]")
 
 
 def pgp_sign_message():
@@ -620,34 +643,36 @@ def pgp_sign_message():
     """
     print_section("PGP Message Signing")
     logging.info("Initiating message signing with PGP.")
-
-    print(
-        f"{NORD14}Enter the message to sign. End input with a single '.' on a new line.{NC}"
+    console.print(
+        f"[bold green]Enter the message to sign. End input with a single '.' on a new line.[/bold green]"
     )
-
     lines = []
     while True:
         line = input()
         if line.strip() == ".":
             break
         lines.append(line)
-
     msg = "\n".join(lines)
-
     try:
-        result = subprocess.run(
-            ["gpg", "--clearsign"],
-            input=msg,
-            text=True,
-            check=True,
-            capture_output=True,
-        )
-        print(f"{NORD14}Signed message:{NC}")
-        print(result.stdout)
+
+        def sign_operation():
+            result = subprocess.run(
+                ["gpg", "--clearsign"],
+                input=msg,
+                text=True,
+                check=True,
+                capture_output=True,
+            )
+            return result.stdout
+
+        signed_msg = run_with_progress("Signing message...", sign_operation)
+        console.print(f"[bold green]Signed message:[/bold green]")
+        console.print(signed_msg)
         logging.info("Message signed successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"PGP signing failed: {e}")
-        print(f"{NORD11}Error: PGP signing failed - {e.stderr}{NC}")
+        err = e.stderr if e.stderr else e
+        console.print(f"[bold red]Error: PGP signing failed - {err}[/bold red]")
 
 
 def pgp_verify_signature():
@@ -656,53 +681,52 @@ def pgp_verify_signature():
     """
     print_section("PGP Signature Verification")
     logging.info("Initiating PGP signature verification.")
-
     infile = input(f"{NORD13}Enter the signed file to verify: {NC}").strip()
-
     if not os.path.isfile(infile):
         logging.error(f"File '{infile}' does not exist.")
-        print(f"{NORD11}Error: File '{infile}' does not exist.{NC}")
+        console.print(f"[bold red]Error: File '{infile}' does not exist.[/bold red]")
         return
-
     try:
-        result = subprocess.run(
-            ["gpg", "--verify", infile], check=True, capture_output=True, text=True
+
+        def verify_operation():
+            result = subprocess.run(
+                ["gpg", "--verify", infile], check=True, text=True, capture_output=True
+            )
+            return result.stderr
+
+        verification_output = run_with_progress(
+            "Verifying signature...", verify_operation
         )
-        print(f"{NORD14}Verification result:{NC}")
-        if result.stderr:  # GPG prints verification info to stderr
-            print(result.stderr)
+        console.print(f"[bold green]Verification result:[/bold green]")
+        if verification_output:
+            console.print(verification_output)
         logging.info("Signature verified successfully.")
-        print(f"{NORD14}Signature verification completed.{NC}")
+        console.print(f"[bold green]Signature verification completed.[/bold green]")
     except subprocess.CalledProcessError as e:
         logging.error(f"Signature verification failed: {e}")
-        print(f"{NORD11}Error: Signature verification failed.{NC}")
+        console.print(f"[bold red]Error: Signature verification failed.[/bold red]")
         if e.stderr:
-            print(e.stderr)
+            console.print(e.stderr)
 
 
 # ------------------------------------------------------------------------------
 # ADDITIONAL TOOLS FUNCTIONS
 # ------------------------------------------------------------------------------
-
-
 def calculate_checksum():
     """
     Calculate MD5 or SHA256 checksum for a file.
     """
     print_section("Checksum Calculation")
     logging.info("Starting checksum calculation.")
-
     file_path = input(f"{NORD13}Enter file to calculate checksum: {NC}").strip()
-
     if not os.path.isfile(file_path):
         logging.error(f"File '{file_path}' does not exist.")
-        print(f"{NORD11}Error: File '{file_path}' does not exist.{NC}")
+        console.print(f"[bold red]Error: File '{file_path}' does not exist.[/bold red]")
         return
 
-    print(f"{NORD14}Select checksum type:{NC}")
-    print(f"{NORD8}[1]{NC} MD5")
-    print(f"{NORD8}[2]{NC} SHA256")
-
+    console.print(f"[bold green]Select checksum type:[/bold green]")
+    console.print(f"[bold cyan][1][/bold cyan] MD5")
+    console.print(f"[bold cyan][2][/bold cyan] SHA256")
     choice = input(f"{NORD13}Enter choice (1 or 2): {NC}").strip()
 
     if choice == "1":
@@ -713,41 +737,42 @@ def calculate_checksum():
         checksum_type = "SHA256"
     else:
         logging.warning("Invalid checksum type selection.")
-        print(f"{NORD12}Invalid selection.{NC}")
+        console.print(f"[bold yellow]Invalid selection.[/bold yellow]")
         return
 
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print(f"{NORD14}{checksum_type} Checksum:{NC}")
-        print(result.stdout)
+
+        def checksum_operation():
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            return result.stdout
+
+        output = run_with_progress("Calculating checksum...", checksum_operation)
+        console.print(f"[bold green]{checksum_type} Checksum:[/bold green]")
+        console.print(output)
         logging.info(f"Calculated {checksum_type} checksum for '{file_path}'.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Checksum calculation failed: {e}")
-        print(f"{NORD11}Error: Checksum calculation failed - {e}{NC}")
+        console.print(f"[bold red]Error: Checksum calculation failed - {e}[/bold red]")
 
 
 # ------------------------------------------------------------------------------
 # INTERACTIVE MENUS
 # ------------------------------------------------------------------------------
-
-
 def file_operations_menu():
     """
-    Display and handle the file operations menu.
+    Display the file operations menu.
     """
     while True:
         print_header()
-        print(f"{NORD14}File Operations:{NC}")
+        console.print(f"{NORD14}File Operations:{NC}")
         print_divider()
-        print(f"{NORD8}[1]{NC} Copy File/Directory")
-        print(f"{NORD8}[2]{NC} Move File/Directory")
-        print(f"{NORD8}[3]{NC} Delete File/Directory")
-        print(f"{NORD8}[4]{NC} Advanced Search")
-        print(f"{NORD8}[0]{NC} Return to Main Menu")
+        console.print(f"{NORD8}[1]{NC} Copy File/Directory")
+        console.print(f"{NORD8}[2]{NC} Move File/Directory")
+        console.print(f"{NORD8}[3]{NC} Delete File/Directory")
+        console.print(f"{NORD8}[4]{NC} Advanced Search")
+        console.print(f"{NORD8}[0]{NC} Return to Main Menu")
         print_divider()
-
         choice = input(f"{NORD13}Enter your choice: {NC}").strip()
-
         if choice == "1":
             file_copy()
             prompt_enter()
@@ -763,25 +788,23 @@ def file_operations_menu():
         elif choice == "0":
             break
         else:
-            print(f"{NORD12}Invalid selection.{NC}")
+            console.print(f"{NORD12}Invalid selection.{NC}")
             time.sleep(1)
 
 
 def compression_menu():
     """
-    Display and handle the compression menu.
+    Display the compression/decompression menu.
     """
     while True:
         print_header()
-        print(f"{NORD14}Compression / Decompression (using pigz):{NC}")
+        console.print(f"{NORD14}Compression / Decompression (using pigz):{NC}")
         print_divider()
-        print(f"{NORD8}[1]{NC} Compress File/Directory")
-        print(f"{NORD8}[2]{NC} Decompress File")
-        print(f"{NORD8}[0]{NC} Return to Main Menu")
+        console.print(f"{NORD8}[1]{NC} Compress File/Directory")
+        console.print(f"{NORD8}[2]{NC} Decompress File")
+        console.print(f"{NORD8}[0]{NC} Return to Main Menu")
         print_divider()
-
         choice = input(f"{NORD13}Enter your choice: {NC}").strip()
-
         if choice == "1":
             compress_file()
             prompt_enter()
@@ -791,25 +814,23 @@ def compression_menu():
         elif choice == "0":
             break
         else:
-            print(f"{NORD12}Invalid selection.{NC}")
+            console.print(f"{NORD12}Invalid selection.{NC}")
             time.sleep(1)
 
 
 def encryption_menu():
     """
-    Display and handle the encryption menu.
+    Display the encryption/decryption menu.
     """
     while True:
         print_header()
-        print(f"{NORD14}File Encryption / Decryption (Password-based):{NC}")
+        console.print(f"{NORD14}File Encryption / Decryption (Password-based):{NC}")
         print_divider()
-        print(f"{NORD8}[1]{NC} Encrypt a File")
-        print(f"{NORD8}[2]{NC} Decrypt a File")
-        print(f"{NORD8}[0]{NC} Return to Main Menu")
+        console.print(f"{NORD8}[1]{NC} Encrypt a File")
+        console.print(f"{NORD8}[2]{NC} Decrypt a File")
+        console.print(f"{NORD8}[0]{NC} Return to Main Menu")
         print_divider()
-
         choice = input(f"{NORD13}Enter your choice: {NC}").strip()
-
         if choice == "1":
             encrypt_file()
             prompt_enter()
@@ -819,28 +840,26 @@ def encryption_menu():
         elif choice == "0":
             break
         else:
-            print(f"{NORD12}Invalid selection.{NC}")
+            console.print(f"{NORD12}Invalid selection.{NC}")
             time.sleep(1)
 
 
 def pgp_menu():
     """
-    Display and handle the PGP operations menu.
+    Display the PGP operations menu.
     """
     while True:
         print_header()
-        print(f"{NORD14}PGP Operations:{NC}")
+        console.print(f"{NORD14}PGP Operations:{NC}")
         print_divider()
-        print(f"{NORD8}[1]{NC} Create PGP Key")
-        print(f"{NORD8}[2]{NC} Encrypt Message")
-        print(f"{NORD8}[3]{NC} Decrypt Message")
-        print(f"{NORD8}[4]{NC} Sign Message")
-        print(f"{NORD8}[5]{NC} Verify Signature")
-        print(f"{NORD8}[0]{NC} Return to Main Menu")
+        console.print(f"{NORD8}[1]{NC} Create PGP Key")
+        console.print(f"{NORD8}[2]{NC} Encrypt Message")
+        console.print(f"{NORD8}[3]{NC} Decrypt Message")
+        console.print(f"{NORD8}[4]{NC} Sign Message")
+        console.print(f"{NORD8}[5]{NC} Verify Signature")
+        console.print(f"{NORD8}[0]{NC} Return to Main Menu")
         print_divider()
-
         choice = input(f"{NORD13}Enter your choice: {NC}").strip()
-
         if choice == "1":
             pgp_create_key()
             prompt_enter()
@@ -859,52 +878,48 @@ def pgp_menu():
         elif choice == "0":
             break
         else:
-            print(f"{NORD12}Invalid selection.{NC}")
+            console.print(f"{NORD12}Invalid selection.{NC}")
             time.sleep(1)
 
 
 def additional_menu():
     """
-    Display and handle the additional tools menu.
+    Display the additional tools menu.
     """
     while True:
         print_header()
-        print(f"{NORD14}Additional Tools:{NC}")
+        console.print(f"{NORD14}Additional Tools:{NC}")
         print_divider()
-        print(f"{NORD8}[1]{NC} Calculate File Checksum")
-        print(f"{NORD8}[0]{NC} Return to Main Menu")
+        console.print(f"{NORD8}[1]{NC} Calculate File Checksum")
+        console.print(f"{NORD8}[0]{NC} Return to Main Menu")
         print_divider()
-
         choice = input(f"{NORD13}Enter your choice: {NC}").strip()
-
         if choice == "1":
             calculate_checksum()
             prompt_enter()
         elif choice == "0":
             break
         else:
-            print(f"{NORD12}Invalid selection.{NC}")
+            console.print(f"{NORD12}Invalid selection.{NC}")
             time.sleep(1)
 
 
 def main_menu():
     """
-    Display and handle the main menu.
+    Display the main menu.
     """
     while True:
         print_header()
-        print(f"{NORD14}Main Menu:{NC}")
+        console.print(f"{NORD14}Main Menu:{NC}")
         print_divider()
-        print(f"{NORD8}[1]{NC} File Operations")
-        print(f"{NORD8}[2]{NC} Compression / Decompression")
-        print(f"{NORD8}[3]{NC} File Encryption/Decryption (Password)")
-        print(f"{NORD8}[4]{NC} PGP Operations")
-        print(f"{NORD8}[5]{NC} Additional Tools")
-        print(f"{NORD8}[q]{NC} Quit")
+        console.print(f"{NORD8}[1]{NC} File Operations")
+        console.print(f"{NORD8}[2]{NC} Compression / Decompression")
+        console.print(f"{NORD8}[3]{NC} File Encryption/Decryption (Password)")
+        console.print(f"{NORD8}[4]{NC} PGP Operations")
+        console.print(f"{NORD8}[5]{NC} Additional Tools")
+        console.print(f"{NORD8}[q]{NC} Quit")
         print_divider()
-
         choice = input(f"{NORD13}Enter your choice: {NC}").strip().lower()
-
         if choice == "1":
             file_operations_menu()
         elif choice == "2":
@@ -917,29 +932,29 @@ def main_menu():
             additional_menu()
         elif choice == "q":
             logging.info("User exited the tool.")
-            print(f"{NORD14}Goodbye!{NC}")
-            return
+            console.print(f"{NORD14}Goodbye!{NC}")
+            break
         else:
-            print(f"{NORD12}Invalid selection. Please choose a valid option.{NC}")
+            console.print(
+                f"{NORD12}Invalid selection. Please choose a valid option.{NC}"
+            )
             time.sleep(1)
 
 
 # ------------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ------------------------------------------------------------------------------
-
-
 def main():
     """
     Main entry point for the script.
     """
-    # Ensure the log directory exists before we attempt to log anything
+    # Ensure log directory exists
     log_dir = os.path.dirname(LOG_FILE)
     if not os.path.isdir(log_dir):
         try:
             os.makedirs(log_dir, exist_ok=True)
         except Exception as e:
-            print(f"Failed to create log directory: {log_dir}. Error: {e}")
+            console.print(f"Failed to create log directory: {log_dir}. Error: {e}")
             sys.exit(1)
 
     try:
@@ -947,7 +962,7 @@ def main():
             pass
         os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        print(
+        console.print(
             f"Failed to create or set permissions on log file: {LOG_FILE}. Error: {e}"
         )
         sys.exit(1)
@@ -964,7 +979,6 @@ def main():
     # Execute main menu
     main_menu()
 
-    # Finish up
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     logging.info("=" * 80)
     logging.info(f"ADVANCED FILE TOOL COMPLETED SUCCESSFULLY AT {now}")
@@ -975,9 +989,8 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as ex:
-        # This catches any unhandled exceptions
         if "logging" in sys.modules:
             logging.error(f"Unhandled exception: {ex}")
         else:
-            print(f"Unhandled exception: {ex}")
+            console.print(f"Unhandled exception: {ex}")
         sys.exit(1)
