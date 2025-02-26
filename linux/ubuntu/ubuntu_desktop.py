@@ -45,7 +45,7 @@ import sys
 import tarfile
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -64,189 +64,211 @@ class Config:
     PLEX_VERSION: str = "1.41.3.9314-a0bfb8370"
     FASTFETCH_VERSION: str = "2.36.1"
     DOCKER_COMPOSE_VERSION: str = "2.20.2"
-    PLEX_URL: str = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_amd64.deb"
-    FASTFETCH_URL: str = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-amd64.deb"
-    UNAME: Any = platform.uname()
-    DOCKER_COMPOSE_URL: str = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{UNAME.system}-{UNAME.machine}"
+    PLEX_URL: str = field(init=False)
+    FASTFETCH_URL: str = field(init=False)
+    UNAME: Any = field(default_factory=platform.uname)
+    DOCKER_COMPOSE_URL: str = field(init=False)
     # Logging and user config
     LOG_FILE: str = "/var/log/ubuntu_setup.log"
     USERNAME: str = "sawyer"
-    USER_HOME: Path = Path(f"/home/sawyer")
+    USER_HOME: Path = field(default_factory=lambda: Path(f"/home/sawyer"))
     # Directories for dotfiles and configuration
-    CONFIG_SRC_DIR: Path = USER_HOME / "github/bash/linux/ubuntu/dotfiles"
-    CONFIG_DEST_DIR: Path = USER_HOME / ".config"
+    CONFIG_SRC_DIR: Path = field(init=False)
+    CONFIG_DEST_DIR: Path = field(init=False)
     # ZFS configuration
     ZFS_POOL_NAME: str = "WD_BLACK"
-    ZFS_MOUNT_POINT: Path = Path(f"/media/WD_BLACK")
+    ZFS_MOUNT_POINT: Path = field(default_factory=lambda: Path(f"/media/WD_BLACK"))
     # Essential packages to install
-    PACKAGES: List[str] = [
-        "bash",
-        "vim",
-        "nano",
-        "screen",
-        "tmux",
-        "mc",
-        "zsh",
-        "htop",
-        "btop",
-        "foot",
-        "foot-themes",
-        "tree",
-        "ncdu",
-        "neofetch",
-        "build-essential",
-        "cmake",
-        "ninja-build",
-        "meson",
-        "gettext",
-        "git",
-        "pkg-config",
-        "openssh-server",
-        "ufw",
-        "curl",
-        "wget",
-        "rsync",
-        "sudo",
-        "bash-completion",
-        "python3",
-        "python3-dev",
-        "python3-pip",
-        "python3-venv",
-        "libssl-dev",
-        "libffi-dev",
-        "zlib1g-dev",
-        "libreadline-dev",
-        "libbz2-dev",
-        "tk-dev",
-        "xz-utils",
-        "libncurses5-dev",
-        "libgdbm-dev",
-        "libnss3-dev",
-        "liblzma-dev",
-        "libxml2-dev",
-        "libxmlsec1-dev",
-        "ca-certificates",
-        "software-properties-common",
-        "apt-transport-https",
-        "gnupg",
-        "lsb-release",
-        "clang",
-        "llvm",
-        "netcat-openbsd",
-        "lsof",
-        "unzip",
-        "zip",
-        "xorg",
-        "x11-xserver-utils",
-        "xterm",
-        "alacritty",
-        "fonts-dejavu-core",
-        "net-tools",
-        "nmap",
-        "iftop",
-        "iperf3",
-        "tcpdump",
-        "lynis",
-        "traceroute",
-        "mtr",
-        "iotop",
-        "glances",
-        "golang-go",
-        "gdb",
-        "cargo",
-        "john",
-        "hydra",
-        "aircrack-ng",
-        "nikto",
-        "fail2ban",
-        "rkhunter",
-        "chkrootkit",
-        "postgresql-client",
-        "mysql-client",
-        "redis-server",
-        "ruby",
-        "rustc",
-        "jq",
-        "yq",
-        "certbot",
-        "p7zip-full",
-        "qemu-system",
-        "libvirt-clients",
-        "libvirt-daemon-system",
-        "virt-manager",
-        "qemu-user-static",
-    ]
+    PACKAGES: List[str] = field(
+        default_factory=lambda: [
+            "bash",
+            "vim",
+            "nano",
+            "screen",
+            "tmux",
+            "mc",
+            "zsh",
+            "htop",
+            "btop",
+            "foot",
+            "foot-themes",
+            "tree",
+            "ncdu",
+            "neofetch",
+            "build-essential",
+            "cmake",
+            "ninja-build",
+            "meson",
+            "gettext",
+            "git",
+            "pkg-config",
+            "openssh-server",
+            "ufw",
+            "curl",
+            "wget",
+            "rsync",
+            "sudo",
+            "bash-completion",
+            "python3",
+            "python3-dev",
+            "python3-pip",
+            "python3-venv",
+            "libssl-dev",
+            "libffi-dev",
+            "zlib1g-dev",
+            "libreadline-dev",
+            "libbz2-dev",
+            "tk-dev",
+            "xz-utils",
+            "libncurses5-dev",
+            "libgdbm-dev",
+            "libnss3-dev",
+            "liblzma-dev",
+            "libxml2-dev",
+            "libxmlsec1-dev",
+            "ca-certificates",
+            "software-properties-common",
+            "apt-transport-https",
+            "gnupg",
+            "lsb-release",
+            "clang",
+            "llvm",
+            "netcat-openbsd",
+            "lsof",
+            "unzip",
+            "zip",
+            "xorg",
+            "x11-xserver-utils",
+            "xterm",
+            "alacritty",
+            "fonts-dejavu-core",
+            "net-tools",
+            "nmap",
+            "iftop",
+            "iperf3",
+            "tcpdump",
+            "lynis",
+            "traceroute",
+            "mtr",
+            "iotop",
+            "glances",
+            "golang-go",
+            "gdb",
+            "cargo",
+            "john",
+            "hydra",
+            "aircrack-ng",
+            "nikto",
+            "fail2ban",
+            "rkhunter",
+            "chkrootkit",
+            "postgresql-client",
+            "mysql-client",
+            "redis-server",
+            "ruby",
+            "rustc",
+            "jq",
+            "yq",
+            "certbot",
+            "p7zip-full",
+            "qemu-system",
+            "libvirt-clients",
+            "libvirt-daemon-system",
+            "virt-manager",
+            "qemu-user-static",
+        ]
+    )
     # Flatpak applications to install
-    FLATPAK_APPS: List[str] = [
-        "com.discordapp.Discord",
-        "com.usebottles.bottles",
-        "com.valvesoftware.Steam",
-        "com.spotify.Client",
-        "org.videolan.VLC",
-        "org.libretro.RetroArch",
-        "com.obsproject.Studio",
-        "com.github.tchx84.Flatseal",
-        "net.lutris.Lutris",
-        "net.davidotek.pupgui2",
-        "org.gimp.GIMP",
-        "org.qbittorrent.qBittorrent",
-        "com.github.Matoking.protontricks",
-        "md.obsidian.Obsidian",
-        "org.prismlauncher.PrismLauncher",
-        "com.bitwarden.desktop",
-        "org.kde.kdenlive",
-        "org.signal.Signal",
-        "org.gnome.Boxes",
-        "com.stremio.Stremio",
-        "org.blender.Blender",
-        "org.localsend.localsend_app",
-        "fr.handbrake.ghb",
-        "org.remmina.Remmina",
-        "org.audacityteam.Audacity",
-        "com.rustdesk.RustDesk",
-        "com.getpostman.Postman",
-        "io.github.aandrew_me.ytdn",
-        "org.shotcut.Shotcut",
-        "com.calibre_ebook.calibre",
-        "tv.plex.PlexDesktop",
-        "org.filezillaproject.Filezilla",
-        "com.github.k4zmu2a.spacecadetpinball",
-        "org.virt_manager.virt-manager",
-        "org.raspberrypi.rpi-imager",
-    ]
+    FLATPAK_APPS: List[str] = field(
+        default_factory=lambda: [
+            "com.discordapp.Discord",
+            "com.usebottles.bottles",
+            "com.valvesoftware.Steam",
+            "com.spotify.Client",
+            "org.videolan.VLC",
+            "org.libretro.RetroArch",
+            "com.obsproject.Studio",
+            "com.github.tchx84.Flatseal",
+            "net.lutris.Lutris",
+            "net.davidotek.pupgui2",
+            "org.gimp.GIMP",
+            "org.qbittorrent.qBittorrent",
+            "com.github.Matoking.protontricks",
+            "md.obsidian.Obsidian",
+            "org.prismlauncher.PrismLauncher",
+            "com.bitwarden.desktop",
+            "org.kde.kdenlive",
+            "org.signal.Signal",
+            "org.gnome.Boxes",
+            "com.stremio.Stremio",
+            "org.blender.Blender",
+            "org.localsend.localsend_app",
+            "fr.handbrake.ghb",
+            "org.remmina.Remmina",
+            "org.audacityteam.Audacity",
+            "com.rustdesk.RustDesk",
+            "com.getpostman.Postman",
+            "io.github.aandrew_me.ytdn",
+            "org.shotcut.Shotcut",
+            "com.calibre_ebook.calibre",
+            "tv.plex.PlexDesktop",
+            "org.filezillaproject.Filezilla",
+            "com.github.k4zmu2a.spacecadetpinball",
+            "org.virt_manager.virt-manager",
+            "org.raspberrypi.rpi-imager",
+        ]
+    )
     # Wayland environment variables
-    WAYLAND_ENV_VARS: Dict[str, str] = {
-        "GDK_BACKEND": "wayland",
-        "QT_QPA_PLATFORM": "wayland",
-        "SDL_VIDEODRIVER": "wayland",
-    }
+    WAYLAND_ENV_VARS: Dict[str, str] = field(
+        default_factory=lambda: {
+            "GDK_BACKEND": "wayland",
+            "QT_QPA_PLATFORM": "wayland",
+            "SDL_VIDEODRIVER": "wayland",
+        }
+    )
     # GitHub repositories to set up
-    GITHUB_REPOS: List[str] = ["bash", "windows", "web", "python", "go", "misc"]
+    GITHUB_REPOS: List[str] = field(
+        default_factory=lambda: ["bash", "windows", "web", "python", "go", "misc"]
+    )
     # SSH security settings
-    SSH_SETTINGS: Dict[str, str] = {
-        "Port": "22",
-        "PermitRootLogin": "no",
-        "PasswordAuthentication": "no",
-        "PermitEmptyPasswords": "no",
-        "ChallengeResponseAuthentication": "no",
-        "Protocol": "2",
-        "MaxAuthTries": "5",
-        "ClientAliveInterval": "600",
-        "ClientAliveCountMax": "48",
-    }
+    SSH_SETTINGS: Dict[str, str] = field(
+        default_factory=lambda: {
+            "Port": "22",
+            "PermitRootLogin": "no",
+            "PasswordAuthentication": "no",
+            "PermitEmptyPasswords": "no",
+            "ChallengeResponseAuthentication": "no",
+            "Protocol": "2",
+            "MaxAuthTries": "5",
+            "ClientAliveInterval": "600",
+            "ClientAliveCountMax": "48",
+        }
+    )
     # Firewall TCP ports to allow
-    FIREWALL_PORTS: List[str] = ["22", "80", "443", "32400"]
+    FIREWALL_PORTS: List[str] = field(
+        default_factory=lambda: ["22", "80", "443", "32400"]
+    )
     # Configuration files to backup
-    CONFIG_BACKUP_FILES: List[str] = [
-        "/etc/ssh/sshd_config",
-        "/etc/ufw/user.rules",
-        "/etc/ntp.conf",
-        "/etc/sysctl.conf",
-        "/etc/environment",
-        "/etc/fail2ban/jail.local",
-        "/etc/docker/daemon.json",
-        "/etc/caddy/Caddyfile",
-    ]
+    CONFIG_BACKUP_FILES: List[str] = field(
+        default_factory=lambda: [
+            "/etc/ssh/sshd_config",
+            "/etc/ufw/user.rules",
+            "/etc/ntp.conf",
+            "/etc/sysctl.conf",
+            "/etc/environment",
+            "/etc/fail2ban/jail.local",
+            "/etc/docker/daemon.json",
+            "/etc/caddy/Caddyfile",
+        ]
+    )
+
+    def __post_init__(self):
+        # Initialize computed fields that depend on other fields
+        self.PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{self.PLEX_VERSION}/debian/plexmediaserver_{self.PLEX_VERSION}_amd64.deb"
+        self.FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{self.FASTFETCH_VERSION}/fastfetch-linux-amd64.deb"
+        self.DOCKER_COMPOSE_URL = f"https://github.com/docker/compose/releases/download/v{self.DOCKER_COMPOSE_VERSION}/docker-compose-{self.UNAME.system}-{self.UNAME.machine}"
+        self.CONFIG_SRC_DIR = self.USER_HOME / "github/bash/linux/ubuntu/dotfiles"
+        self.CONFIG_DEST_DIR = self.USER_HOME / ".config"
 
 
 # ------------------------------------------------------------------------------
