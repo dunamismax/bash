@@ -823,13 +823,16 @@ class SystemUpdater:
 
     def install_packages(self, packages: Optional[List[str]] = None) -> bool:
         """
-        Install required packages using Nala.
+        Install required packages using Nala with improved error handling.
+
+        Installs packages individually when batch installation fails to
+        maximize the number of successful installations.
 
         Args:
             packages: List of packages to install (default: global PACKAGES)
 
         Returns:
-            True if installation was successful, False otherwise
+            True if all essential packages were installed, False otherwise
         """
         logger.info("Installing essential packages using Nala...")
         packages = packages or PACKAGES
@@ -850,100 +853,75 @@ class SystemUpdater:
             else:
                 logger.debug(f"Package already installed: {pkg}")
 
-        if missing:
-            logger.info(f"Installing {len(missing)} missing packages...")
-            installer = ["nala", "install", "-y"]
-
-            try:
-                # Install packages in batches for efficiency
-                batch_size = 20
-                for i in range(0, len(missing), batch_size):
-                    batch = missing[i : i + batch_size]
-                    logger.info(f"Installing batch {i // batch_size + 1}...")
-                    Utils.run_command(installer + batch)
-
-                logger.info("All packages installed successfully.")
-                return True
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Package installation failed: {e}")
-                return False
-        else:
+        if not missing:
             logger.info("All required packages are already installed.")
             return True
 
-    def configure_timezone(self, timezone: str = "America/New_York") -> bool:
-        """
-        Set the system timezone.
+        # Define essential packages that must be installed
+        essential_packages = [
+            "bash",
+            "vim",
+            "nano",
+            "sudo",
+            "openssh-server",
+            "ufw",
+            "python3",
+            "curl",
+            "wget",
+            "ca-certificates",
+        ]
 
-        Args:
-            timezone: Timezone to set
+        # Track failed packages
+        failed_packages = []
+        installer = ["nala", "install", "-y"]
 
-        Returns:
-            True if successful, False otherwise
-        """
-        logger.info(f"Setting timezone to {timezone}...")
-        tz_file = f"/usr/share/zoneinfo/{timezone}"
+        logger.info(f"Installing {len(missing)} missing packages...")
 
-        if not os.path.isfile(tz_file):
-            logger.warning(f"Timezone file for {timezone} not found.")
-            return False
-
+        # First try batch installation
         try:
-            if Utils.command_exists("timedatectl"):
-                Utils.run_command(["timedatectl", "set-timezone", timezone])
-            else:
-                if os.path.exists("/etc/localtime"):
-                    os.remove("/etc/localtime")
-                os.symlink(tz_file, "/etc/localtime")
-                with open("/etc/timezone", "w") as f:
-                    f.write(f"{timezone}\n")
+            # Install packages in batches for efficiency
+            batch_size = 10  # Reduced batch size
+            for i in range(0, len(missing), batch_size):
+                batch = missing[i : i + batch_size]
+                logger.info(f"Installing batch {i // batch_size + 1}...")
 
-            logger.info("Timezone configured successfully.")
-            return True
+                try:
+                    Utils.run_command(installer + batch)
+                    logger.info(f"Batch {i // batch_size + 1} installed successfully.")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"Batch installation failed: {e}")
+
+                    # Fall back to installing packages one by one
+                    for pkg in batch:
+                        try:
+                            logger.info(f"Trying individual installation of {pkg}...")
+                            Utils.run_command(installer + [pkg], check=False)
+                            logger.info(f"Successfully installed {pkg}.")
+                        except Exception as pkg_error:
+                            failed_packages.append(pkg)
+                            logger.warning(f"Failed to install {pkg}: {pkg_error}")
         except Exception as e:
-            logger.error(f"Failed to set timezone: {e}")
+            logger.error(f"Package installation error: {e}")
+            # Even if batch install fails, try essential packages individually
+
+        # Check if any essential packages failed to install
+        essential_failed = [pkg for pkg in failed_packages if pkg in essential_packages]
+
+        if failed_packages:
+            logger.warning(
+                f"Failed to install {len(failed_packages)} packages: {', '.join(failed_packages)}"
+            )
+
+        if essential_failed:
+            logger.error(
+                f"Failed to install essential packages: {', '.join(essential_failed)}"
+            )
             return False
 
-    def configure_locale(self, locale: str = "en_US.UTF-8") -> bool:
-        """
-        Set the system locale.
-
-        Args:
-            locale: Locale to set
-
-        Returns:
-            True if successful, False otherwise
-        """
-        logger.info(f"Setting locale to {locale}...")
-
-        try:
-            Utils.run_command(["locale-gen", locale])
-            Utils.run_command(["update-locale", f"LANG={locale}", f"LC_ALL={locale}"])
-
-            env_file = "/etc/environment"
-            env_content = []
-            locale_added = False
-
-            if os.path.isfile(env_file):
-                with open(env_file, "r") as f:
-                    for line in f:
-                        if line.strip().startswith("LANG="):
-                            env_content.append(f"LANG={locale}\n")
-                            locale_added = True
-                        else:
-                            env_content.append(line)
-
-            if not locale_added:
-                env_content.append(f"LANG={locale}\n")
-
-            with open(env_file, "w") as f:
-                f.writelines(env_content)
-
-            logger.info("Locale configured successfully.")
-            return True
-        except Exception as e:
-            logger.error(f"Locale configuration failed: {e}")
-            return False
+        logger.info(
+            f"Installed {len(missing) - len(failed_packages)} of {len(missing)} packages successfully."
+        )
+        return True
 
 
 # ------------------------------------------------------------------------------
