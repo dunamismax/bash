@@ -633,6 +633,7 @@ def print_status_report():
         "pending": "?",
         "in_progress": "⋯",
         "skipped": "⏭",
+        "warning": "⚠",  # Added warning icon
     }
 
     colors = {
@@ -641,6 +642,7 @@ def print_status_report():
         "pending": "yellow",
         "in_progress": "blue",
         "skipped": "cyan",
+        "warning": "yellow",  # Added warning color
     }
 
     descriptions = {
