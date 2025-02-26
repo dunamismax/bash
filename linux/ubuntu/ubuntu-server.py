@@ -4,15 +4,16 @@ Ubuntu Server Initialization & Hardening Utility – Production Ready
 --------------------------------------------------------------------
 Description:
   This script automates the setup, configuration, and maintenance of an Ubuntu server.
-  It is organized into the following phases:
+  It is divided into the following phases:
     1. Pre-flight Checks
-    2. System Update & Basic Configuration
-    3. User Environment Setup
-    4. Security & Access Hardening
-    5. Service Installations
-    6. Maintenance Tasks
-    7. System Tuning & Permissions
-    8. Final Checks & Cleanup
+    2. Nala Installation (ensuring a fast, modern apt frontend is available)
+    3. System Update & Basic Configuration
+    4. User Environment Setup
+    5. Security & Access Hardening
+    6. Service Installations
+    7. Maintenance Tasks
+    8. System Tuning & Permissions
+    9. Final Checks & Cleanup
 
 Usage:
     sudo ./ubuntu_server.py
@@ -36,9 +37,9 @@ import sys
 import tarfile
 import tempfile
 import time
+import signal
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-import signal
 from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
@@ -317,6 +318,8 @@ PACKAGES = [
     "libvirt-daemon-system",
     "virt-manager",
     "qemu-user-static",
+    # Nala (apt frontend)
+    "nala",
 ]
 
 
@@ -496,19 +499,14 @@ class PreflightChecker:
 # ------------------------------------------------------------------------------
 class SystemUpdater:
     def update_system(self, full_upgrade: bool = False) -> bool:
-        logger.info("Updating system repositories and packages...")
-        has_nala = Utils.command_exists("nala")
+        logger.info("Updating system repositories and packages using Nala...")
+        # With Nala installed, use it for all update/upgrade operations.
         try:
-            if has_nala:
-                Utils.run_command(["nala", "update"])
-            else:
-                Utils.run_command(["apt", "update", "-qq"])
+            Utils.run_command(["nala", "update"])
             cmd = (
-                ["nala", "upgrade"]
-                if has_nala
-                else ["apt", "full-upgrade", "-y"]
-                if full_upgrade
-                else ["apt", "upgrade", "-y"]
+                ["nala", "upgrade", "-y"]
+                if not full_upgrade
+                else ["nala", "full-upgrade", "-y"]
             )
             Utils.run_command(cmd)
             logger.info("System update and upgrade completed.")
@@ -518,7 +516,7 @@ class SystemUpdater:
             return False
 
     def install_packages(self, packages: Optional[List[str]] = None) -> bool:
-        logger.info("Installing essential packages...")
+        logger.info("Installing essential packages using Nala...")
         packages = packages or PACKAGES
         missing = []
         for pkg in packages:
@@ -536,12 +534,9 @@ class SystemUpdater:
                 logger.debug(f"Package already installed: {pkg}")
         if missing:
             logger.info(f"Installing {len(missing)} missing packages...")
-            installer = (
-                ["nala", "install"]
-                if Utils.command_exists("nala")
-                else ["apt", "install", "-y"]
-            )
+            installer = ["nala", "install", "-y"]
             try:
+                # Install packages in batches for efficiency
                 batch_size = 20
                 for i in range(0, len(missing), batch_size):
                     batch = missing[i : i + batch_size]
@@ -755,7 +750,6 @@ class UserEnvironment:
 class SecurityHardener:
     def configure_ssh(self, port: int = 22) -> bool:
         logger.info("Configuring OpenSSH Server...")
-        # Ensure SSH is enabled
         try:
             Utils.run_command(["systemctl", "enable", "--now", "ssh"])
         except subprocess.CalledProcessError as e:
@@ -1443,15 +1437,15 @@ class MaintenanceManager:
 LOG="/var/log/daily_maintenance.log"
 echo "--- Daily Maintenance $(date) ---" >> $LOG
 echo "Updating package lists..." >> $LOG
-apt update -qq >> $LOG 2>&1
+nala update -qq >> $LOG 2>&1
 echo "Checking for security updates..." >> $LOG
-apt list --upgradable | grep -i security >> $LOG 2>&1
+nala list --upgradable | grep -i security >> $LOG 2>&1
 echo "Upgrading packages..." >> $LOG
-apt upgrade -y >> $LOG 2>&1
+nala upgrade -y >> $LOG 2>&1
 echo "Removing unnecessary packages..." >> $LOG
-apt autoremove -y >> $LOG 2>&1
+nala autoremove -y >> $LOG 2>&1
 echo "Cleaning package cache..." >> $LOG
-apt autoclean -y >> $LOG 2>&1
+nala clean >> $LOG 2>&1
 echo "Disk space usage:" >> $LOG
 df -h / >> $LOG 2>&1
 echo "Largest files in /var/log:" >> $LOG
@@ -1873,9 +1867,8 @@ class FinalChecker:
                     stderr=subprocess.STDOUT,
                 )
                 for line in unattended_output.splitlines():
-                    if (
-                        "Packages that will be upgraded:" in line
-                        and "0 upgrades" not in line
+                    if ("Packages that will be upgraded:" in line) and (
+                        "0 upgrades" not in line
                     ):
                         logger.warning("Pending security updates detected!")
                         all_passed = False
@@ -1891,7 +1884,7 @@ class FinalChecker:
         success = True
         try:
             if Utils.command_exists("nala"):
-                Utils.run_command(["nala", "autoremove"])
+                Utils.run_command(["nala", "autoremove", "-y"])
             else:
                 Utils.run_command(["apt", "autoremove", "-y"])
             if Utils.command_exists("nala"):
@@ -2021,7 +2014,11 @@ class UbuntuServerSetup:
             if not self.preflight.check_os_version():
                 self.logger.warning("OS version check failed; proceeding with caution.")
             self.preflight.save_config_snapshot()
-            # Phase 2: System Update & Basic Configuration
+            # Phase 2: Install Nala first to ensure subsequent commands use it.
+            if not run_with_progress("Installing Nala...", self.services.install_nala):
+                self.logger.error("Nala installation failed. Aborting.")
+                sys.exit(1)
+            # Phase 3: System Update & Basic Configuration
             if not run_with_progress("Updating system...", self.updater.update_system):
                 self.logger.warning("System update failed; continuing.")
                 self.success = False
@@ -2040,7 +2037,7 @@ class UbuntuServerSetup:
             ):
                 self.logger.warning("Locale configuration failed.")
                 self.success = False
-            # Phase 3: User Environment Setup
+            # Phase 4: User Environment Setup
             if not run_with_progress(
                 "Setting up user repositories...", self.user_env.setup_repos
             ):
@@ -2061,7 +2058,7 @@ class UbuntuServerSetup:
             ):
                 self.logger.warning("Default shell update failed.")
                 self.success = False
-            # Phase 4: Security & Access Hardening
+            # Phase 5: Security & Access Hardening
             if not run_with_progress("Configuring SSH...", self.security.configure_ssh):
                 self.logger.warning("SSH configuration failed.")
                 self.success = False
@@ -2085,7 +2082,7 @@ class UbuntuServerSetup:
             ):
                 self.logger.warning("AppArmor configuration failed.")
                 self.success = False
-            # Phase 5: Service Installations
+            # Phase 6: Service Installations
             if not run_with_progress(
                 "Installing Fastfetch...", self.services.install_fastfetch
             ):
@@ -2094,8 +2091,6 @@ class UbuntuServerSetup:
                 "Configuring Docker...", self.services.docker_config
             ):
                 self.logger.warning("Docker configuration failed.")
-            if not run_with_progress("Installing Nala...", self.services.install_nala):
-                self.logger.warning("Nala installation failed.")
             if not run_with_progress(
                 "Installing Tailscale...", self.services.install_enable_tailscale
             ):
@@ -2112,7 +2107,7 @@ class UbuntuServerSetup:
                 "Deploying user scripts...", self.services.deploy_user_scripts
             ):
                 self.logger.warning("User scripts deployment failed.")
-            # Phase 6: Maintenance Tasks
+            # Phase 7: Maintenance Tasks
             if not run_with_progress(
                 "Configuring periodic maintenance...",
                 self.maintenance.configure_periodic,
@@ -2126,7 +2121,7 @@ class UbuntuServerSetup:
                 "Updating SSL certificates...", self.maintenance.update_ssl_certificates
             ):
                 self.logger.warning("SSL certificate update failed.")
-            # Phase 7: System Tuning & Permissions
+            # Phase 8: System Tuning & Permissions
             if not run_with_progress(
                 "Applying system tuning...", self.tuner.tune_system
             ):
@@ -2135,7 +2130,7 @@ class UbuntuServerSetup:
                 "Setting home permissions...", self.tuner.home_permissions
             ):
                 self.logger.warning("Home directory permission configuration failed.")
-            # Phase 8: Final Checks & Cleanup
+            # Phase 9: Final Checks & Cleanup
             self.final_checker.system_health_check()
             if not self.final_checker.verify_firewall_rules():
                 self.logger.warning("Firewall rule verification failed.")
@@ -2165,8 +2160,8 @@ class UbuntuServerSetup:
 
 
 def main() -> int:
-    setup = UbuntuServerSetup()
-    return setup.run()
+    setup_instance = UbuntuServerSetup()
+    return setup_instance.run()
 
 
 if __name__ == "__main__":
