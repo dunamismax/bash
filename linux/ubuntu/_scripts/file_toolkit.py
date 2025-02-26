@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Advanced File & Security Operations Toolkit
----------------------------------------------
+Advanced File & Security Operations Toolkit with Disk Analysis
+----------------------------------------------------------------
 Description:
-  An advanced file encryption, decryption, compression, and file management toolkit
-  for Ubuntu. This interactive tool offers a Nord-themed menu with rich integration for:
+  An advanced file encryption, decryption, compression, file management,
+  and disk analysis toolkit for Ubuntu. This interactive tool offers a Nord-themed
+  menu with rich integration for:
     - File copy, move, delete, and advanced search
     - Multicore compression/decompression (via pigz)
     - Password-based encryption/decryption (via OpenSSL)
     - Interactive PGP operations (key generation, message encryption/decryption,
       signing, and verification)
     - Checksum calculation (MD5/SHA256)
+    - Disk Usage Analysis & Duplicate/Rarely Used File Finder (disk usage, duplicate detection,
+      and cleanup recommendations)
 
 Usage:
   sudo ./file_toolkit.py
@@ -20,6 +23,7 @@ Author: Your Name | License: MIT | Version: 4.0.0
 
 import atexit
 import getpass
+import hashlib
 import logging
 import os
 import shutil
@@ -27,21 +31,24 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-
-# Global rich console instance for formatted output
-console = Console()
+from rich.prompt import Prompt
+from rich.table import Table
 
 # ------------------------------------------------------------------------------
-# Environment Configuration
+# Environment Configuration & Globals
 # ------------------------------------------------------------------------------
 LOG_FILE = "/var/log/advanced_file_tool.log"
 DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 DEFAULT_LOG_LEVEL = "INFO"
+
+# Global rich console instance for formatted output
+console = Console()
 
 # ------------------------------------------------------------------------------
 # Nord Color Palette (24-bit ANSI escape sequences)
@@ -63,6 +70,19 @@ NORD13 = "\033[38;2;235;203;139m"  # Yellowish (WARN)
 NORD14 = "\033[38;2;163;190;140m"  # Greenish (INFO)
 NORD15 = "\033[38;2;180;142;173m"  # Purple
 NC = "\033[0m"  # Reset / No Color
+
+# ------------------------------------------------------------------------------
+# Disk Usage & Duplicate Finder Globals
+# ------------------------------------------------------------------------------
+DISK_STATS = {
+    "total_size": 0,
+    "total_files": 0,
+    "total_dirs": 0,
+}
+DUPLICATE_FILES = {}  # {file_hash: [file1, file2, ...]}
+RARELY_USED_FILES = []  # List of file paths
+DEFAULT_SCAN_PATH = "/"  # Default directory to scan
+RARELY_USED_THRESHOLD_DAYS = 180  # Files not accessed in this many days are flagged
 
 
 # ------------------------------------------------------------------------------
@@ -125,6 +145,9 @@ def setup_logging():
         logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
         logger.warning("Continuing with console logging only")
     return logger
+
+
+setup_logging()
 
 
 def print_section(title: str):
@@ -497,7 +520,7 @@ def encrypt_file():
         console.print(f"[bold green]File encrypted successfully.[/bold green]")
     except subprocess.CalledProcessError as e:
         logging.error(f"Encryption failed: {e}")
-        err = e.stderr.decode() if e.stderr else e
+        err = e.stderr.decode() if e.stderr else str(e)
         console.print(f"[bold red]Error: Encryption failed - {err}[/bold red]")
 
 
@@ -535,7 +558,7 @@ def decrypt_file():
         console.print(f"[bold green]File decrypted successfully.[/bold green]")
     except subprocess.CalledProcessError as e:
         logging.error(f"Decryption failed: {e}")
-        err = e.stderr.decode() if e.stderr else e
+        err = e.stderr.decode() if e.stderr else str(e)
         console.print(f"[bold red]Error: Decryption failed - {err}[/bold red]")
         console.print(
             f"[bold yellow]Hint: Check if the password is correct.[/bold yellow]"
@@ -603,7 +626,7 @@ def pgp_encrypt_message():
         logging.info("Message encrypted successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"PGP encryption failed: {e}")
-        err = e.stderr if e.stderr else e
+        err = e.stderr if e.stderr else str(e)
         console.print(f"[bold red]Error: PGP encryption failed - {err}[/bold red]")
 
 
@@ -671,7 +694,7 @@ def pgp_sign_message():
         logging.info("Message signed successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"PGP signing failed: {e}")
-        err = e.stderr if e.stderr else e
+        err = e.stderr if e.stderr else str(e)
         console.print(f"[bold red]Error: PGP signing failed - {err}[/bold red]")
 
 
@@ -753,6 +776,319 @@ def calculate_checksum():
     except subprocess.CalledProcessError as e:
         logging.error(f"Checksum calculation failed: {e}")
         console.print(f"[bold red]Error: Checksum calculation failed - {e}[/bold red]")
+
+
+# ------------------------------------------------------------------------------
+# DISK USAGE & DUPLICATE FILE FINDER FUNCTIONS
+# ------------------------------------------------------------------------------
+def format_size(size_bytes):
+    """
+    Return a human-readable file size.
+    """
+    if size_bytes == 0:
+        return "0 B"
+    names = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while size_bytes >= 1024 and i < len(names) - 1:
+        size_bytes /= 1024
+        i += 1
+    return f"{size_bytes:.2f} {names[i]}"
+
+
+def compute_file_hash(file_path, algorithm="md5", block_size=65536):
+    """
+    Compute the hash of a file using the specified algorithm.
+    Returns the hexadecimal digest or None if an error occurs.
+    """
+    hash_func = hashlib.new(algorithm)
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(block_size), b""):
+                hash_func.update(chunk)
+        return hash_func.hexdigest()
+    except Exception as e:
+        logging.warning(f"Error computing hash for {file_path}: {e}")
+        return None
+
+
+def scan_disk_usage(directory):
+    """
+    Recursively scan the given directory, update disk statistics,
+    and return a list of file paths.
+    """
+    file_list = []
+    total_size = 0
+    total_files = 0
+    total_dirs = 0
+
+    logging.info(f"Scanning disk usage in: {directory}")
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Scanning files...", start=False)
+        for root, dirs, files in os.walk(
+            directory, onerror=lambda e: logging.warning(e)
+        ):
+            total_dirs += len(dirs)
+            total_files += len(files)
+            for file in files:
+                file_path = os.path.join(root, file)
+                file_list.append(file_path)
+                try:
+                    total_size += os.path.getsize(file_path)
+                except Exception as e:
+                    logging.debug(f"Could not get size for {file_path}: {e}")
+            progress.update(task, advance=1)
+        progress.stop()
+
+    DISK_STATS["total_size"] = total_size
+    DISK_STATS["total_files"] = total_files
+    DISK_STATS["total_dirs"] = total_dirs
+    logging.info(
+        f"Scan complete: {total_files} files, {total_dirs} directories, Total size: {format_size(total_size)}"
+    )
+    return file_list
+
+
+def find_duplicate_files(file_list):
+    """
+    Identify duplicate files by grouping on file sizes then comparing file hashes.
+    Updates the global DUPLICATE_FILES dictionary.
+    """
+    logging.info("Identifying duplicate files...")
+    size_map = {}
+    duplicates = {}
+
+    # Group files by size
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Grouping files by size...", total=len(file_list))
+        for file_path in file_list:
+            try:
+                size = os.path.getsize(file_path)
+            except Exception as e:
+                logging.debug(f"Error getting size for {file_path}: {e}")
+                continue
+            size_map.setdefault(size, []).append(file_path)
+            progress.advance(task)
+        progress.stop()
+
+    # For groups with more than one file, compute hash
+    duplicate_groups = {}
+    for size, files in size_map.items():
+        if len(files) < 2:
+            continue
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task(
+                f"Hashing {len(files)} files of size {size}...", total=len(files)
+            )
+            for file_path in files:
+                file_hash = compute_file_hash(file_path)
+                if file_hash:
+                    duplicate_groups.setdefault(file_hash, []).append(file_path)
+                progress.advance(task)
+            progress.stop()
+
+    # Filter groups to only those with duplicates
+    for file_hash, paths in duplicate_groups.items():
+        if len(paths) > 1:
+            duplicates[file_hash] = paths
+
+    DUPLICATE_FILES.clear()
+    DUPLICATE_FILES.update(duplicates)
+    logging.info(f"Found {len(duplicates)} groups of duplicate files.")
+    return duplicates
+
+
+def find_rarely_used_files(file_list, days_threshold):
+    """
+    Identify files not accessed within the specified number of days.
+    Updates the global RARELY_USED_FILES list.
+    """
+    logging.info(f"Identifying files not accessed in the last {days_threshold} days...")
+    threshold_time = time.time() - (days_threshold * 86400)
+    rarely_used = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Checking file access times...", total=len(file_list))
+        for file_path in file_list:
+            try:
+                atime = os.path.getatime(file_path)
+                if atime < threshold_time:
+                    rarely_used.append(file_path)
+            except Exception as e:
+                logging.debug(f"Error accessing time for {file_path}: {e}")
+            progress.advance(task)
+        progress.stop()
+    RARELY_USED_FILES.clear()
+    RARELY_USED_FILES.extend(rarely_used)
+    logging.info(f"Identified {len(rarely_used)} rarely used files.")
+    return rarely_used
+
+
+def display_disk_statistics():
+    """
+    Display disk usage statistics using a rich table.
+    """
+    table = Table(title="Disk Usage Statistics", style=NORD14)
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_row("Total Files", str(DISK_STATS.get("total_files", 0)))
+    table.add_row("Total Directories", str(DISK_STATS.get("total_dirs", 0)))
+    table.add_row("Total Size", format_size(DISK_STATS.get("total_size", 0)))
+    console.print(table)
+
+
+def display_duplicates():
+    """
+    Display duplicate files using rich formatted output.
+    """
+    if not DUPLICATE_FILES:
+        console.print("[bold green]No duplicate files found.[/bold green]")
+        return
+    for file_hash, paths in DUPLICATE_FILES.items():
+        console.print(f"[bold yellow]Hash:[/bold yellow] {file_hash}")
+        for path in paths:
+            console.print(f"  - {path}")
+        console.print()
+
+
+def display_rarely_used():
+    """
+    Display rarely used files in a formatted table.
+    """
+    if not RARELY_USED_FILES:
+        console.print("[bold green]No rarely used files found.[/bold green]")
+        return
+    table = Table(title="Rarely Used Files", style=NORD14)
+    table.add_column("File Path", style="cyan")
+    table.add_column("Last Accessed", style="magenta")
+    for file_path in RARELY_USED_FILES:
+        try:
+            atime = datetime.fromtimestamp(os.path.getatime(file_path)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        except Exception as e:
+            atime = "N/A"
+        table.add_row(file_path, atime)
+    console.print(table)
+
+
+def cleanup_recommendations():
+    """
+    Display cleanup recommendations based on duplicate and rarely used files.
+    """
+    console.print("[bold underline]Cleanup Recommendations[/bold underline]")
+    if DUPLICATE_FILES:
+        console.print("\n[bold yellow]Duplicate Files:[/bold yellow]")
+        for file_hash, paths in DUPLICATE_FILES.items():
+            console.print(f"[yellow]Hash:[/yellow] {file_hash}")
+            console.print("Files:")
+            for idx, path in enumerate(paths, start=1):
+                console.print(f"  {idx}. {path}")
+            console.print(
+                "Recommendation: Consider keeping one copy and removing the rest.\n"
+            )
+    else:
+        console.print("[bold green]No duplicate files to clean up.[/bold green]\n")
+
+    if RARELY_USED_FILES:
+        console.print("[bold yellow]Rarely Used Files:[/bold yellow]")
+        console.print(
+            "Recommendation: Review these files to determine if they can be removed."
+        )
+    else:
+        console.print("[bold green]No rarely used files to clean up.[/bold green]")
+
+
+def disk_usage_menu():
+    """
+    Display the Disk Usage & Duplicate File Finder interactive menu.
+    """
+    file_list = []
+    while True:
+        print_header()
+        console.print(f"{NORD14}Disk Usage & Duplicate File Finder:{NC}")
+        print_divider()
+        console.print(f"{NORD8}[1]{NC} Analyze Disk Usage")
+        console.print(f"{NORD8}[2]{NC} Find Duplicate Files")
+        console.print(f"{NORD8}[3]{NC} Find Rarely Used Files")
+        console.print(f"{NORD8}[4]{NC} Show Cleanup Recommendations")
+        console.print(f"{NORD8}[0]{NC} Return to Main Menu")
+        print_divider()
+        choice = input(f"{NORD13}Enter your choice: {NC}").strip()
+        if choice == "1":
+            scan_path = (
+                input(
+                    f"{NORD13}Enter directory to scan (default: {DEFAULT_SCAN_PATH}): {NC}"
+                ).strip()
+                or DEFAULT_SCAN_PATH
+            )
+            if not os.path.isdir(scan_path):
+                console.print(
+                    f"[bold red]Error: {scan_path} is not a valid directory.[/bold red]"
+                )
+                prompt_enter()
+                continue
+            file_list = scan_disk_usage(scan_path)
+            display_disk_statistics()
+            prompt_enter()
+        elif choice == "2":
+            if not file_list:
+                console.print(
+                    f"[bold yellow]Please run disk analysis first (option 1).[/bold yellow]"
+                )
+                prompt_enter()
+                continue
+            find_duplicate_files(file_list)
+            display_duplicates()
+            prompt_enter()
+        elif choice == "3":
+            if not file_list:
+                console.print(
+                    f"[bold yellow]Please run disk analysis first (option 1).[/bold yellow]"
+                )
+                prompt_enter()
+                continue
+            threshold_input = input(
+                f"{NORD13}Enter threshold in days for rarely used files (default: {RARELY_USED_THRESHOLD_DAYS}): {NC}"
+            ).strip()
+            try:
+                days_threshold = (
+                    int(threshold_input)
+                    if threshold_input
+                    else RARELY_USED_THRESHOLD_DAYS
+                )
+            except ValueError:
+                console.print("[red]Invalid number. Using default threshold.[/red]")
+                days_threshold = RARELY_USED_THRESHOLD_DAYS
+            find_rarely_used_files(file_list, days_threshold)
+            display_rarely_used()
+            prompt_enter()
+        elif choice == "4":
+            cleanup_recommendations()
+            prompt_enter()
+        elif choice == "0":
+            break
+        else:
+            console.print(f"{NORD12}Invalid selection.{NC}")
+            time.sleep(1)
 
 
 # ------------------------------------------------------------------------------
@@ -917,6 +1253,7 @@ def main_menu():
         console.print(f"{NORD8}[3]{NC} File Encryption/Decryption (Password)")
         console.print(f"{NORD8}[4]{NC} PGP Operations")
         console.print(f"{NORD8}[5]{NC} Additional Tools")
+        console.print(f"{NORD8}[6]{NC} Disk Usage & Duplicate File Finder")
         console.print(f"{NORD8}[q]{NC} Quit")
         print_divider()
         choice = input(f"{NORD13}Enter your choice: {NC}").strip().lower()
@@ -930,6 +1267,8 @@ def main_menu():
             pgp_menu()
         elif choice == "5":
             additional_menu()
+        elif choice == "6":
+            disk_usage_menu()
         elif choice == "q":
             logging.info("User exited the tool.")
             console.print(f"{NORD14}Goodbye!{NC}")
@@ -956,7 +1295,6 @@ def main():
         except Exception as e:
             console.print(f"Failed to create log directory: {log_dir}. Error: {e}")
             sys.exit(1)
-
     try:
         with open(LOG_FILE, "a"):
             pass
@@ -967,7 +1305,6 @@ def main():
         )
         sys.exit(1)
 
-    setup_logging()
     check_root()
     check_dependencies()
 
