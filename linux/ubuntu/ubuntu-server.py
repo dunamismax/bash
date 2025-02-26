@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ubuntu_server_setup.py
+ubuntu_server.py
 
 Ubuntu Server Initialization & Hardening Utility – Production Ready
 
@@ -16,7 +16,7 @@ It is organized into logical phases:
   - Final Checks & Cleanup
 
 Usage:
-    sudo ./ubuntu_server_setup.py
+    sudo ./ubuntu_server.py
 
 Disclaimer:
     Provided "as is" without any warranty. Use at your own risk.
