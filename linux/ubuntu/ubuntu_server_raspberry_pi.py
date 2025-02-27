@@ -1856,7 +1856,7 @@ Icon=vscode
 
     def install_enable_tailscale(self) -> bool:
         """
-        Install and configure Tailscale VPN.
+        Install and configure Tailscale VPN using the official script.
 
         Returns:
             True if successful, False otherwise
@@ -1868,74 +1868,33 @@ Icon=vscode
             tailscale_installed = True
         else:
             try:
-                # Add repository and install
-                logger.info("Adding Tailscale repository and installing...")
-                temp_key = os.path.join(TEMP_DIR, "tailscale-key.gpg")
+                logger.info("Installing Tailscale using the official script...")
                 Utils.run_command(
-                    [
-                        "curl",
-                        "-fsSL",
-                        "https://pkgs.tailscale.com/stable/ubuntu/jammy.gpg",
-                        "-o",
-                        temp_key,
-                    ]
+                    ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]
                 )
-                Utils.run_command(["apt-key", "add", temp_key])
 
-                # Add repository
-                repo_file = "/etc/apt/sources.list.d/tailscale.list"
-                os.makedirs(os.path.dirname(repo_file), exist_ok=True)
-                with open(repo_file, "w") as f:
-                    f.write("deb https://pkgs.tailscale.com/stable/ubuntu jammy main\n")
-
-                # Update and install
-                Utils.run_command(["apt", "update"])
-                if not SystemUpdater().install_packages(["tailscale"]):
-                    logger.error("Failed to install Tailscale.")
-                    return False
-
-                # Verify installation
                 tailscale_installed = Utils.command_exists("tailscale")
+
                 if tailscale_installed:
                     logger.info("Tailscale installed successfully.")
                 else:
-                    # Try alternative installation method
                     logger.error("Tailscale installation failed.")
-                    try:
-                        Utils.run_command(
-                            [
-                                "sh",
-                                "-c",
-                                "curl -fsSL https://tailscale.com/install.sh | sh",
-                            ]
-                        )
-                        tailscale_installed = Utils.command_exists("tailscale")
-                        if tailscale_installed:
-                            logger.info(
-                                "Tailscale installed successfully using the official script."
-                            )
-                        else:
-                            logger.error("Alternative Tailscale installation failed.")
-                            return False
-                    except Exception:
-                        logger.error("Alternative Tailscale installation failed.")
-                        return False
+                    return False
             except Exception as e:
                 logger.error(f"Failed to install Tailscale: {e}")
                 return False
 
         try:
-            # Enable and start service
             Utils.run_command(["systemctl", "enable", "tailscaled"])
             Utils.run_command(["systemctl", "start", "tailscaled"])
 
-            # Verify service is running
             status = Utils.run_command(
                 ["systemctl", "is-active", "tailscaled"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
+
             if status.stdout.strip() == "active":
                 logger.info("Tailscale service is active and running.")
                 logger.info("To authenticate, run: tailscale up")

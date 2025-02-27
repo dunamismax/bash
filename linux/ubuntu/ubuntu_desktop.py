@@ -2228,30 +2228,56 @@ net.ipv4.tcp_wmem=4096 16384 4194304
 
     def install_enable_tailscale(self) -> bool:
         """
-        Install and enable Tailscale VPN.
+        Install and configure Tailscale VPN using the official script.
 
         Returns:
-            True if Tailscale installed and enabled successfully, False otherwise
+            True if successful, False otherwise
         """
-        self.print_section("Tailscale Installation and Enablement")
+        self.print_section("Tailscale Installation")
+        self.logger.info("Installing and configuring Tailscale...")
+
         if self.command_exists("tailscale"):
-            self.logger.info("Tailscale already installed; skipping.")
+            self.logger.info("Tailscale is already installed.")
+            tailscale_installed = True
         else:
             try:
+                self.logger.info("Installing Tailscale using the official script...")
                 self.run_command(
                     ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]
                 )
-                self.logger.info("Tailscale installed successfully.")
-            except subprocess.CalledProcessError as e:
+
+                tailscale_installed = self.command_exists("tailscale")
+
+                if tailscale_installed:
+                    self.logger.info("Tailscale installed successfully.")
+                else:
+                    self.logger.error("Tailscale installation failed.")
+                    return False
+            except Exception as e:
                 self.logger.error(f"Failed to install Tailscale: {e}")
                 return False
+
         try:
-            self.run_command(["systemctl", "enable", "--now", "tailscaled"])
-            self.logger.info("Tailscale service enabled and started.")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to enable Tailscale service: {e}")
-            return False
+            self.run_command(["systemctl", "enable", "tailscaled"])
+            self.run_command(["systemctl", "start", "tailscaled"])
+
+            status = self.run_command(
+                ["systemctl", "is-active", "tailscaled"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if status.stdout.strip() == "active":
+                self.logger.info("Tailscale service is active and running.")
+                self.logger.info("To authenticate, run: tailscale up")
+                return True
+            else:
+                self.logger.warning("Tailscale service may not be running correctly.")
+                return tailscale_installed
+        except Exception as e:
+            self.logger.error(f"Failed to enable/start Tailscale: {e}")
+            return tailscale_installed
 
     def install_configure_caddy(self) -> bool:
         """
