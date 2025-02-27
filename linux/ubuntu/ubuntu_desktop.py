@@ -2,26 +2,26 @@
 """
 Ubuntu Desktop Initialization, Customization & Maintenance Utility
 --------------------------------------------------------------------
-Description:
-  This automation script configures and optimizes an Ubuntu Desktop environment.
-  It is divided into well‐defined phases and uses a modular, class‑based architecture.
-  The script employs comprehensive error handling with detailed Nord‑themed logging,
-  signal handling with cleanup, asynchronous progress reporting, and status reporting.
+This automation script configures, customizes, and optimizes an Ubuntu Desktop
+environment. It is divided into well‑defined phases using a modular, class‑based
+architecture. The script employs comprehensive error handling with detailed
+Nord‑themed logging, asynchronous progress reporting, signal handling with cleanup,
+and a final status report.
 
-  Phases include:
-    1. Pre-flight Checks & Backups (root, network, config and ZFS snapshots)
-    2. System Update & Basic Configuration (updates, package installation, timezone)
-    3. Repository & Shell Setup (GitHub repo setup, shell and dotfiles update)
-    4. Security Hardening (SSH, sudoers, firewall, Fail2ban)
-    5. Essential Service Installation (Docker, Plex, Fastfetch)
-    6. User Customization & Script Deployment (user scripts)
-    7. Maintenance & Monitoring Tasks (cron, backups, log rotation, health check)
-    8. Certificates & Performance Tuning (SSL certs, sysctl tuning)
-    9. Permissions & Advanced Storage Setup (home permissions, ZFS configuration)
-   10. Additional Applications & Tools (Brave, Flatpak apps, VS Code)
-   11. Automatic Updates & Additional Security (unattended upgrades, AppArmor)
-   12. Cleanup & Final Configurations (Nala, Tailscale, Caddy, Wayland)
-   13. Final System Checks & Reboot Prompt (health checks and reboot prompt)
+Phases include:
+  1. Pre-flight Checks & Backups (root, network, configuration & ZFS snapshots)
+  2. System Update & Basic Configuration (updates, package installation, timezone)
+  3. Repository & Shell Setup (GitHub repo setup, shell and dotfiles update)
+  4. Security Hardening (SSH, sudoers, firewall, Fail2ban)
+  5. Essential Service Installation (Docker, Plex, Fastfetch)
+  6. User Customization & Script Deployment (user scripts)
+  7. Maintenance & Monitoring Tasks (cron, backups, log rotation, health check)
+  8. Certificates & Performance Tuning (SSL certificates, sysctl tuning)
+  9. Permissions & Advanced Storage Setup (home permissions, ZFS configuration)
+ 10. Additional Applications & Tools (Brave, Flatpak apps, VS Code)
+ 11. Automatic Updates & Additional Security (unattended upgrades, AppArmor)
+ 12. Cleanup & Final Configurations (Nala, Tailscale, Caddy, Wayland)
+ 13. Final System Checks & Reboot Prompt (health checks and reboot prompt)
 
 Usage:
   Run this script as root: sudo ./ubuntu_desktop_setup.py
@@ -51,9 +51,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# ------------------------------------------------------------------------------
-# Global Nord Color Palette & Status Reporting
-# ------------------------------------------------------------------------------
+# =============================================================================
+# ANSI Nord Color Palette & Global Status Reporting
+# =============================================================================
+
 NORD0 = "\033[38;2;46;52;64m"
 NORD1 = "\033[38;2;59;66;82m"
 NORD8 = "\033[38;2;136;192;208m"
@@ -82,7 +83,7 @@ SETUP_STATUS = {
 
 
 def print_status_report():
-    """Display a formatted report of all setup tasks and their status."""
+    """Display a formatted report of all setup tasks and their statuses."""
     border = "─" * 60
     print(f"{NORD8}{border}{NC}")
     print(f"{NORD8}         Ubuntu Desktop Setup Status Report{NC}")
@@ -109,12 +110,12 @@ def print_status_report():
         print(f"{colors[status]}{icons[status]} {key}: {status.upper()} - {msg}{NC}")
 
 
-# ------------------------------------------------------------------------------
-# CUSTOM LOGGING
-# ------------------------------------------------------------------------------
-class NordColorFormatter(logging.Formatter):
-    """Custom formatter that applies Nord color palette to log messages based on level."""
+# =============================================================================
+# Logging Setup with Nord Color Formatter
+# =============================================================================
 
+
+class NordColorFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None, use_colors=True):
         super().__init__(fmt, datefmt)
         self.use_colors = use_colors
@@ -136,14 +137,12 @@ class NordColorFormatter(logging.Formatter):
 
 
 def setup_logging(log_file: Union[str, Path]) -> logging.Logger:
-    """Set up logging with both file and console handlers using Nord colors."""
     log_file = Path(log_file)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("ubuntu_setup")
     logger.setLevel(logging.DEBUG)
-    # Remove any pre-existing handlers.
-    for h in list(logger.handlers):
-        logger.removeHandler(h)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
     formatter = NordColorFormatter(
         "[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
     )
@@ -166,13 +165,14 @@ def setup_logging(log_file: Union[str, Path]) -> logging.Logger:
     return logger
 
 
-# ------------------------------------------------------------------------------
-# RUN WITH PROGRESS HELPER
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Run-With-Progress Helper
+# =============================================================================
+
+
 def run_with_progress(
     description: str, func, *args, task_name: Optional[str] = None, **kwargs
 ):
-    """Run a function asynchronously while displaying progress and updating global status."""
     if task_name:
         SETUP_STATUS[task_name] = {
             "status": "in_progress",
@@ -185,39 +185,31 @@ def run_with_progress(
             future = executor.submit(func, *args, **kwargs)
             while not future.done():
                 time.sleep(0.5)
-            try:
-                result = future.result()
-                elapsed = time.time() - start_time
-                print(f"{NORD14}[✓] {description} completed in {elapsed:.2f}s{NC}")
-                if task_name:
-                    SETUP_STATUS[task_name] = {
-                        "status": "success",
-                        "message": f"{description} completed successfully.",
-                    }
-                return result
-            except Exception as e:
-                elapsed = time.time() - start_time
-                print(
-                    f"{NORD11}[✗] {description} failed in {elapsed:.2f}s: {str(e)}{NC}"
-                )
-                if task_name:
-                    SETUP_STATUS[task_name] = {
-                        "status": "failed",
-                        "message": f"{description} failed: {str(e)}",
-                    }
-                raise
+            result = future.result()
+            elapsed = time.time() - start_time
+            print(f"{NORD14}[✓] {description} completed in {elapsed:.2f}s{NC}")
+            if task_name:
+                SETUP_STATUS[task_name] = {
+                    "status": "success",
+                    "message": f"{description} completed successfully.",
+                }
+            return result
     except Exception as e:
+        elapsed = time.time() - start_time
+        print(f"{NORD11}[✗] {description} failed in {elapsed:.2f}s: {e}{NC}")
         if task_name:
             SETUP_STATUS[task_name] = {
                 "status": "failed",
-                "message": f"{description} failed: {str(e)}",
+                "message": f"{description} failed: {e}",
             }
         raise
 
 
-# ------------------------------------------------------------------------------
-# SIGNAL HANDLING & CLEANUP
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Signal Handling & Cleanup
+# =============================================================================
+
+
 def signal_handler(signum, frame):
     sig_name = (
         signal.Signals(signum).name
@@ -243,9 +235,8 @@ for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
 
 
 def cleanup_temp_files():
-    """Cleanup any temporary files created by the script."""
     logger = logging.getLogger("ubuntu_setup")
-    logger.info("Performing final cleanup of temporary files.")
+    logger.info("Cleaning up temporary files.")
     tmp = Path(tempfile.gettempdir())
     for item in tmp.iterdir():
         if item.name.startswith("ubuntu_setup_"):
@@ -260,14 +251,15 @@ def cleanup_temp_files():
 
 atexit.register(cleanup_temp_files)
 
+# =============================================================================
+# Configuration DataClass
+# =============================================================================
 
-# ------------------------------------------------------------------------------
-# CONFIGURATION CLASS
-# ------------------------------------------------------------------------------
+
 @dataclass
 class Config:
-    PLEX_VERSION: str = "1.41.3.9314-a0bfb8370"
-    FASTFETCH_VERSION: str = "2.36.1"
+    PLEX_VERSION: str = "1.41.4.9463-630c9f557"
+    FASTFETCH_VERSION: str = "2.37.0"
     DOCKER_COMPOSE_VERSION: str = "2.20.2"
     LOG_FILE: str = "/var/log/ubuntu_setup.log"
     USERNAME: str = "sawyer"
@@ -315,7 +307,7 @@ class Config:
             "libbz2-dev",
             "tk-dev",
             "xz-utils",
-            "libncurses5-dev",
+            "libncurses-dev",
             "libgdbm-dev",
             "libnss3-dev",
             "liblzma-dev",
@@ -457,26 +449,25 @@ class Config:
         self.CONFIG_DEST_DIR = self.USER_HOME / ".config"
 
 
-# ------------------------------------------------------------------------------
-# MAIN ORCHESTRATION CLASS
-# ------------------------------------------------------------------------------
-class UbuntuDesktopSetup:
-    """Main class to orchestrate all phases of the Ubuntu Desktop setup process."""
+# =============================================================================
+# Main Orchestration Class
+# =============================================================================
 
+
+class UbuntuDesktopSetup:
     def __init__(self, config: Config = Config()):
         self.config = config
         self.logger = setup_logging(self.config.LOG_FILE)
         self.start_time = time.time()
 
     def print_section(self, title: str) -> None:
-        """Print a formatted section header."""
         border = "─" * 60
         print(f"{NORD8}{border}{NC}")
         print(f"{NORD8}  {title}{NC}")
         print(f"{NORD8}{border}{NC}")
         self.logger.info(f"--- {title} ---")
 
-    # ------------------- Phase 1: Pre-flight Checks & Backups -------------------
+    # Phase 1: Pre-flight Checks & Backups
     def phase_preflight(self) -> bool:
         self.print_section("Phase 1: Pre-flight Checks & Backups")
         try:
@@ -526,7 +517,7 @@ class UbuntuDesktopSetup:
         if self.has_internet_connection():
             self.logger.info("Network connectivity verified.")
         else:
-            self.logger.error("No network connectivity. Check your settings.")
+            self.logger.error("No network connectivity. Please check your settings.")
             sys.exit(1)
 
     def save_config_snapshot(self) -> Optional[str]:
@@ -575,7 +566,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Failed to create ZFS snapshot: {e}")
             return None
 
-    # ------------------- Phase 2: System Update & Basic Configuration -------------------
+    # Phase 2: System Update & Basic Configuration
     def phase_system_update(self) -> bool:
         self.print_section("Phase 2: System Update & Basic Configuration")
         status = True
@@ -665,7 +656,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Failed to set timezone: {e}")
             return False
 
-    # ------------------- Phase 3: Repository & Shell Setup -------------------
+    # Phase 3: Repository & Shell Setup
     def phase_repo_shell_setup(self) -> bool:
         self.print_section("Phase 3: Repository & Shell Setup")
         status = True
@@ -821,7 +812,7 @@ class UbuntuDesktopSetup:
             )
             return False
 
-    # ------------------- Phase 4: Security Hardening -------------------
+    # Phase 4: Security Hardening
     def phase_security_hardening(self) -> bool:
         self.print_section("Phase 4: Security Hardening")
         status = True
@@ -850,7 +841,6 @@ class UbuntuDesktopSetup:
             self.logger.info("openssh-server not installed. Installing...")
             try:
                 self.run_command(["apt", "install", "-y", "openssh-server"])
-                self.logger.info("OpenSSH Server installed.")
             except subprocess.CalledProcessError:
                 self.logger.error("Failed to install OpenSSH Server.")
                 return False
@@ -960,7 +950,7 @@ class UbuntuDesktopSetup:
             self.logger.warning("Failed to manage fail2ban service.")
             return False
 
-    # ------------------- Phase 5: Essential Service Installation -------------------
+    # Phase 5: Essential Service Installation
     def phase_service_installation(self) -> bool:
         self.print_section("Phase 5: Essential Service Installation")
         status = True
@@ -1038,9 +1028,9 @@ class UbuntuDesktopSetup:
             return False
         if not self.command_exists("docker-compose"):
             try:
-                compose_path = Path("/usr/local/bin/docker-compose")
-                self.download_file(self.config.DOCKER_COMPOSE_URL, compose_path)
-                compose_path.chmod(0o755)
+                dest = Path("/usr/local/bin/docker-compose")
+                self.download_file(self.config.DOCKER_COMPOSE_URL, dest)
+                dest.chmod(0o755)
                 self.logger.info("Docker Compose installed.")
             except Exception as e:
                 self.logger.error(f"Failed to install Docker Compose: {e}")
@@ -1051,9 +1041,6 @@ class UbuntuDesktopSetup:
 
     def install_plex(self) -> bool:
         self.print_section("Plex Media Server Installation")
-        if not self.command_exists("curl"):
-            self.logger.error("curl is required but not installed.")
-            return False
         try:
             subprocess.run(
                 ["dpkg", "-s", "plexmediaserver"],
@@ -1142,7 +1129,7 @@ class UbuntuDesktopSetup:
         self.logger.info("Fastfetch installed successfully.")
         return True
 
-    # ------------------- Phase 6: User Customization & Script Deployment -------------------
+    # Phase 6: User Customization & Script Deployment
     def phase_user_customization(self) -> bool:
         self.print_section("Phase 6: User Customization & Script Deployment")
         return run_with_progress("Deploying user scripts", self.deploy_user_scripts)
@@ -1176,7 +1163,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Script deployment failed: {e}")
             return False
 
-    # ------------------- Phase 7: Maintenance & Monitoring Tasks -------------------
+    # Phase 7: Maintenance & Monitoring Tasks
     def phase_maintenance_monitoring(self) -> bool:
         self.print_section("Phase 7: Maintenance & Monitoring Tasks")
         status = True
@@ -1203,11 +1190,7 @@ class UbuntuDesktopSetup:
             return True
         if cron_file.is_file():
             self.backup_file(cron_file)
-        content = (
-            "#!/bin/sh\n"
-            "# Ubuntu maintenance script\n"
-            "nala update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y\n"
-        )
+        content = "#!/bin/sh\n# Ubuntu maintenance script\nnala update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y\n"
         try:
             cron_file.write_text(content)
             cron_file.chmod(0o755)
@@ -1312,7 +1295,7 @@ class UbuntuDesktopSetup:
                 results[port] = False
         return results
 
-    # ------------------- Phase 8: Certificates & Performance Tuning -------------------
+    # Phase 8: Certificates & Performance Tuning
     def phase_certificates_performance(self) -> bool:
         self.print_section("Phase 8: Certificates & Performance Tuning")
         status = True
@@ -1332,7 +1315,7 @@ class UbuntuDesktopSetup:
         self.print_section("SSL Certificates Update")
         if not self.command_exists("certbot"):
             try:
-                self.run_command(["nala", "install", "-y", "certbot"])
+                self.run_command(["apt", "install", "-y", "certbot"])
                 self.logger.info("certbot installed.")
             except subprocess.CalledProcessError:
                 self.logger.warning("Failed to install certbot.")
@@ -1369,7 +1352,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Failed to apply performance tuning: {e}")
             return False
 
-    # ------------------- Phase 9: Permissions & Advanced Storage Setup -------------------
+    # Phase 9: Permissions & Advanced Storage Setup
     def phase_permissions_storage(self) -> bool:
         self.print_section("Phase 9: Permissions & Advanced Storage Setup")
         status = True
@@ -1445,18 +1428,7 @@ class UbuntuDesktopSetup:
         pool = self.config.ZFS_POOL_NAME
         mount_point = self.config.ZFS_MOUNT_POINT
         try:
-            self.run_command(["nala", "update"])
-            self.run_command(
-                [
-                    "apt",
-                    "install",
-                    "-y",
-                    "dpkg-dev",
-                    "linux-headers-generic",
-                    "linux-image-generic",
-                ]
-            )
-            self.run_command(["nala", "install", "-y", "zfs-dkms", "zfsutils-linux"])
+            self.run_command(["apt", "install", "-y", "zfs-dkms", "zfsutils-linux"])
             self.logger.info("ZFS packages installed.")
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to install ZFS packages: {e}")
@@ -1521,7 +1493,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Error verifying ZFS mount status: {e}")
             return False
 
-    # ------------------- Phase 10: Additional Applications & Tools -------------------
+    # Phase 10: Additional Applications & Tools
     def phase_additional_apps(self) -> bool:
         self.print_section("Phase 10: Additional Applications & Tools")
         status = True
@@ -1559,14 +1531,13 @@ class UbuntuDesktopSetup:
 
     def install_flatpak_and_apps(self) -> Tuple[List[str], List[str]]:
         self.print_section("Flatpak Installation & Setup")
-        apps = self.config.FLATPAK_APPS
         try:
-            self.run_command(["nala", "install", "-y", "flatpak"])
+            self.run_command(["apt", "install", "-y", "flatpak"])
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to install Flatpak: {e}")
-            return [], apps
+            return [], self.config.FLATPAK_APPS
         try:
-            self.run_command(["nala", "install", "-y", "gnome-software-plugin-flatpak"])
+            self.run_command(["apt", "install", "-y", "gnome-software-plugin-flatpak"])
         except subprocess.CalledProcessError as e:
             self.logger.warning(f"Failed to install Flatpak plugin: {e}")
         try:
@@ -1581,10 +1552,10 @@ class UbuntuDesktopSetup:
             )
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to add Flathub repository: {e}")
-            return [], apps
+            return [], self.config.FLATPAK_APPS
         successful = []
         failed = []
-        for app in apps:
+        for app in self.config.FLATPAK_APPS:
             try:
                 self.run_command(["flatpak", "install", "--assumeyes", "flathub", app])
                 self.logger.info(f"Installed Flatpak app: {app}")
@@ -1595,7 +1566,7 @@ class UbuntuDesktopSetup:
         return successful, failed
 
     def install_configure_vscode_stable(self) -> bool:
-        self.print_section("Visual Studio Code Installation & Configuration")
+        self.print_section("VS Code Installation & Configuration")
         vscode_url = (
             "https://vscode.download.prss.microsoft.com/dbazure/download/stable/"
             "e54c774e0add60467559eb0d1e229c6452cf8447/code_1.97.2-1739406807_amd64.deb"
@@ -1613,7 +1584,7 @@ class UbuntuDesktopSetup:
         except subprocess.CalledProcessError:
             self.logger.warning("dpkg issues; fixing dependencies...")
             try:
-                self.run_command(["nala", "install", "-f", "-y"])
+                self.run_command(["apt", "install", "-f", "-y"])
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"Failed to fix VS Code dependencies: {e}")
                 return False
@@ -1660,7 +1631,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Failed to update local desktop file: {e}")
             return False
 
-    # ------------------- Phase 11: Automatic Updates & Additional Security -------------------
+    # Phase 11: Automatic Updates & Additional Security
     def phase_automatic_updates_security(self) -> bool:
         self.print_section("Phase 11: Automatic Updates & Additional Security")
         status = True
@@ -1680,7 +1651,7 @@ class UbuntuDesktopSetup:
         self.print_section("Unattended Upgrades Configuration")
         try:
             self.run_command(
-                ["nala", "install", "-y", "unattended-upgrades", "nala-listchanges"]
+                ["apt", "install", "-y", "unattended-upgrades", "apt-listchanges"]
             )
             auto_upgrades_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
             auto_upgrades_content = (
@@ -1722,7 +1693,7 @@ class UbuntuDesktopSetup:
     def configure_apparmor(self) -> bool:
         self.print_section("AppArmor Configuration")
         try:
-            self.run_command(["nala", "install", "-y", "apparmor", "apparmor-utils"])
+            self.run_command(["apt", "install", "-y", "apparmor", "apparmor-utils"])
             self.run_command(["systemctl", "enable", "apparmor"])
             self.run_command(["systemctl", "start", "apparmor"])
             self.logger.info("AppArmor installed and enabled.")
@@ -1731,7 +1702,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Failed to configure AppArmor: {e}")
             return False
 
-    # ------------------- Phase 12: Cleanup & Final Configurations -------------------
+    # Phase 12: Cleanup & Final Configurations
     def phase_cleanup_final(self) -> bool:
         self.print_section("Phase 12: Cleanup & Final Configurations")
         status = True
@@ -1766,8 +1737,8 @@ class UbuntuDesktopSetup:
     def cleanup_system(self) -> bool:
         self.print_section("System Cleanup")
         try:
-            self.run_command(["nala", "autoremove", "-y"])
-            self.run_command(["nala", "autoclean", "-y"])
+            self.run_command(["apt", "autoremove", "-y"])
+            self.run_command(["apt", "autoclean", "-y"])
             self.logger.info("System cleanup completed.")
             return True
         except subprocess.CalledProcessError as e:
@@ -1777,7 +1748,6 @@ class UbuntuDesktopSetup:
     def configure_wayland(self) -> bool:
         self.print_section("Wayland Environment Configuration")
         etc_env = Path("/etc/environment")
-        updated_system = False
         try:
             current = etc_env.read_text() if etc_env.is_file() else ""
             vars_current = {
@@ -1785,11 +1755,12 @@ class UbuntuDesktopSetup:
                 for line in current.splitlines()
                 if "=" in line
             }
+            updated = False
             for key, val in self.config.WAYLAND_ENV_VARS.items():
                 if vars_current.get(key) != val:
                     vars_current[key] = val
-                    updated_system = True
-            if updated_system:
+                    updated = True
+            if updated:
                 new_content = (
                     "\n".join(f"{k}={v}" for k, v in vars_current.items()) + "\n"
                 )
@@ -1839,9 +1810,9 @@ class UbuntuDesktopSetup:
             self.logger.info("Upgrading existing packages...")
             self.run_command(["nala", "upgrade", "-y"])
             self.logger.info("Fixing broken installations...")
-            self.run_command(["nala", "--fix-broken", "install", "-y"])
+            self.run_command(["apt", "--fix-broken", "install", "-y"])
             self.logger.info("Installing nala package...")
-            self.run_command(["nala", "install", "nala", "-y"])
+            self.run_command(["apt", "install", "nala", "-y"])
             if self.command_exists("nala"):
                 self.logger.info("Nala installed successfully.")
                 try:
@@ -1889,7 +1860,7 @@ class UbuntuDesktopSetup:
             )
             if status.stdout.strip() == "active":
                 self.logger.info(
-                    "Tailscale service is active and running. To authenticate, run: tailscale up"
+                    "Tailscale service is active. To authenticate, run: tailscale up"
                 )
                 return True
             else:
@@ -1963,7 +1934,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Failed to manage Caddy service: {e}")
             return False
 
-    # ------------------- Phase 13: Final System Checks & Reboot Prompt -------------------
+    # Phase 13: Final System Checks & Reboot Prompt
     def phase_final_checks(self) -> bool:
         self.print_section("Phase 13: Final System Checks & Reboot Prompt")
         self.final_checks()
@@ -2105,53 +2076,52 @@ class UbuntuDesktopSetup:
         self.logger.info("Performing global cleanup tasks before exit.")
         self.cleanup_system()
 
-    # ------------------- Main Run Method -------------------
-    def run(self) -> int:
-        phases = [
-            self.phase_preflight,
-            self.phase_system_update,
-            self.phase_repo_shell_setup,
-            self.phase_security_hardening,
-            self.phase_service_installation,
-            self.phase_user_customization,
-            self.phase_maintenance_monitoring,
-            self.phase_certificates_performance,
-            self.phase_permissions_storage,
-            self.phase_additional_apps,
-            self.phase_automatic_updates_security,
-            self.phase_cleanup_final,
-            self.phase_final_checks,
-        ]
-        total = len(phases)
-        success_count = 0
-        for idx, phase in enumerate(phases, start=1):
-            self.print_section(f"Starting Phase {idx}/{total}")
-            try:
-                result = run_with_progress(f"Running Phase {idx}", phase)
-                if result:
-                    success_count += 1
-                    self.logger.info(f"Phase {idx} completed successfully.")
-                else:
-                    self.logger.warning(f"Phase {idx} encountered issues.")
-            except Exception as e:
-                self.logger.critical(
-                    f"Phase {idx} failed with an exception: {e}", exc_info=True
-                )
-        success_rate = (success_count / total) * 100
-        self.logger.info(
-            f"Setup completed with {success_rate:.1f}% success ({success_count}/{total} phases)."
-        )
-        print_status_report()
-        return 0
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
 
 
-# ------------------------------------------------------------------------------
-# MAIN ENTRY POINT
-# ------------------------------------------------------------------------------
 def main() -> int:
     setup_instance = UbuntuDesktopSetup()
     atexit.register(setup_instance.cleanup)
-    return setup_instance.run()
+    # Define the phases to run (Phases 1 to 13)
+    phases = [
+        setup_instance.phase_preflight,
+        setup_instance.phase_system_update,
+        setup_instance.phase_repo_shell_setup,
+        setup_instance.phase_security_hardening,
+        setup_instance.phase_service_installation,
+        setup_instance.phase_user_customization,
+        setup_instance.phase_maintenance_monitoring,
+        setup_instance.phase_certificates_performance,
+        setup_instance.phase_permissions_storage,
+        setup_instance.phase_additional_apps,
+        setup_instance.phase_automatic_updates_security,
+        setup_instance.phase_cleanup_final,
+        setup_instance.phase_final_checks,
+    ]
+    total = len(phases)
+    success_count = 0
+    for idx, phase in enumerate(phases, start=1):
+        setup_instance.print_section(f"Starting Phase {idx}/{total}")
+        try:
+            result = run_with_progress(f"Running Phase {idx}", phase)
+            if result:
+                success_count += 1
+                setup_instance.logger.info(f"Phase {idx} completed successfully.")
+            else:
+                setup_instance.logger.warning(f"Phase {idx} encountered issues.")
+        except Exception as e:
+            setup_instance.logger.critical(
+                f"Phase {idx} failed with exception: {e}", exc_info=True
+            )
+    success_rate = (success_count / total) * 100
+    setup_instance.logger.info(
+        f"Setup completed with {success_rate:.1f}% success ({success_count}/{total} phases)."
+    )
+    print_status_report()
+    return 0
 
 
 if __name__ == "__main__":
