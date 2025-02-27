@@ -2,16 +2,12 @@
 """
 Unified Restore Script
 
-This script restores the following restic repositories from Backblaze B2 into:
-  • /home/sawyer/restic_restore/ubuntu-system-backup
-  • /home/sawyer/restic_restore/vm-backups
-  • /home/sawyer/restic_restore/plex-media-server-backup
+This script scans the Backblaze B2 bucket for all restic repositories,
+presents a clean, numbered menu of available backups, and prompts the user
+to select which repositories to restore. Each selected repository is restored
+into its own subfolder under the home restore directory.
 
-Repository structure on B2:
-  Bucket: sawyer-backups / Path: ubuntu-server/[repo-name]
-
-Usage:
-  sudo python3 unified_restore.py [--service {system,vm,plex,all}]
+Note: Run this script with root privileges.
 """
 
 import argparse
@@ -24,32 +20,19 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 #####################################
-# Configuration
+# B2 and Restic Configuration
 #####################################
 
-# Backblaze B2 and restic credentials
-B2_ACCOUNT_ID: str = "12345678"
-B2_ACCOUNT_KEY: str = "12345678"
-B2_BUCKET: str = "sawyer-backups"
-RESTIC_PASSWORD: str = "12345678"
+B2_ACCOUNT_ID = "12345678"
+B2_ACCOUNT_KEY = "12345678"
+B2_BUCKET = "sawyer-backups"
+RESTIC_PASSWORD = "12345678"
 
-# Repository definitions (B2 repository paths)
-REPOS: Dict[str, str] = {
-    "system": f"b2:{B2_BUCKET}:ubuntu-server/ubuntu-system-backup",
-    "vm": f"b2:{B2_BUCKET}:ubuntu-server/vm-backups",
-    "plex": f"b2:{B2_BUCKET}:ubuntu-server/plex-media-server-backup",
-}
-
-# Restore destination directories
+# Restore base directory (each repo will restore into a subfolder here)
 RESTORE_BASE: Path = Path("/home/sawyer/restic_restore")
-RESTORE_DIRS: Dict[str, Path] = {
-    "system": RESTORE_BASE / "ubuntu-system-backup",
-    "vm": RESTORE_BASE / "vm-backups",
-    "plex": RESTORE_BASE / "plex-media-server-backup",
-}
 
 # Retry settings for restic commands
 MAX_RETRIES: int = 3
@@ -58,17 +41,13 @@ RETRY_DELAY: int = 5  # seconds
 # Logging configuration
 LOG_FILE: str = "/var/log/unified_restore.log"
 
-
 #####################################
 # Nord-Themed ANSI Colors for CLI Output
 #####################################
 
 
 class Colors:
-    """
-    Nord-themed ANSI color codes.
-    Adjust these codes if needed for your terminal.
-    """
+    """ANSI Nord-themed color codes for terminal output."""
 
     HEADER = "\033[38;5;81m"  # Nord9
     GREEN = "\033[38;5;82m"  # Nord14
@@ -121,7 +100,6 @@ def signal_handler(signum: int, frame: Any) -> None:
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
 
-
 #####################################
 # Utility Functions
 #####################################
@@ -144,11 +122,11 @@ def run_restic(
 
     Args:
         repo: The repository path.
-        args: List of additional arguments for restic.
+        args: Additional arguments for restic.
         capture_output: Whether to capture stdout/stderr.
 
     Returns:
-        The CompletedProcess instance.
+        subprocess.CompletedProcess instance.
 
     Raises:
         RuntimeError: If maximum retries are exceeded.
@@ -176,6 +154,7 @@ def run_restic(
             return result
         except subprocess.CalledProcessError as e:
             error_msg: str = e.stderr or str(e)
+            # For transient errors, apply a retry
             if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
                 retries += 1
                 delay: int = RETRY_DELAY * (2 ** (retries - 1))
@@ -193,13 +172,13 @@ def run_restic(
 
 def get_latest_snapshot(repo: str) -> Optional[str]:
     """
-    Retrieve the latest snapshot ID from the given repository.
+    Retrieve the latest snapshot ID from the specified repository.
 
     Args:
         repo: The repository path.
 
     Returns:
-        The snapshot ID as a string, or None if not found.
+        The snapshot ID, or None if no snapshots are found.
     """
     try:
         result = run_restic(repo, ["snapshots", "--json"], capture_output=True)
@@ -214,8 +193,53 @@ def get_latest_snapshot(repo: str) -> Optional[str]:
         logging.info(f"Latest snapshot for {repo} is {snap_id}")
         return snap_id
     except Exception as e:
-        logging.error(f"{Colors.RED}Error retrieving snapshots: {e}{Colors.ENDC}")
+        logging.error(
+            f"{Colors.RED}Error retrieving snapshots for {repo}: {e}{Colors.ENDC}"
+        )
         return None
+
+
+#####################################
+# Scanning for Repositories
+#####################################
+
+
+def scan_for_repos() -> Dict[int, Tuple[str, str]]:
+    """
+    Scan the entire B2 bucket for restic repositories.
+    A restic repository is identified by the presence of a 'config' file.
+
+    Returns:
+        A dictionary mapping menu numbers to a tuple (repo_name, repo_path).
+        repo_path is formatted as "b2:{B2_BUCKET}:{repository_folder}".
+    """
+    repos: Dict[int, Tuple[str, str]] = {}
+    seen: set = set()
+    try:
+        # Use the B2 CLI with the recursive flag to list all files in the bucket
+        cmd = ["b2", "ls", B2_BUCKET, "--recursive"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            # Identify restic repositories by the presence of a 'config' file at the root of the repo
+            if line.endswith("/config") or line == "config":
+                # Remove the trailing '/config' if present
+                repo_folder = (
+                    line[: -len("/config")] if line.endswith("/config") else ""
+                )
+                if not repo_folder:
+                    continue
+                if repo_folder in seen:
+                    continue
+                seen.add(repo_folder)
+                repo_name = repo_folder.split("/")[-1]
+                repo_path = f"b2:{B2_BUCKET}:{repo_folder}"
+                repos[len(repos) + 1] = (repo_name, repo_path)
+    except subprocess.CalledProcessError as e:
+        logging.error(
+            f"{Colors.RED}Error scanning B2 bucket: {e.stderr or str(e)}{Colors.ENDC}"
+        )
+    return repos
 
 
 #####################################
@@ -229,10 +253,10 @@ def restore_repo(repo: str, target: Path) -> bool:
 
     Args:
         repo: The repository path.
-        target: The target directory as a Path object.
+        target: The local target directory.
 
     Returns:
-        True if restore succeeds, False otherwise.
+        True if the restore operation succeeded, False otherwise.
     """
     snap_id: Optional[str] = get_latest_snapshot(repo)
     if not snap_id:
@@ -269,16 +293,25 @@ def restore_repo(repo: str, target: Path) -> bool:
 
 
 def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments using argparse."""
+    """
+    Parse command-line arguments.
+
+    The script supports an optional --non-interactive flag in case you want
+    to bypass the repo scanning menu (advanced use).
+    """
     parser = argparse.ArgumentParser(
-        description="Unified Restore Script: Restore restic repositories from B2 into local directories."
+        description="Unified Restore Script: Scan B2 for restic repositories and restore selected backups."
     )
     parser.add_argument(
-        "--service",
+        "--non-interactive",
+        action="store_true",
+        help="Restore a specific repository by providing its repo path via --repo (skips scanning menu).",
+    )
+    parser.add_argument(
+        "--repo",
         type=str,
-        choices=["system", "vm", "plex", "all"],
-        default="all",
-        help="Specify which service to restore (default: all)",
+        default="",
+        help="Specify a single restic repository path to restore (e.g., 'b2:sawyer-backups:some/repo').",
     )
     return parser.parse_args()
 
@@ -297,37 +330,64 @@ def main() -> None:
 
     args = parse_arguments()
 
-    # Determine which services to restore
-    if args.service == "all":
-        services: List[str] = list(REPOS.keys())
+    # If non-interactive mode is chosen, restore the provided repo only
+    if args.non_interactive and args.repo:
+        selected_repos = {1: ("CustomRepo", args.repo)}
     else:
-        services = [args.service]
-
-    # Display a simple numbered menu for clarity
-    print(f"{Colors.BOLD}Services selected for restore:{Colors.ENDC}")
-    for i, service in enumerate(services, 1):
-        print(f"  {i}. {service.capitalize()}")
+        # Scan the B2 bucket for all restic repositories
+        available_repos = scan_for_repos()
+        if not available_repos:
+            logging.error(
+                f"{Colors.RED}No restic repositories found in bucket {B2_BUCKET}.{Colors.ENDC}"
+            )
+            sys.exit(1)
+        # Display the numbered menu
+        print(f"{Colors.BOLD}Available Restic Repositories:{Colors.ENDC}")
+        for num, (repo_name, repo_path) in available_repos.items():
+            print(f"  {num}. {repo_name}  [{repo_path}]")
+        # Prompt the user for one or more selections
+        selection = input(
+            "\nEnter the numbers of the repositories to restore (separated by spaces): "
+        ).strip()
+        if not selection:
+            logging.error(f"{Colors.RED}No selection made. Exiting.{Colors.ENDC}")
+            sys.exit(1)
+        try:
+            choices = [int(num) for num in selection.split()]
+        except ValueError:
+            logging.error(
+                f"{Colors.RED}Invalid input. Please enter valid numbers separated by spaces.{Colors.ENDC}"
+            )
+            sys.exit(1)
+        selected_repos = {
+            num: available_repos[num] for num in choices if num in available_repos
+        }
+        if not selected_repos:
+            logging.error(
+                f"{Colors.RED}No valid repositories selected. Exiting.{Colors.ENDC}"
+            )
+            sys.exit(1)
 
     start_time = time.time()
     results: Dict[str, bool] = {}
-
-    for service in services:
-        repo = REPOS[service]
-        target_dir = RESTORE_DIRS[service]
-        logging.info(f"Restoring {service} repository into {target_dir}...")
-        result = restore_repo(repo, target_dir)
-        results[service] = result
+    for _, (repo_name, repo_path) in selected_repos.items():
+        target_dir = RESTORE_BASE / repo_name
+        logging.info(
+            f"Restoring repository '{repo_name}' from {repo_path} into {target_dir}..."
+        )
+        result = restore_repo(repo_path, target_dir)
+        results[repo_name] = result
 
     total_time = time.time() - start_time
     print_header("Restore Summary")
-    for service, success in results.items():
+    for repo_name, success in results.items():
         status = (
             f"{Colors.GREEN}SUCCESS{Colors.ENDC}"
             if success
             else f"{Colors.RED}FAILED{Colors.ENDC}"
         )
-        logging.info(f"{service.capitalize()} restore: {status}")
-        print(f"{service.capitalize()} restore: {status}")
+        logging.info(f"{repo_name} restore: {status}")
+        print(f"{repo_name} restore: {status}")
 
     logging.info(f"Total restore time: {total_time:.2f} seconds")
     print(f"\nTotal restore time: {total_time:.2f} seconds")
