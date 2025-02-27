@@ -63,9 +63,6 @@ PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debi
 FASTFETCH_VERSION = "2.37.0"
 FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-amd64.deb"
 
-VSCODE_VERSION = "1.97.2-1739406807"
-VSCODE_URL = f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/e54c774e0add60467559eb0d1e229c6452cf8447/code_{VSCODE_VERSION}_amd64.deb"
-
 
 CONFIG_FILES = [
     "/etc/ssh/sshd_config",
@@ -1604,79 +1601,6 @@ class ServiceInstaller:
             logger.error("Docker is not running or is inaccessible.")
             return False
 
-    def install_configure_vscode_stable(self) -> bool:
-        """
-        Install and configure Visual Studio Code.
-
-        Returns:
-            True if successful, False otherwise
-        """
-        logger.info("Installing Visual Studio Code (Stable)...")
-
-        deb_path = os.path.join(TEMP_DIR, "code.deb")
-
-        if Utils.command_exists("code"):
-            logger.info("Visual Studio Code is already installed.")
-            vscode_installed = True
-        else:
-            try:
-                logger.info("Downloading VS Code from official source...")
-                Utils.run_command(["curl", "-L", "-o", deb_path, VSCODE_URL])
-                Utils.run_command(["dpkg", "-i", deb_path])
-                Utils.run_command(["apt", "install", "-f", "-y"])
-
-                if os.path.exists(deb_path):
-                    os.remove(deb_path)
-
-                vscode_installed = Utils.command_exists("code")
-
-                if vscode_installed:
-                    logger.info("Visual Studio Code installed successfully.")
-                else:
-                    logger.error("Visual Studio Code installation failed.")
-                    return False
-            except Exception as e:
-                logger.error(f"Failed to install VS Code: {e}")
-                return False
-
-        desktop_file_path = "/usr/share/applications/code.desktop"
-        desktop_content = f"""[Desktop Entry]
-Name=Visual Studio Code
-Comment=Code Editing. Redefined.
-GenericName=Text Editor
-Exec=/usr/share/code/code --enable-features=UseOzonePlatform --ozone-platform=wayland %F
-Icon=vscode
-Type=Application
-StartupNotify=false
-StartupWMClass=Code
-Categories=TextEditor;Development;IDE;
-MimeType=application/x-code-workspace;
-Actions=new-empty-window;
-
-[Desktop Action new-empty-window]
-Name=New Empty Window
-Exec=/usr/share/code/code --new-window --enable-features=UseOzonePlatform --ozone-platform=wayland %F
-Icon=vscode
-"""
-        try:
-            with open(desktop_file_path, "w") as f:
-                f.write(desktop_content)
-
-            logger.info("Updated system-wide desktop file with Wayland support.")
-
-            local_app_dir = os.path.join(USER_HOME, ".local/share/applications")
-            os.makedirs(local_app_dir, exist_ok=True)
-            local_desktop_file = os.path.join(local_app_dir, "code.desktop")
-
-            shutil.copy2(desktop_file_path, local_desktop_file)
-            Utils.run_command(["chown", f"{USERNAME}:{USERNAME}", local_desktop_file])
-
-            logger.info("VS Code configured for Wayland support.")
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to configure VS Code for Wayland: {e}")
-            return vscode_installed
-
     def install_configure_caddy(self) -> bool:
         """
         Install and configure the Caddy web server using the official repository method.
@@ -3110,22 +3034,6 @@ class UbuntuServerSetup:
                     )
             except Exception as e:
                 self.logger.error(f"Error in Caddy installation: {e}")
-                self.success = False
-
-            try:
-                if hasattr(self.services, "install_configure_vscode_stable"):
-                    if not run_with_progress(
-                        "Installing VS Code...",
-                        self.services.install_configure_vscode_stable,
-                    ):
-                        self.logger.warning("VS Code installation failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "install_configure_vscode_stable method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in VS Code installation: {e}")
                 self.success = False
 
             try:
