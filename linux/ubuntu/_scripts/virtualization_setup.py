@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Install Virtualization Packages and Enable Default Network Switch for Ubuntu
+Install Virtualization Packages and Enable Auto-Start for Virtual Networks and Services on Ubuntu
 
-This script installs common virtualization packages (QEMU/KVM, libvirt, etc.)
-and then enables the default NAT network switch for virtual machines.
-It uses only the standard library, provides clear, color-coded output,
-and handles interrupts gracefully.
+This script installs common virtualization packages (QEMU/KVM, libvirt, etc.),
+updates package lists, and then configures the system so that:
+  • The default virtual network is started and set to autostart.
+  • Key virtualization services (libvirtd and virtlogd) are enabled and started.
+It uses only the standard library, provides clear, color-coded output, and handles interrupts gracefully.
 
 Note: Run this script with root privileges.
 """
@@ -39,6 +40,12 @@ PACKAGES: List[str] = [
     "cpu-checker",
     "ovmf",
     "virtinst",
+]
+
+# List of virtualization-related services to enable and start
+SERVICES: List[str] = [
+    "libvirtd",
+    "virtlogd",
 ]
 
 
@@ -102,14 +109,12 @@ def install_packages(packages: List[str]) -> None:
 
 def enable_default_network() -> None:
     """
-    Enable the default network switch for virtual machines.
+    Enable the default virtual network for virtual machines.
 
     This function starts the 'default' network and sets it to autostart
     using the 'virsh' command.
     """
-    print_header("Enabling default network switch for virtual machines")
-
-    # Start the default network
+    print_header("Enabling default virtual network")
     if run_command(["virsh", "net-start", "default"]):
         print(f"{Colors.GREEN}Default network started successfully.{Colors.ENDC}")
     else:
@@ -117,7 +122,6 @@ def enable_default_network() -> None:
             f"{Colors.YELLOW}Default network may already be running or failed to start.{Colors.ENDC}"
         )
 
-    # Enable autostart for the default network
     if run_command(["virsh", "net-autostart", "default"]):
         print(
             f"{Colors.GREEN}Default network set to autostart successfully.{Colors.ENDC}"
@@ -128,13 +132,35 @@ def enable_default_network() -> None:
         )
 
 
+def enable_virtualization_services(services: List[str]) -> None:
+    """
+    Enable and start essential virtualization services.
+
+    Args:
+        services: A list of service names to enable and start using systemctl.
+    """
+    print_header("Enabling virtualization services")
+    for service in services:
+        print(f"{Colors.BOLD}Processing service: {service}{Colors.ENDC}")
+        # Enable the service to start on boot and start it immediately
+        if run_command(["systemctl", "enable", "--now", service]):
+            print(
+                f"{Colors.GREEN}{service} enabled and started successfully.{Colors.ENDC}"
+            )
+        else:
+            print(
+                f"{Colors.YELLOW}Failed to enable/start {service}. Please check the service status manually.{Colors.ENDC}"
+            )
+        time.sleep(0.5)
+
+
 def main() -> None:
     """Main execution function."""
     # Handle signals for graceful termination
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Check for root privileges
+    # Ensure the script is run with root privileges
     if os.geteuid() != 0:
         print(
             f"{Colors.RED}Error: This script must be run with root privileges.{Colors.ENDC}"
@@ -150,10 +176,11 @@ def main() -> None:
     install_packages(PACKAGES)
 
     enable_default_network()
+    enable_virtualization_services(SERVICES)
 
     print_header("Installation Complete")
     print(
-        f"{Colors.GREEN}All virtualization packages installed and default network enabled successfully.{Colors.ENDC}"
+        f"{Colors.GREEN}All virtualization packages installed, default network configured, and virtualization services enabled successfully.{Colors.ENDC}"
     )
 
 
