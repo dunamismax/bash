@@ -2137,9 +2137,25 @@ class UbuntuServerSetup:
                     "Non-ARM architecture detected; some packages may not work correctly."
                 )
             print_section("Fixing Broken Packages")
+
+            def fix_broken_install():
+                backup_dir = "/etc/apt/apt.conf.d/"
+                # Delete backup files with invalid filename extension
+                for filename in os.listdir(backup_dir):
+                    if filename.startswith("50unattended-upgrades.bak."):
+                        file_path = os.path.join(backup_dir, filename)
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"Removed invalid backup file: {file_path}")
+                        except Exception as e:
+                            logger.warning(f"Could not remove {file_path}: {e}")
+                # Run apt --fix-broken install
+                return Utils.run_command(["apt", "--fix-broken", "install", "-y"])
+
+            # Then call run_with_progress with the new function:
             run_with_progress(
                 "Running apt --fix-broken install",
-                lambda: Utils.run_command(["apt", "--fix-broken", "install", "-y"]),
+                fix_broken_install,
                 task_name="fix_broken",
             )
             self.preflight.save_config_snapshot()
