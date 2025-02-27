@@ -54,11 +54,28 @@ def control_service(service: str, action: str) -> None:
 
 
 def copy_directory(source: str, target: str) -> None:
-    """Remove target (if exists) and copy source directory to target."""
+    """
+    Recursively copy files from source to target.
+    If a file is missing, it prints a warning and continues.
+    """
     print(f"Copying from '{source}' to '{target}'...")
     if os.path.exists(target):
         shutil.rmtree(target)
-    shutil.copytree(source, target, copy_function=shutil.copy2)
+    os.makedirs(target, exist_ok=True)
+    for root, dirs, files in os.walk(source):
+        rel_path = os.path.relpath(root, source)
+        dest_dir = os.path.join(target, rel_path)
+        os.makedirs(dest_dir, exist_ok=True)
+        for file in files:
+            src_file = os.path.join(root, file)
+            dst_file = os.path.join(dest_dir, file)
+            if os.path.exists(src_file):
+                try:
+                    shutil.copy2(src_file, dst_file)
+                except Exception as e:
+                    print(f"Error copying '{src_file}' to '{dst_file}': {e}")
+            else:
+                print(f"Warning: Skipping missing file '{src_file}'")
     print("Copy completed.")
 
 
@@ -78,14 +95,11 @@ def restore_task(task_key: str) -> bool:
         print(f"Source directory not found: {source}")
         return False
 
-    # Stop the service if specified and active
     if service:
         control_service(service, "stop")
 
-    # Copy files from source to target
     copy_directory(source, target)
 
-    # Restart the service if specified
     if service:
         control_service(service, "start")
 
