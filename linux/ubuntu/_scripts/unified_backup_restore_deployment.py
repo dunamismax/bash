@@ -53,12 +53,41 @@ def control_service(service: str, action: str) -> None:
     time.sleep(2)
 
 
+def is_restore_completed(source: str, target: str) -> bool:
+    """
+    Compare source and target directories.
+    Returns True if all files in source exist in target with the same file size.
+    """
+    if not os.path.exists(target):
+        return False
+
+    for root, dirs, files in os.walk(source):
+        rel_path = os.path.relpath(root, source)
+        dest_root = os.path.join(target, rel_path)
+        # Check for missing directories.
+        for d in dirs:
+            dest_dir = os.path.join(dest_root, d)
+            if not os.path.exists(dest_dir):
+                return False
+        # Check files.
+        for file in files:
+            src_file = os.path.join(root, file)
+            dst_file = os.path.join(dest_root, file)
+            if not os.path.exists(dst_file):
+                return False
+            if os.path.getsize(src_file) != os.path.getsize(dst_file):
+                return False
+    return True
+
+
 def copy_directory(source: str, target: str) -> None:
     """
     Recursively copy files from source to target.
-    If a file is missing, it prints a warning and continues.
+    If destination doesn't exist, it is created.
+    Missing files are skipped with a warning.
     """
     print(f"Copying from '{source}' to '{target}'...")
+    # If target exists, remove it to force a fresh copy.
     if os.path.exists(target):
         shutil.rmtree(target)
     os.makedirs(target, exist_ok=True)
@@ -95,6 +124,12 @@ def restore_task(task_key: str) -> bool:
         print(f"Source directory not found: {source}")
         return False
 
+    # If destination exists and is already identical to source, skip restore.
+    if os.path.exists(target) and is_restore_completed(source, target):
+        print(f"Restore already completed for {name}. Skipping copy.")
+        return True
+
+    # Stop the service if one is specified.
     if service:
         control_service(service, "stop")
 
