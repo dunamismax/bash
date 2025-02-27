@@ -15,16 +15,19 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+# ------------------------------------------------------------------------------
 # Configuration
+# ------------------------------------------------------------------------------
 B2_ACCOUNT_ID = "12345678"
 B2_ACCOUNT_KEY = "12345678"
 B2_BUCKET = "sawyer-backups"
+RESTIC_PASSWORD = "12345678"
+
 HOSTNAME = os.uname().nodename
 
 # Repositories
 B2_REPO_VM = f"b2:{B2_BUCKET}:{HOSTNAME}/vm-backups"
 B2_REPO_PLEX = f"b2:{B2_BUCKET}:{HOSTNAME}/plex-media-server-backup"
-RESTIC_PASSWORD = "12345678"
 
 # Restore configuration
 RESTORE_BASE_DIR = "/home/sawyer/restic_backup_restore_data"

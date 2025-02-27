@@ -36,11 +36,13 @@ from typing import Dict, List, Optional, Tuple, Any, Union, Set, Callable
 # System information
 HOSTNAME = socket.gethostname()
 
-# Backblaze B2 Configuration
-B2_ACCOUNT_ID = os.environ.get("B2_ACCOUNT_ID", "")
-B2_ACCOUNT_KEY = os.environ.get("B2_ACCOUNT_KEY", "")
-B2_BUCKET = os.environ.get("B2_BUCKET", "backups")
-RESTIC_PASSWORD = os.environ.get("RESTIC_PASSWORD", "")
+# ------------------------------------------------------------------------------
+# Configuration
+# ------------------------------------------------------------------------------
+B2_ACCOUNT_ID = "12345678"
+B2_ACCOUNT_KEY = "12345678"
+B2_BUCKET = "sawyer-backups"
+RESTIC_PASSWORD = "12345678"
 
 # Repository paths
 REPOSITORIES = {

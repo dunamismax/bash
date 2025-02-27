@@ -37,12 +37,13 @@ from pathlib import Path
 B2_ACCOUNT_ID = "12345678"
 B2_ACCOUNT_KEY = "12345678"
 B2_BUCKET = "sawyer-backups"
+RESTIC_PASSWORD = "12345678"
+
 # Repositories under the "ubuntu-server" folder:
 B2_REPO_SYSTEM = f"b2:{B2_BUCKET}:ubuntu-server/ubuntu-system-backup"
 B2_REPO_VM = f"b2:{B2_BUCKET}:ubuntu-server/vm-backups"
 B2_REPO_PLEX = f"b2:{B2_BUCKET}:ubuntu-server/plex-media-server-backup"
 
-RESTIC_PASSWORD = "12345678"
 HOSTNAME = socket.gethostname()
 
 # Critical paths that must exist after restore
