@@ -601,22 +601,6 @@ class PreflightChecker:
 # Phase 2: System Update & Basic Configuration
 # ------------------------------------------------------------------------------
 class SystemUpdater:
-    def update_system(self, full_upgrade: bool = False) -> bool:
-        logger.info("Updating system repositories and packages using Nala...")
-        try:
-            Utils.run_command(["nala", "update"])
-            cmd = (
-                ["nala", "upgrade", "-y"]
-                if not full_upgrade
-                else ["nala", "full-upgrade", "-y"]
-            )
-            Utils.run_command(cmd)
-            logger.info("System update and upgrade completed.")
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"System update failed: {e}")
-            return False
-
     def install_packages(self, packages: Optional[List[str]] = None) -> bool:
         logger.info("Installing essential packages using Nala...")
         packages = packages or PACKAGES
@@ -634,70 +618,51 @@ class SystemUpdater:
                 logger.debug(f"Package not installed: {pkg}")
             else:
                 logger.debug(f"Package already installed: {pkg}")
-        if missing:
-            logger.info(f"Installing {len(missing)} missing packages...")
-            installer = ["nala", "install", "-y"]
-            try:
-                batch_size = 20
-                for i in range(0, len(missing), batch_size):
-                    batch = missing[i : i + batch_size]
-                    logger.info(f"Installing batch {i // batch_size + 1}...")
-                    Utils.run_command(installer + batch)
-                logger.info("All packages installed successfully.")
-                return True
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Package installation failed: {e}")
-                return False
-        else:
+
+        if not missing:
             logger.info("All required packages are already installed.")
             return True
 
-    def configure_timezone(self, timezone: str = "America/New_York") -> bool:
-        logger.info(f"Setting timezone to {timezone}...")
-        tz_file = f"/usr/share/zoneinfo/{timezone}"
-        if not os.path.isfile(tz_file):
-            logger.warning(f"Timezone file for {timezone} not found.")
-            return False
-        try:
-            if Utils.command_exists("timedatectl"):
-                Utils.run_command(["timedatectl", "set-timezone", timezone])
-            else:
-                if os.path.exists("/etc/localtime"):
-                    os.remove("/etc/localtime")
-                os.symlink(tz_file, "/etc/localtime")
-                with open("/etc/timezone", "w") as f:
-                    f.write(f"{timezone}\n")
-            logger.info("Timezone configured successfully.")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to set timezone: {e}")
+        logger.info(f"Installing {len(missing)} missing packages...")
+        installer = ["nala", "install", "-y"]
+        failed_packages = []
+        batch_size = 5  # smaller batches may help avoid conflicts
+        for i in range(0, len(missing), batch_size):
+            batch = missing[i : i + batch_size]
+            logger.info(f"Installing batch {i // batch_size + 1}: {', '.join(batch)}")
+            try:
+                Utils.run_command(installer + batch)
+                logger.info(f"Batch {i // batch_size + 1} installed successfully.")
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Batch installation failed: {e}")
+                # Try fixing broken dependencies before proceeding
+                try:
+                    Utils.run_command(
+                        ["apt", "--fix-broken", "install", "-y"], check=False
+                    )
+                    logger.info(
+                        "Ran apt --fix-broken install to fix dependency issues."
+                    )
+                except Exception as fix_err:
+                    logger.warning(f"apt --fix-broken install failed: {fix_err}")
+                # Fallback: try installing each package in the batch individually
+                for pkg in batch:
+                    try:
+                        logger.info(f"Trying individual installation of {pkg}...")
+                        Utils.run_command(installer + [pkg], check=True)
+                        logger.info(f"Successfully installed {pkg}.")
+                    except subprocess.CalledProcessError as pkg_error:
+                        failed_packages.append(pkg)
+                        logger.warning(f"Failed to install {pkg}: {pkg_error}")
+
+        if failed_packages:
+            logger.warning(
+                f"Failed to install the following packages: {', '.join(failed_packages)}"
+            )
             return False
 
-    def configure_locale(self, locale: str = "en_US.UTF-8") -> bool:
-        logger.info(f"Setting locale to {locale}...")
-        try:
-            Utils.run_command(["locale-gen", locale])
-            Utils.run_command(["update-locale", f"LANG={locale}", f"LC_ALL={locale}"])
-            env_file = "/etc/environment"
-            env_content = []
-            locale_added = False
-            if os.path.isfile(env_file):
-                with open(env_file, "r") as f:
-                    for line in f:
-                        if line.strip().startswith("LANG="):
-                            env_content.append(f"LANG={locale}\n")
-                            locale_added = True
-                        else:
-                            env_content.append(line)
-            if not locale_added:
-                env_content.append(f"LANG={locale}\n")
-            with open(env_file, "w") as f:
-                f.writelines(env_content)
-            logger.info("Locale configured successfully.")
-            return True
-        except Exception as e:
-            logger.error(f"Locale configuration failed: {e}")
-            return False
+        logger.info("All missing packages installed successfully.")
+        return True
 
 
 # ------------------------------------------------------------------------------
