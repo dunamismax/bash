@@ -132,7 +132,6 @@ def create_and_enable_default_network() -> None:
     exists before setting the network to autostart.
     """
     print_header("Configuring default virtual network")
-    # Check if default network exists
     try:
         result = subprocess.run(
             ["virsh", "net-list", "--all"], capture_output=True, text=True, check=True
@@ -147,7 +146,6 @@ def create_and_enable_default_network() -> None:
                 print(
                     f"{Colors.YELLOW}Default network may already be running or failed to start.{Colors.ENDC}"
                 )
-
             # Check if the autostart symlink exists
             autostart_path = "/etc/libvirt/qemu/networks/autostart/default.xml"
             if os.path.exists(autostart_path):
@@ -192,6 +190,24 @@ def create_and_enable_default_network() -> None:
                 )
     except Exception as e:
         print(f"{Colors.RED}Error checking default network: {e}{Colors.ENDC}")
+
+
+def ensure_network_commands() -> None:
+    """
+    Explicitly run 'virsh net-start default' and 'virsh net-autostart default'
+    to ensure the default network is active and set to autostart.
+    """
+    print_header("Ensuring default network is active")
+    if run_command(["virsh", "net-start", "default"]):
+        print(f"{Colors.GREEN}Default network started.{Colors.ENDC}")
+    else:
+        print(f"{Colors.YELLOW}Default network may already be active.{Colors.ENDC}")
+    if run_command(["virsh", "net-autostart", "default"]):
+        print(f"{Colors.GREEN}Default network set to autostart.{Colors.ENDC}")
+    else:
+        print(
+            f"{Colors.YELLOW}Default network autostart configuration might already exist.{Colors.ENDC}"
+        )
 
 
 def get_vm_list() -> List[dict]:
@@ -247,7 +263,6 @@ def update_vm_networks() -> None:
         vm_name = vm["name"]
         print(f"{Colors.BOLD}Processing VM: {vm_name}{Colors.ENDC}")
         try:
-            # Get the XML definition of the VM
             result = subprocess.run(
                 ["virsh", "dumpxml", vm_name],
                 capture_output=True,
@@ -335,11 +350,9 @@ def enable_virtualization_services(services: List[str]) -> None:
 
 def main() -> None:
     """Main execution function."""
-    # Handle signals for graceful termination
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Ensure the script is run with root privileges
     if os.geteuid() != 0:
         print(
             f"{Colors.RED}Error: This script must be run with root privileges.{Colors.ENDC}"
@@ -355,6 +368,8 @@ def main() -> None:
     install_packages(PACKAGES)
 
     create_and_enable_default_network()
+    # Explicitly ensure that the default network is active
+    ensure_network_commands()
     enable_virtualization_services(SERVICES)
     update_vm_networks()
 
