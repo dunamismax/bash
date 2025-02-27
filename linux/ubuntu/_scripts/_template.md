@@ -1,50 +1,48 @@
-# AI Prompt for Standard Library Python Script Generation
+# LLM Pre-Prompt for Python Standard Library Script Generation
 
 ## Objective
-Create Python scripts that leverage the standard library for robust functionality, clear progress tracking, and user feedback. Scripts should be well-structured, maintainable, and provide excellent user experience without external dependencies.
 
-## Requirements
+Develop Python command-line scripts that rely solely on the standard library to deliver robust functionality, user-friendly progress tracking, and clear feedback. The generated scripts should be modular, maintainable, and adhere to best practices in error handling, resource cleanup, and consistent code styling—all without external dependencies.
+
+## Requirements & Guidelines
 
 ### Core Structure
-1. **Organization**
-   - Clear section separation with descriptive comments
-   - Configuration at the top
-   - Helper functions organized by purpose
-   - Main execution flow at the bottom
 
-2. **Progress Tracking**
-   - Thread-safe progress bars using standard library
-   - File transfer rate display
-   - ETA calculations
-   - Human-readable size formatting
-
-3. **Error Handling**
-   - Comprehensive try/except blocks
-   - Graceful failure modes
-   - Clear error messages with ANSI colors
-   - Process cleanup on exit
-
-4. **User Interface**
-   - ANSI color-coded output
-   - Clear section headers
-   - Progress indicators for long operations
-   - Summary reports of operations
+- **Clear Organization:**  
+  - Separate configuration, helper functions, and the main execution flow with descriptive comments.
+  - Place all configuration and constants at the top of the script.
+- **Progress Tracking:**  
+  - Implement thread-safe progress bars using only the standard library.
+  - Include file transfer rate displays, ETA calculations, and human-readable size formatting.
+- **Error Handling:**  
+  - Use comprehensive try/except blocks with graceful exit modes.
+  - Display clear, ANSI color-coded error messages and perform necessary process cleanup.
+- **User Interface:**  
+  - Use ANSI color codes for section headers and status updates.
+  - Provide progress indicators during long operations and summary reports upon completion.
 
 ### Standard Features
-1. **Must Include**
-   - Root privilege checking
-   - Signal handling
-   - Resource cleanup
-   - Clear status reporting
 
-2. **Code Style**
-   - Type hints
-   - Descriptive docstrings
-   - Clear variable naming
-   - Consistent formatting
+- **Mandatory Elements:**  
+  - Root privilege verification.
+  - Signal handling for graceful interrupts.
+  - Resource cleanup and clear status reporting.
+- **Coding Standards:**  
+  - Use type hints, clear variable names, and descriptive docstrings.
+  - Maintain consistent formatting and comment style throughout the code.
+
+### Pre-Generation Process
+
+- **Clarify Requirements:**  
+  - Always ask the user for specific requirements and clarify any ambiguous points before generating code.
+- **Adherence to Template:**  
+  - Ensure that all generated code follows the principles and structure demonstrated in the example template below.
+
+---
 
 ## Example Template
-Below is a template demonstrating these principles in a file restore script:
+
+Below is a complete template that demonstrates the desired structure, style, and CLI design for a file restore (backup) script. **Do not modify this template.**
 
 ```python
 #!/usr/bin/env python3
@@ -960,15 +958,18 @@ if __name__ == "__main__":
     main()
 ```
 
-## Instructions for AI
-1. When writing scripts, prioritize standard library solutions over external dependencies
-2. Include progress tracking for all long-running operations
-3. Implement proper error handling and cleanup
-4. Use ANSI colors for clear status indication
-5. Maintain consistent code style and documentation
-6. Consider thread safety for progress tracking
-7. Always include type hints and docstrings
-8. Implement signal handling for graceful interrupts
+---
 
-## Note
-Before generating any code, ask the user for specific requirements and clarify any ambiguous points. Ensure the generated code follows the template's principles while addressing the user's specific needs.
+## Instructions for Code Generation
+
+1. **Before Code Generation:**  
+   - Ask the user for specific requirements and clarify any ambiguous points.
+   - Confirm that the code should use only the Python standard library and follow the CLI design as shown.
+
+2. **Script Requirements:**  
+   - Leverage the standard library to implement features such as progress tracking, error handling, signal handling, and resource cleanup.
+   - Use ANSI colors to enhance user feedback and status messages.
+   - Adhere to clear sectioning, include type hints, and maintain consistent formatting and documentation.
+
+3. **Final Note:**  
+   - Always ensure the generated script strictly follows the structure and style demonstrated in the example template above while addressing the user’s specific needs.
