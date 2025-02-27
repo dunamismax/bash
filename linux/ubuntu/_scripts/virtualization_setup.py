@@ -127,8 +127,9 @@ def create_and_enable_default_network() -> None:
     """
     Create (if necessary) and enable the default virtual network.
 
-    This function checks if a 'default' network exists. If not, it writes the default
-    network XML to a temporary file, defines it, and then starts it and sets it to autostart.
+    This function checks if a 'default' network exists. If not, it writes the network XML
+    to a temporary file, defines it, and then starts it. It then checks if the autostart symlink
+    exists before setting the network to autostart.
     """
     print_header("Configuring default virtual network")
     # Check if default network exists
@@ -137,7 +138,7 @@ def create_and_enable_default_network() -> None:
             ["virsh", "net-list", "--all"], capture_output=True, text=True, check=True
         )
         if "default" in result.stdout:
-            # Attempt to start and autostart the default network
+            # Attempt to start the default network
             if run_command(["virsh", "net-start", "default"]):
                 print(
                     f"{Colors.GREEN}Default network started successfully.{Colors.ENDC}"
@@ -146,14 +147,22 @@ def create_and_enable_default_network() -> None:
                 print(
                     f"{Colors.YELLOW}Default network may already be running or failed to start.{Colors.ENDC}"
                 )
-            if run_command(["virsh", "net-autostart", "default"]):
+
+            # Check if the autostart symlink exists
+            autostart_path = "/etc/libvirt/qemu/networks/autostart/default.xml"
+            if os.path.exists(autostart_path):
                 print(
-                    f"{Colors.GREEN}Default network set to autostart successfully.{Colors.ENDC}"
+                    f"{Colors.GREEN}Default network is already set to autostart.{Colors.ENDC}"
                 )
             else:
-                print(
-                    f"{Colors.YELLOW}Failed to set default network to autostart. It may already be enabled.{Colors.ENDC}"
-                )
+                if run_command(["virsh", "net-autostart", "default"]):
+                    print(
+                        f"{Colors.GREEN}Default network set to autostart successfully.{Colors.ENDC}"
+                    )
+                else:
+                    print(
+                        f"{Colors.YELLOW}Failed to set default network to autostart. It may already be enabled.{Colors.ENDC}"
+                    )
         else:
             # Create and define the default network
             temp_xml = "/tmp/default_network.xml"
