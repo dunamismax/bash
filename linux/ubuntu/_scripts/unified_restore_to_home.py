@@ -19,7 +19,6 @@ Usage:
 import json
 import logging
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -43,7 +42,7 @@ REPOS = {
     "plex": f"b2:{B2_BUCKET}:ubuntu-server/plex-media-server-backup",
 }
 
-# Restore locations: each repo is restored directly into its subfolder in the home folder.
+# Restore locations: each repository is restored directly into its subfolder.
 RESTORE_BASE = Path("/home/sawyer/restic_restore")
 RESTORE_DIRS = {
     "system": RESTORE_BASE / "ubuntu-system-backup",
@@ -51,18 +50,27 @@ RESTORE_DIRS = {
     "plex": RESTORE_BASE / "plex-media-server-backup",
 }
 
+MAX_RETRIES = 3
+RETRY_DELAY = 5  # seconds
+
+LOG_FILE = "/var/log/unified_restore.log"
+
+
 # ------------------------------------------------------------------------------
 # Logging Setup
 # ------------------------------------------------------------------------------
-LOG_FILE = "/var/log/unified_restore.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE, mode="a"),
-    ],
-)
+def setup_logging() -> None:
+    log_dir = os.path.dirname(LOG_FILE)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(LOG_FILE, mode="a"),
+        ],
+    )
 
 
 # ------------------------------------------------------------------------------
@@ -100,7 +108,7 @@ def run_restic(
     cmd = ["restic", "--repo", repo] + args
     logging.info("Running: " + " ".join(cmd))
     retries = 0
-    while retries <= 3:
+    while retries <= MAX_RETRIES:
         try:
             result = subprocess.run(
                 cmd,
@@ -115,7 +123,7 @@ def run_restic(
             msg = e.stderr or str(e)
             if "timeout" in msg.lower() or "connection" in msg.lower():
                 retries += 1
-                delay = 5 * (2 ** (retries - 1))
+                delay = RETRY_DELAY * (2 ** (retries - 1))
                 logging.warning(
                     f"Transient error; retrying in {delay} seconds (attempt {retries})"
                 )
@@ -149,7 +157,7 @@ def get_latest_snapshot(repo: str) -> Optional[str]:
 # ------------------------------------------------------------------------------
 def restore_repo(repo: str, target: Path) -> bool:
     """
-    Directly restore the latest snapshot from repo into the target directory.
+    Directly restore the latest snapshot from the repo into the target directory.
     """
     snap_id = get_latest_snapshot(repo)
     if not snap_id:
@@ -159,11 +167,11 @@ def restore_repo(repo: str, target: Path) -> bool:
     target.mkdir(parents=True, exist_ok=True)
     logging.info(f"Restoring snapshot {snap_id} from {repo} into {target} ...")
     try:
-        # Direct restore into the target directory.
+        # Directly restore into the target directory.
         run_restic(
             repo, ["restore", snap_id, "--target", str(target)], capture_output=True
         )
-        # Optionally, verify that the target is not empty.
+        # Verify that the target directory is not empty.
         if not any(target.iterdir()):
             logging.error(f"Restore failed: {target} is empty after restore")
             return False
@@ -178,8 +186,8 @@ def restore_repo(repo: str, target: Path) -> bool:
 # Main Function
 # ------------------------------------------------------------------------------
 def main() -> None:
-    check_root()
     setup_logging()
+    check_root()
     start_time = time.time()
 
     results = {}
