@@ -601,9 +601,172 @@ class PreflightChecker:
 # Phase 2: System Update & Basic Configuration
 # ------------------------------------------------------------------------------
 class SystemUpdater:
-    def get_missing_packages(self, packages: List[str]) -> List[str]:
-        """Return a list of packages from the provided list that are not installed."""
+    """Update the system, install packages, and configure basic settings."""
+
+    def fix_package_issues(self) -> bool:
+        """Fix broken dependencies, held packages, and interrupted installations."""
+        logger.info("Checking and fixing package management issues...")
+        try:
+            # Check for dpkg interruptions or locks
+            dpkg_status = Utils.run_command(
+                ["dpkg", "--configure", "-a"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if dpkg_status.returncode != 0:
+                logger.warning(
+                    f"Issues found when configuring unpacked packages: {dpkg_status.stderr}"
+                )
+                logger.info("Attempting to fix dpkg interrupted installations...")
+                Utils.run_command(["dpkg", "--configure", "-a"])
+
+            # Check for and fix held packages
+            held_packages = Utils.run_command(
+                ["apt-mark", "showhold"], check=False, capture_output=True, text=True
+            )
+            if held_packages.stdout.strip():
+                held_list = held_packages.stdout.strip().split("\n")
+                logger.warning(
+                    f"Found {len(held_list)} held packages: {', '.join(held_list)}"
+                )
+                logger.info("Attempting to fix held packages...")
+                for pkg in held_list:
+                    if pkg.strip():
+                        try:
+                            # Try to unhold the package
+                            Utils.run_command(
+                                ["apt-mark", "unhold", pkg.strip()], check=False
+                            )
+                            logger.info(f"Successfully unheld package: {pkg}")
+                        except Exception as e:
+                            logger.warning(f"Failed to unhold package {pkg}: {e}")
+
+            # Fix broken packages
+            logger.info("Checking for broken packages...")
+            Utils.run_command(["apt", "--fix-broken", "install", "-y"], check=False)
+
+            # Clean up apt caches to ensure clean state
+            logger.info("Cleaning package caches...")
+            Utils.run_command(["apt", "clean"], check=False)
+            Utils.run_command(["apt", "autoclean", "-y"], check=False)
+
+            # Check for missing dependencies or broken installations
+            check_result = Utils.run_command(
+                ["apt-get", "check"], check=False, capture_output=True, text=True
+            )
+            if check_result.returncode != 0:
+                logger.warning(
+                    f"System package status is not clean: {check_result.stderr}"
+                )
+                logger.info("Running additional fixes...")
+                Utils.run_command(["apt", "--fix-missing", "update"], check=False)
+                Utils.run_command(["apt", "--fix-broken", "install", "-y"], check=False)
+
+                # Check again after fixes
+                final_check = Utils.run_command(
+                    ["apt-get", "check"], check=False, capture_output=True, text=True
+                )
+                if final_check.returncode != 0:
+                    logger.error(
+                        "Unable to fully resolve package issues. Some problems may persist."
+                    )
+                    return False
+
+            logger.info("Package management issues fixed successfully.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to fix package issues: {e}")
+            return False
+
+    def update_system(self, full_upgrade: bool = False) -> bool:
+        logger.info("Updating system repositories and packages using Nala...")
+        try:
+            # First fix any existing package issues
+            if not self.fix_package_issues():
+                logger.warning(
+                    "Package issues detected but could not be fully resolved."
+                )
+                # Continue anyway as we might still be able to update
+
+            # Try to update repositories
+            try:
+                logger.info("Updating package lists...")
+                Utils.run_command(["nala", "update"])
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Repository update failed: {e}")
+                logger.info("Trying alternative update method...")
+                try:
+                    # Fallback to apt if nala fails
+                    Utils.run_command(["apt", "update"])
+                    logger.info("Repository update completed with apt instead of nala.")
+                except subprocess.CalledProcessError as apt_error:
+                    logger.error(
+                        f"Repository update failed with both nala and apt: {apt_error}"
+                    )
+                    return False
+
+            # Try to upgrade packages
+            upgrade_cmd = (
+                ["nala", "full-upgrade", "-y"]
+                if full_upgrade
+                else ["nala", "upgrade", "-y"]
+            )
+
+            try:
+                logger.info(
+                    f"Running system {'full-upgrade' if full_upgrade else 'upgrade'}..."
+                )
+                Utils.run_command(upgrade_cmd)
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"Package upgrade failed: {e}")
+                logger.info("Trying to resolve dependencies and upgrade again...")
+
+                # Try fixing broken packages again
+                self.fix_package_issues()
+
+                # Try one more time with the upgrade
+                try:
+                    Utils.run_command(upgrade_cmd)
+                    logger.info(
+                        "System upgrade completed successfully after fixing dependencies."
+                    )
+                except subprocess.CalledProcessError as retry_error:
+                    logger.error(f"System upgrade failed after retry: {retry_error}")
+                    return False
+
+            logger.info("System update and upgrade completed successfully.")
+            return True
+
+        except Exception as e:
+            logger.error(f"System update failed with unexpected error: {e}")
+            return False
+
+    def install_packages(self, packages: Optional[List[str]] = None) -> bool:
+        logger.info("Installing essential packages using Nala...")
+        packages = packages or PACKAGES
+        essential_packages = [
+            "bash",
+            "vim",
+            "nano",
+            "sudo",
+            "openssh-server",
+            "ufw",
+            "python3",
+            "curl",
+            "wget",
+            "ca-certificates",
+        ]
+
+        # First fix any package management issues
+        if not self.fix_package_issues():
+            logger.warning("Package issues detected but could not be fully resolved.")
+            # Continue anyway as we might still be able to install packages
+
+        # Check which packages are already installed
         missing = []
+        logger.info("Checking for already installed packages...")
         for pkg in packages:
             try:
                 subprocess.run(
@@ -612,74 +775,100 @@ class SystemUpdater:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                logger.debug(f"Package '{pkg}' is already installed.")
+                logger.debug(f"Package already installed: {pkg}")
             except subprocess.CalledProcessError:
                 missing.append(pkg)
-                logger.debug(f"Package '{pkg}' is missing.")
-        return missing
-
-    def install_packages(
-        self, packages: Optional[List[str]] = None, batch_size: int = 5
-    ) -> bool:
-        logger.info("Installing essential packages using Nala...")
-        packages = packages or PACKAGES
-        missing = self.get_missing_packages(packages)
+                logger.debug(f"Package not installed: {pkg}")
 
         if not missing:
             logger.info("All required packages are already installed.")
             return True
 
-        logger.info(f"Missing packages: {', '.join(missing)}")
-        installer_cmd = ["nala", "install", "-y"]
+        logger.info(
+            f"Installing {len(missing)} missing packages with a single command..."
+        )
+
+        # Try to install all missing packages at once
         failed_packages = []
+        installer = ["nala", "install", "-y"]
 
-        # Install packages in small batches
-        for i in range(0, len(missing), batch_size):
-            batch = missing[i : i + batch_size]
-            logger.info(f"Installing batch {i // batch_size + 1}: {', '.join(batch)}")
-            try:
-                Utils.run_command(installer_cmd + batch)
-                logger.info(f"Batch {i // batch_size + 1} installed successfully.")
-            except subprocess.CalledProcessError as batch_err:
-                logger.warning(f"Batch installation failed: {batch_err}")
-                # Try to fix broken dependencies
-                try:
-                    Utils.run_command(
-                        ["apt", "--fix-broken", "install", "-y"], check=False
-                    )
-                    logger.info(
-                        "Executed 'apt --fix-broken install -y' to resolve dependency issues."
-                    )
-                except Exception as fix_err:
-                    logger.warning(f"'apt --fix-broken install' failed: {fix_err}")
-                # Fallback: Install packages individually
-                for pkg in batch:
-                    try:
-                        logger.info(f"Attempting individual installation of {pkg}...")
-                        Utils.run_command(installer_cmd + [pkg], check=True)
-                        logger.info(f"Successfully installed {pkg}.")
-                    except subprocess.CalledProcessError as indiv_err:
-                        failed_packages.append(pkg)
-                        logger.error(f"Failed to install {pkg}: {indiv_err}")
-
-        if failed_packages:
-            logger.warning(
-                f"Failed to install the following packages: {', '.join(failed_packages)}"
-            )
-            return False
-
-        logger.info("All missing packages installed successfully.")
-        return True
-
-    def update_system(self) -> bool:
-        logger.info("Updating system packages...")
         try:
-            Utils.run_command(["nala", "update"])
-            Utils.run_command(["nala", "upgrade", "-y"])
+            Utils.run_command(installer + missing)
+            logger.info("All packages installed successfully.")
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"System update failed: {e}")
-            return False
+            logger.warning(f"Bulk installation failed: {e}")
+            logger.info("Attempting to fix package issues and retry...")
+
+            # Try to fix package issues again
+            self.fix_package_issues()
+
+            # Try essential packages first, then the rest one by one
+            essential_missing = [pkg for pkg in missing if pkg in essential_packages]
+            non_essential_missing = [
+                pkg for pkg in missing if pkg not in essential_packages
+            ]
+
+            if essential_missing:
+                logger.info(
+                    f"Retrying installation of {len(essential_missing)} essential packages..."
+                )
+                try:
+                    Utils.run_command(installer + essential_missing)
+                    logger.info("Essential packages installed successfully.")
+                except subprocess.CalledProcessError as e_essential:
+                    logger.error(f"Failed to install essential packages: {e_essential}")
+                    # Check which essential packages failed
+                    for pkg in essential_missing:
+                        try:
+                            subprocess.run(
+                                ["dpkg", "-s", pkg],
+                                check=True,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                        except subprocess.CalledProcessError:
+                            failed_packages.append(pkg)
+                            logger.error(f"Failed to install essential package: {pkg}")
+
+                    essential_failed = [
+                        pkg for pkg in failed_packages if pkg in essential_packages
+                    ]
+                    if essential_failed:
+                        logger.error(
+                            f"Failed to install essential packages: {', '.join(essential_failed)}"
+                        )
+                        return False
+
+            # Try the remaining non-essential packages individually
+            logger.info(
+                f"Trying individual installation for {len(non_essential_missing)} non-essential packages..."
+            )
+            for pkg in non_essential_missing:
+                if pkg in failed_packages:
+                    continue  # Skip already known failed packages
+                try:
+                    Utils.run_command(installer + [pkg], check=False)
+                    logger.info(f"Successfully installed {pkg}.")
+                except Exception as pkg_error:
+                    failed_packages.append(pkg)
+                    logger.warning(f"Failed to install {pkg}: {pkg_error}")
+
+            # Report results
+            if failed_packages:
+                logger.warning(
+                    f"Failed to install {len(failed_packages)} packages: {', '.join(failed_packages)}"
+                )
+
+            logger.info(
+                f"Installed {len(missing) - len(failed_packages)} of {len(missing)} packages successfully."
+            )
+
+            # Success if all essential packages are installed
+            essential_failed = [
+                pkg for pkg in failed_packages if pkg in essential_packages
+            ]
+            return len(essential_failed) == 0
 
     def configure_timezone(self, timezone: str = "America/New_York") -> bool:
         logger.info(f"Setting timezone to {timezone}...")
