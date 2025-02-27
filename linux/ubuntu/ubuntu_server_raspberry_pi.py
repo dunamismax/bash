@@ -65,22 +65,27 @@ TEMP_DIR = tempfile.gettempdir()
 LOG_FILE = "/var/log/ubuntu_setup.log"
 MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 
+Here's the rewritten section for Raspberry Pi / ARM architecture:
+
+
 # Software versions and download URLs
-PLEX_VERSION = "1.41.3.9314-a0bfb8370"
-PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_amd64.deb"
+PLEX_VERSION = "1.40.1.8267-c3e6adcf1"
+PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_arm64.deb"
 
 FASTFETCH_VERSION = "2.36.1"
-FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-amd64.deb"
+FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-arm64.deb"
 
 DOCKER_COMPOSE_VERSION = "2.20.3"
 uname_info = platform.uname()
 DOCKER_COMPOSE_URL = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{uname_info.system}-{uname_info.machine}"
 
-VSCODE_VERSION = "1.97.2-1739406807"
-VSCODE_URL = f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/e54c774e0add60467559eb0d1e229c6452cf8447/code_{VSCODE_VERSION}_amd64.deb"
+# Code Server instead of VS Code (better ARM compatibility)
+CODE_SERVER_VERSION = "4.20.1"
+CODE_SERVER_URL = f"https://github.com/coder/code-server/releases/download/v{CODE_SERVER_VERSION}/code-server_{CODE_SERVER_VERSION}_arm64.deb"
 
 CADDY_VERSION = "2.9.1"
-CADDY_URL = f"https://github.com/caddyserver/caddy/releases/download/v{CADDY_VERSION}/caddy_{CADDY_VERSION}_linux_amd64.deb"
+CADDY_URL = f"https://github.com/caddyserver/caddy/releases/download/v{CADDY_VERSION}/caddy_{CADDY_VERSION}_linux_arm64.deb"
+
 
 CONFIG_FILES = [
     "/etc/ssh/sshd_config",
