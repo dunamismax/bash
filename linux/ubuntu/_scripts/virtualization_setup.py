@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 Install Virtualization Packages, Enable Auto-Start for Virtual Networks and Services,
-and Reconfigure Virtual Machines to Use the 'default' NAT Network on Ubuntu
+Reconfigure Virtual Machines to Use the 'default' NAT Network on Ubuntu, and
+Configure all VMs to Auto Boot at System Startup
 
 This script installs common virtualization packages (QEMU/KVM, libvirt, etc.),
 updates package lists, and then configures the system so that:
   • The default virtual network is created (if not already defined), started, and set to autostart.
   • All defined virtual machines are updated to use the "default" NAT network.
+  • All virtual machines are configured to auto start at system boot.
   • Key virtualization services (libvirtd and virtlogd) are enabled and started.
 It uses only the standard library, provides clear, color-coded output, and handles interrupts gracefully.
 
@@ -327,6 +329,31 @@ def update_vm_networks() -> None:
         time.sleep(1)
 
 
+def set_vms_autostart() -> None:
+    """
+    Configure all virtual machines to auto boot at system startup.
+
+    This function iterates over all defined VMs and runs 'virsh autostart' for each one.
+    """
+    print_header("Configuring VMs for Autostart at Boot")
+    vms = get_vm_list()
+    if not vms:
+        print(
+            f"{Colors.YELLOW}No virtual machines found to configure for autostart.{Colors.ENDC}"
+        )
+        return
+    for vm in vms:
+        vm_name = vm["name"]
+        print(f"Setting VM '{vm_name}' to autostart...")
+        if run_command(["virsh", "autostart", vm_name]):
+            print(
+                f"{Colors.GREEN}VM {vm_name} set to autostart successfully.{Colors.ENDC}"
+            )
+        else:
+            print(f"{Colors.RED}Failed to set VM {vm_name} to autostart.{Colors.ENDC}")
+        time.sleep(0.5)
+
+
 def enable_virtualization_services(services: List[str]) -> None:
     """
     Enable and start essential virtualization services.
@@ -334,7 +361,7 @@ def enable_virtualization_services(services: List[str]) -> None:
     Args:
         services: A list of service names to enable and start using systemctl.
     """
-    print_header("Enabling virtualization services")
+    print_header("Enabling Virtualization Services")
     for service in services:
         print(f"{Colors.BOLD}Processing service: {service}{Colors.ENDC}")
         if run_command(["systemctl", "enable", "--now", service]):
@@ -359,12 +386,12 @@ def main() -> None:
         )
         sys.exit(1)
 
-    print_header("Updating package lists")
+    print_header("Updating Package Lists")
     if not run_command(["apt-get", "update"]):
         print(f"{Colors.RED}Failed to update package lists. Aborting.{Colors.ENDC}")
         sys.exit(1)
 
-    print_header("Installing virtualization packages")
+    print_header("Installing Virtualization Packages")
     install_packages(PACKAGES)
 
     create_and_enable_default_network()
@@ -372,11 +399,12 @@ def main() -> None:
     ensure_network_commands()
     enable_virtualization_services(SERVICES)
     update_vm_networks()
+    # Configure all VMs to autostart at system boot
+    set_vms_autostart()
 
     print_header("Installation Complete")
     print(
-        f"{Colors.GREEN}All virtualization packages installed, default network configured, "
-        f"VMs updated, and virtualization services enabled successfully.{Colors.ENDC}"
+        f"{Colors.GREEN}All virtualization packages installed, default network configured, VMs updated, and virtualization services enabled successfully.{Colors.ENDC}"
     )
 
 
