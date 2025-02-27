@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Unified Restore Script (B2 CLI Version with Fixed B2 Path)
+Unified Restore Script (B2 CLI Version with Recursive Scan)
 
 This script uses the B2 CLI tool (with a full path) to scan the sawyer-backups bucket for all restic repositories,
-displays a numbered list of available backups, and prompts the user to select one or more repositories to restore
-(multiple selections are allowed via space-separated numbers). Each selected repository is restored into its own
-subfolder under the restore base directory.
+even if they are nested in subdirectories. It displays a numbered list of available backups and prompts the user
+to select one or more repositories to restore (multiple selections are allowed via space-separated numbers).
+Each selected repository is restored into its own subfolder under the restore base directory.
 
 Note: Run this script with root privileges.
 """
@@ -29,6 +29,9 @@ from typing import Any, Dict, List, Optional, Tuple
 # Full path to the B2 CLI tool. Update this path if your installation is elsewhere.
 B2_CLI = "/home/sawyer/.local/bin/b2"
 
+# ------------------------------------------------------------------------------
+# B2 Configuration
+# ------------------------------------------------------------------------------
 B2_ACCOUNT_ID = "12345678"
 B2_ACCOUNT_KEY = "12345678"
 B2_BUCKET = "sawyer-backups"
@@ -180,8 +183,8 @@ def get_latest_snapshot(repo: str) -> Optional[str]:
 
 def scan_for_repos() -> Dict[int, Tuple[str, str]]:
     """
-    Scan the B2 bucket for restic repositories.
-    A repository is identified by the presence of a 'config' file.
+    Recursively scan the B2 bucket for restic repositories.
+    A repository is identified by the presence of a 'config' file in any subdirectory.
 
     Returns:
         Dictionary mapping menu numbers to (repo_name, repo_path).
@@ -190,19 +193,19 @@ def scan_for_repos() -> Dict[int, Tuple[str, str]]:
     repos: Dict[int, Tuple[str, str]] = {}
     seen: set = set()
     try:
-        # Use the full path to the B2 CLI tool.
+        # Use the full path to the B2 CLI tool with recursive listing.
         cmd = [B2_CLI, "ls", B2_BUCKET, "--recursive"]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         for line in result.stdout.splitlines():
             line = line.strip()
-            # Identify a restic repository by a 'config' file at its root.
-            if line.endswith("/config") or line == "config":
-                repo_folder = (
-                    line[: -len("/config")] if line.endswith("/config") else ""
-                )
-                if not repo_folder or repo_folder in seen:
+            parts = line.split("/")
+            # Check if the last segment of the path is "config"
+            if parts[-1] == "config" and len(parts) > 1:
+                repo_folder = "/".join(parts[:-1])
+                if repo_folder in seen:
                     continue
                 seen.add(repo_folder)
+                # Use the last folder name as the repository name
                 repo_name = repo_folder.split("/")[-1]
                 repo_path = f"b2:{B2_BUCKET}:{repo_folder}"
                 repos[len(repos) + 1] = (repo_name, repo_path)
@@ -255,7 +258,7 @@ def restore_repo(repo: str, target: Path) -> bool:
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Unified Restore Script: Scan B2 for restic repositories and restore selected backups."
+        description="Unified Restore Script: Recursively scan B2 for restic repositories and restore selected backups."
     )
     parser.add_argument(
         "--non-interactive",
