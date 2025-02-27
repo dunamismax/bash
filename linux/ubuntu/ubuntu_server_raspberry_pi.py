@@ -65,8 +65,6 @@ TEMP_DIR = tempfile.gettempdir()
 LOG_FILE = "/var/log/ubuntu_setup.log"
 MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 
-Here's the rewritten section for Raspberry Pi / ARM architecture:
-
 
 # Software versions and download URLs
 PLEX_VERSION = "1.40.1.8267-c3e6adcf1"
