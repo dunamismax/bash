@@ -1857,7 +1857,7 @@ Icon=vscode
 
     def install_nala(self) -> bool:
         """
-        Install Nala (an improved frontend for apt).
+        Install Nala as a modern apt frontend.
 
         Returns:
             True if successful, False otherwise
@@ -1869,34 +1869,36 @@ Icon=vscode
             return True
 
         try:
-            # Update package lists
-            logger.info("Updating package lists...")
-            Utils.run_command(["apt", "update"], check=True)
+            # Step 1: Update apt repositories
+            logger.info("Updating apt repositories...")
+            Utils.run_command(["apt", "update"])
 
-            # Install Nala
-            logger.info("Installing Nala via apt...")
-            Utils.run_command(["apt", "install", "-y", "nala"], check=True)
+            # Step 2: Upgrade existing packages
+            logger.info("Upgrading existing packages...")
+            Utils.run_command(["apt", "upgrade", "-y"])
 
-            # Verify installation
+            # Step 3: Fix any broken installations
+            logger.info("Fixing any broken package installations...")
+            Utils.run_command(["apt", "--fix-broken", "install", "-y"])
+
+            # Step 4: Install nala
+            logger.info("Installing nala package...")
+            Utils.run_command(["apt", "install", "nala", "-y"])
+
+            # Verify nala is installed
             if Utils.command_exists("nala"):
                 logger.info("Nala installed successfully.")
-
-                # Configure faster mirrors
                 try:
                     Utils.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
                     logger.info("Configured faster mirrors with Nala.")
                 except subprocess.CalledProcessError:
                     logger.warning("Failed to configure mirrors with Nala.")
-
                 return True
             else:
                 logger.error("Nala installation verification failed.")
                 return False
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Nala installation failed: {e}")
-            return False
         except Exception as e:
-            logger.error(f"Unexpected error during Nala installation: {e}")
+            logger.error(f"Failed to install Nala: {e}")
             return False
 
     def install_enable_tailscale(self) -> bool:

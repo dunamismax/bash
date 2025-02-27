@@ -2137,21 +2137,48 @@ net.ipv4.tcp_wmem=4096 16384 4194304
 
     def install_nala(self) -> bool:
         """
-        Install Nala, a more user-friendly apt frontend.
+        Install Nala as a modern apt frontend.
 
         Returns:
-            True if Nala installed successfully, False otherwise
+            True if successful, False otherwise
         """
         self.print_section("Nala Installation")
+        self.logger.info("Installing Nala (apt frontend)...")
+
         if self.command_exists("nala"):
             self.logger.info("Nala is already installed.")
             return True
+
         try:
+            # Step 1: Update apt repositories
+            self.logger.info("Updating apt repositories...")
             self.run_command(["apt", "update"])
-            self.run_command(["apt", "install", "-y", "nala"])
-            self.logger.info("Nala installed successfully.")
-            return True
-        except subprocess.CalledProcessError as e:
+
+            # Step 2: Upgrade existing packages
+            self.logger.info("Upgrading existing packages...")
+            self.run_command(["apt", "upgrade", "-y"])
+
+            # Step 3: Fix any broken installations
+            self.logger.info("Fixing any broken package installations...")
+            self.run_command(["apt", "--fix-broken", "install", "-y"])
+
+            # Step 4: Install nala
+            self.logger.info("Installing nala package...")
+            self.run_command(["apt", "install", "nala", "-y"])
+
+            # Verify nala is installed
+            if self.command_exists("nala"):
+                self.logger.info("Nala installed successfully.")
+                try:
+                    self.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
+                    self.logger.info("Configured faster mirrors with Nala.")
+                except subprocess.CalledProcessError:
+                    self.logger.warning("Failed to configure mirrors with Nala.")
+                return True
+            else:
+                self.logger.error("Nala installation verification failed.")
+                return False
+        except Exception as e:
             self.logger.error(f"Failed to install Nala: {e}")
             return False
 

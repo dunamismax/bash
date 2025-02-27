@@ -1828,11 +1828,23 @@ Icon=vscode
             return True
 
         try:
+            # Step 1: Update apt repositories
+            logger.info("Updating apt repositories...")
             Utils.run_command(["apt", "update"])
-            if not SystemUpdater().install_packages(["nala"]):
-                logger.error("Failed to install Nala.")
-                return False
 
+            # Step 2: Upgrade existing packages
+            logger.info("Upgrading existing packages...")
+            Utils.run_command(["apt", "upgrade", "-y"])
+
+            # Step 3: Fix any broken installations
+            logger.info("Fixing any broken package installations...")
+            Utils.run_command(["apt", "--fix-broken", "install", "-y"])
+
+            # Step 4: Install nala
+            logger.info("Installing nala package...")
+            Utils.run_command(["apt", "install", "nala", "-y"])
+
+            # Verify nala is installed
             if Utils.command_exists("nala"):
                 logger.info("Nala installed successfully.")
                 try:
