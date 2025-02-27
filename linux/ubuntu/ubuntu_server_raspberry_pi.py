@@ -122,7 +122,7 @@ PACKAGES = [
     "libbz2-dev",
     "tk-dev",
     "xz-utils",
-    "libncurses5-dev",
+    "libncurses-dev",
     "libgdbm-dev",
     "libnss3-dev",
     "liblzma-dev",
