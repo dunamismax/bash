@@ -1206,7 +1206,7 @@ class UbuntuDesktopSetup:
         content = (
             "#!/bin/sh\n"
             "# Ubuntu maintenance script\n"
-            "apt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y\n"
+            "nala update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y\n"
         )
         try:
             cron_file.write_text(content)
@@ -1332,7 +1332,7 @@ class UbuntuDesktopSetup:
         self.print_section("SSL Certificates Update")
         if not self.command_exists("certbot"):
             try:
-                self.run_command(["apt", "install", "-y", "certbot"])
+                self.run_command(["nala", "install", "-y", "certbot"])
                 self.logger.info("certbot installed.")
             except subprocess.CalledProcessError:
                 self.logger.warning("Failed to install certbot.")
@@ -1445,7 +1445,7 @@ class UbuntuDesktopSetup:
         pool = self.config.ZFS_POOL_NAME
         mount_point = self.config.ZFS_MOUNT_POINT
         try:
-            self.run_command(["apt", "update"])
+            self.run_command(["nala", "update"])
             self.run_command(
                 [
                     "apt",
@@ -1456,7 +1456,7 @@ class UbuntuDesktopSetup:
                     "linux-image-generic",
                 ]
             )
-            self.run_command(["apt", "install", "-y", "zfs-dkms", "zfsutils-linux"])
+            self.run_command(["nala", "install", "-y", "zfs-dkms", "zfsutils-linux"])
             self.logger.info("ZFS packages installed.")
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to install ZFS packages: {e}")
@@ -1561,12 +1561,12 @@ class UbuntuDesktopSetup:
         self.print_section("Flatpak Installation & Setup")
         apps = self.config.FLATPAK_APPS
         try:
-            self.run_command(["apt", "install", "-y", "flatpak"])
+            self.run_command(["nala", "install", "-y", "flatpak"])
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to install Flatpak: {e}")
             return [], apps
         try:
-            self.run_command(["apt", "install", "-y", "gnome-software-plugin-flatpak"])
+            self.run_command(["nala", "install", "-y", "gnome-software-plugin-flatpak"])
         except subprocess.CalledProcessError as e:
             self.logger.warning(f"Failed to install Flatpak plugin: {e}")
         try:
@@ -1613,7 +1613,7 @@ class UbuntuDesktopSetup:
         except subprocess.CalledProcessError:
             self.logger.warning("dpkg issues; fixing dependencies...")
             try:
-                self.run_command(["apt", "install", "-f", "-y"])
+                self.run_command(["nala", "install", "-f", "-y"])
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"Failed to fix VS Code dependencies: {e}")
                 return False
@@ -1680,7 +1680,7 @@ class UbuntuDesktopSetup:
         self.print_section("Unattended Upgrades Configuration")
         try:
             self.run_command(
-                ["apt", "install", "-y", "unattended-upgrades", "apt-listchanges"]
+                ["nala", "install", "-y", "unattended-upgrades", "nala-listchanges"]
             )
             auto_upgrades_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
             auto_upgrades_content = (
@@ -1722,7 +1722,7 @@ class UbuntuDesktopSetup:
     def configure_apparmor(self) -> bool:
         self.print_section("AppArmor Configuration")
         try:
-            self.run_command(["apt", "install", "-y", "apparmor", "apparmor-utils"])
+            self.run_command(["nala", "install", "-y", "apparmor", "apparmor-utils"])
             self.run_command(["systemctl", "enable", "apparmor"])
             self.run_command(["systemctl", "start", "apparmor"])
             self.logger.info("AppArmor installed and enabled.")
@@ -1766,8 +1766,8 @@ class UbuntuDesktopSetup:
     def cleanup_system(self) -> bool:
         self.print_section("System Cleanup")
         try:
-            self.run_command(["apt", "autoremove", "-y"])
-            self.run_command(["apt", "autoclean", "-y"])
+            self.run_command(["nala", "autoremove", "-y"])
+            self.run_command(["nala", "autoclean", "-y"])
             self.logger.info("System cleanup completed.")
             return True
         except subprocess.CalledProcessError as e:
@@ -1835,13 +1835,13 @@ class UbuntuDesktopSetup:
             return True
         try:
             self.logger.info("Updating apt repositories...")
-            self.run_command(["apt", "update"])
+            self.run_command(["nala", "update"])
             self.logger.info("Upgrading existing packages...")
-            self.run_command(["apt", "upgrade", "-y"])
+            self.run_command(["nala", "upgrade", "-y"])
             self.logger.info("Fixing broken installations...")
-            self.run_command(["apt", "--fix-broken", "install", "-y"])
+            self.run_command(["nala", "--fix-broken", "install", "-y"])
             self.logger.info("Installing nala package...")
-            self.run_command(["apt", "install", "nala", "-y"])
+            self.run_command(["nala", "install", "nala", "-y"])
             if self.command_exists("nala"):
                 self.logger.info("Nala installed successfully.")
                 try:

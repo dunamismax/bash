@@ -90,7 +90,7 @@ def run_command(command, error_message=None):
 
 def check_dependencies():
     """Check for required system commands."""
-    required_commands = ["apt", "systemctl", "zpool", "zfs"]
+    required_commands = ["nala", "systemctl", "zpool", "zfs"]
     for cmd in required_commands:
         if not shutil.which(cmd):
             logging.error(f"Required command '{cmd}' is missing.")
@@ -101,9 +101,11 @@ def install_zfs_packages():
     """Update package lists and install ZFS packages."""
     logging.info("Installing ZFS packages")
     try:
-        run_command("apt update")
-        run_command("apt install -y dpkg-dev linux-headers-generic linux-image-generic")
-        run_command("apt install -y zfs-dkms zfsutils-linux")
+        run_command("nala update")
+        run_command(
+            "nala install -y dpkg-dev linux-headers-generic linux-image-generic"
+        )
+        run_command("nala install -y zfs-dkms zfsutils-linux")
         logging.info("ZFS packages installed successfully.")
     except subprocess.CalledProcessError:
         logging.error("Failed to install ZFS packages.")

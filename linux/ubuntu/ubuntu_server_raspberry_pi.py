@@ -671,6 +671,66 @@ class SystemUpdater:
         logger.info("All missing packages installed successfully.")
         return True
 
+    def update_system(self) -> bool:
+        logger.info("Updating system packages...")
+        try:
+            Utils.run_command(["nala", "update"])
+            Utils.run_command(["nala", "upgrade", "-y"])
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"System update failed: {e}")
+            return False
+
+    def configure_timezone(self, timezone: str = "America/New_York") -> bool:
+        logger.info(f"Setting timezone to {timezone}...")
+        tz_file = f"/usr/share/zoneinfo/{timezone}"
+        if not os.path.isfile(tz_file):
+            logger.warning(f"Timezone file for {timezone} not found.")
+            return False
+        try:
+            if Utils.command_exists("timedatectl"):
+                Utils.run_command(["timedatectl", "set-timezone", timezone])
+            else:
+                if os.path.exists("/etc/localtime"):
+                    os.remove("/etc/localtime")
+                os.symlink(tz_file, "/etc/localtime")
+                with open("/etc/timezone", "w") as f:
+                    f.write(f"{timezone}\n")
+            logger.info("Timezone configured successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set timezone: {e}")
+            return False
+
+    def configure_locale(self, locale: str = "en_US.UTF-8") -> bool:
+        """
+        Set the system locale.
+        """
+        logger.info(f"Setting locale to {locale}...")
+        try:
+            Utils.run_command(["locale-gen", locale])
+            Utils.run_command(["update-locale", f"LANG={locale}", f"LC_ALL={locale}"])
+            env_file = "/etc/environment"
+            env_content = []
+            locale_added = False
+            if os.path.isfile(env_file):
+                with open(env_file, "r") as f:
+                    for line in f:
+                        if line.strip().startswith("LANG="):
+                            env_content.append(f"LANG={locale}\n")
+                            locale_added = True
+                        else:
+                            env_content.append(line)
+            if not locale_added:
+                env_content.append(f"LANG={locale}\n")
+            with open(env_file, "w") as f:
+                f.writelines(env_content)
+            logger.info("Locale configured successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Locale configuration failed: {e}")
+            return False
+
 
 # ------------------------------------------------------------------------------
 # Phase 3: User Environment Setup
@@ -1317,9 +1377,9 @@ class ServiceInstaller:
             return True
         try:
             logger.info("Updating apt repositories...")
-            Utils.run_command(["apt", "update"])
+            Utils.run_command(["nala", "update"])
             logger.info("Upgrading existing packages...")
-            Utils.run_command(["apt", "upgrade", "-y"])
+            Utils.run_command(["nala", "upgrade", "-y"])
             logger.info("Fixing any broken package installations...")
             Utils.run_command(["apt", "--fix-broken", "install", "-y"])
             logger.info("Installing nala package...")
@@ -1870,11 +1930,11 @@ class FinalChecker:
             if Utils.command_exists("nala"):
                 Utils.run_command(["nala", "autoremove", "-y"])
             else:
-                Utils.run_command(["apt", "autoremove", "-y"])
+                Utils.run_command(["nala", "autoremove", "-y"])
             if Utils.command_exists("nala"):
                 Utils.run_command(["nala", "clean"])
             else:
-                Utils.run_command(["apt", "clean"])
+                Utils.run_command(["nala", "clean"])
             try:
                 current = subprocess.check_output(["uname", "-r"], text=True).strip()
                 running_image = f"linux-image-{current}"
@@ -1902,7 +1962,7 @@ class FinalChecker:
                     to_remove = old_kernel_packages[:-1]
                     if to_remove:
                         logger.info(f"Removing {len(to_remove)} old kernel packages...")
-                        Utils.run_command(["apt", "purge", "-y"] + to_remove)
+                        Utils.run_command(["nala", "purge", "-y"] + to_remove)
                 else:
                     logger.info("No old kernels to remove.")
             except Exception as e:

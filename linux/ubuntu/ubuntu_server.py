@@ -1154,7 +1154,7 @@ class ServiceInstaller:
             logger.debug(f"Downloading Fastfetch from {FASTFETCH_URL}...")
             Utils.run_command(["curl", "-L", "-o", temp_deb, FASTFETCH_URL])
             Utils.run_command(["dpkg", "-i", temp_deb])
-            Utils.run_command(["apt", "install", "-f", "-y"])
+            Utils.run_command(["nala", "install", "-f", "-y"])
             if os.path.exists(temp_deb):
                 os.remove(temp_deb)
             if Utils.command_exists("fastfetch"):
@@ -1377,9 +1377,9 @@ class ServiceInstaller:
             return True
         try:
             logger.info("Updating apt repositories...")
-            Utils.run_command(["apt", "update"])
+            Utils.run_command(["nala", "update"])
             logger.info("Upgrading existing packages...")
-            Utils.run_command(["apt", "upgrade", "-y"])
+            Utils.run_command(["nala", "upgrade", "-y"])
             logger.info("Fixing any broken package installations...")
             Utils.run_command(["apt", "--fix-broken", "install", "-y"])
             logger.info("Installing nala package...")
@@ -1829,7 +1829,7 @@ class FinalChecker:
         try:
             updates = (
                 subprocess.check_output(
-                    ["apt", "list", "--upgradable"],
+                    ["nala", "list", "--upgradable"],
                     text=True,
                     stderr=subprocess.DEVNULL,
                 )

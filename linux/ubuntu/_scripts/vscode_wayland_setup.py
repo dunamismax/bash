@@ -65,7 +65,7 @@ def check_root():
 
 def check_dependencies():
     """Check for required system commands."""
-    required_commands = ["curl", "dpkg", "apt"]
+    required_commands = ["curl", "dpkg", "nala"]
     for cmd in required_commands:
         if not shutil.which(cmd):
             logging.error(f"Required command '{cmd}' is missing.")
@@ -103,7 +103,7 @@ def install_vscode():
         try:
             # Try to fix dependencies
             logging.warning("Fixing dependencies...")
-            subprocess.run(["apt", "install", "-f", "-y"], check=True)
+            subprocess.run(["nala", "install", "-f", "-y"], check=True)
             logging.info("Dependencies fixed. VS Code should now be installed.")
             return True
         except subprocess.CalledProcessError as e:
