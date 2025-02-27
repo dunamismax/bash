@@ -4,8 +4,7 @@ Script Name: update_dns_records.py
 --------------------------------------------------------
 Description:
   Updates Cloudflare DNS A records with the current public IP address using the Cloudflare API.
-  Uses the Nord color theme for visual feedback, rich progress spinners for real-time feedback,
-  and includes comprehensive logging, error handling, and graceful signal handling.
+  Includes comprehensive logging, error handling, and graceful signal handling.
 
 Usage:
   sudo ./update_dns_records.py
@@ -23,9 +22,9 @@ import os
 import re
 import signal
 import sys
+import threading
 import time
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 # Third-party dependency check for requests
 try:
@@ -36,15 +35,10 @@ except ImportError:
     )
     sys.exit(1)
 
-# Rich library for progress spinners and formatted output
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.console import Console
-
 # ------------------------------------------------------------------------------
 # Environment Configuration
 # ------------------------------------------------------------------------------
 LOG_FILE = "/var/log/update_dns_records.log"
-DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 DEFAULT_LOG_LEVEL = "INFO"
 
 # Cloudflare API configuration from environment variables
@@ -58,107 +52,95 @@ IP_SERVICES = [
     "https://checkip.amazonaws.com",
 ]
 
-# ------------------------------------------------------------------------------
-# NORD COLOR THEME CONSTANTS (24-bit ANSI escape sequences)
-# ------------------------------------------------------------------------------
-NORD0 = "\033[38;2;46;52;64m"
-NORD1 = "\033[38;2;59;66;82m"
-NORD8 = "\033[38;2;136;192;208m"
-NORD9 = "\033[38;2;129;161;193m"
-NORD10 = "\033[38;2;94;129;172m"
-NORD11 = "\033[38;2;191;97;106m"
-NORD13 = "\033[38;2;235;203;139m"
-NORD14 = "\033[38;2;163;190;140m"
-NC = "\033[0m"
-
 
 # ------------------------------------------------------------------------------
-# CUSTOM LOGGING SETUP
+# Progress Indicator
 # ------------------------------------------------------------------------------
-class NordColorFormatter(logging.Formatter):
-    """
-    Custom logging formatter that applies the Nord color theme.
-    """
+class ConsoleSpinner:
+    """Simple console spinner for progress indication."""
 
-    def __init__(self, fmt=None, datefmt=None, use_colors=True):
-        super().__init__(fmt, datefmt)
-        self.use_colors = use_colors and not DISABLE_COLORS
+    def __init__(self, message: str):
+        self.message = message
+        self.spinning = True
+        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        self.current = 0
+        self.thread = threading.Thread(target=self._spin)
+        self.start_time = time.time()
 
-    def format(self, record):
-        msg = super().format(record)
-        if not self.use_colors:
-            return msg
-        level = record.levelname
-        if level == "DEBUG":
-            return f"{NORD9}{msg}{NC}"
-        elif level == "INFO":
-            return f"{NORD14}{msg}{NC}"
-        elif level == "WARNING":
-            return f"{NORD13}{msg}{NC}"
-        elif level in ("ERROR", "CRITICAL"):
-            return f"{NORD11}{msg}{NC}"
-        return msg
+    def _spin(self):
+        while self.spinning:
+            elapsed = time.time() - self.start_time
+            sys.stdout.write(
+                f"\r{self.spinner_chars[self.current]} {self.message} "
+                f"[{elapsed:.1f}s elapsed]"
+            )
+            sys.stdout.flush()
+            self.current = (self.current + 1) % len(self.spinner_chars)
+            time.sleep(0.1)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.spinning = False
+        self.thread.join()
+        sys.stdout.write("\r" + " " * (len(self.message) + 30) + "\r")
+        sys.stdout.flush()
 
 
+# ------------------------------------------------------------------------------
+# Logging Configuration
+# ------------------------------------------------------------------------------
 def setup_logging():
-    """
-    Set up console and file logging with Nord color formatting.
-    """
+    """Set up console and file logging."""
     log_dir = os.path.dirname(LOG_FILE)
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir, exist_ok=True)
 
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+
+    # Remove any existing handlers
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
 
-    # Console handler with colors
-    console_formatter = NordColorFormatter(
+    # Set up formatter
+    formatter = logging.Formatter(
         fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
+
+    # Console handler
     console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setFormatter(console_formatter)
+    console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # File handler without colors
-    file_formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-
+    # File handler
     try:
+        file_handler = logging.FileHandler(LOG_FILE)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
         os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        logger.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
+        logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
+        logger.warning("Continuing with console logging only")
 
     return logger
 
 
 def print_section(title: str):
-    """
-    Print a formatted section header using the Nord theme.
-    """
-    border = "─" * 60
-    if not DISABLE_COLORS:
-        logging.info(f"{NORD10}{border}{NC}")
-        logging.info(f"{NORD10}  {title}{NC}")
-        logging.info(f"{NORD10}{border}{NC}")
-    else:
-        logging.info(border)
-        logging.info(f"  {title}")
-        logging.info(border)
+    """Print a section header."""
+    border = "=" * 60
+    logging.info(border)
+    logging.info(f"  {title}")
+    logging.info(border)
 
 
 # ------------------------------------------------------------------------------
-# SIGNAL HANDLING & CLEANUP
+# Signal Handling & Cleanup
 # ------------------------------------------------------------------------------
 def signal_handler(signum, frame):
-    """
-    Handle termination signals gracefully.
-    """
+    """Handle termination signals gracefully."""
     sig_name = (
         signal.Signals(signum).name
         if hasattr(signal, "Signals")
@@ -179,9 +161,7 @@ for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
 
 
 def cleanup():
-    """
-    Perform cleanup tasks before exiting.
-    """
+    """Perform cleanup tasks before exiting."""
     logging.info("Performing cleanup tasks before exit.")
     # No additional cleanup required for this script.
 
@@ -190,51 +170,23 @@ atexit.register(cleanup)
 
 
 # ------------------------------------------------------------------------------
-# PROGRESS HELPER (using rich)
-# ------------------------------------------------------------------------------
-def run_with_progress(description: str, func, *args, **kwargs):
-    """
-    Run a blocking function in a background thread while displaying a progress spinner.
-    """
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(func, *args, **kwargs)
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            transient=True,
-        ) as progress:
-            task = progress.add_task(description, total=None)
-            while not future.done():
-                time.sleep(0.1)
-                progress.refresh()
-            return future.result()
-
-
-# ------------------------------------------------------------------------------
-# DEPENDENCY & PRIVILEGE CHECKS
+# Dependency & Privilege Checks
 # ------------------------------------------------------------------------------
 def check_dependencies():
-    """
-    Check for required dependencies.
-    """
+    """Check for required dependencies."""
     # 'requests' is already checked at import time.
     pass
 
 
 def check_root():
-    """
-    Ensure the script is run as root.
-    """
+    """Ensure the script is run as root."""
     if os.geteuid() != 0:
         logging.error("This script must be run as root.")
         sys.exit(1)
 
 
 def validate_config():
-    """
-    Validate that required environment variables are set.
-    """
+    """Validate that required environment variables are set."""
     if not CF_API_TOKEN:
         logging.error(
             "Environment variable 'CF_API_TOKEN' is not set. Please set it (e.g., in /etc/environment)."
@@ -248,12 +200,10 @@ def validate_config():
 
 
 # ------------------------------------------------------------------------------
-# HELPER & UTILITY FUNCTIONS
+# Helper & Utility Functions
 # ------------------------------------------------------------------------------
 def get_public_ip() -> str:
-    """
-    Retrieve the current public IP address using multiple fallback services.
-    """
+    """Retrieve the current public IP address using multiple fallback services."""
     for service_url in IP_SERVICES:
         try:
             logging.debug(f"Attempting to retrieve public IP from {service_url}")
@@ -274,9 +224,7 @@ def get_public_ip() -> str:
 
 
 def fetch_dns_records():
-    """
-    Fetch all DNS A records from Cloudflare.
-    """
+    """Fetch all DNS A records from Cloudflare."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records?type=A"
     headers = {
         "Authorization": f"Bearer {CF_API_TOKEN}",
@@ -296,9 +244,7 @@ def fetch_dns_records():
 
 
 def update_dns_record(record_id, record_name, current_ip, proxied):
-    """
-    Update a single DNS A record with the new IP address.
-    """
+    """Update a single DNS A record with the new IP address."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records/{record_id}"
     headers = {
         "Authorization": f"Bearer {CF_API_TOKEN}",
@@ -332,25 +278,25 @@ def update_dns_record(record_id, record_name, current_ip, proxied):
 
 
 # ------------------------------------------------------------------------------
-# MAIN FUNCTIONALITY
+# Main Functionality
 # ------------------------------------------------------------------------------
 def update_cloudflare_dns():
-    """
-    Update Cloudflare DNS A records with the current public IP address.
-    """
+    """Update Cloudflare DNS A records with the current public IP address."""
     print_section("Starting Cloudflare DNS Update")
 
-    # Retrieve current public IP with progress spinner
+    # Retrieve current public IP
     logging.info("Fetching current public IP address...")
-    current_ip = run_with_progress("Retrieving public IP...", get_public_ip)
+    with ConsoleSpinner("Retrieving public IP..."):
+        current_ip = get_public_ip()
     logging.info(f"Current public IP: {current_ip}")
 
-    # Fetch DNS records with progress spinner
+    # Fetch DNS records
     logging.info("Fetching DNS records from Cloudflare...")
-    records = run_with_progress("Fetching DNS records...", fetch_dns_records)
+    with ConsoleSpinner("Fetching DNS records..."):
+        records = fetch_dns_records()
     logging.info(f"Found {len(records)} DNS records in the Cloudflare zone.")
 
-    # Update records if needed with progress feedback
+    # Update records if needed
     errors = 0
     updates = 0
     for record in records:
@@ -389,12 +335,10 @@ def update_cloudflare_dns():
 
 
 # ------------------------------------------------------------------------------
-# MAIN ENTRY POINT
+# Main Entry Point
 # ------------------------------------------------------------------------------
 def main():
-    """
-    Main entry point for updating Cloudflare DNS records.
-    """
+    """Main entry point for updating Cloudflare DNS records."""
     setup_logging()
     check_dependencies()
     check_root()

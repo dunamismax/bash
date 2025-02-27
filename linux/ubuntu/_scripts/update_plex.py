@@ -3,28 +3,27 @@
 Script Name: update_plex.py
 --------------------------------------------------------
 Description:
-  A robust, visually engaging script that downloads and installs the
+  A standard library-based script that downloads and installs the
   latest Plex Media Server package, fixes dependency issues, cleans up
   temporary files, and restarts the Plex service.
 
 Usage:
   sudo ./update_plex.py
 
-Author: Your Name | License: MIT | Version: 1.1.0
+Author: Your Name | License: MIT | Version: 1.0.0
 """
 
 import atexit
 import logging
 import os
-import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
+import urllib.request
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 # ------------------------------------------------------------------------------
 # Environment Configuration (Modify these settings as needed)
@@ -35,51 +34,12 @@ PLEX_URL = (
 )
 TEMP_DEB = "/tmp/plexmediaserver.deb"
 LOG_FILE = "/var/log/update_plex.log"
-DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
-DEFAULT_LOG_LEVEL = "INFO"
-
-# ------------------------------------------------------------------------------
-# Nord Color Theme Constants (24-bit ANSI escape sequences)
-# ------------------------------------------------------------------------------
-NORD0 = "\033[38;2;46;52;64m"  # Polar Night (dark)
-NORD1 = "\033[38;2;59;66;82m"  # Polar Night (darker than NORD0)
-NORD8 = "\033[38;2;136;192;208m"  # Frost (light blue)
-NORD9 = "\033[38;2;129;161;193m"  # Bluish (DEBUG)
-NORD10 = "\033[38;2;94;129;172m"  # Accent Blue (section headers)
-NORD11 = "\033[38;2;191;97;106m"  # Reddish (ERROR/CRITICAL)
-NORD13 = "\033[38;2;235;203;139m"  # Yellowish (WARN)
-NORD14 = "\033[38;2;163;190;140m"  # Greenish (INFO)
-NC = "\033[0m"  # Reset / No Color
+DEFAULT_LOG_LEVEL = logging.INFO
 
 
 # ------------------------------------------------------------------------------
 # CUSTOM LOGGING SETUP
 # ------------------------------------------------------------------------------
-class NordColorFormatter(logging.Formatter):
-    """
-    Custom formatter applying the Nord color theme to log messages.
-    """
-
-    def __init__(self, fmt=None, datefmt=None, use_colors=True):
-        super().__init__(fmt, datefmt)
-        self.use_colors = use_colors and not DISABLE_COLORS
-
-    def format(self, record):
-        msg = super().format(record)
-        if not self.use_colors:
-            return msg
-        level = record.levelname
-        if level == "DEBUG":
-            return f"{NORD9}{msg}{NC}"
-        elif level == "INFO":
-            return f"{NORD14}{msg}{NC}"
-        elif level == "WARNING":
-            return f"{NORD13}{msg}{NC}"
-        elif level in ("ERROR", "CRITICAL"):
-            return f"{NORD11}{msg}{NC}"
-        return msg
-
-
 def setup_logging():
     """
     Set up logging with both console and file handlers.
@@ -88,72 +48,34 @@ def setup_logging():
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir, exist_ok=True)
 
-    logger = logging.getLogger()
-    logger.setLevel(DEFAULT_LOG_LEVEL)
-
-    # Remove existing handlers
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
-
-    # Console handler with Nord color formatter
-    console_fmt = "[%(asctime)s] [%(levelname)s] %(message)s"
-    console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setFormatter(
-        NordColorFormatter(fmt=console_fmt, datefmt="%Y-%m-%d %H:%M:%S")
+    # Configure logging
+    logging.basicConfig(
+        level=DEFAULT_LOG_LEVEL,
+        format="[%(asctime)s] [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[
+            logging.StreamHandler(sys.stderr),
+            logging.FileHandler(LOG_FILE, mode="a"),
+        ],
     )
-    logger.addHandler(console_handler)
 
-    # File handler without colors
-    file_fmt = "[%(asctime)s] [%(levelname)s] %(message)s"
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(
-        logging.Formatter(fmt=file_fmt, datefmt="%Y-%m-%d %H:%M:%S")
-    )
-    logger.addHandler(file_handler)
-
+    # Attempt to set secure log file permissions
     try:
         os.chmod(LOG_FILE, 0o600)
     except Exception as e:
         logging.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
 
-    return logger
+    return logging.getLogger()
 
 
 def print_section(title: str):
     """
-    Log a section header with Nord theme styling.
+    Log a section header.
     """
     border = "─" * 60
-    if not DISABLE_COLORS:
-        logging.info(f"{NORD10}{border}{NC}")
-        logging.info(f"{NORD10}  {title}{NC}")
-        logging.info(f"{NORD10}{border}{NC}")
-    else:
-        logging.info(border)
-        logging.info(f"  {title}")
-        logging.info(border)
-
-
-# ------------------------------------------------------------------------------
-# PROGRESS HELPER (using rich)
-# ------------------------------------------------------------------------------
-def run_with_progress(description: str, func, *args, **kwargs):
-    """
-    Run a blocking function in a background thread while displaying a progress spinner.
-    """
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(func, *args, **kwargs)
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            transient=True,
-        ) as progress:
-            task = progress.add_task(description, total=None)
-            while not future.done():
-                time.sleep(0.1)
-                progress.refresh()
-            return future.result()
+    logging.info(border)
+    logging.info(f"  {title}")
+    logging.info(border)
 
 
 # ------------------------------------------------------------------------------
@@ -206,7 +128,19 @@ def check_dependencies():
     Ensure all required system commands are available.
     """
     required_commands = ["curl", "dpkg", "apt-get", "systemctl"]
-    missing = [cmd for cmd in required_commands if not shutil.which(cmd)]
+    missing = []
+
+    for cmd in required_commands:
+        try:
+            subprocess.run(
+                ["which", cmd],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            missing.append(cmd)
+
     if missing:
         logging.error(
             f"Missing required commands: {', '.join(missing)}. Please install them and try again."
@@ -226,24 +160,23 @@ def check_root():
 # ------------------------------------------------------------------------------
 # HELPER FUNCTIONS
 # ------------------------------------------------------------------------------
-def run_command(cmd, check=True, capture_output=False, text=True, **kwargs):
+def run_command(cmd, check=True, capture_output=False):
     """
     Execute a shell command and log its output.
     """
     log_cmd = " ".join(cmd) if isinstance(cmd, list) else cmd
-    logging.debug(f"Executing command: {log_cmd}")
+    logging.info(f"Executing command: {log_cmd}")
     try:
-        result = subprocess.run(
-            cmd, check=check, capture_output=capture_output, text=text, **kwargs
-        )
+        result = subprocess.run(cmd, check=check, capture_output=True, text=True)
+        if result.stdout:
+            logging.info(f"Command output: {result.stdout.strip()}")
         return result
     except subprocess.CalledProcessError as e:
         logging.error(f"Command failed [{e.returncode}]: {log_cmd}")
-        if capture_output:
-            if e.stdout:
-                logging.debug(f"Stdout: {e.stdout}")
-            if e.stderr:
-                logging.error(f"Stderr: {e.stderr}")
+        if e.stdout:
+            logging.debug(f"Stdout: {e.stdout}")
+        if e.stderr:
+            logging.error(f"Stderr: {e.stderr}")
         if check:
             raise
         return e
@@ -254,17 +187,30 @@ def run_command(cmd, check=True, capture_output=False, text=True, **kwargs):
 # ------------------------------------------------------------------------------
 def download_plex():
     """
-    Download the Plex Media Server package.
+    Download the Plex Media Server package using urllib.
     """
     print_section("Downloading Plex Media Server Package")
     logging.info("Starting Plex package download...")
+
     try:
-        run_with_progress(
-            "Downloading...", run_command, ["curl", "-L", "-o", TEMP_DEB, PLEX_URL]
-        )
-        logging.info("Plex package downloaded successfully.")
-    except subprocess.CalledProcessError:
-        logging.error("Failed to download Plex package.")
+        logging.info(f"Downloading from: {PLEX_URL}")
+        logging.info(f"Saving to: {TEMP_DEB}")
+
+        # Create parent directory if it doesn't exist
+        os.makedirs(os.path.dirname(TEMP_DEB), exist_ok=True)
+
+        # Download the file
+        start_time = time.time()
+        urllib.request.urlretrieve(PLEX_URL, TEMP_DEB)
+
+        # Log download details
+        download_time = time.time() - start_time
+        file_size = os.path.getsize(TEMP_DEB)
+        logging.info(f"Download completed in {download_time:.2f} seconds")
+        logging.info(f"File size: {file_size / (1024 * 1024):.2f} MB")
+
+    except Exception as e:
+        logging.error(f"Failed to download Plex package: {e}")
         sys.exit(1)
 
 
@@ -275,17 +221,16 @@ def install_plex():
     print_section("Installing Plex Media Server")
     logging.info("Installing Plex Media Server...")
     try:
-        run_with_progress("Installing...", run_command, ["dpkg", "-i", TEMP_DEB])
+        # Attempt initial installation
+        run_command(["dpkg", "-i", TEMP_DEB])
     except subprocess.CalledProcessError:
         logging.warning("Dependency issues detected. Attempting to fix dependencies...")
         try:
-            run_with_progress(
-                "Fixing Dependencies...",
-                run_command,
-                ["apt-get", "install", "-f", "-y"],
-            )
-            # Retry installation after fixing dependencies
-            run_with_progress("Reinstalling...", run_command, ["dpkg", "-i", TEMP_DEB])
+            # Fix dependencies
+            run_command(["apt-get", "install", "-f", "-y"])
+
+            # Retry installation
+            run_command(["dpkg", "-i", TEMP_DEB])
         except subprocess.CalledProcessError:
             logging.error("Failed to resolve dependencies for Plex.")
             sys.exit(1)
@@ -299,11 +244,7 @@ def restart_plex():
     print_section("Restarting Plex Media Server Service")
     logging.info("Restarting Plex Media Server...")
     try:
-        run_with_progress(
-            "Restarting Service...",
-            run_command,
-            ["systemctl", "restart", "plexmediaserver"],
-        )
+        run_command(["systemctl", "restart", "plexmediaserver"])
         logging.info("Plex Media Server service restarted successfully.")
     except subprocess.CalledProcessError:
         logging.error("Failed to restart Plex Media Server service.")
@@ -340,5 +281,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as ex:
-        logging.error(f"Unhandled exception: {ex}")
+        logging.error(f"Unhandled exception: {ex}", exc_info=True)
         sys.exit(1)

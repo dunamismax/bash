@@ -26,65 +26,58 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 # ------------------------------------------------------------------------------
 # Environment Configuration
 # ------------------------------------------------------------------------------
 LOG_FILE = "/var/log/universal_downloader.log"
-DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 DEFAULT_LOG_LEVEL = "INFO"
 
-# ------------------------------------------------------------------------------
-# Nord Color Palette (24-bit ANSI escape sequences)
-# ------------------------------------------------------------------------------
-NORD0 = "\033[38;2;46;52;64m"  # Dark
-NORD1 = "\033[38;2;59;66;82m"
-NORD8 = "\033[38;2;136;192;208m"  # Light blue (progress)
-NORD9 = "\033[38;2;129;161;193m"  # Debug
-NORD10 = "\033[38;2;94;129;172m"  # Section headers
-NORD11 = "\033[38;2;191;97;106m"  # Error/Critical
-NORD13 = "\033[38;2;235;203;139m"  # Warning
-NORD14 = "\033[38;2;163;190;140m"  # Info
-NC = "\033[0m"
-
 
 # ------------------------------------------------------------------------------
-# CUSTOM LOGGING
+# Progress Indicator
 # ------------------------------------------------------------------------------
-class NordColorFormatter(logging.Formatter):
-    """
-    Custom formatter that applies the Nord color theme to log messages.
-    """
+class ConsoleSpinner:
+    """Simple console spinner for progress indication."""
 
-    def __init__(self, fmt=None, datefmt=None, use_colors=True):
-        super().__init__(fmt, datefmt)
-        self.use_colors = use_colors and not DISABLE_COLORS
+    def __init__(self, message: str):
+        self.message = message
+        self.spinning = True
+        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        self.current = 0
+        self.thread = threading.Thread(target=self._spin)
+        self.start_time = time.time()
 
-    def format(self, record):
-        msg = super().format(record)
-        if not self.use_colors:
-            return msg
-        level = record.levelname
-        if level == "DEBUG":
-            return f"{NORD9}{msg}{NC}"
-        elif level == "INFO":
-            return f"{NORD14}{msg}{NC}"
-        elif level == "WARNING":
-            return f"{NORD13}{msg}{NC}"
-        elif level in ("ERROR", "CRITICAL"):
-            return f"{NORD11}{msg}{NC}"
-        return msg
+    def _spin(self):
+        while self.spinning:
+            elapsed = time.time() - self.start_time
+            sys.stdout.write(
+                f"\r{self.spinner_chars[self.current]} {self.message} "
+                f"[{elapsed:.1f}s elapsed]"
+            )
+            sys.stdout.flush()
+            self.current = (self.current + 1) % len(self.spinner_chars)
+            time.sleep(0.1)
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.spinning = False
+        self.thread.join()
+        sys.stdout.write("\r" + " " * (len(self.message) + 30) + "\r")
+        sys.stdout.flush()
 
 
+# ------------------------------------------------------------------------------
+# Logging Configuration
+# ------------------------------------------------------------------------------
 def setup_logging():
-    """
-    Set up console and file logging with Nord-themed formatting.
-    """
+    """Set up console and file logging."""
     log_dir = os.path.dirname(LOG_FILE)
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir, exist_ok=True)
@@ -92,56 +85,44 @@ def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # Remove any existing handlers.
+    # Remove any existing handlers
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
 
-    # Console handler with colors.
-    console_formatter = NordColorFormatter(
+    # Console handler
+    console_formatter = logging.Formatter(
         fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # File handler (plain text).
-    file_formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
-
+    # File handler
     try:
+        file_handler = logging.FileHandler(LOG_FILE)
+        file_handler.setFormatter(console_formatter)
+        logger.addHandler(file_handler)
         os.chmod(LOG_FILE, 0o600)
     except Exception as e:
-        logger.warning(f"Failed to set permissions on log file {LOG_FILE}: {e}")
+        logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
+        logger.warning("Continuing with console logging only")
 
     return logger
 
 
 def print_section(title: str):
-    """
-    Print a section header with Nord styling.
-    """
-    border = "─" * 60
-    if not DISABLE_COLORS:
-        logging.info(f"{NORD10}{border}{NC}")
-        logging.info(f"{NORD10}  {title}{NC}")
-        logging.info(f"{NORD10}{border}{NC}")
-    else:
-        logging.info(border)
-        logging.info(f"  {title}")
-        logging.info(border)
+    """Print a section header."""
+    border = "=" * 60
+    logging.info(border)
+    logging.info(f"  {title}")
+    logging.info(border)
 
 
 # ------------------------------------------------------------------------------
-# SIGNAL HANDLING & CLEANUP
+# Signal Handling & Cleanup
 # ------------------------------------------------------------------------------
 def signal_handler(signum, frame):
-    """
-    Gracefully handle termination signals.
-    """
+    """Gracefully handle termination signals."""
     sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
     logging.error(f"Script interrupted by {sig_name}.")
     cleanup()
@@ -153,9 +134,7 @@ for sig in (signal.SIGINT, signal.SIGTERM):
 
 
 def cleanup():
-    """
-    Perform cleanup tasks before exit.
-    """
+    """Perform cleanup tasks before exit."""
     logging.info("Performing cleanup tasks before exit.")
     # Add additional cleanup steps here if needed.
 
@@ -164,34 +143,10 @@ atexit.register(cleanup)
 
 
 # ------------------------------------------------------------------------------
-# PROGRESS HELPER (using rich)
-# ------------------------------------------------------------------------------
-def run_with_progress(description: str, func, *args, **kwargs):
-    """
-    Run a blocking function with a rich progress spinner.
-    """
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(func, *args, **kwargs)
-        with Progress(
-            SpinnerColumn(style=NORD8),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            transient=True,
-        ) as progress:
-            task = progress.add_task(description, total=None)
-            while not future.done():
-                time.sleep(0.1)
-                progress.refresh()
-            return future.result()
-
-
-# ------------------------------------------------------------------------------
-# DEPENDENCY CHECKS
+# Dependency Checks
 # ------------------------------------------------------------------------------
 def check_dependencies():
-    """
-    Check if required commands are available.
-    """
+    """Check if required commands are available."""
     required_commands = ["wget", "yt-dlp", "ffmpeg"]
     missing = [cmd for cmd in required_commands if not shutil.which(cmd)]
     if missing:
@@ -202,9 +157,7 @@ def check_dependencies():
 
 
 def install_prerequisites(missing_commands=None):
-    """
-    Attempt to install missing dependencies via apt.
-    """
+    """Attempt to install missing dependencies via apt."""
     if missing_commands is None:
         missing_commands = ["wget", "yt-dlp", "ffmpeg"]
     logging.info(f"Installing missing tools: {', '.join(missing_commands)}")
@@ -222,12 +175,10 @@ def install_prerequisites(missing_commands=None):
 
 
 # ------------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# Helper Functions
 # ------------------------------------------------------------------------------
 def run_command(cmd, capture_output=False, check=True):
-    """
-    Execute a command in the shell and return the result.
-    """
+    """Execute a command in the shell and return the result."""
     logging.debug(f"Executing command: {' '.join(cmd)}")
     try:
         result = subprocess.run(
@@ -240,9 +191,7 @@ def run_command(cmd, capture_output=False, check=True):
 
 
 def ensure_directory(path: str):
-    """
-    Ensure that the given directory exists.
-    """
+    """Ensure that the given directory exists."""
     if not os.path.isdir(path):
         try:
             os.makedirs(path)
@@ -253,13 +202,12 @@ def ensure_directory(path: str):
 
 
 # ------------------------------------------------------------------------------
-# DOWNLOAD FUNCTIONS
+# Download Functions
 # ------------------------------------------------------------------------------
 def download_with_yt_dlp():
-    """
-    Download media from YouTube using yt-dlp.
-    """
+    """Download media from YouTube using yt-dlp."""
     print_section("YouTube Downloader (yt-dlp)")
+
     yt_link = input("\nEnter YouTube link (video or playlist): ").strip()
     if not yt_link:
         logging.error("YouTube link cannot be empty.")
@@ -284,15 +232,15 @@ def download_with_yt_dlp():
     ]
 
     logging.info("Starting yt-dlp download...")
-    run_with_progress("Downloading with yt-dlp...", run_command, cmd)
+    with ConsoleSpinner("Downloading with yt-dlp..."):
+        run_command(cmd)
     logging.info("yt-dlp download completed successfully.")
 
 
 def download_with_wget():
-    """
-    Download file from the web using wget.
-    """
+    """Download file from the web using wget."""
     print_section("File Downloader (wget)")
+
     url = input("\nEnter URL to download: ").strip()
     if not url:
         logging.error("URL cannot be empty.")
@@ -307,26 +255,20 @@ def download_with_wget():
     cmd = ["wget", "-P", download_dir, url]
 
     logging.info("Starting wget download...")
-    run_with_progress("Downloading with wget...", run_command, cmd)
+    with ConsoleSpinner("Downloading with wget..."):
+        run_command(cmd)
     logging.info("wget download completed successfully.")
 
 
 # ------------------------------------------------------------------------------
-# INTERACTIVE MENU
+# Interactive Menu
 # ------------------------------------------------------------------------------
 def display_menu():
-    """
-    Display the interactive download method menu.
-    """
+    """Display the interactive download method menu."""
     print_section("Universal Downloader")
-    if not DISABLE_COLORS:
-        print(f"{NORD8}  1) wget - Download files from the web{NC}")
-        print(f"{NORD8}  2) yt-dlp - Download YouTube videos/playlists{NC}")
-        print(f"{NORD8}  q) Quit the application{NC}\n")
-    else:
-        print("  1) wget - Download files from the web")
-        print("  2) yt-dlp - Download YouTube videos/playlists")
-        print("  q) Quit the application\n")
+    print("  1) wget - Download files from the web")
+    print("  2) yt-dlp - Download YouTube videos/playlists")
+    print("  q) Quit the application\n")
 
     while True:
         choice = input("Enter your choice (1, 2, or q): ").strip().lower()
@@ -346,12 +288,10 @@ def display_menu():
 
 
 # ------------------------------------------------------------------------------
-# MAIN ENTRY POINT
+# Main Entry Point
 # ------------------------------------------------------------------------------
 def main():
-    """
-    Main entry point for the universal downloader.
-    """
+    """Main entry point for the universal downloader."""
     setup_logging()
     check_dependencies()
 
