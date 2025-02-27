@@ -1836,7 +1836,7 @@ Icon=vscode
             if Utils.command_exists("nala"):
                 logger.info("Nala installed successfully.")
                 try:
-                    Utils.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
+                    Utils.run_command(["nala", "fetch", "--auto", "-y"], check=False)
                     logger.info("Configured faster mirrors with Nala.")
                 except subprocess.CalledProcessError:
                     logger.warning("Failed to configure mirrors with Nala.")

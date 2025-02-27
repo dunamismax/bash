@@ -2214,7 +2214,7 @@ net.ipv4.tcp_wmem=4096 16384 4194304
             if self.command_exists("nala"):
                 self.logger.info("Nala installed successfully.")
                 try:
-                    self.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
+                    self.run_command(["nala", "fetch", "--auto", "-y"], check=False)
                     self.logger.info("Configured faster mirrors with Nala.")
                 except subprocess.CalledProcessError:
                     self.logger.warning("Failed to configure mirrors with Nala.")
