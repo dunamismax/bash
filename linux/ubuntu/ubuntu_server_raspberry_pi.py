@@ -601,9 +601,8 @@ class PreflightChecker:
 # Phase 2: System Update & Basic Configuration
 # ------------------------------------------------------------------------------
 class SystemUpdater:
-    def install_packages(self, packages: Optional[List[str]] = None) -> bool:
-        logger.info("Installing essential packages using Nala...")
-        packages = packages or PACKAGES
+    def get_missing_packages(self, packages: List[str]) -> List[str]:
+        """Return a list of packages from the provided list that are not installed."""
         missing = []
         for pkg in packages:
             try:
@@ -613,47 +612,55 @@ class SystemUpdater:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
+                logger.debug(f"Package '{pkg}' is already installed.")
             except subprocess.CalledProcessError:
                 missing.append(pkg)
-                logger.debug(f"Package not installed: {pkg}")
-            else:
-                logger.debug(f"Package already installed: {pkg}")
+                logger.debug(f"Package '{pkg}' is missing.")
+        return missing
+
+    def install_packages(
+        self, packages: Optional[List[str]] = None, batch_size: int = 5
+    ) -> bool:
+        logger.info("Installing essential packages using Nala...")
+        packages = packages or PACKAGES
+        missing = self.get_missing_packages(packages)
 
         if not missing:
             logger.info("All required packages are already installed.")
             return True
 
-        logger.info(f"Installing {len(missing)} missing packages...")
-        installer = ["nala", "install", "-y"]
+        logger.info(f"Missing packages: {', '.join(missing)}")
+        installer_cmd = ["nala", "install", "-y"]
         failed_packages = []
-        batch_size = 5  # smaller batches may help avoid conflicts
+
+        # Install packages in small batches
         for i in range(0, len(missing), batch_size):
             batch = missing[i : i + batch_size]
             logger.info(f"Installing batch {i // batch_size + 1}: {', '.join(batch)}")
             try:
-                Utils.run_command(installer + batch)
+                Utils.run_command(installer_cmd + batch)
                 logger.info(f"Batch {i // batch_size + 1} installed successfully.")
-            except subprocess.CalledProcessError as e:
-                logger.warning(f"Batch installation failed: {e}")
-                # Try fixing broken dependencies before proceeding
+            except subprocess.CalledProcessError as batch_err:
+                logger.warning(f"Batch installation failed: {batch_err}")
+                # Try to fix broken dependencies
                 try:
                     Utils.run_command(
                         ["apt", "--fix-broken", "install", "-y"], check=False
                     )
                     logger.info(
-                        "Ran apt --fix-broken install to fix dependency issues."
+                        "Executed 'apt --fix-broken install -y' to resolve dependency issues."
                     )
                 except Exception as fix_err:
-                    logger.warning(f"apt --fix-broken install failed: {fix_err}")
-                # Fallback: try installing each package in the batch individually
+                    logger.warning(f"'apt --fix-broken install' failed: {fix_err}")
+                # Fallback: Install packages individually
                 for pkg in batch:
                     try:
-                        logger.info(f"Trying individual installation of {pkg}...")
-                        Utils.run_command(installer + [pkg], check=True)
+                        logger.info(f"Attempting individual installation of {pkg}...")
+                        Utils.run_command(installer_cmd + [pkg], check=True)
                         logger.info(f"Successfully installed {pkg}.")
-                    except subprocess.CalledProcessError as pkg_error:
+                    except subprocess.CalledProcessError as indiv_err:
                         failed_packages.append(pkg)
-                        logger.warning(f"Failed to install {pkg}: {pkg_error}")
+                        logger.error(f"Failed to install {pkg}: {indiv_err}")
 
         if failed_packages:
             logger.warning(
