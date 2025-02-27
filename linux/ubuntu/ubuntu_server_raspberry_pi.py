@@ -143,12 +143,6 @@ PACKAGES = [
     "lsof",
     "unzip",
     "zip",
-    # Xorg and GUI utilities (if needed)
-    "xorg",
-    "x11-xserver-utils",
-    "xterm",
-    "alacritty",
-    "fonts-dejavu-core",
     # Networking tools
     "net-tools",
     "nmap",
@@ -166,10 +160,6 @@ PACKAGES = [
     "gdb",
     "cargo",
     # Security tools
-    "john",
-    "hydra",
-    "aircrack-ng",
-    "nikto",
     "fail2ban",
     "rkhunter",
     "chkrootkit",
