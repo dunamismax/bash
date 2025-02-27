@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Install Virtualization Packages and Enable Default Virtual Network for Ubuntu
+Install Virtualization Packages, Enable Auto-Start for Virtual Networks and Services,
+and Reconfigure Virtual Machines to Use the 'default' NAT Network on Ubuntu
 
 This script installs common virtualization packages (QEMU/KVM, libvirt, etc.),
-updates package lists, enables essential libvirt services to auto start at boot,
-and then starts and configures the default virtual network to autostart.
+updates package lists, and then configures the system so that:
+  • The default virtual network is created (if not already defined), started, and set to autostart.
+  • All defined virtual machines are updated to use the "default" NAT network.
+  • Key virtualization services (libvirtd and virtlogd) are enabled and started.
+It uses only the standard library, provides clear, color-coded output, and handles interrupts gracefully.
 
-Note: Run this script as root.
+Note: Run this script with root privileges.
 """
 
 import os
@@ -14,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 from typing import List
 
 
@@ -40,11 +45,24 @@ PACKAGES: List[str] = [
     "virtinst",
 ]
 
-# List of libvirt services to enable and start
+# List of virtualization-related services to enable and start
 SERVICES: List[str] = [
     "libvirtd",
     "virtlogd",
 ]
+
+# Default network XML configuration for libvirt
+DEFAULT_NETWORK_XML = """<network>
+  <name>default</name>
+  <forward mode='nat'/>
+  <bridge name='virbr0' stp='on' delay='0'/>
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+    </dhcp>
+  </ip>
+</network>
+"""
 
 
 def signal_handler(sig, frame) -> None:
@@ -105,14 +123,194 @@ def install_packages(packages: List[str]) -> None:
         time.sleep(1)
 
 
-def enable_services(services: List[str]) -> None:
+def create_and_enable_default_network() -> None:
     """
-    Enable and start the given services via systemd.
+    Create (if necessary) and enable the default virtual network.
+
+    This function checks if a 'default' network exists. If not, it writes the default
+    network XML to a temporary file, defines it, and then starts it and sets it to autostart.
+    """
+    print_header("Configuring default virtual network")
+    # Check if default network exists
+    try:
+        result = subprocess.run(
+            ["virsh", "net-list", "--all"], capture_output=True, text=True, check=True
+        )
+        if "default" in result.stdout:
+            # Attempt to start and autostart the default network
+            if run_command(["virsh", "net-start", "default"]):
+                print(
+                    f"{Colors.GREEN}Default network started successfully.{Colors.ENDC}"
+                )
+            else:
+                print(
+                    f"{Colors.YELLOW}Default network may already be running or failed to start.{Colors.ENDC}"
+                )
+            if run_command(["virsh", "net-autostart", "default"]):
+                print(
+                    f"{Colors.GREEN}Default network set to autostart successfully.{Colors.ENDC}"
+                )
+            else:
+                print(
+                    f"{Colors.YELLOW}Failed to set default network to autostart. It may already be enabled.{Colors.ENDC}"
+                )
+        else:
+            # Create and define the default network
+            temp_xml = "/tmp/default_network.xml"
+            with open(temp_xml, "w") as f:
+                f.write(DEFAULT_NETWORK_XML)
+            os.chmod(temp_xml, 0o644)
+            if run_command(["virsh", "net-define", temp_xml]):
+                print(
+                    f"{Colors.GREEN}Default network defined successfully.{Colors.ENDC}"
+                )
+            else:
+                print(f"{Colors.RED}Failed to define default network.{Colors.ENDC}")
+                return
+            if run_command(["virsh", "net-start", "default"]):
+                print(
+                    f"{Colors.GREEN}Default network started successfully.{Colors.ENDC}"
+                )
+            else:
+                print(f"{Colors.RED}Failed to start default network.{Colors.ENDC}")
+            if run_command(["virsh", "net-autostart", "default"]):
+                print(
+                    f"{Colors.GREEN}Default network set to autostart successfully.{Colors.ENDC}"
+                )
+            else:
+                print(
+                    f"{Colors.YELLOW}Failed to set default network to autostart.{Colors.ENDC}"
+                )
+    except Exception as e:
+        print(f"{Colors.RED}Error checking default network: {e}{Colors.ENDC}")
+
+
+def get_vm_list() -> List[dict]:
+    """
+    Retrieve a list of virtual machines using 'virsh list --all'.
+
+    Returns:
+        A list of dictionaries containing 'id', 'name', and 'state' for each VM.
+    """
+    vms = []
+    try:
+        result = subprocess.run(
+            ["virsh", "list", "--all"], capture_output=True, text=True, check=True
+        )
+        lines = result.stdout.strip().splitlines()
+        try:
+            sep_index = next(
+                i for i, line in enumerate(lines) if line.lstrip().startswith("---")
+            )
+        except StopIteration:
+            sep_index = 1
+        for line in lines[sep_index + 1 :]:
+            if line.strip():
+                parts = line.split()
+                if len(parts) >= 2:
+                    vms.append(
+                        {
+                            "id": parts[0],
+                            "name": parts[1],
+                            "state": " ".join(parts[2:]) if len(parts) > 2 else "",
+                        }
+                    )
+    except Exception as e:
+        print(f"{Colors.RED}Error retrieving VM list: {e}{Colors.ENDC}")
+    return vms
+
+
+def update_vm_networks() -> None:
+    """
+    Update all virtual machines to use the 'default' NAT network.
+
+    For each VM, this function retrieves its XML definition and looks for any interface
+    of type "network" that is not using the 'default' network. For each such interface,
+    it detaches it (using its MAC address) and attaches a new interface on the 'default'
+    network using a virtio model.
+    """
+    print_header("Updating Virtual Machines to Use 'default' NAT Network")
+    vms = get_vm_list()
+    if not vms:
+        print(f"{Colors.YELLOW}No virtual machines found to update.{Colors.ENDC}")
+        return
+    for vm in vms:
+        vm_name = vm["name"]
+        print(f"{Colors.BOLD}Processing VM: {vm_name}{Colors.ENDC}")
+        try:
+            # Get the XML definition of the VM
+            result = subprocess.run(
+                ["virsh", "dumpxml", vm_name],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            root = ET.fromstring(result.stdout)
+            interfaces = root.findall("devices/interface")
+            modified = False
+            for iface in interfaces:
+                if iface.get("type") == "network":
+                    source = iface.find("source")
+                    if source is not None and source.get("network") != "default":
+                        mac_elem = iface.find("mac")
+                        if mac_elem is not None:
+                            mac = mac_elem.get("address")
+                            detach_cmd = [
+                                "virsh",
+                                "detach-interface",
+                                vm_name,
+                                "network",
+                                "--mac",
+                                mac,
+                                "--config",
+                                "--live",
+                            ]
+                            if run_command(detach_cmd):
+                                print(
+                                    f"{Colors.YELLOW}Detached interface with MAC {mac} from VM {vm_name}.{Colors.ENDC}"
+                                )
+                                modified = True
+                            else:
+                                print(
+                                    f"{Colors.RED}Failed to detach interface with MAC {mac} from VM {vm_name}.{Colors.ENDC}"
+                                )
+            if modified:
+                attach_cmd = [
+                    "virsh",
+                    "attach-interface",
+                    vm_name,
+                    "network",
+                    "default",
+                    "--model",
+                    "virtio",
+                    "--config",
+                    "--live",
+                ]
+                if run_command(attach_cmd):
+                    print(
+                        f"{Colors.GREEN}Attached new 'default' network interface to VM {vm_name}.{Colors.ENDC}"
+                    )
+                else:
+                    print(
+                        f"{Colors.RED}Failed to attach new network interface to VM {vm_name}.{Colors.ENDC}"
+                    )
+            else:
+                print(
+                    f"{Colors.GREEN}VM {vm_name} is already using the 'default' network.{Colors.ENDC}"
+                )
+        except Exception as e:
+            print(f"{Colors.RED}Error processing VM {vm_name}: {e}{Colors.ENDC}")
+        time.sleep(1)
+
+
+def enable_virtualization_services(services: List[str]) -> None:
+    """
+    Enable and start essential virtualization services.
 
     Args:
-        services: A list of service names.
+        services: A list of service names to enable and start using systemctl.
     """
-    print_header("Enabling libvirt services")
+    print_header("Enabling virtualization services")
     for service in services:
         print(f"{Colors.BOLD}Processing service: {service}{Colors.ENDC}")
         if run_command(["systemctl", "enable", "--now", service]):
@@ -121,35 +319,9 @@ def enable_services(services: List[str]) -> None:
             )
         else:
             print(
-                f"{Colors.YELLOW}Failed to enable/start {service}. Please check its status manually.{Colors.ENDC}"
+                f"{Colors.YELLOW}Failed to enable/start {service}. Please check the service status manually.{Colors.ENDC}"
             )
         time.sleep(0.5)
-
-
-def enable_default_network() -> None:
-    """
-    Enable the default virtual network for virtual machines.
-
-    This function starts the 'default' network and sets it to autostart using 'virsh'.
-    """
-    print_header("Enabling default virtual network")
-    # Start the default network
-    if run_command(["virsh", "net-start", "default"]):
-        print(f"{Colors.GREEN}Default network started successfully.{Colors.ENDC}")
-    else:
-        print(
-            f"{Colors.YELLOW}Default network may already be running or failed to start.{Colors.ENDC}"
-        )
-
-    # Enable autostart for the default network
-    if run_command(["virsh", "net-autostart", "default"]):
-        print(
-            f"{Colors.GREEN}Default network set to autostart successfully.{Colors.ENDC}"
-        )
-    else:
-        print(
-            f"{Colors.YELLOW}Failed to set default network to autostart. It may already be enabled.{Colors.ENDC}"
-        )
 
 
 def main() -> None:
@@ -158,7 +330,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Check for root privileges
+    # Ensure the script is run with root privileges
     if os.geteuid() != 0:
         print(
             f"{Colors.RED}Error: This script must be run with root privileges.{Colors.ENDC}"
@@ -173,13 +345,14 @@ def main() -> None:
     print_header("Installing virtualization packages")
     install_packages(PACKAGES)
 
-    enable_services(SERVICES)
-
-    enable_default_network()
+    create_and_enable_default_network()
+    enable_virtualization_services(SERVICES)
+    update_vm_networks()
 
     print_header("Installation Complete")
     print(
-        f"{Colors.GREEN}All virtualization packages installed, libvirt services enabled, and default network configured to autostart.{Colors.ENDC}"
+        f"{Colors.GREEN}All virtualization packages installed, default network configured, "
+        f"VMs updated, and virtualization services enabled successfully.{Colors.ENDC}"
     )
 
 
