@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Install Virtualization Packages for Ubuntu
+Install Virtualization Packages and Enable Default Network Switch for Ubuntu
 
-This script installs common virtualization packages (QEMU/KVM, libvirt, virt-manager, etc.)
-on Ubuntu. It uses only the standard library and provides clear progress tracking,
-ANSI color-coded output, and error handling.
+This script installs common virtualization packages (QEMU/KVM, libvirt, etc.)
+and then enables the default NAT network switch for virtual machines.
+It uses only the standard library, provides clear, color-coded output,
+and handles interrupts gracefully.
 
 Note: Run this script with root privileges.
 """
@@ -49,19 +50,18 @@ def signal_handler(sig, frame) -> None:
 
 def run_command(cmd: List[str]) -> bool:
     """
-    Run a shell command and stream its output.
+    Run a command and stream its output.
 
     Args:
         cmd: A list of command arguments.
 
     Returns:
-        True if command succeeds, False otherwise.
+        True if the command succeeds, False otherwise.
     """
     try:
         process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
-        # Stream output line by line
         while True:
             line = process.stdout.readline()
             if not line:
@@ -81,30 +81,56 @@ def run_command(cmd: List[str]) -> bool:
 
 def print_header(message: str) -> None:
     """Print a formatted header message."""
-    print(f"\n{Colors.HEADER}{Colors.BOLD}{'=' * 80}")
-    print(message.center(80))
-    print(f"{'=' * 80}{Colors.ENDC}\n")
+    print(f"\n{Colors.HEADER}{Colors.BOLD}{'=' * 60}")
+    print(message.center(60))
+    print(f"{'=' * 60}{Colors.ENDC}\n")
 
 
 def install_packages(packages: List[str]) -> None:
-    """Install each package individually with progress tracking."""
-    total = len(packages)
+    """Install each package one by one."""
     for idx, pkg in enumerate(packages, start=1):
-        print_header(f"Installing package {idx} of {total}: {pkg}")
-        cmd = ["apt-get", "install", "-y", pkg]
-        if not run_command(cmd):
+        print_header(f"Installing package {idx}/{len(packages)}: {pkg}")
+        if not run_command(["apt-get", "install", "-y", pkg]):
             print(
                 f"{Colors.RED}Failed to install {pkg}. Aborting installation.{Colors.ENDC}"
             )
             sys.exit(1)
         else:
             print(f"{Colors.GREEN}Successfully installed {pkg}.{Colors.ENDC}")
-        time.sleep(1)  # Short delay for readability
+        time.sleep(1)
+
+
+def enable_default_network() -> None:
+    """
+    Enable the default network switch for virtual machines.
+
+    This function starts the 'default' network and sets it to autostart
+    using the 'virsh' command.
+    """
+    print_header("Enabling default network switch for virtual machines")
+
+    # Start the default network
+    if run_command(["virsh", "net-start", "default"]):
+        print(f"{Colors.GREEN}Default network started successfully.{Colors.ENDC}")
+    else:
+        print(
+            f"{Colors.YELLOW}Default network may already be running or failed to start.{Colors.ENDC}"
+        )
+
+    # Enable autostart for the default network
+    if run_command(["virsh", "net-autostart", "default"]):
+        print(
+            f"{Colors.GREEN}Default network set to autostart successfully.{Colors.ENDC}"
+        )
+    else:
+        print(
+            f"{Colors.YELLOW}Failed to set default network to autostart. It may already be enabled.{Colors.ENDC}"
+        )
 
 
 def main() -> None:
     """Main execution function."""
-    # Setup signal handling for graceful termination
+    # Handle signals for graceful termination
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -120,12 +146,14 @@ def main() -> None:
         print(f"{Colors.RED}Failed to update package lists. Aborting.{Colors.ENDC}")
         sys.exit(1)
 
-    print_header("Starting installation of virtualization packages")
+    print_header("Installing virtualization packages")
     install_packages(PACKAGES)
+
+    enable_default_network()
 
     print_header("Installation Complete")
     print(
-        f"{Colors.GREEN}All virtualization packages were installed successfully.{Colors.ENDC}"
+        f"{Colors.GREEN}All virtualization packages installed and default network enabled successfully.{Colors.ENDC}"
     )
 
 
