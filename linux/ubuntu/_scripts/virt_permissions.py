@@ -14,29 +14,93 @@ Usage:
     If no paths are provided, the default folder '/var/lib/libvirt/images' is used.
 """
 
+import argparse
+import logging
 import os
 import sys
 import grp
 import pwd
+import signal
+from typing import List
 
-# Default folder to fix permissions for
-DEFAULT_FOLDERS = ["/var/lib/libvirt/images"]
+#####################################
+# Nord-Themed ANSI Colors for CLI Output
+#####################################
 
-# Desired settings:
-# - Owner: root
-# - Group: libvirt-qemu (this is the group typically used by QEMU processes on Ubuntu)
-# - Directories: mode 2770 (rwxrws---)
-# - Files: mode 0660 (rw-rw----)
-OWNER = "root"
-GROUP = "libvirt-qemu"
-DIR_MODE = 0o2770
-FILE_MODE = 0o0660
+
+class Colors:
+    """Nord-themed ANSI color codes."""
+
+    HEADER = "\033[38;5;81m"  # Nord9
+    GREEN = "\033[38;5;82m"  # Nord14
+    YELLOW = "\033[38;5;226m"  # Nord13
+    RED = "\033[38;5;196m"  # Nord11
+    BLUE = "\033[38;5;39m"  # Nord8
+    BOLD = "\033[1m"
+    ENDC = "\033[0m"
+
+
+def print_header(title: str) -> None:
+    """Print a formatted header."""
+    border = f"{Colors.HEADER}{'=' * 60}{Colors.ENDC}"
+    logging.info(border)
+    logging.info(f"{Colors.BOLD}{title}{Colors.ENDC}")
+    logging.info(border)
+
+
+#####################################
+# Configuration
+#####################################
+
+DEFAULT_FOLDERS: List[str] = ["/var/lib/libvirt/images"]
+
+OWNER: str = "root"
+GROUP: str = "libvirt-qemu"
+DIR_MODE: int = 0o2770  # Directories: rwxrws---
+FILE_MODE: int = 0o0660  # Files: rw-rw----
+
+#####################################
+# Logging Setup
+#####################################
+
+
+def setup_logging() -> None:
+    """Configure logging to the console with Nord-themed ANSI colors."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format=f"{Colors.BOLD}[%(asctime)s] [%(levelname)s]{Colors.ENDC} %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+
+#####################################
+# Signal Handling
+#####################################
+
+
+def handle_signal(signum, frame) -> None:
+    """Handle termination signals gracefully."""
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
+    logging.error(f"Received {sig_name}. Exiting gracefully.")
+    sys.exit(1)
+
+
+for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(sig, handle_signal)
+
+#####################################
+# Helper Functions
+#####################################
 
 
 def check_root() -> None:
     """Ensure the script is run with root privileges."""
     if os.geteuid() != 0:
-        print("This script must be run as root.")
+        logging.error("This script must be run as root.")
         sys.exit(1)
 
 
@@ -45,7 +109,7 @@ def get_uid(username: str) -> int:
     try:
         return pwd.getpwnam(username).pw_uid
     except KeyError:
-        print(f"User '{username}' not found.")
+        logging.error(f"User '{username}' not found.")
         sys.exit(1)
 
 
@@ -54,7 +118,7 @@ def get_gid(groupname: str) -> int:
     try:
         return grp.getgrnam(groupname).gr_gid
     except KeyError:
-        print(f"Group '{groupname}' not found.")
+        logging.error(f"Group '{groupname}' not found.")
         sys.exit(1)
 
 
@@ -66,43 +130,44 @@ def fix_permissions(path: str, uid: int, gid: int) -> None:
     Ownership is set to uid:gid.
     """
     if not os.path.exists(path):
-        print(f"Path not found: {path}")
+        logging.error(f"Path not found: {path}")
         return
 
     for root, dirs, files in os.walk(path):
         try:
             os.chown(root, uid, gid)
             os.chmod(root, DIR_MODE)
-            print(f"Fixed directory: {root}")
+            logging.info(f"Fixed directory: {root}")
         except Exception as e:
-            print(f"Error processing directory {root}: {e}")
+            logging.error(f"Error processing directory {root}: {e}")
         for name in files:
             file_path = os.path.join(root, name)
             try:
                 os.chown(file_path, uid, gid)
                 os.chmod(file_path, FILE_MODE)
-                print(f"Fixed file: {file_path}")
+                logging.info(f"Fixed file: {file_path}")
             except Exception as e:
-                print(f"Error processing file {file_path}: {e}")
+                logging.error(f"Error processing file {file_path}: {e}")
 
 
 def ensure_libvirt_membership() -> None:
     """
     Ensure that the invoking user (via SUDO_USER) is a member of the 'libvirt' group.
-
-    If not, attempt to add the user to the group.
+    If not, attempt to add the user to that group.
     """
     sudo_user = os.environ.get("SUDO_USER")
     if not sudo_user:
-        print(
-            "Warning: SUDO_USER not found; cannot determine invoking user. Skipping group membership check."
+        logging.warning(
+            "SUDO_USER not found; cannot determine invoking user. Skipping group membership check."
         )
         return
 
     try:
         user_info = pwd.getpwnam(sudo_user)
     except KeyError:
-        print(f"User {sudo_user} not found. Skipping group membership check.")
+        logging.warning(
+            f"User '{sudo_user}' not found. Skipping group membership check."
+        )
         return
 
     # Build a list of groups the user is a member of
@@ -111,40 +176,56 @@ def ensure_libvirt_membership() -> None:
     if primary_group not in groups:
         groups.append(primary_group)
 
-    # virt-manager typically requires membership in the 'libvirt' group.
     target_group = "libvirt"
     if target_group in groups:
-        print(f"{sudo_user} is already a member of the '{target_group}' group.")
+        logging.info(f"{sudo_user} is already a member of the '{target_group}' group.")
     else:
-        print(
+        logging.info(
             f"{sudo_user} is not a member of the '{target_group}' group. Attempting to add..."
         )
         result = os.system(f"usermod -a -G {target_group} {sudo_user}")
         if result == 0:
-            print(f"Successfully added {sudo_user} to the '{target_group}' group.")
+            logging.info(
+                f"Successfully added {sudo_user} to the '{target_group}' group."
+            )
         else:
-            print(
+            logging.error(
                 f"Failed to add {sudo_user} to the '{target_group}' group. Please add manually."
             )
 
 
+#####################################
+# Main Execution Flow
+#####################################
+
+
 def main() -> None:
+    setup_logging()
     check_root()
-    uid = get_uid(OWNER)
-    gid = get_gid(GROUP)
+    uid: int = get_uid(OWNER)
+    gid: int = get_gid(GROUP)
 
-    # Use command-line arguments if provided, else default folder(s)
-    folders = sys.argv[1:] if len(sys.argv) > 1 else DEFAULT_FOLDERS
+    # Parse folder arguments; default to DEFAULT_FOLDERS if none provided.
+    parser = argparse.ArgumentParser(
+        description="Fix VM Folder Permissions and Ensure libvirt Group Membership for virt-manager."
+    )
+    parser.add_argument(
+        "folders",
+        nargs="*",
+        default=DEFAULT_FOLDERS,
+        help=f"Folder paths to fix permissions (default: {DEFAULT_FOLDERS})",
+    )
+    args = parser.parse_args()
 
-    print("Starting permission fixes on virtual machine folders...\n")
-    for folder in folders:
-        print(f"Processing folder: {folder}")
+    logging.info("Starting permission fixes on virtual machine folders...\n")
+    for folder in args.folders:
+        logging.info(f"Processing folder: {folder}")
         fix_permissions(folder, uid, gid)
 
-    # Ensure the invoking user is in the libvirt group for management access
+    # Ensure the invoking user is in the 'libvirt' group for proper management access.
     ensure_libvirt_membership()
 
-    print(
+    logging.info(
         "\nPermissions have been fixed. Ensure that users running virt-manager are in the 'libvirt' group for management access."
     )
 

@@ -3,7 +3,8 @@
 Script Name: update_dns_records.py
 --------------------------------------------------------
 Description:
-  Updates Cloudflare DNS A records with the current public IP address using the Cloudflare API.
+  Updates Cloudflare DNS A records with the current public IP address
+  using the Cloudflare API via the standard library.
   Includes comprehensive logging, error handling, and graceful signal handling.
 
 Usage:
@@ -17,6 +18,7 @@ Author: YourName | License: MIT | Version: 4.1.0
 """
 
 import atexit
+import json
 import logging
 import os
 import re
@@ -25,19 +27,38 @@ import sys
 import threading
 import time
 from datetime import datetime
+from urllib.error import URLError, HTTPError
+from urllib.request import Request, urlopen
 
-# Third-party dependency check for requests
-try:
-    import requests
-except ImportError:
-    sys.stderr.write(
-        "Error: The 'requests' library is required. Install it with 'pip install requests'.\n"
-    )
-    sys.exit(1)
+#####################################
+# Nord-Themed ANSI Colors for CLI Output
+#####################################
 
-# ------------------------------------------------------------------------------
+
+class Colors:
+    """Nord-themed ANSI color codes."""
+
+    HEADER = "\033[38;5;81m"  # Nord9
+    GREEN = "\033[38;5;82m"  # Nord14
+    YELLOW = "\033[38;5;226m"  # Nord13
+    RED = "\033[38;5;196m"  # Nord11
+    BLUE = "\033[38;5;39m"  # Nord8
+    BOLD = "\033[1m"
+    ENDC = "\033[0m"
+
+
+def print_section(title: str) -> None:
+    """Print a formatted section header."""
+    border = "=" * 60
+    logging.info(border)
+    logging.info(f"  {title}")
+    logging.info(border)
+
+
+#####################################
 # Environment Configuration
-# ------------------------------------------------------------------------------
+#####################################
+
 LOG_FILE = "/var/log/update_dns_records.log"
 DEFAULT_LOG_LEVEL = "INFO"
 
@@ -45,17 +66,18 @@ DEFAULT_LOG_LEVEL = "INFO"
 CF_API_TOKEN = os.environ.get("CF_API_TOKEN")
 CF_ZONE_ID = os.environ.get("CF_ZONE_ID")
 
-# IP checking services (fallbacks)
+# Fallback IP services
 IP_SERVICES = [
     "https://api.ipify.org",
     "https://ifconfig.me/ip",
     "https://checkip.amazonaws.com",
 ]
 
+#####################################
+# Console Spinner for Progress Indication
+#####################################
 
-# ------------------------------------------------------------------------------
-# Progress Indicator
-# ------------------------------------------------------------------------------
+
 class ConsoleSpinner:
     """Simple console spinner for progress indication."""
 
@@ -89,9 +111,11 @@ class ConsoleSpinner:
         sys.stdout.flush()
 
 
-# ------------------------------------------------------------------------------
+#####################################
 # Logging Configuration
-# ------------------------------------------------------------------------------
+#####################################
+
+
 def setup_logging():
     """Set up console and file logging."""
     log_dir = os.path.dirname(LOG_FILE)
@@ -100,22 +124,18 @@ def setup_logging():
 
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-
-    # Remove any existing handlers
+    # Remove existing handlers
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
 
-    # Set up formatter
     formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        fmt=f"{Colors.BOLD}[%(asctime)s] [%(levelname)s]{Colors.ENDC} %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-    # Console handler
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # File handler
     try:
         file_handler = logging.FileHandler(LOG_FILE)
         file_handler.setFormatter(formatter)
@@ -124,29 +144,29 @@ def setup_logging():
     except Exception as e:
         logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
         logger.warning("Continuing with console logging only")
-
     return logger
 
 
-def print_section(title: str):
-    """Print a section header."""
-    border = "=" * 60
-    logging.info(border)
-    logging.info(f"  {title}")
-    logging.info(border)
-
-
-# ------------------------------------------------------------------------------
+#####################################
 # Signal Handling & Cleanup
-# ------------------------------------------------------------------------------
+#####################################
+
+
+def cleanup():
+    """Perform cleanup tasks before exiting."""
+    logging.info("Performing cleanup tasks before exit.")
+    # No additional cleanup required for this script.
+
+
+atexit.register(cleanup)
+
+
 def signal_handler(signum, frame):
     """Handle termination signals gracefully."""
-    sig_name = (
-        signal.Signals(signum).name
-        if hasattr(signal, "Signals")
-        else f"signal {signum}"
+    sig_name = getattr(signal, "Signals", lambda s: f"signal {s}")(signum)
+    logging.error(
+        f"Script interrupted by {signal.Signals(signum).name if hasattr(signal, 'Signals') else signum}."
     )
-    logging.error(f"Script interrupted by {sig_name}.")
     cleanup()
     if signum == signal.SIGINT:
         sys.exit(130)
@@ -159,23 +179,14 @@ def signal_handler(signum, frame):
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
 
-
-def cleanup():
-    """Perform cleanup tasks before exiting."""
-    logging.info("Performing cleanup tasks before exit.")
-    # No additional cleanup required for this script.
-
-
-atexit.register(cleanup)
-
-
-# ------------------------------------------------------------------------------
+#####################################
 # Dependency & Privilege Checks
-# ------------------------------------------------------------------------------
+#####################################
+
+
 def check_dependencies():
-    """Check for required dependencies."""
-    # 'requests' is already checked at import time.
-    pass
+    """No external dependencies required beyond the standard library."""
+    pass  # All required modules are from the standard library.
 
 
 def check_root():
@@ -199,24 +210,26 @@ def validate_config():
         sys.exit(1)
 
 
-# ------------------------------------------------------------------------------
+#####################################
 # Helper & Utility Functions
-# ------------------------------------------------------------------------------
+#####################################
+
+
 def get_public_ip() -> str:
-    """Retrieve the current public IP address using multiple fallback services."""
+    """Retrieve the current public IP address using fallback services."""
     for service_url in IP_SERVICES:
         try:
             logging.debug(f"Attempting to retrieve public IP from {service_url}")
-            response = requests.get(service_url, timeout=10)
-            response.raise_for_status()
-            ip = response.text.strip()
-            if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ip):
-                logging.info(f"Successfully retrieved public IP from {service_url}")
-                return ip
-            else:
-                logging.warning(
-                    f"Invalid IPv4 format received from {service_url}: {ip}"
-                )
+            req = Request(service_url)
+            with urlopen(req, timeout=10) as response:
+                ip = response.read().decode().strip()
+                if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ip):
+                    logging.info(f"Successfully retrieved public IP from {service_url}")
+                    return ip
+                else:
+                    logging.warning(
+                        f"Invalid IPv4 format received from {service_url}: {ip}"
+                    )
         except Exception as e:
             logging.warning(f"Failed to retrieve public IP from {service_url}: {e}")
     logging.error("Failed to retrieve public IP address from all available services.")
@@ -224,27 +237,29 @@ def get_public_ip() -> str:
 
 
 def fetch_dns_records():
-    """Fetch all DNS A records from Cloudflare."""
+    """Fetch all DNS A records from Cloudflare using the standard library."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records?type=A"
     headers = {
         "Authorization": f"Bearer {CF_API_TOKEN}",
         "Content-Type": "application/json",
     }
+    req = Request(url, headers=headers)
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        if "result" not in data:
-            logging.error("Unexpected response from Cloudflare API.")
-            sys.exit(1)
-        return data["result"]
+        with urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            if "result" not in data:
+                logging.error("Unexpected response from Cloudflare API.")
+                sys.exit(1)
+            return data["result"]
     except Exception as e:
         logging.error(f"Failed to fetch DNS records from Cloudflare: {e}")
         sys.exit(1)
 
 
-def update_dns_record(record_id, record_name, current_ip, proxied):
-    """Update a single DNS A record with the new IP address."""
+def update_dns_record(
+    record_id: str, record_name: str, current_ip: str, proxied: bool
+) -> bool:
+    """Update a single DNS A record with the new IP address using a PUT request."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records/{record_id}"
     headers = {
         "Authorization": f"Bearer {CF_API_TOKEN}",
@@ -257,30 +272,33 @@ def update_dns_record(record_id, record_name, current_ip, proxied):
         "ttl": 1,
         "proxied": proxied,
     }
+    data = json.dumps(payload).encode("utf-8")
+    req = Request(url, data=data, headers=headers, method="PUT")
     try:
-        response = requests.put(url, headers=headers, json=payload, timeout=10)
-        response.raise_for_status()
-        result = response.json()
-        if not result.get("success"):
-            error_msgs = [
-                error.get("message", "Unknown error")
-                for error in result.get("errors", [])
-            ]
-            logging.warning(
-                f"Cloudflare API reported failure for record '{record_name}': {', '.join(error_msgs)}"
-            )
-            return False
-        logging.info(f"Successfully updated DNS record '{record_name}'")
-        return True
+        with urlopen(req, timeout=10) as response:
+            result = json.loads(response.read().decode())
+            if not result.get("success"):
+                error_msgs = [
+                    error.get("message", "Unknown error")
+                    for error in result.get("errors", [])
+                ]
+                logging.warning(
+                    f"Cloudflare API reported failure for record '{record_name}': {', '.join(error_msgs)}"
+                )
+                return False
+            logging.info(f"Successfully updated DNS record '{record_name}'")
+            return True
     except Exception as e:
         logging.warning(f"Failed to update DNS record '{record_name}': {e}")
         return False
 
 
-# ------------------------------------------------------------------------------
+#####################################
 # Main Functionality
-# ------------------------------------------------------------------------------
-def update_cloudflare_dns():
+#####################################
+
+
+def update_cloudflare_dns() -> bool:
     """Update Cloudflare DNS A records with the current public IP address."""
     print_section("Starting Cloudflare DNS Update")
 
@@ -334,9 +352,11 @@ def update_cloudflare_dns():
         return True
 
 
-# ------------------------------------------------------------------------------
+#####################################
 # Main Entry Point
-# ------------------------------------------------------------------------------
+#####################################
+
+
 def main():
     """Main entry point for updating Cloudflare DNS records."""
     setup_logging()

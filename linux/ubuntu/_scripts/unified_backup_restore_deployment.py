@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
+"""
+Restore Script
+
+Restores files for VM and Plex data from a previously created restic backup.
+This script supports restoring individual tasks (VM Libvirt or Plex)
+or all tasks at once.
+
+Note: Run this script with root privileges.
+"""
+
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
+from typing import Dict, List
 
-# ------------------------------------------------------------------------------
-# Restore Task Mapping (VM and Plex only)
-# ------------------------------------------------------------------------------
-RESTORE_TASKS = {
+#####################################
+# Restore Task Configuration
+#####################################
+
+RESTORE_TASKS: Dict[str, Dict[str, str]] = {
     "vm-libvirt-var": {
         "name": "VM Libvirt (var)",
         "source": "/home/sawyer/restic_restore/vm-backups/var/lib/libvirt",
@@ -30,19 +44,47 @@ RESTORE_TASKS = {
     },
 }
 
+#####################################
+# Nord-Themed ANSI Colors for CLI Output
+#####################################
+
+
+class NordColors:
+    HEADER = "\033[38;2;216;222;233m"  # Light gray
+    INFO = "\033[38;2;136;192;208m"  # Light blue
+    SUCCESS = "\033[38;2;163;190;140m"  # Green
+    WARNING = "\033[38;2;235;203;139m"  # Yellow
+    ERROR = "\033[38;2;191;97;106m"  # Red
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+
+#####################################
+# Helper Functions
+#####################################
+
 
 def run_command(cmd: str) -> str:
-    """Run a shell command and return its output. Exit on error."""
+    """
+    Run a shell command and return its output.
+    Exit with an error message if the command fails.
+    """
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"Error running command '{cmd}': {result.stderr}")
+        print(
+            f"{NordColors.ERROR}Error running command '{cmd}': {result.stderr}{NordColors.RESET}"
+        )
         sys.exit(result.returncode)
     return result.stdout.strip()
 
 
 def control_service(service: str, action: str) -> None:
-    """Stop or start a given service."""
-    print(f"{action.capitalize()}ing service '{service}'...")
+    """
+    Stop or start a given service using systemctl.
+    """
+    print(
+        f"{NordColors.INFO}{action.capitalize()}ing service '{service}'...{NordColors.RESET}"
+    )
     run_command(f"systemctl {action} {service}")
     time.sleep(2)
 
@@ -75,10 +117,11 @@ def is_restore_completed(source: str, target: str) -> bool:
 def copy_directory(source: str, target: str) -> None:
     """
     Recursively copy files from source to target.
-    If destination doesn't exist, it is created.
-    Missing files are skipped with a warning.
+    The target directory is recreated if it already exists.
     """
-    print(f"Copying from '{source}' to '{target}'...")
+    print(
+        f"{NordColors.INFO}Copying from '{source}' to '{target}'...{NordColors.RESET}"
+    )
     if os.path.exists(target):
         shutil.rmtree(target)
     os.makedirs(target, exist_ok=True)
@@ -93,30 +136,60 @@ def copy_directory(source: str, target: str) -> None:
                 try:
                     shutil.copy2(src_file, dst_file)
                 except Exception as e:
-                    print(f"Error copying '{src_file}' to '{dst_file}': {e}")
+                    print(
+                        f"{NordColors.ERROR}Error copying '{src_file}' to '{dst_file}': {e}{NordColors.RESET}"
+                    )
             else:
-                print(f"Warning: Skipping missing file '{src_file}'")
-    print("Copy completed.")
+                print(
+                    f"{NordColors.WARNING}Warning: Skipping missing file '{src_file}'{NordColors.RESET}"
+                )
+    print(f"{NordColors.SUCCESS}Copy completed.{NordColors.RESET}")
+
+
+#####################################
+# Signal Handler
+#####################################
+
+
+def signal_handler(sig: int, frame) -> None:
+    """
+    Handle interrupt signals gracefully.
+    """
+    print(f"\n{NordColors.WARNING}Restore interrupted. Exiting...{NordColors.RESET}")
+    sys.exit(1)
+
+
+#####################################
+# Restore Task Functions
+#####################################
 
 
 def restore_task(task_key: str) -> bool:
+    """
+    Restore a single task defined in RESTORE_TASKS.
+    Stops the associated service, copies files, and then restarts the service.
+    """
     if task_key not in RESTORE_TASKS:
-        print(f"Unknown restore task: {task_key}")
+        print(f"{NordColors.ERROR}Unknown restore task: {task_key}{NordColors.RESET}")
         return False
 
     config = RESTORE_TASKS[task_key]
     name = config["name"]
     source = config["source"]
     target = config["target"]
-    service = config["service"]
+    service = config.get("service", "")
 
-    print(f"\nRestoring {name}...")
+    print(f"\n{NordColors.HEADER}Restoring {name}...{NordColors.RESET}")
     if not os.path.exists(source):
-        print(f"Source directory not found: {source}")
+        print(
+            f"{NordColors.ERROR}Source directory not found: {source}{NordColors.RESET}"
+        )
         return False
 
     if os.path.exists(target) and is_restore_completed(source, target):
-        print(f"Restore already completed for {name}. Skipping copy.")
+        print(
+            f"{NordColors.INFO}Restore already completed for {name}. Skipping copy.{NordColors.RESET}"
+        )
         return True
 
     if service:
@@ -127,25 +200,37 @@ def restore_task(task_key: str) -> bool:
     if service:
         control_service(service, "start")
 
-    print(f"Successfully restored {name}")
+    print(f"{NordColors.SUCCESS}Successfully restored {name}.{NordColors.RESET}")
     return True
 
 
-def restore_all() -> dict:
-    results = {}
+def restore_all() -> Dict[str, bool]:
+    """
+    Restore all tasks defined in RESTORE_TASKS.
+    Returns a dictionary mapping task keys to boolean success values.
+    """
+    results: Dict[str, bool] = {}
     for key in RESTORE_TASKS:
         results[key] = restore_task(key)
     return results
 
 
-def print_status_report(results: dict) -> None:
-    print("\nRestore Status Report:")
+def print_status_report(results: Dict[str, bool]) -> None:
+    """
+    Print a summary report of restore statuses.
+    """
+    print(f"\n{NordColors.BOLD}Restore Status Report:{NordColors.RESET}")
     print("-" * 30)
     for key, success in results.items():
         name = RESTORE_TASKS[key]["name"]
         status_str = "SUCCESS" if success else "FAILED"
         print(f"{name:30} {status_str}")
     print("-" * 30)
+
+
+#####################################
+# Main Execution Flow
+#####################################
 
 
 def main() -> None:
@@ -161,7 +246,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    print("Starting Restore Operations")
+    print(f"{NordColors.BOLD}Starting Restore Operations{NordColors.RESET}")
     start_time = time.time()
 
     if args.service == "all":
@@ -171,13 +256,18 @@ def main() -> None:
 
     print_status_report(results)
     elapsed = time.time() - start_time
-    print(f"Completed in {elapsed:.1f} seconds")
+    print(f"{NordColors.INFO}Completed in {elapsed:.1f} seconds{NordColors.RESET}")
     if not all(results.values()):
         sys.exit(1)
 
 
 if __name__ == "__main__":
     if os.geteuid() != 0:
-        print("This script must be run with root privileges.")
+        print(
+            f"{NordColors.ERROR}This script must be run with root privileges.{NordColors.RESET}"
+        )
         sys.exit(1)
+    # Setup signal handlers for graceful interruption
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
     main()
