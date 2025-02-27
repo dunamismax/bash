@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Fix Virtual Machine Folder Permissions and Ensure libvirt Group Membership for virt-manager on Ubuntu
+Fix Virtual Machine Folder Permissions and Ensure Correct Group Membership for virt-manager on Ubuntu
 
 This script recursively fixes the permissions on common virtual machine folders so that
-virt-manager has full access by setting ownership to root:libvirt, with directories at mode 2770
-and files at mode 0660. Additionally, it checks whether the invoking user (via SUDO_USER) is
-a member of the 'libvirt' group. If not, it attempts to add the user to the group.
+QEMU/libvirt can access storage files by setting ownership to root:libvirt-qemu, with directories
+at mode 2770 (setgid bit included) and files at mode 0660. Additionally, it checks whether the
+invoking user (via SUDO_USER) is a member of the 'libvirt' group. If not, it attempts to add the user
+to that group.
 
 Usage:
     Run this script as root.
@@ -17,17 +18,17 @@ import os
 import sys
 import grp
 import pwd
-import stat
 
+# Default folder to fix permissions for
 DEFAULT_FOLDERS = ["/var/lib/libvirt/images"]
 
 # Desired settings:
-# - Owner: root (uid 0)
-# - Group: libvirt
-# - Directories: set to 2770 (setgid bit included)
-# - Files: set to 0660
+# - Owner: root
+# - Group: libvirt-qemu (this is the group typically used by QEMU processes on Ubuntu)
+# - Directories: mode 2770 (rwxrws---)
+# - Files: mode 0660 (rw-rw----)
 OWNER = "root"
-GROUP = "libvirt"
+GROUP = "libvirt-qemu"
 DIR_MODE = 0o2770
 FILE_MODE = 0o0660
 
@@ -68,7 +69,6 @@ def fix_permissions(path: str, uid: int, gid: int) -> None:
         print(f"Path not found: {path}")
         return
 
-    # Walk the directory tree
     for root, dirs, files in os.walk(path):
         try:
             os.chown(root, uid, gid)
@@ -76,7 +76,6 @@ def fix_permissions(path: str, uid: int, gid: int) -> None:
             print(f"Fixed directory: {root}")
         except Exception as e:
             print(f"Error processing directory {root}: {e}")
-
         for name in files:
             file_path = os.path.join(root, name)
             try:
@@ -106,30 +105,31 @@ def ensure_libvirt_membership() -> None:
         print(f"User {sudo_user} not found. Skipping group membership check.")
         return
 
-    # Get the list of groups for the user
+    # Build a list of groups the user is a member of
     groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
     primary_group = grp.getgrgid(user_info.pw_gid).gr_name
     if primary_group not in groups:
         groups.append(primary_group)
 
-    if GROUP in groups:
-        print(f"{sudo_user} is already a member of the '{GROUP}' group.")
+    # virt-manager typically requires membership in the 'libvirt' group.
+    target_group = "libvirt"
+    if target_group in groups:
+        print(f"{sudo_user} is already a member of the '{target_group}' group.")
     else:
         print(
-            f"{sudo_user} is not a member of the '{GROUP}' group. Attempting to add..."
+            f"{sudo_user} is not a member of the '{target_group}' group. Attempting to add..."
         )
-        result = os.system(f"usermod -a -G {GROUP} {sudo_user}")
+        result = os.system(f"usermod -a -G {target_group} {sudo_user}")
         if result == 0:
-            print(f"Successfully added {sudo_user} to the '{GROUP}' group.")
+            print(f"Successfully added {sudo_user} to the '{target_group}' group.")
         else:
             print(
-                f"Failed to add {sudo_user} to the '{GROUP}' group. Please add manually."
+                f"Failed to add {sudo_user} to the '{target_group}' group. Please add manually."
             )
 
 
 def main() -> None:
     check_root()
-
     uid = get_uid(OWNER)
     gid = get_gid(GROUP)
 
@@ -141,11 +141,11 @@ def main() -> None:
         print(f"Processing folder: {folder}")
         fix_permissions(folder, uid, gid)
 
-    # Ensure the invoking user is in the libvirt group for full access
+    # Ensure the invoking user is in the libvirt group for management access
     ensure_libvirt_membership()
 
     print(
-        "\nPermissions have been fixed. Ensure that users running virt-manager are in the 'libvirt' group for full access."
+        "\nPermissions have been fixed. Ensure that users running virt-manager are in the 'libvirt' group for management access."
     )
 
 
