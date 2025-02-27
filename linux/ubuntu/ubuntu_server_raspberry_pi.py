@@ -47,26 +47,18 @@ USER_HOME = f"/home/{USERNAME}"
 BACKUP_DIR = "/var/backups"
 TEMP_DIR = tempfile.gettempdir()
 
+# ------------------------------------------------------------------------------
 # Software versions and download URLs (ARM versions)
-PLEX_VERSION = "1.41.3.9314-a0bfb8370"
+# ------------------------------------------------------------------------------
+PLEX_VERSION = "1.41.4.9463-630c9f557"  # Updated version (February 7, 2025)
 PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_arm64.deb"
 
-FASTFETCH_VERSION = "2.36.1"
-FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-arm64.deb"
+FASTFETCH_VERSION = "2.37.0"
+FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-aarch64.deb"
 
-DOCKER_COMPOSE_VERSION = "2.20.3"
-uname_info = platform.uname()
-system = uname_info.system.lower()  # should be 'linux'
-machine = uname_info.machine.lower()  # expected to be 'aarch64' on ARM
-DOCKER_COMPOSE_URL = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{system}-{machine}"
+VSCODE_VERSION = "1.97.2-1739406006"
+VSCODE_URL = f"https://vscode.download.prss.microsoft.com/dbazure/download/stable/e54c774e0add60467559eb0d1e229c6452cf8447/code_{VSCODE_VERSION}_arm64.deb"
 
-VSCODE_VERSION = "1.97.2-1739406807"
-VSCODE_URL = (
-    f"https://update.code.visualstudio.com/{VSCODE_VERSION}/linux-deb-arm64/stable"
-)
-
-CADDY_VERSION = "2.9.1"
-CADDY_URL = f"https://github.com/caddyserver/caddy/releases/download/v{CADDY_VERSION}/caddy_{CADDY_VERSION}_linux_arm64.deb"
 
 CONFIG_FILES = [
     "/etc/ssh/sshd_config",
@@ -1452,18 +1444,18 @@ class ServiceInstaller:
     def docker_config(self) -> bool:
         """
         Install and configure Docker and Docker Compose.
+        Docker Compose is now installed via the 'docker-compose-plugin' package.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Configuring Docker and Docker Compose...")
 
-        # Check if Docker is already installed
+        # Install Docker if not already installed
         if Utils.command_exists("docker"):
             logger.info("Docker is already installed.")
         else:
             try:
-                # Install using official script
                 logger.info("Installing Docker using official script...")
                 script_path = os.path.join(TEMP_DIR, "get-docker.sh")
                 Utils.run_command(
@@ -1476,13 +1468,11 @@ class ServiceInstaller:
             except Exception as e:
                 logger.error(f"Failed to install Docker: {e}")
                 logger.warning("Trying alternative Docker installation method...")
-
-                # Fallback to package manager
                 if not SystemUpdater().install_packages(["docker.io"]):
                     logger.error("Alternative Docker installation failed.")
                     return False
 
-        # Add user to docker group
+        # Add user to docker group if needed
         try:
             result = subprocess.run(
                 ["id", "-nG", USERNAME], capture_output=True, text=True, check=True
@@ -1495,30 +1485,28 @@ class ServiceInstaller:
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to add {USERNAME} to docker group: {e}")
 
-        # Configure Docker daemon
+        # Configure Docker daemon settings (unchanged)
         daemon_json_path = "/etc/docker/daemon.json"
         os.makedirs(os.path.dirname(daemon_json_path), exist_ok=True)
-
         desired_daemon_json = """{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  },
-  "exec-opts": ["native.cgroupdriver=systemd"],
-  "storage-driver": "overlay2",
-  "features": {
-    "buildkit": true
-  },
-  "default-address-pools": [
-    {
-      "base": "172.17.0.0/16",
-      "size": 24
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "10m",
+        "max-file": "3"
+    },
+    "exec-opts": ["native.cgroupdriver=systemd"],
+    "storage-driver": "overlay2",
+    "features": {
+        "buildkit": true
+    },
+    "default-address-pools": [
+        {
+        "base": "172.17.0.0/16",
+        "size": 24
+        }
+    ]
     }
-  ]
-}
-"""
-        # Check if configuration needs updating
+    """
         update_needed = True
         if os.path.isfile(daemon_json_path):
             try:
@@ -1526,16 +1514,17 @@ class ServiceInstaller:
                     existing = f.read()
                 existing_config = json.loads(existing)
                 desired_config = json.loads(desired_daemon_json)
-
                 if existing_config == desired_config:
                     logger.info("Docker daemon configuration is already up-to-date.")
                     update_needed = False
                 else:
                     Utils.backup_file(daemon_json_path)
+                logger.debug(
+                    "Docker daemon configuration requires update: " + str(update_needed)
+                )
             except Exception as e:
                 logger.warning(f"Failed to read {daemon_json_path}: {e}")
 
-        # Update configuration if needed
         if update_needed:
             try:
                 with open(daemon_json_path, "w") as f:
@@ -1544,7 +1533,6 @@ class ServiceInstaller:
             except Exception as e:
                 logger.warning(f"Failed to write {daemon_json_path}: {e}")
 
-        # Enable and restart Docker service
         try:
             Utils.run_command(["systemctl", "enable", "docker"])
             Utils.run_command(["systemctl", "restart", "docker"])
@@ -1553,28 +1541,17 @@ class ServiceInstaller:
             logger.error(f"Failed to manage Docker service: {e}")
             return False
 
-        # Install Docker Compose if needed
+        # Install Docker Compose plugin via nala
         if not Utils.command_exists("docker-compose"):
-            # Verify ARM architecture
-            if not Utils.verify_arm_architecture():
-                logger.warning(
-                    "Non-ARM architecture detected. Docker Compose ARM binary may not work."
-                )
-
             try:
-                compose_target = "/usr/local/bin/docker-compose"
-                Utils.run_command(
-                    ["curl", "-L", "-o", compose_target, DOCKER_COMPOSE_URL]
-                )
-                os.chmod(compose_target, 0o755)
-                logger.info("Docker Compose installed successfully.")
+                Utils.run_command(["nala", "install", "docker-compose-plugin"])
+                logger.info("Docker Compose plugin installed successfully.")
             except Exception as e:
-                logger.error(f"Failed to install Docker Compose: {e}")
+                logger.error(f"Failed to install Docker Compose plugin: {e}")
                 return False
         else:
             logger.info("Docker Compose is already installed.")
 
-        # Verify Docker is running
         try:
             Utils.run_command(["docker", "info"], capture_output=True)
             logger.info("Docker is running and accessible.")
@@ -1668,126 +1645,119 @@ Icon=vscode
 
     def install_configure_caddy(self) -> bool:
         """
-        Install and configure Caddy web server.
+        Install and configure the Caddy web server using the official repository method.
 
         Returns:
             True if successful, False otherwise
         """
-        logger.info("Installing Caddy web server for ARM...")
+        logger.info("Installing Caddy web server for ARM using repository method...")
 
-        # Verify ARM architecture
-        if not Utils.verify_arm_architecture():
-            logger.warning(
-                "Non-ARM architecture detected. Caddy ARM package may not work."
-            )
-
-        # Check if already installed
         if Utils.command_exists("caddy"):
             logger.info("Caddy is already installed.")
             caddy_installed = True
         else:
-            temp_deb = os.path.join(TEMP_DIR, "caddy.deb")
             try:
-                # Download and install
-                Utils.run_command(["curl", "-L", "-o", temp_deb, CADDY_URL])
-                Utils.run_command(["dpkg", "-i", temp_deb])
-                Utils.run_command(["apt", "install", "-f", "-y"])
-
-                # Clean up
-                if os.path.exists(temp_deb):
-                    os.remove(temp_deb)
-
-                # Verify installation
-                caddy_installed = Utils.command_exists("caddy")
-                if caddy_installed:
-                    logger.info("Caddy installed successfully.")
-                else:
-                    logger.error("Caddy installation failed.")
-                    return False
+                # Install prerequisites and add the Caddy repository
+                Utils.run_command(
+                    [
+                        "nala",
+                        "install",
+                        "-y",
+                        "debian-keyring",
+                        "debian-archive-keyring",
+                        "apt-transport-https",
+                        "curl",
+                    ]
+                )
+                Utils.run_command(
+                    "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg",
+                    shell=True,
+                )
+                Utils.run_command(
+                    "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list",
+                    shell=True,
+                )
+                Utils.run_command(["nala", "update"])
+                Utils.run_command(["nala", "install", "caddy"])
+                logger.info("Caddy installed successfully via repository method.")
+                caddy_installed = True
             except Exception as e:
                 logger.error(f"Failed to install Caddy: {e}")
                 return False
 
         try:
-            # Create required directories
+            # Ensure necessary directories exist
             Utils.ensure_directory("/etc/caddy", "root:root", 0o755)
             Utils.ensure_directory("/var/log/caddy", "caddy:caddy", 0o755)
 
-            # Configure Caddyfile
+            # Configure Caddyfile: copy from repository if available, else create default
             caddyfile_source = os.path.join(
                 USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles", "Caddyfile"
             )
             caddyfile_dest = "/etc/caddy/Caddyfile"
 
             if os.path.isfile(caddyfile_source):
-                # Copy from repository if available
                 if os.path.isfile(caddyfile_dest):
                     Utils.backup_file(caddyfile_dest)
                 shutil.copy2(caddyfile_source, caddyfile_dest)
                 logger.info(f"Copied Caddyfile from {caddyfile_source}")
             else:
-                # Create default configuration if needed
                 if not os.path.isfile(caddyfile_dest):
                     with open(caddyfile_dest, "w") as f:
                         f.write(f"""# Caddy default configuration
-# Created by ubuntu_server_setup.py on {datetime.datetime.now().strftime("%Y-%m-%d")}
+    # Created by ubuntu_server_setup.py on {datetime.datetime.now().strftime("%Y-%m-%d")}
 
-:80 {{
-    root * /var/www/html
-    file_server
-    log {{
-        output file /var/log/caddy/access.log
-        format console
+    :80 {{
+        root * /var/www/html
+        file_server
+        log {{
+            output file /var/log/caddy/access.log
+            format console
+        }}
     }}
-}}
-""")
+    """)
                     logger.info("Created default Caddyfile.")
 
-            # Set proper permissions
             Utils.run_command(["chown", "root:caddy", caddyfile_dest])
             Utils.run_command(["chmod", "644", caddyfile_dest])
 
-            # Create web root directory
             Utils.ensure_directory("/var/www/html", "caddy:caddy", 0o755)
-
-            # Create default index file if needed
             index_file = "/var/www/html/index.html"
+
             if not os.path.isfile(index_file):
                 with open(index_file, "w") as f:
                     server_name = socket.gethostname()
                     f.write(f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Server: {server_name}</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 20px; }}
-        h1 {{ color: #2c3e50; }}
-    </style>
-</head>
-<body>
-    <h1>Welcome to {server_name}</h1>
-    <p>Configured by ubuntu_server_setup.py on {datetime.datetime.now().strftime("%Y-%m-%d")}.</p>
-</body>
-</html>""")
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Server: {server_name}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 20px; }}
+            h1 {{ color: #2c3e50; }}
+        </style>
+    </head>
+    <body>
+        <h1>Welcome to {server_name}</h1>
+        <p>Configured by ubuntu_server_setup.py on {datetime.datetime.now().strftime("%Y-%m-%d")}.</p>
+    </body>
+    </html>""")
                 logger.info("Created default index.html file.")
 
-            # Set proper permissions
             Utils.run_command(["chown", "caddy:caddy", index_file])
             Utils.run_command(["chmod", "644", index_file])
 
-            # Enable and start service
             Utils.run_command(["systemctl", "enable", "caddy"])
             Utils.run_command(["systemctl", "restart", "caddy"])
 
-            # Verify service is running
             status = Utils.run_command(
                 ["systemctl", "is-active", "caddy"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
+
             if status.stdout.strip() == "active":
                 logger.info("Caddy web server is active and running.")
                 return True
