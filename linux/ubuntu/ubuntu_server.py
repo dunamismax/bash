@@ -404,7 +404,12 @@ class Utils:
     def backup_file(file_path: str) -> Optional[str]:
         if os.path.isfile(file_path):
             timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-            backup = f"{file_path}.bak.{timestamp}"
+            dir_name, base_name = os.path.split(file_path)
+            # If backing up an apt config file, store the backup in BACKUP_DIR instead
+            if dir_name == "/etc/apt/apt.conf.d":
+                backup = os.path.join(BACKUP_DIR, f"{base_name}.bak.{timestamp}")
+            else:
+                backup = f"{file_path}.bak.{timestamp}"
             try:
                 shutil.copy2(file_path, backup)
                 logger.info(f"Backed up {file_path} to {backup}")
@@ -2169,6 +2174,12 @@ class UbuntuServerSetup:
             except Exception as e:
                 self.logger.error(f"Error in preflight phase: {e}")
                 self.success = False
+            print_section("Fixing Broken Packages")
+            run_with_progress(
+                "Running apt --fix-broken install",
+                lambda: Utils.run_command(["apt", "--fix-broken", "install", "-y"]),
+                task_name="fix_broken",
+            )
             print_section("Phase 2: Installing Nala Package Manager")
             try:
                 if not run_with_progress(
