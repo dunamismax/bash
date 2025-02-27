@@ -68,6 +68,7 @@ def fix_permissions(path: str, uid: int, gid: int) -> None:
         print(f"Path not found: {path}")
         return
 
+    # Walk the directory tree
     for root, dirs, files in os.walk(path):
         try:
             os.chown(root, uid, gid)
@@ -105,7 +106,7 @@ def ensure_libvirt_membership() -> None:
         print(f"User {sudo_user} not found. Skipping group membership check.")
         return
 
-    # Build a list of groups the user is a member of, including the primary group.
+    # Get the list of groups for the user
     groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
     primary_group = grp.getgrgid(user_info.pw_gid).gr_name
     if primary_group not in groups:
