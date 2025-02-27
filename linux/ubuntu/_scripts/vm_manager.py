@@ -4,16 +4,15 @@ Script Name: vm_manager.py
 --------------------------------------------------------
 Description:
   A robust Ubuntu/Linux VM manager that can list, create, start, stop,
-  and delete VMs with improved error handling, logging, and optional
-  command-line support. The script ensures that the default virtual network
-  is active by creating the default network XML file (with proper permissions)
-  and starting the network.
+  delete, and snapshot VMs with improved error handling, logging, and
+  optional command-line support. The script ensures that the default virtual network
+  is active by creating the default network XML file and starting the network.
 
 Usage:
   sudo ./vm_manager.py           # Interactive mode
   sudo ./vm_manager.py --list    # Direct command mode
 
-Author: Your Name | License: MIT | Version: 6.0.0
+Author: Your Name | License: MIT | Version: 7.0.0
 """
 
 import argparse
@@ -33,6 +32,7 @@ LOG_FILE = "/var/log/vm_manager.log"
 DEFAULT_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 VM_IMAGE_DIR = "/var/lib/libvirt/images"
 ISO_DIR = "/var/lib/libvirt/boot"
+SNAPSHOT_DIR = "/var/lib/libvirt/snapshots"
 
 # Default resource settings
 DEFAULT_VCPUS = 2
@@ -83,7 +83,6 @@ def run_command(command, capture_output=False, check=True, timeout=60):
     Returns the command output if capture_output is True, else returns True.
     """
     try:
-        # Use shlex.join for logging readability if available, else join manually.
         command_str = " ".join(shlex.quote(arg) for arg in command)
         logging.debug(f"Executing: {command_str}")
         result = subprocess.run(
@@ -195,6 +194,41 @@ def get_vm_list():
         return []
 
 
+def get_vm_snapshots(vm_name):
+    """Retrieve a list of snapshots for a specific VM."""
+    try:
+        output = run_command(
+            ["virsh", "snapshot-list", vm_name], capture_output=True, check=False
+        )
+        if not output or "failed" in output.lower() or "error" in output.lower():
+            return []
+
+        snapshots = []
+        lines = output.strip().splitlines()
+        # Skip header lines
+        data_lines = [
+            line
+            for line in lines
+            if line.strip()
+            and not line.startswith("Name")
+            and not line.startswith("----")
+        ]
+
+        for line in data_lines:
+            parts = line.split()
+            if len(parts) >= 1:
+                snapshot = {
+                    "name": parts[0],
+                    "creation_time": " ".join(parts[1:3]) if len(parts) > 2 else "",
+                    "state": parts[3] if len(parts) > 3 else "",
+                }
+                snapshots.append(snapshot)
+        return snapshots
+    except Exception as e:
+        logging.error(f"Failed to retrieve snapshots for VM '{vm_name}': {e}")
+        return []
+
+
 def print_header(title):
     """Print a formatted header for sections."""
     print("\n" + "=" * 60)
@@ -208,12 +242,36 @@ def list_vms():
     vms = get_vm_list()
     if not vms:
         print("No VMs found.")
-        return
+        return []
     print("No.  Name                State")
     print("-" * 40)
     for index, vm in enumerate(vms, start=1):
         print(f"{index:>3}. {vm['name']:<20} {vm['state']}")
     return vms
+
+
+def list_vm_snapshots(vm_name=None):
+    """List snapshots for a specific VM or prompt for selection."""
+    if not vm_name:
+        vm_name = select_vm("Select a VM to list snapshots (or 'q' to cancel): ")
+        if not vm_name:
+            return
+
+    snapshots = get_vm_snapshots(vm_name)
+    print_header(f"Snapshots for VM: {vm_name}")
+
+    if not snapshots:
+        print(f"No snapshots found for VM '{vm_name}'.")
+        return []
+
+    print("No.  Name                Creation Time           State")
+    print("-" * 60)
+    for index, snapshot in enumerate(snapshots, start=1):
+        print(
+            f"{index:>3}. {snapshot['name']:<20} {snapshot['creation_time']:<22} {snapshot['state']}"
+        )
+
+    return snapshots
 
 
 def select_vm(prompt="Select a VM by number (or 'q' to cancel): "):
@@ -236,6 +294,34 @@ def select_vm(prompt="Select a VM by number (or 'q' to cancel): "):
             selection = int(choice)
             if 1 <= selection <= len(vms):
                 return vms[selection - 1]["name"]
+            else:
+                print("Invalid number. Please select from the list.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
+
+
+def select_snapshot(vm_name, prompt="Select a snapshot by number (or 'q' to cancel): "):
+    """
+    Prompt user to select a snapshot by number from the listed snapshots.
+    Returns the selected snapshot's name, or None if cancelled.
+    """
+    snapshots = get_vm_snapshots(vm_name)
+    if not snapshots:
+        print(f"No snapshots available for VM '{vm_name}'.")
+        return None
+
+    print_header(f"Select a Snapshot for VM: {vm_name}")
+    for index, snapshot in enumerate(snapshots, start=1):
+        print(f"{index:>3}. {snapshot['name']:<20} {snapshot['creation_time']}")
+
+    while True:
+        choice = input(prompt).strip()
+        if choice.lower() == "q":
+            return None
+        try:
+            selection = int(choice)
+            if 1 <= selection <= len(snapshots):
+                return snapshots[selection - 1]["name"]
             else:
                 print("Invalid number. Please select from the list.")
         except ValueError:
@@ -314,6 +400,7 @@ def create_vm():
     try:
         run_command(virt_install_cmd)
         logging.info(f"VM '{vm_name}' created successfully.")
+        print(f"VM '{vm_name}' created successfully.")
     except Exception as e:
         logging.error(f"Failed to create VM '{vm_name}': {e}")
         try:
@@ -324,6 +411,162 @@ def create_vm():
             pass
 
 
+def create_snapshot():
+    """Create a snapshot of a virtual machine."""
+    print_header("Create VM Snapshot")
+    vm_name = select_vm("Select a VM to snapshot (or 'q' to cancel): ")
+    if not vm_name:
+        return
+
+    # Get VM state
+    output = run_command(["virsh", "domstate", vm_name], capture_output=True)
+    if "running" not in output.lower():
+        print(
+            f"Warning: VM '{vm_name}' is not running. For best results, the VM should be running."
+        )
+        proceed = input("Do you want to continue anyway? (y/n): ").lower()
+        if proceed != "y":
+            return
+
+    # Gather snapshot details
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    default_snapshot_name = f"{vm_name}-snap-{timestamp}"
+    snapshot_name = (
+        input(f"Enter snapshot name (default: {default_snapshot_name}): ").strip()
+        or default_snapshot_name
+    )
+
+    description = input("Enter snapshot description (optional): ").strip()
+
+    # Create snapshot directory if it doesn't exist
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+    # Create snapshot XML file
+    snapshot_xml = f"""<domainsnapshot>
+  <name>{snapshot_name}</name>
+  <description>{description}</description>
+</domainsnapshot>"""
+
+    snapshot_xml_path = os.path.join(SNAPSHOT_DIR, f"{snapshot_name}.xml")
+    with open(snapshot_xml_path, "w") as f:
+        f.write(snapshot_xml)
+
+    try:
+        run_command(
+            ["virsh", "snapshot-create", vm_name, "--xmlfile", snapshot_xml_path]
+        )
+        logging.info(
+            f"Snapshot '{snapshot_name}' created successfully for VM '{vm_name}'."
+        )
+        print(f"Snapshot '{snapshot_name}' created successfully.")
+    except Exception as e:
+        logging.error(f"Failed to create snapshot: {e}")
+        print(f"Failed to create snapshot: {e}")
+    finally:
+        # Clean up temporary XML file
+        if os.path.exists(snapshot_xml_path):
+            os.unlink(snapshot_xml_path)
+
+
+def revert_to_snapshot():
+    """Revert a VM to a previous snapshot."""
+    print_header("Revert VM to Snapshot")
+    vm_name = select_vm("Select a VM to revert (or 'q' to cancel): ")
+    if not vm_name:
+        return
+
+    snapshot_name = select_snapshot(
+        vm_name, "Select a snapshot to revert to (or 'q' to cancel): "
+    )
+    if not snapshot_name:
+        return
+
+    # Confirm reversion
+    confirm = input(
+        f"Are you sure you want to revert VM '{vm_name}' to snapshot '{snapshot_name}'? (y/n): "
+    ).lower()
+    if confirm != "y":
+        print("Revert operation cancelled.")
+        return
+
+    try:
+        # Get current VM state
+        vm_running = False
+        output = run_command(["virsh", "domstate", vm_name], capture_output=True)
+        if "running" in output.lower():
+            vm_running = True
+            # Stop VM if it's running
+            run_command(["virsh", "shutdown", vm_name], check=False)
+            print(f"Shutting down VM '{vm_name}'...")
+
+            # Wait for VM to shut down (with timeout)
+            timeout = 30  # seconds
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                output = run_command(
+                    ["virsh", "domstate", vm_name], capture_output=True
+                )
+                if "shut off" in output.lower():
+                    break
+                print(".", end="", flush=True)
+                time.sleep(1)
+            print()  # Newline after dots
+
+            output = run_command(["virsh", "domstate", vm_name], capture_output=True)
+            if "running" in output.lower():
+                print("VM did not shut down gracefully, forcing off...")
+                run_command(["virsh", "destroy", vm_name], check=False)
+
+        # Revert to snapshot
+        run_command(["virsh", "snapshot-revert", vm_name, snapshot_name])
+        logging.info(
+            f"VM '{vm_name}' reverted to snapshot '{snapshot_name}' successfully."
+        )
+        print(f"VM '{vm_name}' reverted to snapshot '{snapshot_name}' successfully.")
+
+        # Restart VM if it was running before
+        if vm_running:
+            restart = input("Would you like to restart the VM? (y/n): ").lower()
+            if restart == "y":
+                run_command(["virsh", "start", vm_name])
+                print(f"VM '{vm_name}' started.")
+    except Exception as e:
+        logging.error(f"Failed to revert to snapshot: {e}")
+        print(f"Failed to revert to snapshot: {e}")
+
+
+def delete_snapshot():
+    """Delete a VM snapshot."""
+    print_header("Delete VM Snapshot")
+    vm_name = select_vm("Select a VM (or 'q' to cancel): ")
+    if not vm_name:
+        return
+
+    snapshot_name = select_snapshot(
+        vm_name, "Select a snapshot to delete (or 'q' to cancel): "
+    )
+    if not snapshot_name:
+        return
+
+    # Confirm deletion
+    confirm = input(
+        f"Are you sure you want to delete snapshot '{snapshot_name}' for VM '{vm_name}'? (y/n): "
+    ).lower()
+    if confirm != "y":
+        print("Deletion cancelled.")
+        return
+
+    try:
+        run_command(["virsh", "snapshot-delete", vm_name, snapshot_name])
+        logging.info(
+            f"Snapshot '{snapshot_name}' for VM '{vm_name}' deleted successfully."
+        )
+        print(f"Snapshot '{snapshot_name}' for VM '{vm_name}' deleted successfully.")
+    except Exception as e:
+        logging.error(f"Failed to delete snapshot: {e}")
+        print(f"Failed to delete snapshot: {e}")
+
+
 def delete_vm():
     """Delete an existing virtual machine."""
     print_header("Delete Virtual Machine")
@@ -331,17 +574,44 @@ def delete_vm():
     if not vm_name:
         return
 
+    # Check if VM has snapshots
+    snapshots = get_vm_snapshots(vm_name)
+    if snapshots:
+        print(f"Warning: VM '{vm_name}' has {len(snapshots)} snapshot(s).")
+        print("All snapshots will be deleted along with the VM.")
+
     confirm = input(f"Are you sure you want to delete VM '{vm_name}'? (y/n): ").lower()
     if confirm != "y":
         print("Deletion cancelled.")
         return
 
     try:
-        run_command(["virsh", "destroy", vm_name], check=False)
+        # Try graceful shutdown first if VM is running
+        output = run_command(
+            ["virsh", "domstate", vm_name], capture_output=True, check=False
+        )
+        if "running" in output.lower():
+            print(f"Shutting down VM '{vm_name}'...")
+            run_command(["virsh", "shutdown", vm_name], check=False)
+
+            # Give the VM some time to shut down gracefully
+            time.sleep(5)
+
+        # Force off if still running
+        output = run_command(
+            ["virsh", "domstate", vm_name], capture_output=True, check=False
+        )
+        if "running" in output.lower():
+            print("Forcing VM off...")
+            run_command(["virsh", "destroy", vm_name], check=False)
+
+        # Delete the VM and storage
         run_command(["virsh", "undefine", vm_name, "--remove-all-storage"])
         logging.info(f"VM '{vm_name}' deleted successfully.")
+        print(f"VM '{vm_name}' deleted successfully.")
     except Exception as e:
         logging.error(f"Error deleting VM '{vm_name}': {e}")
+        print(f"Error deleting VM '{vm_name}': {e}")
 
 
 def start_vm():
@@ -358,8 +628,10 @@ def start_vm():
     try:
         run_command(["virsh", "start", vm_name])
         logging.info(f"VM '{vm_name}' started successfully.")
+        print(f"VM '{vm_name}' started successfully.")
     except Exception as e:
         logging.error(f"Error starting VM '{vm_name}': {e}")
+        print(f"Error starting VM '{vm_name}': {e}")
 
 
 def stop_vm():
@@ -370,14 +642,74 @@ def stop_vm():
         return
 
     try:
+        print(f"Sending shutdown signal to VM '{vm_name}'...")
         run_command(["virsh", "shutdown", vm_name])
         logging.info(f"Shutdown signal sent to VM '{vm_name}'.")
-    except Exception:
-        try:
+
+        # Give the VM some time to shut down gracefully
+        print("Waiting for VM to shut down...", end="", flush=True)
+        for _ in range(10):  # Wait up to 10 seconds
+            time.sleep(1)
+            print(".", end="", flush=True)
+            output = run_command(
+                ["virsh", "domstate", vm_name], capture_output=True, check=False
+            )
+            if "shut off" in output.lower():
+                print("\nVM shut down successfully.")
+                return
+
+        print("\nVM is taking longer to shut down...")
+        force_shutdown = input("Force VM to stop now? (y/n): ").lower()
+        if force_shutdown == "y":
             run_command(["virsh", "destroy", vm_name])
             logging.info(f"VM '{vm_name}' forcefully stopped.")
-        except Exception as e:
-            logging.error(f"Error stopping VM '{vm_name}': {e}")
+            print(f"VM '{vm_name}' forcefully stopped.")
+        else:
+            print(
+                f"VM '{vm_name}' shutdown in progress. Check status later with 'List VMs'."
+            )
+    except Exception as e:
+        logging.error(f"Error stopping VM '{vm_name}': {e}")
+        print(f"Error stopping VM '{vm_name}': {e}")
+
+
+def show_vm_info():
+    """Show detailed information about a VM."""
+    print_header("VM Information")
+    vm_name = select_vm("Select a VM to show info (or 'q' to cancel): ")
+    if not vm_name:
+        return
+
+    try:
+        # Get VM basic info
+        output = run_command(["virsh", "dominfo", vm_name], capture_output=True)
+        print("\n--- Basic VM Information ---")
+        print(output)
+
+        # Get VM network info
+        output = run_command(
+            ["virsh", "domifaddr", vm_name], capture_output=True, check=False
+        )
+        if output and "failed" not in output.lower():
+            print("\n--- Network Interfaces ---")
+            print(output)
+
+        # Get snapshots count
+        snapshots = get_vm_snapshots(vm_name)
+        print(f"\n--- Snapshots ---")
+        print(f"Total snapshots: {len(snapshots)}")
+        if snapshots:
+            print("Available snapshots:")
+            for i, snap in enumerate(snapshots, 1):
+                print(f"  {i}. {snap['name']} ({snap['creation_time']})")
+
+        # Get VM storage info
+        output = run_command(["virsh", "domblklist", vm_name], capture_output=True)
+        print("\n--- Storage Devices ---")
+        print(output)
+    except Exception as e:
+        logging.error(f"Error retrieving VM info: {e}")
+        print(f"Error retrieving VM info: {e}")
 
 
 def interactive_menu():
@@ -389,8 +721,12 @@ def interactive_menu():
         print("3. Start VM")
         print("4. Stop VM")
         print("5. Delete VM")
-        print("6. Exit")
+        print("6. VM Information")
+        print("7. Snapshot Management")
+        print("8. Exit")
+
         choice = input("Enter your choice: ").strip()
+
         if choice == "1":
             list_vms()
         elif choice == "2":
@@ -402,11 +738,42 @@ def interactive_menu():
         elif choice == "5":
             delete_vm()
         elif choice == "6":
+            show_vm_info()
+        elif choice == "7":
+            # Snapshot submenu
+            while True:
+                print_header("Snapshot Management")
+                print("1. List Snapshots")
+                print("2. Create Snapshot")
+                print("3. Revert to Snapshot")
+                print("4. Delete Snapshot")
+                print("5. Return to Main Menu")
+
+                snap_choice = input("Enter your choice: ").strip()
+
+                if snap_choice == "1":
+                    list_vm_snapshots()
+                elif snap_choice == "2":
+                    create_snapshot()
+                elif snap_choice == "3":
+                    revert_to_snapshot()
+                elif snap_choice == "4":
+                    delete_snapshot()
+                elif snap_choice == "5":
+                    break
+                else:
+                    print("Invalid choice. Please try again.")
+
+                if snap_choice != "5":
+                    input("\nPress Enter to continue...")
+        elif choice == "8":
             print("Exiting VM Manager.")
             break
         else:
             print("Invalid choice. Please try again.")
-        input("\nPress Enter to continue...")
+
+        if choice != "8":
+            input("\nPress Enter to continue...")
 
 
 def parse_args():
@@ -420,6 +787,28 @@ def parse_args():
     group.add_argument("--start", action="store_true", help="Start an existing VM")
     group.add_argument("--stop", action="store_true", help="Stop an existing VM")
     group.add_argument("--delete", action="store_true", help="Delete an existing VM")
+    group.add_argument("--info", action="store_true", help="Show VM information")
+
+    # Snapshot-related arguments
+    group.add_argument(
+        "--list-snapshots", action="store_true", help="List snapshots for a VM"
+    )
+    group.add_argument(
+        "--create-snapshot", action="store_true", help="Create a snapshot for a VM"
+    )
+    group.add_argument(
+        "--revert-snapshot", action="store_true", help="Revert a VM to a snapshot"
+    )
+    group.add_argument(
+        "--delete-snapshot", action="store_true", help="Delete a VM snapshot"
+    )
+
+    # VM name argument (optional for most commands)
+    parser.add_argument("--vm", help="Specify VM name for operations")
+
+    # Snapshot name argument (optional for snapshot operations)
+    parser.add_argument("--snapshot", help="Specify snapshot name for operations")
+
     return parser.parse_args()
 
 
@@ -434,8 +823,10 @@ def main():
     if not check_root():
         sys.exit(1)
 
+    # Create necessary directories
     os.makedirs(ISO_DIR, exist_ok=True)
     os.makedirs(VM_IMAGE_DIR, exist_ok=True)
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
 
     if not check_dependencies():
         logging.error("Missing critical dependencies.")
@@ -449,11 +840,160 @@ def main():
     elif args.create:
         create_vm()
     elif args.start:
-        start_vm()
+        if args.vm:
+            # If VM name is provided, start specific VM
+            try:
+                run_command(["virsh", "start", args.vm])
+                logging.info(f"VM '{args.vm}' started successfully.")
+                print(f"VM '{args.vm}' started successfully.")
+            except Exception as e:
+                logging.error(f"Error starting VM '{args.vm}': {e}")
+                print(f"Error starting VM '{args.vm}': {e}")
+        else:
+            start_vm()
     elif args.stop:
-        stop_vm()
+        if args.vm:
+            # If VM name is provided, stop specific VM
+            try:
+                run_command(["virsh", "shutdown", args.vm])
+                logging.info(f"Shutdown signal sent to VM '{args.vm}'.")
+                print(f"Shutdown signal sent to VM '{args.vm}'.")
+            except Exception as e:
+                logging.error(f"Error stopping VM '{args.vm}': {e}")
+                print(f"Error stopping VM '{args.vm}': {e}")
+        else:
+            stop_vm()
     elif args.delete:
-        delete_vm()
+        if args.vm:
+            # Confirm deletion
+            confirm = input(
+                f"Are you sure you want to delete VM '{args.vm}'? (y/n): "
+            ).lower()
+            if confirm == "y":
+                try:
+                    run_command(["virsh", "destroy", args.vm], check=False)
+                    run_command(["virsh", "undefine", args.vm, "--remove-all-storage"])
+                    logging.info(f"VM '{args.vm}' deleted successfully.")
+                    print(f"VM '{args.vm}' deleted successfully.")
+                except Exception as e:
+                    logging.error(f"Error deleting VM '{args.vm}': {e}")
+                    print(f"Error deleting VM '{args.vm}': {e}")
+            else:
+                print("Deletion cancelled.")
+        else:
+            delete_vm()
+    elif args.info:
+        if args.vm:
+            try:
+                # Get VM basic info
+                output = run_command(["virsh", "dominfo", args.vm], capture_output=True)
+                print("\n--- Basic VM Information ---")
+                print(output)
+
+                # Get snapshots count
+                snapshots = get_vm_snapshots(args.vm)
+                print(f"\nSnapshots: {len(snapshots)}")
+            except Exception as e:
+                logging.error(f"Error retrieving VM info: {e}")
+                print(f"Error retrieving VM info: {e}")
+        else:
+            show_vm_info()
+    # Snapshot command handling
+    elif args.list_snapshots:
+        if args.vm:
+            list_vm_snapshots(args.vm)
+        else:
+            list_vm_snapshots()
+    elif args.create_snapshot:
+        if args.vm:
+            # Create snapshot with specified name or auto-generated name
+            vm_name = args.vm
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            snapshot_name = args.snapshot or f"{vm_name}-snap-{timestamp}"
+            description = (
+                f"Snapshot created on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+
+            # Create snapshot directory if it doesn't exist
+            os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+
+            # Create snapshot XML file
+            snapshot_xml = f"""<domainsnapshot>
+  <name>{snapshot_name}</name>
+  <description>{description}</description>
+</domainsnapshot>"""
+
+            snapshot_xml_path = os.path.join(SNAPSHOT_DIR, f"{snapshot_name}.xml")
+            with open(snapshot_xml_path, "w") as f:
+                f.write(snapshot_xml)
+
+            try:
+                run_command(
+                    [
+                        "virsh",
+                        "snapshot-create",
+                        vm_name,
+                        "--xmlfile",
+                        snapshot_xml_path,
+                    ]
+                )
+                logging.info(
+                    f"Snapshot '{snapshot_name}' created successfully for VM '{vm_name}'."
+                )
+                print(f"Snapshot '{snapshot_name}' created successfully.")
+            except Exception as e:
+                logging.error(f"Failed to create snapshot: {e}")
+                print(f"Failed to create snapshot: {e}")
+            finally:
+                # Clean up temporary XML file
+                if os.path.exists(snapshot_xml_path):
+                    os.unlink(snapshot_xml_path)
+        else:
+            create_snapshot()
+    elif args.revert_snapshot:
+        if args.vm and args.snapshot:
+            # Confirm reversion
+            confirm = input(
+                f"Are you sure you want to revert VM '{args.vm}' to snapshot '{args.snapshot}'? (y/n): "
+            ).lower()
+            if confirm == "y":
+                try:
+                    run_command(["virsh", "snapshot-revert", args.vm, args.snapshot])
+                    logging.info(
+                        f"VM '{args.vm}' reverted to snapshot '{args.snapshot}' successfully."
+                    )
+                    print(
+                        f"VM '{args.vm}' reverted to snapshot '{args.snapshot}' successfully."
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to revert to snapshot: {e}")
+                    print(f"Failed to revert to snapshot: {e}")
+            else:
+                print("Revert operation cancelled.")
+        else:
+            revert_to_snapshot()
+    elif args.delete_snapshot:
+        if args.vm and args.snapshot:
+            # Confirm deletion
+            confirm = input(
+                f"Are you sure you want to delete snapshot '{args.snapshot}' for VM '{args.vm}'? (y/n): "
+            ).lower()
+            if confirm == "y":
+                try:
+                    run_command(["virsh", "snapshot-delete", args.vm, args.snapshot])
+                    logging.info(
+                        f"Snapshot '{args.snapshot}' for VM '{args.vm}' deleted successfully."
+                    )
+                    print(
+                        f"Snapshot '{args.snapshot}' for VM '{args.vm}' deleted successfully."
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to delete snapshot: {e}")
+                    print(f"Failed to delete snapshot: {e}")
+            else:
+                print("Deletion cancelled.")
+        else:
+            delete_snapshot()
     else:
         # Launch interactive menu if no direct command was provided.
         try:
