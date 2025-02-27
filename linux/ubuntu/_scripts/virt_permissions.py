@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Fix Virtual Machine Folder Permissions for virt-manager on Ubuntu
+Fix Virtual Machine Folder Permissions and Ensure libvirt Group Membership for virt-manager on Ubuntu
 
-This script fixes the permissions on common virtual machine folders so that
-virt-manager (when run by users in the 'libvirt' group) has full access.
-It recursively changes the ownership to root:libvirt and sets directory and file
-permissions appropriately.
+This script recursively fixes the permissions on common virtual machine folders so that
+virt-manager has full access by setting ownership to root:libvirt, with directories at mode 2770
+and files at mode 0660. Additionally, it checks whether the invoking user (via SUDO_USER) is
+a member of the 'libvirt' group. If not, it attempts to add the user to the group.
 
 Usage:
     Run this script as root.
@@ -86,6 +86,46 @@ def fix_permissions(path: str, uid: int, gid: int) -> None:
                 print(f"Error processing file {file_path}: {e}")
 
 
+def ensure_libvirt_membership() -> None:
+    """
+    Ensure that the invoking user (via SUDO_USER) is a member of the 'libvirt' group.
+
+    If not, attempt to add the user to the group.
+    """
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user:
+        print(
+            "Warning: SUDO_USER not found; cannot determine invoking user. Skipping group membership check."
+        )
+        return
+
+    try:
+        user_info = pwd.getpwnam(sudo_user)
+    except KeyError:
+        print(f"User {sudo_user} not found. Skipping group membership check.")
+        return
+
+    # Build a list of groups the user is a member of, including the primary group.
+    groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
+    primary_group = grp.getgrgid(user_info.pw_gid).gr_name
+    if primary_group not in groups:
+        groups.append(primary_group)
+
+    if GROUP in groups:
+        print(f"{sudo_user} is already a member of the '{GROUP}' group.")
+    else:
+        print(
+            f"{sudo_user} is not a member of the '{GROUP}' group. Attempting to add..."
+        )
+        result = os.system(f"usermod -a -G {GROUP} {sudo_user}")
+        if result == 0:
+            print(f"Successfully added {sudo_user} to the '{GROUP}' group.")
+        else:
+            print(
+                f"Failed to add {sudo_user} to the '{GROUP}' group. Please add manually."
+            )
+
+
 def main() -> None:
     check_root()
 
@@ -99,6 +139,9 @@ def main() -> None:
     for folder in folders:
         print(f"Processing folder: {folder}")
         fix_permissions(folder, uid, gid)
+
+    # Ensure the invoking user is in the libvirt group for full access
+    ensure_libvirt_membership()
 
     print(
         "\nPermissions have been fixed. Ensure that users running virt-manager are in the 'libvirt' group for full access."
