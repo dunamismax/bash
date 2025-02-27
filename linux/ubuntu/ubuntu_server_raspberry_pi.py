@@ -1,32 +1,36 @@
 #!/usr/bin/env python3
 """
 Ubuntu Server Initialization & Hardening Utility for Raspberry Pi (ARM)
------------------------------------------------------------------------
-Description:
-  This script automates the setup, configuration, and maintenance of an Ubuntu server
-  running on Raspberry Pi hardware (ARM architecture). It is divided into the following phases:
-    1. Pre-flight Checks
-    2. Nala Installation & System Update / Basic Configuration
-    3. User Environment Setup
-    4. Security & Access Hardening
-    5. Service Installations
-    6. Maintenance Tasks
-    7. System Tuning & Permissions
-    8. Final Checks & Cleanup
+=======================================================================
 
-  Features:
-    - Detailed logging with a Nord color palette
-    - Comprehensive pre-flight checks (root, network, OS version, architecture)
-    - Automated package installation via Nala with ARM-specific packages/URLs
-    - Security hardening (SSH, sudoers, UFW, Fail2ban, AppArmor)
-    - Service installations (Fastfetch, Docker, Caddy, Tailscale, user scripts)
-    - Scheduled maintenance and system tuning
-    - Final system health checks and optional reboot prompt
+This utility automates the initialization, configuration, and security hardening
+of an Ubuntu server running on Raspberry Pi hardware (ARM architecture). It is
+divided into the following phases:
 
-Usage:
-    sudo ./ubuntu_server.py
+  1. Pre-flight Checks
+     - Verifies root access, network connectivity, OS version, and ARM architecture.
+     - Saves a snapshot of critical configuration files.
+  2. Nala Installation & System Update / Basic Configuration
+     - Fixes package issues, updates repositories and packages (using Nala), and sets
+       timezone and locale.
+  3. User Environment Setup
+     - Clones user repositories and updates shell and configuration files.
+  4. Security & Access Hardening
+     - Hardens SSH settings, configures sudoers, firewall (UFW), Fail2ban, and AppArmor.
+  5. Service Installations
+     - Installs and configures services such as Fastfetch, Docker, Caddy, Tailscale,
+       and deploys user scripts.
+  6. Maintenance Tasks
+     - Sets up periodic maintenance jobs, backups, and SSL certificate updates.
+  7. System Tuning & Permissions
+     - Applies performance tuning (via sysctl) and secures user home directory permissions.
+  8. Final Checks & Cleanup
+     - Performs system health checks, verifies firewall rules, cleans up, and optionally
+       prompts for a reboot.
 
-Author: Your Name | License: MIT | Version: 5.0.0
+Author: dunamismax
+License: MIT
+Version: 6.0.0 (ARM refactored)
 """
 
 import atexit
@@ -49,23 +53,25 @@ import signal
 from typing import Any, Dict, List, Optional, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor
 
-# ------------------------------------------------------------------------------
-# Environment Configuration & Constants
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Global Constants and Environment Settings
+# =============================================================================
+
 USERNAME = "sawyer"
 USER_HOME = f"/home/{USERNAME}"
 BACKUP_DIR = "/var/backups"
 TEMP_DIR = tempfile.gettempdir()
+LOG_FILE = "/var/log/ubuntu_setup.log"
+MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 
-# ------------------------------------------------------------------------------
-# Software Versions & Download URLs (ARM versions)
-# ------------------------------------------------------------------------------
+# Software Versions and Download URLs (ARM-specific)
 PLEX_VERSION = "1.41.4.9463-630c9f557"  # Updated February 7, 2025
 PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_arm64.deb"
 
 FASTFETCH_VERSION = "2.37.0"
 FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-aarch64.deb"
 
+# List of configuration files to back up
 CONFIG_FILES = [
     "/etc/ssh/sshd_config",
     "/etc/ufw/user.rules",
@@ -76,8 +82,11 @@ CONFIG_FILES = [
     "/etc/docker/daemon.json",
     "/etc/caddy/Caddyfile",
 ]
+
+# TCP ports allowed through the firewall
 ALLOWED_PORTS = ["22", "80", "443", "32400"]
 
+# Essential packages to be installed (including ACL support for setfacl)
 PACKAGES = [
     # Shells, editors, and utilities
     "bash",
@@ -94,7 +103,7 @@ PACKAGES = [
     "tree",
     "ncdu",
     "neofetch",
-    # Development and build tools
+    # Development tools
     "build-essential",
     "cmake",
     "ninja-build",
@@ -102,7 +111,7 @@ PACKAGES = [
     "gettext",
     "git",
     "pkg-config",
-    # SSH, firewall, and system management
+    # SSH, firewall, system management
     "openssh-server",
     "ufw",
     "curl",
@@ -110,7 +119,7 @@ PACKAGES = [
     "rsync",
     "sudo",
     "bash-completion",
-    # Python and libraries
+    # Python and related libraries
     "python3",
     "python3-dev",
     "python3-pip",
@@ -161,11 +170,11 @@ PACKAGES = [
     "fail2ban",
     "rkhunter",
     "chkrootkit",
-    # Database clients and servers
+    # Database clients
     "postgresql-client",
     "mysql-client",
     "redis-server",
-    # Scripting languages and utilities
+    # Scripting and utilities
     "ruby",
     "rustc",
     "jq",
@@ -185,8 +194,8 @@ PACKAGES = [
     "acl",
 ]
 
-# Global status for reporting
-SETUP_STATUS = {
+# Global dictionary to track setup task status
+SETUP_STATUS: Dict[str, Dict[str, str]] = {
     "preflight": {"status": "pending", "message": ""},
     "nala_install": {"status": "pending", "message": ""},
     "system_update": {"status": "pending", "message": ""},
@@ -199,9 +208,9 @@ SETUP_STATUS = {
     "final": {"status": "pending", "message": ""},
 }
 
-# ------------------------------------------------------------------------------
-# Nord Color Palette (24-bit ANSI escape sequences)
-# ------------------------------------------------------------------------------
+# =============================================================================
+# ANSI Color Codes (Nord Palette)
+# =============================================================================
 NORD0 = "\033[38;2;46;52;64m"
 NORD1 = "\033[38;2;59;66;82m"
 NORD8 = "\033[38;2;136;192;208m"
@@ -210,22 +219,26 @@ NORD10 = "\033[38;2;94;129;172m"
 NORD11 = "\033[38;2;191;97;106m"
 NORD13 = "\033[38;2;235;203;139m"
 NORD14 = "\033[38;2;163;190;140m"
-NC = "\033[0m"
+NC = "\033[0m"  # Reset color
 
-# ------------------------------------------------------------------------------
-# Global Logging Setup
-# ------------------------------------------------------------------------------
-LOG_FILE = "/var/log/ubuntu_setup.log"
-MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
+# =============================================================================
+# Custom Logging Setup with Nord Color Formatter
+# =============================================================================
+
 DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 
 
 class NordColorFormatter(logging.Formatter):
-    def __init__(self, fmt=None, datefmt=None, use_colors=True):
+    def __init__(
+        self,
+        fmt: Optional[str] = None,
+        datefmt: Optional[str] = None,
+        use_colors: bool = True,
+    ):
         super().__init__(fmt, datefmt)
         self.use_colors = use_colors and not DISABLE_COLORS
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         msg = super().format(record)
         if not self.use_colors:
             return msg
@@ -242,8 +255,7 @@ class NordColorFormatter(logging.Formatter):
 
 
 def setup_logging() -> logging.Logger:
-    log_dir = os.path.dirname(LOG_FILE)
-    os.makedirs(log_dir, mode=0o700, exist_ok=True)
+    os.makedirs(os.path.dirname(LOG_FILE), mode=0o700, exist_ok=True)
     if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > MAX_LOG_SIZE:
         LogManager.rotate_logs()
     logger = logging.getLogger("ubuntu_setup")
@@ -253,22 +265,22 @@ def setup_logging() -> logging.Logger:
     formatter = NordColorFormatter(
         "[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
     )
-    fh = logging.FileHandler(LOG_FILE)
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
+    file_handler = logging.FileHandler(LOG_FILE)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
     if sys.stderr.isatty():
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-        ch.setFormatter(formatter)
-        logger.addHandler(ch)
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
     return logger
 
 
 logger = setup_logging()
 
 
-def print_section(title: str):
+def print_section(title: str) -> None:
     border = "─" * 60
     print(f"{NORD8}{border}{NC}")
     print(f"{NORD8}  {title}{NC}")
@@ -276,10 +288,12 @@ def print_section(title: str):
     logger.info(f"--- {title} ---")
 
 
-# ------------------------------------------------------------------------------
-# Signal Handling & Cleanup
-# ------------------------------------------------------------------------------
-def signal_handler(signum, frame):
+# =============================================================================
+# Signal Handling and Cleanup Functions
+# =============================================================================
+
+
+def signal_handler(signum: int, frame: Optional[Any]) -> None:
     sig_name = (
         signal.Signals(signum).name
         if hasattr(signal, "Signals")
@@ -302,7 +316,7 @@ for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
 
 
-def cleanup():
+def cleanup() -> None:
     logger.info("Performing cleanup tasks before exit.")
     for temp_file in os.listdir(tempfile.gettempdir()):
         if temp_file.startswith("ubuntu_setup_"):
@@ -316,11 +330,14 @@ def cleanup():
 
 atexit.register(cleanup)
 
+# =============================================================================
+# Helper Function: Run with Progress Indicator
+# =============================================================================
 
-# ------------------------------------------------------------------------------
-# Run-With-Progress Helper
-# ------------------------------------------------------------------------------
-def run_with_progress(description: str, func, *args, task_name=None, **kwargs):
+
+def run_with_progress(
+    description: str, func, *args, task_name: Optional[str] = None, **kwargs
+):
     if task_name:
         SETUP_STATUS[task_name] = {
             "status": "in_progress",
@@ -333,40 +350,32 @@ def run_with_progress(description: str, func, *args, task_name=None, **kwargs):
             future = executor.submit(func, *args, **kwargs)
             while not future.done():
                 time.sleep(0.5)
-            try:
-                result = future.result()
-                elapsed = time.time() - start_time
-                print(f"{NORD14}[✓] {description} completed in {elapsed:.2f}s{NC}")
-                if task_name:
-                    SETUP_STATUS[task_name] = {
-                        "status": "success",
-                        "message": f"{description} completed successfully.",
-                    }
-                return result
-            except Exception as e:
-                elapsed = time.time() - start_time
-                print(
-                    f"{NORD11}[✗] {description} failed in {elapsed:.2f}s: {str(e)}{NC}"
-                )
-                if task_name:
-                    SETUP_STATUS[task_name] = {
-                        "status": "failed",
-                        "message": f"{description} failed: {str(e)}",
-                    }
-                raise
+            result = future.result()
+            elapsed = time.time() - start_time
+            print(f"{NORD14}[✓] {description} completed in {elapsed:.2f}s{NC}")
+            if task_name:
+                SETUP_STATUS[task_name] = {
+                    "status": "success",
+                    "message": f"{description} completed successfully.",
+                }
+            return result
     except Exception as e:
+        elapsed = time.time() - start_time
+        print(f"{NORD11}[✗] {description} failed in {elapsed:.2f}s: {e}{NC}")
         if task_name:
             SETUP_STATUS[task_name] = {
                 "status": "failed",
-                "message": f"{description} failed: {str(e)}",
+                "message": f"{description} failed: {e}",
             }
         raise
 
 
-# ------------------------------------------------------------------------------
-# Status Reporting
-# ------------------------------------------------------------------------------
-def print_status_report():
+# =============================================================================
+# Status Report Printer
+# =============================================================================
+
+
+def print_status_report() -> None:
     print_section("Setup Status Report")
     icons = {
         "success": "✓",
@@ -400,14 +409,16 @@ def print_status_report():
         status = data["status"]
         msg = data["message"]
         task_desc = descriptions.get(task, task)
-        icon = icons[status]
-        color = colors[status]
+        icon = icons.get(status, "?")
+        color = colors.get(status, "")
         print(f"{color}{icon} {task_desc}: {status.upper()}{NC} - {msg}")
 
 
-# ------------------------------------------------------------------------------
-# Utility Functions & Classes
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Utility Functions and Classes
+# =============================================================================
+
+
 class Utils:
     @staticmethod
     def run_command(
@@ -438,7 +449,6 @@ class Utils:
         if os.path.isfile(file_path):
             timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             dir_name, base_name = os.path.split(file_path)
-            # If backing up an apt config file, store the backup in BACKUP_DIR instead
             if dir_name == "/etc/apt/apt.conf.d":
                 backup = os.path.join(BACKUP_DIR, f"{base_name}.bak.{timestamp}")
             else:
@@ -507,9 +517,8 @@ class LogManager:
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         rotated_file = f"{LOG_FILE}.{timestamp}.gz"
         try:
-            with open(LOG_FILE, "rb") as f_in:
-                with gzip.open(rotated_file, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            with open(LOG_FILE, "rb") as f_in, gzip.open(rotated_file, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
             open(LOG_FILE, "w").close()
             logger.info(f"Log rotated to {rotated_file}.")
             return True
@@ -518,9 +527,11 @@ class LogManager:
             return False
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 1: Pre-flight Checks
-# ------------------------------------------------------------------------------
+# =============================================================================
+
+
 class PreflightChecker:
     def check_root(self) -> None:
         if os.geteuid() != 0:
@@ -597,17 +608,15 @@ class PreflightChecker:
             return None
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 2: System Update & Basic Configuration
-# ------------------------------------------------------------------------------
-class SystemUpdater:
-    """Update the system, install packages, and configure basic settings."""
+# =============================================================================
 
+
+class SystemUpdater:
     def fix_package_issues(self) -> bool:
-        """Fix broken dependencies, held packages, and interrupted installations."""
         logger.info("Checking and fixing package management issues...")
         try:
-            # Check for dpkg interruptions or locks
             dpkg_status = Utils.run_command(
                 ["dpkg", "--configure", "-a"],
                 check=False,
@@ -615,67 +624,43 @@ class SystemUpdater:
                 text=True,
             )
             if dpkg_status.returncode != 0:
-                logger.warning(
-                    f"Issues found when configuring unpacked packages: {dpkg_status.stderr}"
-                )
-                logger.info("Attempting to fix dpkg interrupted installations...")
+                logger.warning(f"Issues configuring packages: {dpkg_status.stderr}")
+                logger.info("Attempting to fix dpkg interruptions...")
                 Utils.run_command(["dpkg", "--configure", "-a"])
-
-            # Check for and fix held packages
             held_packages = Utils.run_command(
                 ["apt-mark", "showhold"], check=False, capture_output=True, text=True
             )
             if held_packages.stdout.strip():
                 held_list = held_packages.stdout.strip().split("\n")
-                logger.warning(
-                    f"Found {len(held_list)} held packages: {', '.join(held_list)}"
-                )
-                logger.info("Attempting to fix held packages...")
+                logger.warning(f"Held packages found: {', '.join(held_list)}")
                 for pkg in held_list:
                     if pkg.strip():
                         try:
-                            # Try to unhold the package
                             Utils.run_command(
                                 ["apt-mark", "unhold", pkg.strip()], check=False
                             )
-                            logger.info(f"Successfully unheld package: {pkg}")
+                            logger.info(f"Unheld package: {pkg}")
                         except Exception as e:
                             logger.warning(f"Failed to unhold package {pkg}: {e}")
-
-            # Fix broken packages
-            logger.info("Checking for broken packages...")
+            logger.info("Fixing broken packages and cleaning caches...")
             Utils.run_command(["apt", "--fix-broken", "install", "-y"], check=False)
-
-            # Clean up apt caches to ensure clean state
-            logger.info("Cleaning package caches...")
             Utils.run_command(["apt", "clean"], check=False)
             Utils.run_command(["apt", "autoclean", "-y"], check=False)
-
-            # Check for missing dependencies or broken installations
             check_result = Utils.run_command(
                 ["apt-get", "check"], check=False, capture_output=True, text=True
             )
             if check_result.returncode != 0:
-                logger.warning(
-                    f"System package status is not clean: {check_result.stderr}"
-                )
-                logger.info("Running additional fixes...")
+                logger.warning(f"Package status not clean: {check_result.stderr}")
                 Utils.run_command(["apt", "--fix-missing", "update"], check=False)
                 Utils.run_command(["apt", "--fix-broken", "install", "-y"], check=False)
-
-                # Check again after fixes
                 final_check = Utils.run_command(
                     ["apt-get", "check"], check=False, capture_output=True, text=True
                 )
                 if final_check.returncode != 0:
-                    logger.error(
-                        "Unable to fully resolve package issues. Some problems may persist."
-                    )
+                    logger.error("Unable to fully resolve package issues.")
                     return False
-
             logger.info("Package management issues fixed successfully.")
             return True
-
         except Exception as e:
             logger.error(f"Failed to fix package issues: {e}")
             return False
@@ -683,64 +668,39 @@ class SystemUpdater:
     def update_system(self, full_upgrade: bool = False) -> bool:
         logger.info("Updating system repositories and packages using Nala...")
         try:
-            # First fix any existing package issues
             if not self.fix_package_issues():
-                logger.warning(
-                    "Package issues detected but could not be fully resolved."
-                )
-                # Continue anyway as we might still be able to update
-
-            # Try to update repositories
+                logger.warning("Package issues detected but continuing with update.")
             try:
-                logger.info("Updating package lists...")
+                logger.info("Updating package lists with Nala...")
                 Utils.run_command(["nala", "update"])
             except subprocess.CalledProcessError as e:
-                logger.warning(f"Repository update failed: {e}")
-                logger.info("Trying alternative update method...")
-                try:
-                    # Fallback to apt if nala fails
-                    Utils.run_command(["apt", "update"])
-                    logger.info("Repository update completed with apt instead of nala.")
-                except subprocess.CalledProcessError as apt_error:
-                    logger.error(
-                        f"Repository update failed with both nala and apt: {apt_error}"
-                    )
-                    return False
-
-            # Try to upgrade packages
+                logger.warning(
+                    f"Nala update failed: {e}. Falling back to apt update..."
+                )
+                Utils.run_command(["apt", "update"])
             upgrade_cmd = (
                 ["nala", "full-upgrade", "-y"]
                 if full_upgrade
                 else ["nala", "upgrade", "-y"]
             )
-
             try:
                 logger.info(
                     f"Running system {'full-upgrade' if full_upgrade else 'upgrade'}..."
                 )
                 Utils.run_command(upgrade_cmd)
             except subprocess.CalledProcessError as e:
-                logger.warning(f"Package upgrade failed: {e}")
-                logger.info("Trying to resolve dependencies and upgrade again...")
-
-                # Try fixing broken packages again
+                logger.warning(f"Upgrade failed: {e}. Retrying after fixing issues...")
                 self.fix_package_issues()
-
-                # Try one more time with the upgrade
                 try:
                     Utils.run_command(upgrade_cmd)
-                    logger.info(
-                        "System upgrade completed successfully after fixing dependencies."
-                    )
+                    logger.info("System upgrade succeeded after retry.")
                 except subprocess.CalledProcessError as retry_error:
                     logger.error(f"System upgrade failed after retry: {retry_error}")
                     return False
-
             logger.info("System update and upgrade completed successfully.")
             return True
-
         except Exception as e:
-            logger.error(f"System update failed with unexpected error: {e}")
+            logger.error(f"System update failed unexpectedly: {e}")
             return False
 
     def install_packages(self, packages: Optional[List[str]] = None) -> bool:
@@ -758,15 +718,10 @@ class SystemUpdater:
             "wget",
             "ca-certificates",
         ]
-
-        # First fix any package management issues
         if not self.fix_package_issues():
-            logger.warning("Package issues detected but could not be fully resolved.")
-            # Continue anyway as we might still be able to install packages
-
-        # Check which packages are already installed
+            logger.warning("Package issues detected but proceeding with installation.")
         missing = []
-        logger.info("Checking for already installed packages...")
+        logger.info("Checking which packages are missing...")
         for pkg in packages:
             try:
                 subprocess.run(
@@ -779,46 +734,30 @@ class SystemUpdater:
             except subprocess.CalledProcessError:
                 missing.append(pkg)
                 logger.debug(f"Package not installed: {pkg}")
-
         if not missing:
             logger.info("All required packages are already installed.")
             return True
-
-        logger.info(
-            f"Installing {len(missing)} missing packages with a single command..."
-        )
-
-        # Try to install all missing packages at once
-        failed_packages = []
         installer = ["nala", "install", "-y"]
-
         try:
+            logger.info(f"Installing {len(missing)} missing packages at once...")
             Utils.run_command(installer + missing)
             logger.info("All packages installed successfully.")
             return True
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Bulk installation failed: {e}")
-            logger.info("Attempting to fix package issues and retry...")
-
-            # Try to fix package issues again
-            self.fix_package_issues()
-
-            # Try essential packages first, then the rest one by one
+            logger.warning(
+                f"Bulk installation failed: {e}. Retrying essential packages first..."
+            )
+            failed_packages = []
             essential_missing = [pkg for pkg in missing if pkg in essential_packages]
             non_essential_missing = [
                 pkg for pkg in missing if pkg not in essential_packages
             ]
-
             if essential_missing:
-                logger.info(
-                    f"Retrying installation of {len(essential_missing)} essential packages..."
-                )
                 try:
                     Utils.run_command(installer + essential_missing)
                     logger.info("Essential packages installed successfully.")
                 except subprocess.CalledProcessError as e_essential:
                     logger.error(f"Failed to install essential packages: {e_essential}")
-                    # Check which essential packages failed
                     for pkg in essential_missing:
                         try:
                             subprocess.run(
@@ -829,46 +768,37 @@ class SystemUpdater:
                             )
                         except subprocess.CalledProcessError:
                             failed_packages.append(pkg)
-                            logger.error(f"Failed to install essential package: {pkg}")
-
-                    essential_failed = [
-                        pkg for pkg in failed_packages if pkg in essential_packages
-                    ]
-                    if essential_failed:
+                    if any(pkg in essential_packages for pkg in failed_packages):
                         logger.error(
-                            f"Failed to install essential packages: {', '.join(essential_failed)}"
+                            f"Essential packages failed: {', '.join(failed_packages)}"
                         )
                         return False
-
-            # Try the remaining non-essential packages individually
-            logger.info(
-                f"Trying individual installation for {len(non_essential_missing)} non-essential packages..."
-            )
             for pkg in non_essential_missing:
                 if pkg in failed_packages:
-                    continue  # Skip already known failed packages
+                    continue
                 try:
                     Utils.run_command(installer + [pkg], check=False)
-                    logger.info(f"Successfully installed {pkg}.")
+                    logger.info(f"Installed {pkg} successfully.")
                 except Exception as pkg_error:
                     failed_packages.append(pkg)
                     logger.warning(f"Failed to install {pkg}: {pkg_error}")
-
-            # Report results
             if failed_packages:
                 logger.warning(
-                    f"Failed to install {len(failed_packages)} packages: {', '.join(failed_packages)}"
+                    f"Failed to install packages: {', '.join(failed_packages)}"
                 )
-
-            logger.info(
-                f"Installed {len(missing) - len(failed_packages)} of {len(missing)} packages successfully."
+            installed_successfully = len(
+                [pkg for pkg in missing if pkg not in failed_packages]
             )
-
-            # Success if all essential packages are installed
+            logger.info(
+                f"Installed {installed_successfully} of {len(missing)} missing packages."
+            )
             essential_failed = [
                 pkg for pkg in failed_packages if pkg in essential_packages
             ]
             return len(essential_failed) == 0
+        except Exception as e:
+            logger.error(f"Unexpected error during package installation: {e}")
+            return False
 
     def configure_timezone(self, timezone: str = "America/New_York") -> bool:
         logger.info(f"Setting timezone to {timezone}...")
@@ -892,9 +822,6 @@ class SystemUpdater:
             return False
 
     def configure_locale(self, locale: str = "en_US.UTF-8") -> bool:
-        """
-        Set the system locale.
-        """
         logger.info(f"Setting locale to {locale}...")
         try:
             Utils.run_command(["locale-gen", locale])
@@ -921,9 +848,11 @@ class SystemUpdater:
             return False
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 3: User Environment Setup
-# ------------------------------------------------------------------------------
+# =============================================================================
+
+
 class UserEnvironment:
     def setup_repos(self) -> bool:
         logger.info(f"Setting up GitHub repositories for user '{USERNAME}'...")
@@ -1066,9 +995,11 @@ class UserEnvironment:
             return False
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 4: Security & Access Hardening
-# ------------------------------------------------------------------------------
+# =============================================================================
+
+
 class SecurityHardener:
     def configure_ssh(self, port: int = 22) -> bool:
         logger.info("Configuring OpenSSH Server...")
@@ -1229,9 +1160,9 @@ class SecurityHardener:
     def configure_fail2ban(self) -> bool:
         logger.info("Configuring Fail2ban...")
         if not Utils.command_exists("fail2ban-server"):
-            logger.info("fail2ban not installed; installing...")
+            logger.info("Fail2ban not installed; installing...")
             if not SystemUpdater().install_packages(["fail2ban"]):
-                logger.error("Failed to install fail2ban.")
+                logger.error("Failed to install Fail2ban.")
                 return False
         jail_local = "/etc/fail2ban/jail.local"
         config_content = """[DEFAULT]
@@ -1325,9 +1256,11 @@ logpath = /var/log/auth.log
             return False
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 5: Service Installations
-# ------------------------------------------------------------------------------
+# =============================================================================
+
+
 class ServiceInstaller:
     def install_fastfetch(self) -> bool:
         logger.info("Installing Fastfetch...")
@@ -1358,9 +1291,7 @@ class ServiceInstaller:
 
     def docker_config(self) -> bool:
         logger.info("Configuring Docker and Docker Compose...")
-        if Utils.command_exists("docker"):
-            logger.info("Docker is already installed.")
-        else:
+        if not Utils.command_exists("docker"):
             try:
                 logger.info("Installing Docker using official script...")
                 script_path = os.path.join(TEMP_DIR, "get-docker.sh")
@@ -1403,18 +1334,16 @@ class ServiceInstaller:
     },
     "default-address-pools": [
         {
-        "base": "172.17.0.0/16",
-        "size": 24
+            "base": "172.17.0.0/16",
+            "size": 24
         }
     ]
-    }
-    """
+}"""
         update_needed = True
         if os.path.isfile(daemon_json_path):
             try:
                 with open(daemon_json_path, "r") as f:
-                    existing = f.read()
-                existing_config = json.loads(existing)
+                    existing_config = json.load(f)
                 desired_config = json.loads(desired_daemon_json)
                 if existing_config == desired_config:
                     logger.info("Docker daemon configuration is already up-to-date.")
@@ -1569,9 +1498,9 @@ class ServiceInstaller:
             Utils.run_command(["nala", "update"])
             logger.info("Upgrading existing packages...")
             Utils.run_command(["nala", "upgrade", "-y"])
-            logger.info("Fixing any broken package installations...")
+            logger.info("Fixing any broken installations...")
             Utils.run_command(["apt", "--fix-broken", "install", "-y"])
-            logger.info("Installing nala package...")
+            logger.info("Installing Nala package...")
             Utils.run_command(["apt", "install", "nala", "-y"])
             if Utils.command_exists("nala"):
                 logger.info("Nala installed successfully.")
@@ -1663,9 +1592,11 @@ class ServiceInstaller:
             return False
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 6: Maintenance Tasks
-# ------------------------------------------------------------------------------
+# =============================================================================
+
+
 class MaintenanceManager:
     def configure_periodic(self) -> bool:
         logger.info("Setting up daily maintenance cron job...")
@@ -1728,7 +1659,8 @@ echo "Daily maintenance completed at $(date)" >> $LOG
             else:
                 logger.debug(f"File {file} not found; skipping.")
         try:
-            with open(os.path.join(backup_dir, "MANIFEST.txt"), "w") as f:
+            manifest = os.path.join(backup_dir, "MANIFEST.txt")
+            with open(manifest, "w") as f:
                 f.write("Ubuntu Configuration Backup\n")
                 f.write(f"Created: {datetime.datetime.now()}\n")
                 f.write(f"Hostname: {socket.gethostname()}\n\n")
@@ -1778,15 +1710,9 @@ echo "Daily maintenance completed at $(date)" >> $LOG
                 'APT::Periodic::AutocleanInterval "7";\n'
                 'APT::Periodic::Download-Upgradeable-Packages "1";\n'
             )
-            try:
-                with open(auto_upgrades_file, "w") as f:
-                    f.write(auto_upgrades_content)
-                logger.info(
-                    f"Auto-upgrades configuration written to {auto_upgrades_file}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to write auto-upgrades configuration: {e}")
-                return False
+            with open(auto_upgrades_file, "w") as f:
+                f.write(auto_upgrades_content)
+            logger.info(f"Auto-upgrades configuration written to {auto_upgrades_file}")
             unattended_file = "/etc/apt/apt.conf.d/50unattended-upgrades"
             if os.path.isfile(unattended_file):
                 Utils.backup_file(unattended_file)
@@ -1807,15 +1733,11 @@ echo "Daily maintenance completed at $(date)" >> $LOG
                 'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
                 'Unattended-Upgrade::SyslogEnable "true";\n'
             )
-            try:
-                with open(unattended_file, "w") as f:
-                    f.write(unattended_content)
-                logger.info(
-                    f"Unattended-upgrades configuration written to {unattended_file}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to write unattended-upgrades configuration: {e}")
-                return False
+            with open(unattended_file, "w") as f:
+                f.write(unattended_content)
+            logger.info(
+                f"Unattended-upgrades configuration written to {unattended_file}"
+            )
             Utils.run_command(["systemctl", "enable", "unattended-upgrades"])
             Utils.run_command(["systemctl", "restart", "unattended-upgrades"])
             status = Utils.run_command(
@@ -1837,9 +1759,11 @@ echo "Daily maintenance completed at $(date)" >> $LOG
             return False
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 7: System Tuning & Permissions
-# ------------------------------------------------------------------------------
+# =============================================================================
+
+
 class SystemTuner:
     def tune_system(self) -> bool:
         logger.info("Applying system performance tuning...")
@@ -1870,9 +1794,7 @@ class SystemTuner:
                 content = f.read()
             marker = "# Performance tuning settings for Ubuntu"
             if marker in content:
-                logger.info(
-                    "Performance tuning settings already exist. Updating settings..."
-                )
+                logger.info("Performance tuning settings already exist; updating...")
                 content = re.split(marker, content)[0]
             content += f"\n{marker}\n"
             for key, value in tuning_settings.items():
@@ -1930,13 +1852,15 @@ class SystemTuner:
             return False
 
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Phase 8: Final Checks & Cleanup
-# ------------------------------------------------------------------------------
+# =============================================================================
+
+
 class FinalChecker:
     def system_health_check(self) -> Dict[str, Any]:
         logger.info("Performing system health check...")
-        health_data = {}
+        health_data: Dict[str, Any] = {}
         try:
             uptime = subprocess.check_output(["uptime"], text=True).strip()
             logger.info(f"Uptime: {uptime}")
@@ -2026,7 +1950,7 @@ class FinalChecker:
                 .splitlines()
             )
             security_updates = sum(1 for line in updates if "security" in line.lower())
-            total_updates = len(updates) - 1 if len(updates) > 0 else 0
+            total_updates = len(updates) - 1 if updates else 0
             if total_updates > 0:
                 logger.info(
                     f"Available updates: {total_updates} total, {security_updates} security"
@@ -2119,11 +2043,11 @@ class FinalChecker:
             if Utils.command_exists("nala"):
                 Utils.run_command(["nala", "autoremove", "-y"])
             else:
-                Utils.run_command(["nala", "autoremove", "-y"])
+                Utils.run_command(["apt", "autoremove", "-y"])
             if Utils.command_exists("nala"):
                 Utils.run_command(["nala", "clean"])
             else:
-                Utils.run_command(["nala", "clean"])
+                Utils.run_command(["apt", "clean"])
             try:
                 current = subprocess.check_output(["uname", "-r"], text=True).strip()
                 running_image = f"linux-image-{current}"
@@ -2188,9 +2112,11 @@ class FinalChecker:
                 )
                 for log_file in log_files:
                     logger.debug(f"Compressing large log file: {log_file}")
-                    with open(log_file, "rb") as f_in:
-                        with gzip.open(f"{log_file}.gz", "wb") as f_out:
-                            shutil.copyfileobj(f_in, f_out)
+                    with (
+                        open(log_file, "rb") as f_in,
+                        gzip.open(f"{log_file}.gz", "wb") as f_out,
+                    ):
+                        shutil.copyfileobj(f_in, f_out)
                     open(log_file, "w").close()
             except Exception as e:
                 logger.warning(f"Failed to rotate logs: {e}")
@@ -2242,7 +2168,6 @@ class FinalChecker:
                 (line for line in free_output if line.startswith("Mem:")), ""
             )
             logger.info(f"Memory usage: {mem_line}")
-            cpu_model = ""
             cpu_output = subprocess.check_output(["lscpu"], text=True)
             for line in cpu_output.splitlines():
                 if "Model name" in line:
@@ -2266,7 +2191,7 @@ class FinalChecker:
                 cpu_count = os.cpu_count() or 1
                 if float(load_avg[1]) > cpu_count:
                     logger.warning(
-                        f"Warning: 5min load average ({load_avg[1]}) exceeds CPU count ({cpu_count})."
+                        f"5min load average ({load_avg[1]}) exceeds CPU count ({cpu_count})."
                     )
             services_to_check = [
                 "ssh",
@@ -2284,11 +2209,10 @@ class FinalChecker:
                     capture_output=True,
                     check=False,
                 )
-                status_str = status.stdout.strip()
-                if status_str == "active":
+                if status.stdout.strip() == "active":
                     logger.info(f"{service}: active")
                 else:
-                    logger.warning(f"{service}: {status_str}")
+                    logger.warning(f"{service}: {status.stdout.strip()}")
                     if service in ["ssh", "ufw"]:
                         all_passed = False
             try:
@@ -2311,9 +2235,11 @@ class FinalChecker:
             return False
 
 
-# ------------------------------------------------------------------------------
-# Main Orchestration
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Main Orchestration Class
+# =============================================================================
+
+
 class UbuntuServerSetup:
     def __init__(self):
         self.logger = logger
@@ -2331,12 +2257,12 @@ class UbuntuServerSetup:
     def run(self) -> int:
         try:
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"{NORD8}----------------------------------------{NC}")
-            print(f"{NORD8}  Starting Ubuntu Server Setup v5.0.0{NC}")
+            print(f"{NORD8}{'-' * 40}{NC}")
+            print(f"{NORD8}  Starting Ubuntu Server Setup v6.0.0 (ARM){NC}")
             print(f"{NORD8}  {now}{NC}")
-            print(f"{NORD8}----------------------------------------{NC}")
+            print(f"{NORD8}{'-' * 40}{NC}")
             logger.info(
-                f"Starting Ubuntu Server Setup v5.0.0 on {datetime.datetime.now()}"
+                f"Starting Ubuntu Server Setup v6.0.0 (ARM) on {datetime.datetime.now()}"
             )
             print_section("Phase 1: Pre-flight Checks")
             run_with_progress(
@@ -2361,7 +2287,6 @@ class UbuntuServerSetup:
 
             def fix_broken_install():
                 backup_dir = "/etc/apt/apt.conf.d/"
-                # Delete backup files with invalid filename extension
                 for filename in os.listdir(backup_dir):
                     if filename.startswith("50unattended-upgrades.bak."):
                         file_path = os.path.join(backup_dir, filename)
@@ -2370,10 +2295,8 @@ class UbuntuServerSetup:
                             logger.info(f"Removed invalid backup file: {file_path}")
                         except Exception as e:
                             logger.warning(f"Could not remove {file_path}: {e}")
-                # Run apt --fix-broken install
                 return Utils.run_command(["apt", "--fix-broken", "install", "-y"])
 
-            # Then call run_with_progress with the new function:
             run_with_progress(
                 "Running apt --fix-broken install",
                 fix_broken_install,
