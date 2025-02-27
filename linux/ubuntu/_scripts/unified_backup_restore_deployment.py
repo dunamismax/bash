@@ -1,52 +1,3 @@
-# AI Prompt for Standard Library Python Script Generation
-
-## Objective
-Create Python scripts that leverage the standard library for robust functionality, clear progress tracking, and user feedback. Scripts should be well-structured, maintainable, and provide excellent user experience without external dependencies.
-
-## Requirements
-
-### Core Structure
-1. **Organization**
-   - Clear section separation with descriptive comments
-   - Configuration at the top
-   - Helper functions organized by purpose
-   - Main execution flow at the bottom
-
-2. **Progress Tracking**
-   - Thread-safe progress bars using standard library
-   - File transfer rate display
-   - ETA calculations
-   - Human-readable size formatting
-
-3. **Error Handling**
-   - Comprehensive try/except blocks
-   - Graceful failure modes
-   - Clear error messages with ANSI colors
-   - Process cleanup on exit
-
-4. **User Interface**
-   - ANSI color-coded output
-   - Clear section headers
-   - Progress indicators for long operations
-   - Summary reports of operations
-
-### Standard Features
-1. **Must Include**
-   - Root privilege checking
-   - Signal handling
-   - Resource cleanup
-   - Clear status reporting
-
-2. **Code Style**
-   - Type hints
-   - Descriptive docstrings
-   - Clear variable naming
-   - Consistent formatting
-
-## Example Template
-Below is a template demonstrating these principles in a file restore script:
-
-```python
 #!/usr/bin/env python3
 """
 Streamlined File Restore Script
@@ -315,17 +266,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-```
-
-## Instructions for AI
-1. When writing scripts, prioritize standard library solutions over external dependencies
-2. Include progress tracking for all long-running operations
-3. Implement proper error handling and cleanup
-4. Use ANSI colors for clear status indication
-5. Maintain consistent code style and documentation
-6. Consider thread safety for progress tracking
-7. Always include type hints and docstrings
-8. Implement signal handling for graceful interrupts
-
-## Note
-Before generating any code, ask the user for specific requirements and clarify any ambiguous points. Ensure the generated code follows the template's principles while addressing the user's specific needs.

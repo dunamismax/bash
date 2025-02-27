@@ -55,8 +55,8 @@ from rich import box
 # ------------------------------------------------------------------------------
 # Environment Configuration
 # ------------------------------------------------------------------------------
-B2_ACCOUNT_ID = "12345678"
-B2_ACCOUNT_KEY = "12345678"
+B2_ACCOUNT_ID = "005531878ffff660000000001"
+B2_ACCOUNT_KEY = "K005oVgYPouP1DMQa5jhGfRBiX33Kns"
 B2_BUCKET = "sawyer-backups"
 
 HOSTNAME = socket.gethostname()
@@ -66,7 +66,7 @@ B2_REPO_SYSTEM = f"b2:{B2_BUCKET}:{HOSTNAME}/ubuntu-system-backup"
 B2_REPO_VM = f"b2:{B2_BUCKET}:{HOSTNAME}/vm-backups"
 B2_REPO_PLEX = f"b2:{B2_BUCKET}:{HOSTNAME}/plex-media-server-backup"
 
-RESTIC_PASSWORD = "12345678"
+RESTIC_PASSWORD = "j57z66Mwc^2A%Cf5!iAG^n&c&%wJ"
 
 # Critical paths to verify after restore
 CRITICAL_SYSTEM_PATHS = ["/etc/fstab", "/etc/passwd", "/etc/hosts"]
