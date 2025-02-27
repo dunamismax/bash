@@ -148,12 +148,6 @@ PACKAGES = [
     "lsof",
     "unzip",
     "zip",
-    # Xorg and GUI utilities (if needed)
-    "xorg",
-    "x11-xserver-utils",
-    "xterm",
-    "alacritty",
-    "fonts-dejavu-core",
     # Networking tools
     "net-tools",
     "nmap",
@@ -171,17 +165,12 @@ PACKAGES = [
     "gdb",
     "cargo",
     # Security tools
-    "john",
-    "hydra",
-    "aircrack-ng",
-    "nikto",
     "fail2ban",
     "rkhunter",
     "chkrootkit",
     # Database clients and servers
     "postgresql-client",
     "mysql-client",
-    "redis-server",
     # Scripting languages and utilities
     "ruby",
     "rustc",
@@ -1862,7 +1851,7 @@ Icon=vscode
 
     def install_enable_tailscale(self) -> bool:
         """
-        Install and configure Tailscale VPN.
+        Install and configure Tailscale VPN using the official script.
 
         Returns:
             True if successful, False otherwise
@@ -1874,28 +1863,10 @@ Icon=vscode
             tailscale_installed = True
         else:
             try:
-                logger.info("Adding Tailscale repository and installing...")
-                temp_key = os.path.join(TEMP_DIR, "tailscale-key.gpg")
+                logger.info("Installing Tailscale using the official script...")
                 Utils.run_command(
-                    [
-                        "curl",
-                        "-fsSL",
-                        "https://pkgs.tailscale.com/stable/ubuntu/focal.gpg",
-                        "-o",
-                        temp_key,
-                    ]
+                    ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]
                 )
-                Utils.run_command(["apt-key", "add", temp_key])
-
-                repo_file = "/etc/apt/sources.list.d/tailscale.list"
-                with open(repo_file, "w") as f:
-                    f.write("deb https://pkgs.tailscale.com/stable/ubuntu focal main\n")
-
-                Utils.run_command(["apt", "update"])
-
-                if not SystemUpdater().install_packages(["tailscale"]):
-                    logger.error("Failed to install Tailscale.")
-                    return False
 
                 tailscale_installed = Utils.command_exists("tailscale")
 
@@ -1903,25 +1874,7 @@ Icon=vscode
                     logger.info("Tailscale installed successfully.")
                 else:
                     logger.error("Tailscale installation failed.")
-                    try:
-                        Utils.run_command(
-                            [
-                                "sh",
-                                "-c",
-                                "curl -fsSL https://tailscale.com/install.sh | sh",
-                            ]
-                        )
-                        tailscale_installed = Utils.command_exists("tailscale")
-                        if tailscale_installed:
-                            logger.info(
-                                "Tailscale installed successfully using the official script."
-                            )
-                        else:
-                            logger.error("Alternative Tailscale installation failed.")
-                            return False
-                    except Exception:
-                        logger.error("Alternative Tailscale installation failed.")
-                        return False
+                    return False
             except Exception as e:
                 logger.error(f"Failed to install Tailscale: {e}")
                 return False
@@ -1991,6 +1944,99 @@ Icon=vscode
             return True
         except subprocess.CalledProcessError as e:
             logger.error(f"Script deployment failed: {e}")
+            return False
+
+    def configure_unattended_upgrades(self) -> bool:
+        """
+        Configure unattended upgrades for security patches.
+
+        Returns:
+            True if unattended upgrades configured successfully, False otherwise
+        """
+        logger.info("Configuring unattended upgrades...")
+
+        try:
+            # Install required packages
+            if not SystemUpdater().install_packages(
+                ["unattended-upgrades", "apt-listchanges"]
+            ):
+                logger.error("Failed to install unattended-upgrades packages.")
+                return False
+
+            # Create configuration for auto upgrades
+            auto_upgrades_file = "/etc/apt/apt.conf.d/20auto-upgrades"
+            auto_upgrades_content = (
+                'APT::Periodic::Update-Package-Lists "1";\n'
+                'APT::Periodic::Unattended-Upgrade "1";\n'
+                'APT::Periodic::AutocleanInterval "7";\n'
+                'APT::Periodic::Download-Upgradeable-Packages "1";\n'
+            )
+
+            try:
+                with open(auto_upgrades_file, "w") as f:
+                    f.write(auto_upgrades_content)
+                logger.info(
+                    f"Auto-upgrades configuration written to {auto_upgrades_file}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to write auto-upgrades configuration: {e}")
+                return False
+
+            # Configure unattended upgrades behavior
+            unattended_file = "/etc/apt/apt.conf.d/50unattended-upgrades"
+            if os.path.isfile(unattended_file):
+                Utils.backup_file(unattended_file)
+
+            unattended_content = (
+                "Unattended-Upgrade::Allowed-Origins {\n"
+                '    "${distro_id}:${distro_codename}";\n'
+                '    "${distro_id}:${distro_codename}-security";\n'
+                '    "${distro_id}ESMApps:${distro_codename}-apps-security";\n'
+                '    "${distro_id}ESM:${distro_codename}-infra-security";\n'
+                '    "${distro_id}:${distro_codename}-updates";\n'
+                "};\n\n"
+                "Unattended-Upgrade::Package-Blacklist {\n"
+                "};\n\n"
+                'Unattended-Upgrade::DevRelease "false";\n'
+                'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";\n'
+                'Unattended-Upgrade::Remove-Unused-Dependencies "true";\n'
+                'Unattended-Upgrade::Automatic-Reboot "false";\n'
+                'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
+                'Unattended-Upgrade::SyslogEnable "true";\n'
+            )
+
+            try:
+                with open(unattended_file, "w") as f:
+                    f.write(unattended_content)
+                logger.info(
+                    f"Unattended-upgrades configuration written to {unattended_file}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to write unattended-upgrades configuration: {e}")
+                return False
+
+            # Enable the service
+            Utils.run_command(["systemctl", "enable", "unattended-upgrades"])
+            Utils.run_command(["systemctl", "restart", "unattended-upgrades"])
+
+            status = Utils.run_command(
+                ["systemctl", "is-active", "unattended-upgrades"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if status.stdout.strip() == "active":
+                logger.info("Unattended upgrades service is active and running.")
+                return True
+            else:
+                logger.warning(
+                    "Unattended upgrades service may not be running correctly."
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to configure unattended upgrades: {e}")
             return False
 
 
@@ -3034,6 +3080,22 @@ class UbuntuServerSetup:
                     )
             except Exception as e:
                 self.logger.error(f"Error in Tailscale installation: {e}")
+                self.success = False
+
+            try:
+                if hasattr(self.services, "configure_unattended_upgrades"):
+                    if not run_with_progress(
+                        "Configuring unattended upgrades...",
+                        self.services.configure_unattended_upgrades,
+                    ):
+                        self.logger.warning("Unattended upgrades configuration failed.")
+                        self.success = False
+                else:
+                    self.logger.warning(
+                        "configure_unattended_upgrades method not found, skipping."
+                    )
+            except Exception as e:
+                self.logger.error(f"Error in unattended upgrades configuration: {e}")
                 self.success = False
 
             try:

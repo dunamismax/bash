@@ -2010,10 +2010,54 @@ net.ipv4.tcp_wmem=4096 16384 4194304
         """
         self.print_section("Unattended Upgrades Configuration")
         try:
-            self.run_command(["apt", "install", "-y", "unattended-upgrades"])
-            self.logger.info("Unattended Upgrades installed and configured.")
+            # Install required packages
+            self.run_command(
+                ["apt", "install", "-y", "unattended-upgrades", "apt-listchanges"]
+            )
+
+            # Create configuration for auto upgrades
+            auto_upgrades_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
+            auto_upgrades_content = (
+                'APT::Periodic::Update-Package-Lists "1";\n'
+                'APT::Periodic::Unattended-Upgrade "1";\n'
+                'APT::Periodic::AutocleanInterval "7";\n'
+                'APT::Periodic::Download-Upgradeable-Packages "1";\n'
+            )
+            auto_upgrades_file.write_text(auto_upgrades_content)
+
+            # Configure unattended upgrades behavior
+            unattended_file = Path("/etc/apt/apt.conf.d/50unattended-upgrades")
+            if unattended_file.exists():
+                self.backup_file(unattended_file)
+
+            unattended_content = (
+                "Unattended-Upgrade::Allowed-Origins {\n"
+                '    "${distro_id}:${distro_codename}";\n'
+                '    "${distro_id}:${distro_codename}-security";\n'
+                '    "${distro_id}ESMApps:${distro_codename}-apps-security";\n'
+                '    "${distro_id}ESM:${distro_codename}-infra-security";\n'
+                '    "${distro_id}:${distro_codename}-updates";\n'
+                "};\n\n"
+                "Unattended-Upgrade::Package-Blacklist {\n"
+                "};\n\n"
+                'Unattended-Upgrade::DevRelease "false";\n'
+                'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";\n'
+                'Unattended-Upgrade::Remove-Unused-Dependencies "true";\n'
+                'Unattended-Upgrade::Automatic-Reboot "false";\n'
+                'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
+                'Unattended-Upgrade::SyslogEnable "true";\n'
+            )
+            unattended_file.write_text(unattended_content)
+
+            # Enable the service
+            self.run_command(["systemctl", "enable", "unattended-upgrades"])
+            self.run_command(["systemctl", "restart", "unattended-upgrades"])
+
+            self.logger.info(
+                "Unattended Upgrades installed and configured to apply security updates automatically."
+            )
             return True
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             self.logger.error(f"Failed to configure unattended upgrades: {e}")
             return False
 

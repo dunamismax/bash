@@ -195,6 +195,8 @@ PACKAGES = [
     "qemu-user-static",
     # Nala (apt frontend)
     "nala",
+    # ACL support (for setfacl)
+    "acl",
 ]
 
 # Global state tracker for reporting
@@ -367,7 +369,7 @@ def run_with_progress(description: str, func, *args, **kwargs):
     """
     start_time = time.time()
     logger.info(f"{description}...")
-    
+
     try:
         result = func(*args, **kwargs)
         elapsed = time.time() - start_time
@@ -533,6 +535,26 @@ class Utils:
         sock.close()
         return result == 0
 
+    @staticmethod
+    def verify_arm_architecture() -> bool:
+        """
+        Verify that the system is running on ARM architecture.
+
+        Returns:
+            True if ARM architecture is detected, False otherwise
+        """
+        try:
+            machine = platform.machine().lower()
+            if any(arch in machine for arch in ["arm", "aarch"]):
+                logger.info(f"ARM architecture detected: {machine}")
+                return True
+            else:
+                logger.warning(f"Non-ARM architecture detected: {machine}")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to verify architecture: {e}")
+            return False
+
 
 class LogManager:
     @staticmethod
@@ -642,6 +664,16 @@ class PreflightChecker:
             )
 
         return ("ubuntu", version)
+
+    def check_architecture(self) -> bool:
+        """
+        Check if the system is running on ARM architecture.
+
+        Returns:
+            True if ARM architecture is detected, False otherwise
+        """
+        logger.info("Checking system architecture...")
+        return Utils.verify_arm_architecture()
 
     def save_config_snapshot(self) -> Optional[str]:
         """
@@ -915,109 +947,7 @@ class UserEnvironment:
             for dest_dir in destination_dirs:
                 dest = os.path.join(dest_dir, file)
 
-                # Check disk usage
-            try:
-                df_output = subprocess.check_output(
-                    ["df", "-h", "/"], text=True
-                ).splitlines()[1]
-                logger.info(f"Disk usage (root): {df_output}")
-
-                # Alert on high disk usage
-                disk_percent = int(df_output.split()[4].strip("%"))
-                if disk_percent > 90:
-                    logger.warning("Critical: Disk usage over 90%!")
-                    all_passed = False
-                elif disk_percent > 80:
-                    logger.warning("Warning: Disk usage over 80%.")
-
-                # Check memory usage
-                free_output = subprocess.check_output(
-                    ["free", "-h"], text=True
-                ).splitlines()
-                mem_line = next(
-                    (line for line in free_output if line.startswith("Mem:")), ""
-                )
-                logger.info(f"Memory usage: {mem_line}")
-
-                # Check CPU info
-                cpu_model = ""
-                cpu_output = subprocess.check_output(["lscpu"], text=True)
-                for line in cpu_output.splitlines():
-                    if "Model name" in line:
-                        cpu_model = line.split(":", 1)[1].strip()
-                        logger.info(f"CPU: {cpu_model}")
-                        break
-
-                # Check network interfaces
-                interfaces = subprocess.check_output(["ip", "-brief", "address"], text=True)
-                logger.info("Active network interfaces:")
-                for line in interfaces.splitlines():
-                    logger.info(line)
-
-                # Check network connections
-                netstat = subprocess.check_output(["ss", "-tuln"], text=True).splitlines()[
-                    :10
-                ]
-                logger.info("Active network connections:")
-                for line in netstat:
-                    logger.info(line)
-
-                # Check load average
-                with open("/proc/loadavg", "r") as f:
-                    load_avg = f.read().split()[:3]
-                if load_avg:
-                    logger.info(f"Load averages (1, 5, 15 min): {', '.join(load_avg)}")
-                    cpu_count = os.cpu_count() or 1
-                    if float(load_avg[1]) > cpu_count:
-                        logger.warning(
-                            f"Warning: 5min load average ({load_avg[1]}) exceeds CPU count ({cpu_count})."
-                        )
-
-                # Check critical services
-                services_to_check = [
-                    "ssh",
-                    "ufw",
-                    "fail2ban",
-                    "caddy",
-                    "docker",
-                    "tailscaled",
-                    "unattended-upgrades",
-                ]
-                for service in services_to_check:
-                    status = subprocess.run(
-                        ["systemctl", "is-active", service],
-                        text=True,
-                        capture_output=True,
-                        check=False,
-                    )
-                    status_str = status.stdout.strip()
-                    if status_str == "active":
-                        logger.info(f"{service}: active")
-                    else:
-                        logger.warning(f"{service}: {status_str}")
-                        if service in ["ssh", "ufw"]:
-                            all_passed = False
-
-                # Check for pending security updates
-                try:
-                    unattended_output = subprocess.check_output(
-                        ["unattended-upgrade", "--dry-run", "--debug"],
-                        text=True,
-                        stderr=subprocess.STDOUT,
-                    )
-                    for line in unattended_output.splitlines():
-                        if ("Packages that will be upgraded:" in line) and (
-                            "0 upgrades" not in line
-                        ):
-                            logger.warning("Pending security updates detected!")
-                            all_passed = False
-                except Exception:
-                    logger.debug("Unable to check for security updates.")
-
-                return all_passed
-            except Exception as e:
-                logger.error(f"Error during final checks: {e}")
-                return False if file is already up-to-date
+                # Check if file is already up-to-date
                 copy_needed = True
                 if os.path.isfile(dest) and filecmp.cmp(src, dest):
                     logger.info(f"File {dest} is already up-to-date.")
@@ -1497,6 +1427,12 @@ class ServiceInstaller:
         """
         logger.info("Installing Fastfetch...")
 
+        # Verify ARM architecture
+        if not Utils.verify_arm_architecture():
+            logger.warning(
+                "Non-ARM architecture detected. Fastfetch ARM package may not work."
+            )
+
         if Utils.command_exists("fastfetch"):
             logger.info("Fastfetch is already installed; skipping.")
             return True
@@ -1573,7 +1509,7 @@ class ServiceInstaller:
 
         # Configure Docker daemon
         daemon_json_path = "/etc/docker/daemon.json"
-        os.makedirs("/etc/docker", exist_ok=True)
+        os.makedirs(os.path.dirname(daemon_json_path), exist_ok=True)
 
         desired_daemon_json = """{
   "log-driver": "json-file",
@@ -1631,6 +1567,12 @@ class ServiceInstaller:
 
         # Install Docker Compose if needed
         if not Utils.command_exists("docker-compose"):
+            # Verify ARM architecture
+            if not Utils.verify_arm_architecture():
+                logger.warning(
+                    "Non-ARM architecture detected. Docker Compose ARM binary may not work."
+                )
+
             try:
                 compose_target = "/usr/local/bin/docker-compose"
                 Utils.run_command(
@@ -1661,6 +1603,13 @@ class ServiceInstaller:
             True if successful, False otherwise
         """
         logger.info("Installing Visual Studio Code (Stable) for ARM...")
+
+        # Verify ARM architecture
+        if not Utils.verify_arm_architecture():
+            logger.warning(
+                "Non-ARM architecture detected. VS Code ARM package may not work."
+            )
+
         deb_path = os.path.join(TEMP_DIR, "code.deb")
 
         # Check if already installed
@@ -1737,6 +1686,12 @@ Icon=vscode
             True if successful, False otherwise
         """
         logger.info("Installing Caddy web server for ARM...")
+
+        # Verify ARM architecture
+        if not Utils.verify_arm_architecture():
+            logger.warning(
+                "Non-ARM architecture detected. Caddy ARM package may not work."
+            )
 
         # Check if already installed
         if Utils.command_exists("caddy"):
@@ -1891,8 +1846,8 @@ Icon=vscode
                 try:
                     Utils.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
                     logger.info("Configured faster mirrors with Nala.")
-                except subprocess.CalledProcessError:
-                    logger.warning("Failed to configure mirrors with Nala.")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"Failed to configure mirrors with Nala: {e}")
                 return True
             else:
                 logger.error("Nala installation verification failed.")
@@ -1931,6 +1886,7 @@ Icon=vscode
 
                 # Add repository
                 repo_file = "/etc/apt/sources.list.d/tailscale.list"
+                os.makedirs(os.path.dirname(repo_file), exist_ok=True)
                 with open(repo_file, "w") as f:
                     f.write("deb https://pkgs.tailscale.com/stable/ubuntu jammy main\n")
 
@@ -2015,7 +1971,7 @@ Icon=vscode
         try:
             # Copy scripts
             Utils.run_command(
-                ["rsync", "-ah", "--delete", f"{script_source}/", f"{script_target}/"]
+                ["rsync", "-ah", "--update", f"{script_source}/", f"{script_target}/"]
             )
 
             # Set executable permissions
@@ -2174,6 +2130,99 @@ echo "Daily maintenance completed at $(date)" >> $LOG
             logger.warning(f"Failed to update SSL certificates: {e}")
             return False
 
+    def configure_unattended_upgrades(self) -> bool:
+        """
+        Configure unattended upgrades for security patches.
+
+        Returns:
+            True if unattended upgrades configured successfully, False otherwise
+        """
+        logger.info("Configuring unattended upgrades...")
+
+        try:
+            # Install required packages
+            if not SystemUpdater().install_packages(
+                ["unattended-upgrades", "apt-listchanges"]
+            ):
+                logger.error("Failed to install unattended-upgrades packages.")
+                return False
+
+            # Create configuration for auto upgrades
+            auto_upgrades_file = "/etc/apt/apt.conf.d/20auto-upgrades"
+            auto_upgrades_content = (
+                'APT::Periodic::Update-Package-Lists "1";\n'
+                'APT::Periodic::Unattended-Upgrade "1";\n'
+                'APT::Periodic::AutocleanInterval "7";\n'
+                'APT::Periodic::Download-Upgradeable-Packages "1";\n'
+            )
+
+            try:
+                with open(auto_upgrades_file, "w") as f:
+                    f.write(auto_upgrades_content)
+                logger.info(
+                    f"Auto-upgrades configuration written to {auto_upgrades_file}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to write auto-upgrades configuration: {e}")
+                return False
+
+            # Configure unattended upgrades behavior
+            unattended_file = "/etc/apt/apt.conf.d/50unattended-upgrades"
+            if os.path.isfile(unattended_file):
+                Utils.backup_file(unattended_file)
+
+            unattended_content = (
+                "Unattended-Upgrade::Allowed-Origins {\n"
+                '    "${distro_id}:${distro_codename}";\n'
+                '    "${distro_id}:${distro_codename}-security";\n'
+                '    "${distro_id}ESMApps:${distro_codename}-apps-security";\n'
+                '    "${distro_id}ESM:${distro_codename}-infra-security";\n'
+                '    "${distro_id}:${distro_codename}-updates";\n'
+                "};\n\n"
+                "Unattended-Upgrade::Package-Blacklist {\n"
+                "};\n\n"
+                'Unattended-Upgrade::DevRelease "false";\n'
+                'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";\n'
+                'Unattended-Upgrade::Remove-Unused-Dependencies "true";\n'
+                'Unattended-Upgrade::Automatic-Reboot "false";\n'
+                'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
+                'Unattended-Upgrade::SyslogEnable "true";\n'
+            )
+
+            try:
+                with open(unattended_file, "w") as f:
+                    f.write(unattended_content)
+                logger.info(
+                    f"Unattended-upgrades configuration written to {unattended_file}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to write unattended-upgrades configuration: {e}")
+                return False
+
+            # Enable the service
+            Utils.run_command(["systemctl", "enable", "unattended-upgrades"])
+            Utils.run_command(["systemctl", "restart", "unattended-upgrades"])
+
+            status = Utils.run_command(
+                ["systemctl", "is-active", "unattended-upgrades"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if status.stdout.strip() == "active":
+                logger.info("Unattended upgrades service is active and running.")
+                return True
+            else:
+                logger.warning(
+                    "Unattended upgrades service may not be running correctly."
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to configure unattended upgrades: {e}")
+            return False
+
 
 # ------------------------------------------------------------------------------
 # Phase 7: System Tuning & Permissions
@@ -2251,6 +2300,14 @@ class SystemTuner:
             True if successful, False otherwise
         """
         logger.info("Configuring home directory permissions...")
+
+        # Check for acl package
+        if not Utils.command_exists("setfacl"):
+            logger.info("ACL utilities not found; installing...")
+            if not SystemUpdater().install_packages(["acl"]):
+                logger.warning(
+                    "ACL package installation failed; continuing without ACLs."
+                )
 
         try:
             # Set ownership recursively
@@ -2832,6 +2889,12 @@ class UbuntuServerSetup:
             if not self.preflight.check_os_version():
                 self.logger.warning("OS version check failed; proceeding with caution.")
 
+            # Check ARM architecture
+            if not self.preflight.check_architecture():
+                self.logger.warning(
+                    "Non-ARM architecture detected; some packages may not work correctly."
+                )
+
             self.preflight.save_config_snapshot()
 
             TASK_STATUS["preflight"]["status"] = "success"
@@ -2971,9 +3034,7 @@ class UbuntuServerSetup:
                 self.logger.warning("Fastfetch installation failed.")
                 services_success = False
 
-            if not run_with_progress(
-                "Configuring Docker", self.services.docker_config
-            ):
+            if not run_with_progress("Configuring Docker", self.services.docker_config):
                 self.logger.warning("Docker configuration failed.")
                 services_success = False
 
@@ -3022,6 +3083,13 @@ class UbuntuServerSetup:
                 maintenance_success = False
 
             if not run_with_progress(
+                "Configuring unattended upgrades",
+                self.maintenance.configure_unattended_upgrades,
+            ):
+                self.logger.warning("Unattended upgrades configuration failed.")
+                maintenance_success = False
+
+            if not run_with_progress(
                 "Backing up configurations", self.maintenance.backup_configs
             ):
                 self.logger.warning("Configuration backup failed.")
@@ -3046,9 +3114,7 @@ class UbuntuServerSetup:
 
             tuning_success = True
 
-            if not run_with_progress(
-                "Applying system tuning", self.tuner.tune_system
-            ):
+            if not run_with_progress("Applying system tuning", self.tuner.tune_system):
                 self.logger.warning("System tuning failed.")
                 tuning_success = False
 
