@@ -1,32 +1,23 @@
 #!/usr/bin/env python3
 """
-Ubuntu Server Initialization & Hardening Utility – Enhanced Version
---------------------------------------------------------------------
+Ubuntu Server Initialization & Hardening Utility for Raspberry Pi (ARM)
+-----------------------------------------------------------------------
 Description:
-  This script automates the setup, configuration, and maintenance of an Ubuntu server.
-  It is divided into the following phases:
+  This script automates the setup, configuration, and maintenance of an Ubuntu server
+  running on Raspberry Pi hardware (ARM architecture). It is divided into the following phases:
     1. Pre-flight Checks
-    2. Nala Installation (ensuring a fast, modern apt frontend is available)
-    3. System Update & Basic Configuration
-    4. User Environment Setup
-    5. Security & Access Hardening
-    6. Service Installations
-    7. Maintenance Tasks
-    8. System Tuning & Permissions
-    9. Final Checks & Cleanup
-
-  Features:
-    - Comprehensive error handling with detailed logging
-    - Visual progress indicators for long-running tasks
-    - Secure configuration of core services (SSH, UFW, Fail2ban, etc.)
-    - Installation of modern tooling (Docker, Tailscale, VS Code, etc.)
-    - System performance tuning and security hardening
-    - Automatic backup of critical configuration files
+    2. System Update & Basic Configuration (using Nala)
+    3. User Environment Setup
+    4. Security & Access Hardening
+    5. Service Installations
+    6. Maintenance Tasks
+    7. System Tuning & Permissions
+    8. Final Checks & Cleanup
 
 Usage:
-    sudo ./ubuntu_server_setup.py
+    sudo ./ubuntu_server.py
 
-Author: Your Name | License: MIT | Version: 6.0.0
+Author: Your Name | License: MIT | Version: 5.0.0
 """
 
 import atexit
@@ -50,24 +41,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor
 
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.panel import Panel
-from rich.text import Text
-
 # ------------------------------------------------------------------------------
-# Environment Configuration & Constants
+# Environment Configuration (Modify these settings as needed)
 # ------------------------------------------------------------------------------
 USERNAME = "sawyer"
 USER_HOME = f"/home/{USERNAME}"
 BACKUP_DIR = "/var/backups"
 TEMP_DIR = tempfile.gettempdir()
-LOG_FILE = "/var/log/ubuntu_setup.log"
-MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 
-
-# Software versions and download URLs
-PLEX_VERSION = "1.40.1.8267-c3e6adcf1"
+# Software versions and download URLs (ARM versions)
+PLEX_VERSION = "1.41.3.9314-a0bfb8370"
 PLEX_URL = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}/debian/plexmediaserver_{PLEX_VERSION}_arm64.deb"
 
 FASTFETCH_VERSION = "2.36.1"
@@ -75,15 +58,17 @@ FASTFETCH_URL = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{
 
 DOCKER_COMPOSE_VERSION = "2.20.3"
 uname_info = platform.uname()
-DOCKER_COMPOSE_URL = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{uname_info.system}-{uname_info.machine}"
+system = uname_info.system.lower()  # should be 'linux'
+machine = uname_info.machine.lower()  # expected to be 'aarch64' on ARM
+DOCKER_COMPOSE_URL = f"https://github.com/docker/compose/releases/download/v{DOCKER_COMPOSE_VERSION}/docker-compose-{system}-{machine}"
 
-# Code Server instead of VS Code (better ARM compatibility)
-CODE_SERVER_VERSION = "4.20.1"
-CODE_SERVER_URL = f"https://github.com/coder/code-server/releases/download/v{CODE_SERVER_VERSION}/code-server_{CODE_SERVER_VERSION}_arm64.deb"
+VSCODE_VERSION = "1.97.2-1739406807"
+VSCODE_URL = (
+    f"https://update.code.visualstudio.com/{VSCODE_VERSION}/linux-deb-arm64/stable"
+)
 
 CADDY_VERSION = "2.9.1"
 CADDY_URL = f"https://github.com/caddyserver/caddy/releases/download/v{CADDY_VERSION}/caddy_{CADDY_VERSION}_linux_arm64.deb"
-
 
 CONFIG_FILES = [
     "/etc/ssh/sshd_config",
@@ -212,13 +197,11 @@ PACKAGES = [
     "nala",
 ]
 
-# Global status for reporting
-SETUP_STATUS = {
+# Global state tracker for reporting
+TASK_STATUS = {
     "preflight": {"status": "pending", "message": ""},
-    "nala_install": {"status": "pending", "message": ""},
-    "system_update": {"status": "pending", "message": ""},
-    "packages_install": {"status": "pending", "message": ""},
-    "user_env": {"status": "pending", "message": ""},
+    "update": {"status": "pending", "message": ""},
+    "environment": {"status": "pending", "message": ""},
     "security": {"status": "pending", "message": ""},
     "services": {"status": "pending", "message": ""},
     "maintenance": {"status": "pending", "message": ""},
@@ -239,25 +222,23 @@ NORD13 = "\033[38;2;235;203;139m"
 NORD14 = "\033[38;2;163;190;140m"
 NC = "\033[0m"
 
-# Global console setup
-console = Console()
+# ------------------------------------------------------------------------------
+# Global Logging Setup
+# ------------------------------------------------------------------------------
+LOG_FILE = "/var/log/ubuntu_setup.log"
+MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
+DISABLE_COLORS = os.environ.get("DISABLE_COLORS", "false").lower() == "true"
 
 
-# ------------------------------------------------------------------------------
-# CUSTOM LOGGING
-# ------------------------------------------------------------------------------
 class NordColorFormatter(logging.Formatter):
-    """Custom formatter that applies Nord color palette to log messages based on level."""
-
     def __init__(self, fmt=None, datefmt=None, use_colors=True):
         super().__init__(fmt, datefmt)
-        self.use_colors = use_colors
+        self.use_colors = use_colors and not DISABLE_COLORS
 
     def format(self, record):
         msg = super().format(record)
         if not self.use_colors:
             return msg
-
         level = record.levelname
         if level == "DEBUG":
             return f"{NORD9}{msg}{NC}"
@@ -272,10 +253,7 @@ class NordColorFormatter(logging.Formatter):
 
 def setup_logging() -> logging.Logger:
     """
-    Configure logging with file and console handlers using Nord color palette.
-
-    Returns:
-        logging.Logger: Configured logger instance
+    Configure the logger with custom formatter and set up log rotation.
     """
     log_dir = os.path.dirname(LOG_FILE)
     os.makedirs(log_dir, mode=0o700, exist_ok=True)
@@ -290,18 +268,16 @@ def setup_logging() -> logging.Logger:
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
 
-    # Create formatters
+    # File handler
     formatter = NordColorFormatter(
         "[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
     )
-
-    # Set up file handler
     fh = logging.FileHandler(LOG_FILE)
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
 
-    # Set up console handler if connected to a terminal
+    # Console handler (only if stderr is a TTY)
     if sys.stderr.isatty():
         ch = logging.StreamHandler()
         ch.setLevel(logging.INFO)
@@ -311,34 +287,28 @@ def setup_logging() -> logging.Logger:
     return logger
 
 
-# Initialize logger
 logger = setup_logging()
 
 
 def print_section(title: str):
-    """
-    Display a formatted section header using Nord color palette.
-
-    Args:
-        title: The section title to display
-    """
+    """Print a nicely formatted section header in the log."""
     border = "─" * 60
-    console.print(f"[#94CEEB]{border}")
-    console.print(f"[#94CEEB]  {title}")
-    console.print(f"[#94CEEB]{border}")
-    logger.info(f"--- {title} ---")
+    if not DISABLE_COLORS:
+        logger.info(f"{NORD10}{border}{NC}")
+        logger.info(f"{NORD10}  {title}{NC}")
+        logger.info(f"{NORD10}{border}{NC}")
+    else:
+        logger.info(border)
+        logger.info(f"  {title}")
+        logger.info(border)
 
 
 # ------------------------------------------------------------------------------
-# SIGNAL HANDLING & CLEANUP
+# Signal Handling & Cleanup
 # ------------------------------------------------------------------------------
 def signal_handler(signum, frame):
     """
-    Handle termination signals gracefully.
-
-    Args:
-        signum: Signal number
-        frame: Current stack frame
+    Handle signals like SIGINT and SIGTERM to ensure proper cleanup.
     """
     sig_name = (
         signal.Signals(signum).name
@@ -346,12 +316,7 @@ def signal_handler(signum, frame):
         else f"signal {signum}"
     )
     logger.error(f"Script interrupted by {sig_name}.")
-
-    try:
-        cleanup()
-    except Exception as e:
-        logger.error(f"Error during cleanup after signal: {e}")
-
+    cleanup()
     if signum == signal.SIGINT:
         sys.exit(130)
     elif signum == signal.SIGTERM:
@@ -360,16 +325,20 @@ def signal_handler(signum, frame):
         sys.exit(128 + signum)
 
 
-# Register signal handlers
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
 
 
 def cleanup():
-    """Perform final cleanup tasks before exiting."""
+    """
+    Perform cleanup operations when the script exits.
+    """
     logger.info("Performing cleanup tasks before exit.")
+    # Print final status if we've started any tasks
+    if any(item["status"] != "pending" for item in TASK_STATUS.values()):
+        print_status_report()
 
-    # Remove any temporary files created with our prefix
+    # Clean up any temporary files
     for temp_file in os.listdir(tempfile.gettempdir()):
         if temp_file.startswith("ubuntu_setup_"):
             try:
@@ -377,83 +346,89 @@ def cleanup():
             except Exception:
                 pass
 
-    # Print status report if any tasks were started
-    if any(item["status"] != "pending" for item in SETUP_STATUS.values()):
-        print_status_report()
 
-
-# Register cleanup function to run at exit
 atexit.register(cleanup)
 
 
 # ------------------------------------------------------------------------------
-# Run-With-Progress Helper (using rich)
+# Simple Function Execution Helper
 # ------------------------------------------------------------------------------
-def run_with_progress(description: str, func, *args, task_name=None, **kwargs):
+def run_with_progress(description: str, func, *args, **kwargs):
     """
-    Run a function in a background thread while displaying a progress spinner.
+    Run a function with a simple progress indicator.
 
     Args:
-        description: Description to display with the spinner
-        func: Function to execute
-        task_name: Name of the task for status tracking
+        description: Text to display for the operation
+        func: The function to execute
         *args, **kwargs: Arguments to pass to the function
 
     Returns:
-        The result of the function
+        The result of the function call
     """
-    if task_name:
-        SETUP_STATUS[task_name] = {
-            "status": "in_progress",
-            "message": f"{description} in progress...",
-        }
-
+    start_time = time.time()
+    logger.info(f"{description}...")
+    
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(func, *args, **kwargs)
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                TimeElapsedColumn(),
-                transient=True,
-                console=console,
-            ) as progress:
-                task = progress.add_task(description, total=None)
-                while not future.done():
-                    time.sleep(0.1)
-                    progress.refresh()
-
-                # Get the result or exception
-                try:
-                    result = future.result()
-                    if task_name:
-                        SETUP_STATUS[task_name] = {
-                            "status": "success",
-                            "message": f"{description} completed successfully.",
-                        }
-                    return result
-                except Exception as e:
-                    if task_name:
-                        SETUP_STATUS[task_name] = {
-                            "status": "failed",
-                            "message": f"{description} failed: {str(e)}",
-                        }
-                    raise
+        result = func(*args, **kwargs)
+        elapsed = time.time() - start_time
+        logger.info(f"{description} completed in {elapsed:.2f}s")
+        return result
     except Exception as e:
-        if task_name:
-            SETUP_STATUS[task_name] = {
-                "status": "failed",
-                "message": f"{description} failed: {str(e)}",
-            }
+        elapsed = time.time() - start_time
+        logger.error(f"{description} failed after {elapsed:.2f}s: {e}")
         raise
+
+
+# ------------------------------------------------------------------------------
+# Status Reporting
+# ------------------------------------------------------------------------------
+def print_status_report():
+    """
+    Print a comprehensive status report of all tasks that have been started.
+    """
+    print_section("Task Status Report")
+    icons = {
+        "success": "✓" if not DISABLE_COLORS else "[SUCCESS]",
+        "failed": "✗" if not DISABLE_COLORS else "[FAILED]",
+        "pending": "?" if not DISABLE_COLORS else "[PENDING]",
+        "in_progress": "⋯" if not DISABLE_COLORS else "[IN PROGRESS]",
+        "skipped": "⏭" if not DISABLE_COLORS else "[SKIPPED]",
+    }
+    colors = {
+        "success": NORD14,
+        "failed": NORD11,
+        "pending": NORD13,
+        "in_progress": NORD8,
+        "skipped": NORD9,
+    }
+    descriptions = {
+        "preflight": "Pre-flight Checks",
+        "update": "System Update & Configuration",
+        "environment": "User Environment Setup",
+        "security": "Security & Access Hardening",
+        "services": "Service Installations",
+        "maintenance": "Maintenance Tasks",
+        "tuning": "System Tuning & Permissions",
+        "final": "Final Checks & Cleanup",
+    }
+
+    for task, data in TASK_STATUS.items():
+        status = data["status"]
+        msg = data["message"]
+        task_desc = descriptions.get(task, task)
+
+        if not DISABLE_COLORS:
+            icon = icons[status]
+            color = colors[status]
+            logger.info(f"{color}{icon} {task_desc}: {status.upper()}{NC} - {msg}")
+        else:
+            logger.info(f"{icons[status]} {task_desc}: {status.upper()} - {msg}")
 
 
 # ------------------------------------------------------------------------------
 # Utility Functions & Classes
 # ------------------------------------------------------------------------------
 class Utils:
-    """Utility functions for common operations."""
-
     @staticmethod
     def run_command(
         cmd: Union[List[str], str],
@@ -463,24 +438,20 @@ class Utils:
         **kwargs,
     ) -> subprocess.CompletedProcess:
         """
-        Execute a shell command with proper logging.
+        Run a shell command with proper error handling and logging.
 
         Args:
-            cmd: Command to execute (list or string)
-            check: Whether to raise an exception on non-zero exit code
+            cmd: The command to run (list or string)
+            check: Whether to raise an exception on non-zero exit
             capture_output: Whether to capture stdout/stderr
-            text: Whether to return strings instead of bytes
-            **kwargs: Additional arguments to pass to subprocess.run
+            text: Whether to decode output as text
+            **kwargs: Additional arguments for subprocess.run
 
         Returns:
-            CompletedProcess instance
-
-        Raises:
-            subprocess.CalledProcessError: If the command returns non-zero exit code and check=True
+            The completed process object
         """
         cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
         logger.debug(f"Executing command: {cmd_str}")
-
         try:
             result = subprocess.run(
                 cmd, check=check, capture_output=capture_output, text=text, **kwargs
@@ -493,32 +464,23 @@ class Utils:
 
     @staticmethod
     def command_exists(cmd: str) -> bool:
-        """
-        Check if a command exists in the system PATH.
-
-        Args:
-            cmd: Command name to check
-
-        Returns:
-            True if command exists, False otherwise
-        """
+        """Check if a command exists in the PATH."""
         return shutil.which(cmd) is not None
 
     @staticmethod
     def backup_file(file_path: str) -> Optional[str]:
         """
-        Create a backup of a file with timestamp.
+        Create a backup of a file with timestamp in the filename.
 
         Args:
             file_path: Path to the file to back up
 
         Returns:
-            Path to the backup file, or None if backup failed
+            Path to the backup file or None if backup failed
         """
         if os.path.isfile(file_path):
             timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             backup = f"{file_path}.bak.{timestamp}"
-
             try:
                 shutil.copy2(file_path, backup)
                 logger.info(f"Backed up {file_path} to {backup}")
@@ -535,22 +497,20 @@ class Utils:
         path: str, owner: Optional[str] = None, mode: int = 0o755
     ) -> bool:
         """
-        Create a directory if it doesn't exist and set ownership.
+        Ensure a directory exists with the correct permissions.
 
         Args:
-            path: Directory path to create
-            owner: Owner in the format "user:group" (optional)
-            mode: Directory permissions
+            path: Directory path to ensure
+            owner: Owner of the directory (user:group format)
+            mode: Permission mode as octal
 
         Returns:
             True if successful, False otherwise
         """
         try:
             os.makedirs(path, mode=mode, exist_ok=True)
-
             if owner:
                 Utils.run_command(["chown", owner, path])
-
             logger.debug(f"Ensured directory exists: {path}")
             return True
         except Exception as e:
@@ -559,32 +519,14 @@ class Utils:
 
     @staticmethod
     def generate_unique_filename(base_path: str, extension: str = "") -> str:
-        """
-        Generate a filename with a timestamp to ensure uniqueness.
-
-        Args:
-            base_path: Base path for the filename
-            extension: File extension (without the dot)
-
-        Returns:
-            Unique filename with timestamp
-        """
+        """Generate a unique filename with timestamp."""
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         ext = f".{extension}" if extension else ""
         return f"{base_path}_{timestamp}{ext}"
 
     @staticmethod
     def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
-        """
-        Check if a port is open on a specified host.
-
-        Args:
-            port: TCP port number to check
-            host: Host to check (default: localhost)
-
-        Returns:
-            True if port is open, False otherwise
-        """
+        """Check if a port is open on the given host."""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
         result = sock.connect_ex((host, port))
@@ -593,18 +535,15 @@ class Utils:
 
 
 class LogManager:
-    """Manage log files, including rotation and cleanup."""
-
     @staticmethod
     def rotate_logs() -> bool:
         """
-        Rotate the main log file when it gets too large.
+        Rotate the main log file by compressing it with a timestamp.
 
         Returns:
-            True if rotation was successful, False otherwise
+            True if rotation succeeded, False otherwise
         """
         logger.info("Rotating logs...")
-
         if not os.path.isfile(LOG_FILE):
             logger.warning(f"Log file {LOG_FILE} does not exist.")
             return False
@@ -616,7 +555,6 @@ class LogManager:
             with open(LOG_FILE, "rb") as f_in:
                 with gzip.open(rotated_file, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
-
             # Clear the current log file
             open(LOG_FILE, "w").close()
             logger.info(f"Log rotated to {rotated_file}.")
@@ -626,82 +564,27 @@ class LogManager:
             return False
 
 
-def print_status_report():
-    """Display a formatted report of all setup tasks and their status."""
-    print_section("Setup Status Report")
-
-    icons = {
-        "success": "✓",
-        "failed": "✗",
-        "pending": "?",
-        "in_progress": "⋯",
-        "skipped": "⏭",
-        "warning": "⚠",  # Added warning icon
-    }
-
-    colors = {
-        "success": "green",
-        "failed": "red",
-        "pending": "yellow",
-        "in_progress": "blue",
-        "skipped": "cyan",
-        "warning": "yellow",  # Added warning color
-    }
-
-    descriptions = {
-        "preflight": "Pre-flight Checks",
-        "nala_install": "Nala Installation",
-        "system_update": "System Update",
-        "packages_install": "Package Installation",
-        "user_env": "User Environment Setup",
-        "security": "Security Hardening",
-        "services": "Service Installation",
-        "maintenance": "Maintenance Tasks",
-        "tuning": "System Tuning",
-        "final": "Final Checks & Cleanup",
-    }
-
-    for task, data in SETUP_STATUS.items():
-        status = data["status"]
-        msg = data["message"]
-        task_desc = descriptions.get(task, task)
-
-        icon = icons[status]
-        color = colors[status]
-
-        console.print(
-            f"[{color}]{icon} {task_desc}: {status.upper()}[/{color}] - {msg}"
-        )
-
-
 # ------------------------------------------------------------------------------
 # Phase 1: Pre-flight Checks
 # ------------------------------------------------------------------------------
 class PreflightChecker:
-    """Perform initial system checks before proceeding with setup."""
-
     def check_root(self) -> None:
         """
-        Verify the script is running with root privileges.
-
-        Raises:
-            SystemExit: If not running as root
+        Check if the script is running with root privileges.
+        Exits if not running as root.
         """
         if os.geteuid() != 0:
-            console.print(
-                f"[bold red]Error: This script must be run as root.[/bold red]"
-            )
-            console.print(f"Please run with: sudo {sys.argv[0]}")
+            print(f"{NORD11}Error: This script must be run as root.{NC}")
+            print(f"Please run with: sudo {sys.argv[0]}")
             sys.exit(1)
-
         logger.info("Root privileges confirmed.")
 
     def check_network(self) -> bool:
         """
-        Check network connectivity to essential services.
+        Check network connectivity by pinging well-known hosts.
 
         Returns:
-            True if network is available, False otherwise
+            True if at least one host responds, False otherwise
         """
         logger.info("Performing network connectivity check...")
         test_hosts = ["google.com", "cloudflare.com", "1.1.1.1"]
@@ -713,7 +596,6 @@ class PreflightChecker:
                     check=False,
                     capture_output=True,
                 )
-
                 if result.returncode == 0:
                     logger.info(f"Network connectivity verified via {host}.")
                     return True
@@ -725,10 +607,10 @@ class PreflightChecker:
 
     def check_os_version(self) -> Optional[Tuple[str, str]]:
         """
-        Check Ubuntu version compatibility.
+        Check if the system is running a supported Ubuntu version.
 
         Returns:
-            Tuple of (os_name, version) or None if not supported
+            Tuple of (os_id, version) if successful, None otherwise
         """
         logger.info("Checking OS version...")
 
@@ -751,7 +633,6 @@ class PreflightChecker:
 
         version = os_info.get("VERSION_ID", "").strip('"')
         pretty_name = os_info.get("PRETTY_NAME", "Unknown")
-
         logger.info(f"Detected OS: {pretty_name}")
 
         supported = ["20.04", "22.04", "24.04"]
@@ -764,10 +645,10 @@ class PreflightChecker:
 
     def save_config_snapshot(self) -> Optional[str]:
         """
-        Create a backup of existing configuration files.
+        Create a backup archive of important configuration files.
 
         Returns:
-            Path to the backup archive or None if failed
+            Path to the snapshot file if successful, None otherwise
         """
         logger.info("Saving configuration snapshot...")
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -794,29 +675,24 @@ class PreflightChecker:
 # Phase 2: System Update & Basic Configuration
 # ------------------------------------------------------------------------------
 class SystemUpdater:
-    """Update the system, install packages, and configure basic settings."""
-
     def update_system(self, full_upgrade: bool = False) -> bool:
         """
-        Update system packages using Nala.
+        Update system repositories and packages using Nala.
 
         Args:
             full_upgrade: Whether to perform a full upgrade
 
         Returns:
-            True if update was successful, False otherwise
+            True if successful, False otherwise
         """
         logger.info("Updating system repositories and packages using Nala...")
-
         try:
             Utils.run_command(["nala", "update"])
-
             cmd = (
                 ["nala", "upgrade", "-y"]
                 if not full_upgrade
                 else ["nala", "full-upgrade", "-y"]
             )
-
             Utils.run_command(cmd)
             logger.info("System update and upgrade completed.")
             return True
@@ -826,16 +702,13 @@ class SystemUpdater:
 
     def install_packages(self, packages: Optional[List[str]] = None) -> bool:
         """
-        Install required packages using Nala with improved error handling.
-
-        Installs packages individually when batch installation fails to
-        maximize the number of successful installations.
+        Install required packages using Nala.
 
         Args:
-            packages: List of packages to install (default: global PACKAGES)
+            packages: List of packages to install, or use default if None
 
         Returns:
-            True if all essential packages were installed, False otherwise
+            True if successful, False otherwise
         """
         logger.info("Installing essential packages using Nala...")
         packages = packages or PACKAGES
@@ -856,82 +729,34 @@ class SystemUpdater:
             else:
                 logger.debug(f"Package already installed: {pkg}")
 
-        if not missing:
+        if missing:
+            logger.info(f"Installing {len(missing)} missing packages...")
+            installer = ["nala", "install", "-y"]
+
+            try:
+                # Install in batches to avoid command line length limits
+                batch_size = 20
+                for i in range(0, len(missing), batch_size):
+                    batch = missing[i : i + batch_size]
+                    logger.info(f"Installing batch {i // batch_size + 1}...")
+                    Utils.run_command(installer + batch)
+
+                logger.info("All packages installed successfully.")
+                return True
+
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Package installation failed: {e}")
+                return False
+        else:
             logger.info("All required packages are already installed.")
             return True
-
-        # Define essential packages that must be installed
-        essential_packages = [
-            "bash",
-            "vim",
-            "nano",
-            "sudo",
-            "openssh-server",
-            "ufw",
-            "python3",
-            "curl",
-            "wget",
-            "ca-certificates",
-        ]
-
-        # Track failed packages
-        failed_packages = []
-        installer = ["nala", "install", "-y"]
-
-        logger.info(f"Installing {len(missing)} missing packages...")
-
-        # First try batch installation
-        try:
-            # Install packages in batches for efficiency
-            batch_size = 10  # Reduced batch size
-            for i in range(0, len(missing), batch_size):
-                batch = missing[i : i + batch_size]
-                logger.info(f"Installing batch {i // batch_size + 1}...")
-
-                try:
-                    Utils.run_command(installer + batch)
-                    logger.info(f"Batch {i // batch_size + 1} installed successfully.")
-                except subprocess.CalledProcessError as e:
-                    logger.warning(f"Batch installation failed: {e}")
-
-                    # Fall back to installing packages one by one
-                    for pkg in batch:
-                        try:
-                            logger.info(f"Trying individual installation of {pkg}...")
-                            Utils.run_command(installer + [pkg], check=False)
-                            logger.info(f"Successfully installed {pkg}.")
-                        except Exception as pkg_error:
-                            failed_packages.append(pkg)
-                            logger.warning(f"Failed to install {pkg}: {pkg_error}")
-        except Exception as e:
-            logger.error(f"Package installation error: {e}")
-            # Even if batch install fails, try essential packages individually
-
-        # Check if any essential packages failed to install
-        essential_failed = [pkg for pkg in failed_packages if pkg in essential_packages]
-
-        if failed_packages:
-            logger.warning(
-                f"Failed to install {len(failed_packages)} packages: {', '.join(failed_packages)}"
-            )
-
-        if essential_failed:
-            logger.error(
-                f"Failed to install essential packages: {', '.join(essential_failed)}"
-            )
-            return False
-
-        logger.info(
-            f"Installed {len(missing) - len(failed_packages)} of {len(missing)} packages successfully."
-        )
-        return True
 
     def configure_timezone(self, timezone: str = "America/New_York") -> bool:
         """
         Set the system timezone.
 
         Args:
-            timezone: Timezone to set
+            timezone: The timezone to set
 
         Returns:
             True if successful, False otherwise
@@ -955,8 +780,52 @@ class SystemUpdater:
 
             logger.info("Timezone configured successfully.")
             return True
+
         except Exception as e:
             logger.error(f"Failed to set timezone: {e}")
+            return False
+
+    def configure_locale(self, locale: str = "en_US.UTF-8") -> bool:
+        """
+        Set the system locale.
+
+        Args:
+            locale: The locale to set
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Setting locale to {locale}...")
+
+        try:
+            Utils.run_command(["locale-gen", locale])
+            Utils.run_command(["update-locale", f"LANG={locale}", f"LC_ALL={locale}"])
+
+            # Update /etc/environment
+            env_file = "/etc/environment"
+            env_content = []
+            locale_added = False
+
+            if os.path.isfile(env_file):
+                with open(env_file, "r") as f:
+                    for line in f:
+                        if line.strip().startswith("LANG="):
+                            env_content.append(f"LANG={locale}\n")
+                            locale_added = True
+                        else:
+                            env_content.append(line)
+
+            if not locale_added:
+                env_content.append(f"LANG={locale}\n")
+
+            with open(env_file, "w") as f:
+                f.writelines(env_content)
+
+            logger.info("Locale configured successfully.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Locale configuration failed: {e}")
             return False
 
 
@@ -964,14 +833,12 @@ class SystemUpdater:
 # Phase 3: User Environment Setup
 # ------------------------------------------------------------------------------
 class UserEnvironment:
-    """Set up user environment, repositories, and configuration files."""
-
     def setup_repos(self) -> bool:
         """
-        Clone and update GitHub repositories for the user.
+        Set up GitHub repositories for the user.
 
         Returns:
-            True if all repositories were successfully set up, False otherwise
+            True if all repositories were set up successfully, False otherwise
         """
         logger.info(f"Setting up GitHub repositories for user '{USERNAME}'...")
         gh_dir = os.path.join(USER_HOME, "github")
@@ -1018,13 +885,12 @@ class UserEnvironment:
 
     def copy_shell_configs(self) -> bool:
         """
-        Copy shell configuration files from repository to user home.
+        Update shell configuration files from the bash repository.
 
         Returns:
-            True if successful, False otherwise
+            True if all files were copied successfully, False otherwise
         """
         logger.info("Updating shell configuration files...")
-
         files_to_copy = [".bashrc", ".profile"]
         source_dir = os.path.join(
             USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles"
@@ -1048,15 +914,120 @@ class UserEnvironment:
 
             for dest_dir in destination_dirs:
                 dest = os.path.join(dest_dir, file)
-                copy_needed = True
 
+                # Check disk usage
+            try:
+                df_output = subprocess.check_output(
+                    ["df", "-h", "/"], text=True
+                ).splitlines()[1]
+                logger.info(f"Disk usage (root): {df_output}")
+
+                # Alert on high disk usage
+                disk_percent = int(df_output.split()[4].strip("%"))
+                if disk_percent > 90:
+                    logger.warning("Critical: Disk usage over 90%!")
+                    all_passed = False
+                elif disk_percent > 80:
+                    logger.warning("Warning: Disk usage over 80%.")
+
+                # Check memory usage
+                free_output = subprocess.check_output(
+                    ["free", "-h"], text=True
+                ).splitlines()
+                mem_line = next(
+                    (line for line in free_output if line.startswith("Mem:")), ""
+                )
+                logger.info(f"Memory usage: {mem_line}")
+
+                # Check CPU info
+                cpu_model = ""
+                cpu_output = subprocess.check_output(["lscpu"], text=True)
+                for line in cpu_output.splitlines():
+                    if "Model name" in line:
+                        cpu_model = line.split(":", 1)[1].strip()
+                        logger.info(f"CPU: {cpu_model}")
+                        break
+
+                # Check network interfaces
+                interfaces = subprocess.check_output(["ip", "-brief", "address"], text=True)
+                logger.info("Active network interfaces:")
+                for line in interfaces.splitlines():
+                    logger.info(line)
+
+                # Check network connections
+                netstat = subprocess.check_output(["ss", "-tuln"], text=True).splitlines()[
+                    :10
+                ]
+                logger.info("Active network connections:")
+                for line in netstat:
+                    logger.info(line)
+
+                # Check load average
+                with open("/proc/loadavg", "r") as f:
+                    load_avg = f.read().split()[:3]
+                if load_avg:
+                    logger.info(f"Load averages (1, 5, 15 min): {', '.join(load_avg)}")
+                    cpu_count = os.cpu_count() or 1
+                    if float(load_avg[1]) > cpu_count:
+                        logger.warning(
+                            f"Warning: 5min load average ({load_avg[1]}) exceeds CPU count ({cpu_count})."
+                        )
+
+                # Check critical services
+                services_to_check = [
+                    "ssh",
+                    "ufw",
+                    "fail2ban",
+                    "caddy",
+                    "docker",
+                    "tailscaled",
+                    "unattended-upgrades",
+                ]
+                for service in services_to_check:
+                    status = subprocess.run(
+                        ["systemctl", "is-active", service],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    status_str = status.stdout.strip()
+                    if status_str == "active":
+                        logger.info(f"{service}: active")
+                    else:
+                        logger.warning(f"{service}: {status_str}")
+                        if service in ["ssh", "ufw"]:
+                            all_passed = False
+
+                # Check for pending security updates
+                try:
+                    unattended_output = subprocess.check_output(
+                        ["unattended-upgrade", "--dry-run", "--debug"],
+                        text=True,
+                        stderr=subprocess.STDOUT,
+                    )
+                    for line in unattended_output.splitlines():
+                        if ("Packages that will be upgraded:" in line) and (
+                            "0 upgrades" not in line
+                        ):
+                            logger.warning("Pending security updates detected!")
+                            all_passed = False
+                except Exception:
+                    logger.debug("Unable to check for security updates.")
+
+                return all_passed
+            except Exception as e:
+                logger.error(f"Error during final checks: {e}")
+                return False if file is already up-to-date
+                copy_needed = True
                 if os.path.isfile(dest) and filecmp.cmp(src, dest):
                     logger.info(f"File {dest} is already up-to-date.")
                     copy_needed = False
 
+                # Backup existing file if needed
                 if copy_needed and os.path.isfile(dest):
                     Utils.backup_file(dest)
 
+                # Copy the file
                 if copy_needed:
                     try:
                         shutil.copy2(src, dest)
@@ -1075,13 +1046,12 @@ class UserEnvironment:
 
     def copy_config_folders(self) -> bool:
         """
-        Copy configuration folders to user's .config directory.
+        Copy configuration folders from the bash repository.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Copying configuration folders...")
-
         source_dir = os.path.join(
             USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles"
         )
@@ -1093,9 +1063,12 @@ class UserEnvironment:
         try:
             for item in os.listdir(source_dir):
                 src_path = os.path.join(source_dir, item)
+
                 if os.path.isdir(src_path):
                     dest_path = os.path.join(dest_dir, item)
                     os.makedirs(dest_path, exist_ok=True)
+
+                    # Use rsync to copy only newer files
                     Utils.run_command(
                         ["rsync", "-a", "--update", src_path + "/", dest_path + "/"]
                     )
@@ -1103,6 +1076,7 @@ class UserEnvironment:
                         ["chown", "-R", f"{USERNAME}:{USERNAME}", dest_path]
                     )
                     logger.info(f"Copied '{item}' configuration to '{dest_path}'.")
+
             return success
         except Exception as e:
             logger.error(f"Error scanning source directory '{source_dir}': {e}")
@@ -1110,19 +1084,21 @@ class UserEnvironment:
 
     def set_bash_shell(self) -> bool:
         """
-        Set bash as the default shell for the user.
+        Ensure bash is the default shell for the user.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Ensuring /bin/bash is the default shell...")
 
+        # Install bash if not present
         if not Utils.command_exists("bash"):
             logger.info("Bash not found; installing...")
             if not SystemUpdater().install_packages(["bash"]):
                 logger.warning("Bash installation failed.")
                 return False
 
+        # Ensure bash is in /etc/shells
         try:
             with open("/etc/shells", "r") as f:
                 shells = f.read()
@@ -1136,6 +1112,7 @@ class UserEnvironment:
         except Exception as e:
             logger.warning(f"Failed to update /etc/shells: {e}")
 
+        # Set default shell for user
         try:
             current_shell = (
                 subprocess.check_output(["getent", "passwd", USERNAME], text=True)
@@ -1150,6 +1127,7 @@ class UserEnvironment:
             Utils.run_command(["chsh", "-s", "/bin/bash", USERNAME])
             logger.info(f"Default shell for {USERNAME} set to /bin/bash.")
             return True
+
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to set default shell for {USERNAME}: {e}")
             return False
@@ -1159,14 +1137,12 @@ class UserEnvironment:
 # Phase 4: Security & Access Hardening
 # ------------------------------------------------------------------------------
 class SecurityHardener:
-    """Implement security hardening measures for the system."""
-
     def configure_ssh(self, port: int = 22) -> bool:
         """
-        Configure OpenSSH server with secure settings.
+        Configure SSH server with secure settings.
 
         Args:
-            port: SSH port number to use
+            port: The SSH port to use
 
         Returns:
             True if successful, False otherwise
@@ -1186,6 +1162,7 @@ class SecurityHardener:
 
         Utils.backup_file(sshd_config)
 
+        # Define secure SSH settings
         ssh_settings = {
             "Port": str(port),
             "PermitRootLogin": "no",
@@ -1207,9 +1184,11 @@ class SecurityHardener:
         }
 
         try:
+            # Read existing config
             with open(sshd_config, "r") as f:
                 lines = f.readlines()
 
+            # Update config with our settings
             for key, value in ssh_settings.items():
                 found = False
                 for i, line in enumerate(lines):
@@ -1219,11 +1198,14 @@ class SecurityHardener:
                         lines[i] = f"{key} {value}\n"
                         found = True
                         break
+
                 if not found:
                     lines.append(f"{key} {value}\n")
 
+            # Write config back
             with open(sshd_config, "w") as f:
                 f.writelines(lines)
+
         except Exception as e:
             logger.error(f"Failed to update SSH configuration: {e}")
             return False
@@ -1238,24 +1220,25 @@ class SecurityHardener:
 
     def setup_sudoers(self) -> bool:
         """
-        Configure sudo access with secure settings.
+        Configure sudo privileges for the user.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info(f"Configuring sudo privileges for {USERNAME}...")
 
+        # Check if user exists
         try:
             Utils.run_command(["id", USERNAME], capture_output=True)
         except subprocess.CalledProcessError:
             logger.error(f"User {USERNAME} does not exist.")
             return False
 
+        # Add user to sudo group if needed
         try:
             result = subprocess.run(
                 ["id", "-nG", USERNAME], capture_output=True, text=True, check=True
             )
-
             if "sudo" not in result.stdout.split():
                 Utils.run_command(["usermod", "-aG", "sudo", USERNAME])
                 logger.info(f"Added {USERNAME} to sudo group.")
@@ -1265,19 +1248,22 @@ class SecurityHardener:
             logger.error(f"Failed to add {USERNAME} to sudo group: {e}")
             return False
 
+        # Create custom sudoers file
         sudoers_file = f"/etc/sudoers.d/99-{USERNAME}"
-
         try:
             with open(sudoers_file, "w") as f:
                 f.write(f"{USERNAME} ALL=(ALL:ALL) ALL\n")
                 f.write("Defaults timestamp_timeout=15\n")
                 f.write("Defaults requiretty\n")
 
+            # Set proper permissions
             os.chmod(sudoers_file, 0o440)
             logger.info(f"Secure sudoers configuration created for {USERNAME}.")
 
+            # Verify syntax
             Utils.run_command(["visudo", "-c"], check=True)
             logger.info("Sudoers syntax verified.")
+
             return True
         except Exception as e:
             logger.error(f"Failed to configure sudoers: {e}")
@@ -1285,26 +1271,29 @@ class SecurityHardener:
 
     def configure_firewall(self) -> bool:
         """
-        Configure UFW firewall with secure default policies.
+        Configure UFW firewall with secure settings.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Configuring UFW firewall...")
-
         ufw_cmd = "/usr/sbin/ufw"
+
+        # Install UFW if not present
         if not (os.path.isfile(ufw_cmd) and os.access(ufw_cmd, os.X_OK)):
             logger.info("UFW not found; installing...")
             if not SystemUpdater().install_packages(["ufw"]):
                 logger.error("Failed to install UFW.")
                 return False
 
+        # Reset to defaults
         try:
             Utils.run_command([ufw_cmd, "reset", "--force"], check=False)
             logger.info("UFW reset to defaults.")
         except subprocess.CalledProcessError:
             logger.warning("Failed to reset UFW configuration.")
 
+        # Set default policies
         for cmd, desc in [
             (
                 [ufw_cmd, "default", "deny", "incoming"],
@@ -1321,6 +1310,7 @@ class SecurityHardener:
             except subprocess.CalledProcessError:
                 logger.warning(f"Failed to {desc}.")
 
+        # Allow specific ports
         for port in ALLOWED_PORTS:
             try:
                 Utils.run_command([ufw_cmd, "allow", f"{port}/tcp"])
@@ -1328,11 +1318,11 @@ class SecurityHardener:
             except subprocess.CalledProcessError:
                 logger.warning(f"Failed to allow TCP port {port}.")
 
+        # Enable UFW if not already active
         try:
             result = Utils.run_command(
                 [ufw_cmd, "status"], capture_output=True, text=True
             )
-
             if "inactive" in result.stdout.lower():
                 try:
                     Utils.run_command([ufw_cmd, "--force", "enable"])
@@ -1346,12 +1336,14 @@ class SecurityHardener:
             logger.error("Failed to retrieve UFW status.")
             return False
 
+        # Enable logging
         try:
             Utils.run_command([ufw_cmd, "logging", "on"])
             logger.info("UFW logging enabled.")
         except subprocess.CalledProcessError:
             logger.warning("Failed to enable UFW logging.")
 
+        # Ensure service starts at boot
         try:
             Utils.run_command(["systemctl", "enable", "ufw"])
             Utils.run_command(["systemctl", "restart", "ufw"])
@@ -1363,13 +1355,14 @@ class SecurityHardener:
 
     def configure_fail2ban(self) -> bool:
         """
-        Configure Fail2ban for intrusion prevention.
+        Configure Fail2ban to protect against brute force attacks.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Configuring Fail2ban...")
 
+        # Install fail2ban if not present
         if not Utils.command_exists("fail2ban-server"):
             logger.info("fail2ban not installed; installing...")
             if not SystemUpdater().install_packages(["fail2ban"]):
@@ -1409,25 +1402,27 @@ enabled = true
 banaction = %(banaction_allports)s
 logpath = /var/log/auth.log
 """
+        # Backup existing configuration
         if os.path.isfile(jail_local):
             Utils.backup_file(jail_local)
 
         try:
+            # Write configuration
             with open(jail_local, "w") as f:
                 f.write(config_content)
-
             logger.info("Fail2ban configuration written to /etc/fail2ban/jail.local.")
 
+            # Enable and start service
             Utils.run_command(["systemctl", "enable", "fail2ban"])
             Utils.run_command(["systemctl", "restart", "fail2ban"])
 
+            # Verify service is running
             status = Utils.run_command(
                 ["systemctl", "is-active", "fail2ban"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-
             if status.stdout.strip() == "active":
                 logger.info("Fail2ban is active.")
                 return True
@@ -1440,7 +1435,7 @@ logpath = /var/log/auth.log
 
     def configure_apparmor(self) -> bool:
         """
-        Configure AppArmor for mandatory access control.
+        Configure AppArmor for enhanced security.
 
         Returns:
             True if successful, False otherwise
@@ -1448,13 +1443,16 @@ logpath = /var/log/auth.log
         logger.info("Configuring AppArmor...")
 
         try:
+            # Install AppArmor
             if not SystemUpdater().install_packages(["apparmor", "apparmor-utils"]):
                 logger.error("Failed to install AppArmor packages.")
                 return False
 
+            # Enable and start service
             Utils.run_command(["systemctl", "enable", "apparmor"])
             Utils.run_command(["systemctl", "start", "apparmor"])
 
+            # Verify service is running
             status = Utils.run_command(
                 ["systemctl", "is-active", "apparmor"],
                 capture_output=True,
@@ -1465,6 +1463,7 @@ logpath = /var/log/auth.log
             if status.stdout.strip() == "active":
                 logger.info("AppArmor is active.")
 
+                # Update profiles if possible
                 if Utils.command_exists("aa-update-profiles"):
                     try:
                         Utils.run_command(["aa-update-profiles"], check=False)
@@ -1489,11 +1488,9 @@ logpath = /var/log/auth.log
 # Phase 5: Service Installations
 # ------------------------------------------------------------------------------
 class ServiceInstaller:
-    """Install and configure various services and applications."""
-
     def install_fastfetch(self) -> bool:
         """
-        Install Fastfetch system information tool.
+        Install Fastfetch (a modern system information tool).
 
         Returns:
             True if successful, False otherwise
@@ -1504,17 +1501,20 @@ class ServiceInstaller:
             logger.info("Fastfetch is already installed; skipping.")
             return True
 
-        temp_deb = os.path.join(TEMP_DIR, "fastfetch-linux-amd64.deb")
+        temp_deb = os.path.join(TEMP_DIR, "fastfetch-linux-arm64.deb")
 
         try:
+            # Download and install
             logger.debug(f"Downloading Fastfetch from {FASTFETCH_URL}...")
             Utils.run_command(["curl", "-L", "-o", temp_deb, FASTFETCH_URL])
             Utils.run_command(["dpkg", "-i", temp_deb])
             Utils.run_command(["apt", "install", "-f", "-y"])
 
+            # Clean up
             if os.path.exists(temp_deb):
                 os.remove(temp_deb)
 
+            # Verify installation
             if Utils.command_exists("fastfetch"):
                 logger.info("Fastfetch installed successfully.")
                 return True
@@ -1527,17 +1527,19 @@ class ServiceInstaller:
 
     def docker_config(self) -> bool:
         """
-        Install and configure Docker with optimal settings.
+        Install and configure Docker and Docker Compose.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Configuring Docker and Docker Compose...")
 
+        # Check if Docker is already installed
         if Utils.command_exists("docker"):
             logger.info("Docker is already installed.")
         else:
             try:
+                # Install using official script
                 logger.info("Installing Docker using official script...")
                 script_path = os.path.join(TEMP_DIR, "get-docker.sh")
                 Utils.run_command(
@@ -1550,15 +1552,17 @@ class ServiceInstaller:
             except Exception as e:
                 logger.error(f"Failed to install Docker: {e}")
                 logger.warning("Trying alternative Docker installation method...")
+
+                # Fallback to package manager
                 if not SystemUpdater().install_packages(["docker.io"]):
                     logger.error("Alternative Docker installation failed.")
                     return False
 
+        # Add user to docker group
         try:
             result = subprocess.run(
                 ["id", "-nG", USERNAME], capture_output=True, text=True, check=True
             )
-
             if "docker" not in result.stdout.split():
                 Utils.run_command(["usermod", "-aG", "docker", USERNAME])
                 logger.info(f"Added {USERNAME} to docker group.")
@@ -1567,6 +1571,7 @@ class ServiceInstaller:
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to add {USERNAME} to docker group: {e}")
 
+        # Configure Docker daemon
         daemon_json_path = "/etc/docker/daemon.json"
         os.makedirs("/etc/docker", exist_ok=True)
 
@@ -1589,8 +1594,8 @@ class ServiceInstaller:
   ]
 }
 """
+        # Check if configuration needs updating
         update_needed = True
-
         if os.path.isfile(daemon_json_path):
             try:
                 with open(daemon_json_path, "r") as f:
@@ -1606,6 +1611,7 @@ class ServiceInstaller:
             except Exception as e:
                 logger.warning(f"Failed to read {daemon_json_path}: {e}")
 
+        # Update configuration if needed
         if update_needed:
             try:
                 with open(daemon_json_path, "w") as f:
@@ -1614,6 +1620,7 @@ class ServiceInstaller:
             except Exception as e:
                 logger.warning(f"Failed to write {daemon_json_path}: {e}")
 
+        # Enable and restart Docker service
         try:
             Utils.run_command(["systemctl", "enable", "docker"])
             Utils.run_command(["systemctl", "restart", "docker"])
@@ -1622,6 +1629,7 @@ class ServiceInstaller:
             logger.error(f"Failed to manage Docker service: {e}")
             return False
 
+        # Install Docker Compose if needed
         if not Utils.command_exists("docker-compose"):
             try:
                 compose_target = "/usr/local/bin/docker-compose"
@@ -1636,6 +1644,7 @@ class ServiceInstaller:
         else:
             logger.info("Docker Compose is already installed.")
 
+        # Verify Docker is running
         try:
             Utils.run_command(["docker", "info"], capture_output=True)
             logger.info("Docker is running and accessible.")
@@ -1646,30 +1655,32 @@ class ServiceInstaller:
 
     def install_configure_vscode_stable(self) -> bool:
         """
-        Install and configure Visual Studio Code.
+        Install and configure Visual Studio Code with Wayland support.
 
         Returns:
             True if successful, False otherwise
         """
-        logger.info("Installing Visual Studio Code (Stable)...")
-
+        logger.info("Installing Visual Studio Code (Stable) for ARM...")
         deb_path = os.path.join(TEMP_DIR, "code.deb")
 
+        # Check if already installed
         if Utils.command_exists("code"):
             logger.info("Visual Studio Code is already installed.")
             vscode_installed = True
         else:
             try:
+                # Download and install
                 logger.info("Downloading VS Code from official source...")
                 Utils.run_command(["curl", "-L", "-o", deb_path, VSCODE_URL])
                 Utils.run_command(["dpkg", "-i", deb_path])
                 Utils.run_command(["apt", "install", "-f", "-y"])
 
+                # Clean up
                 if os.path.exists(deb_path):
                     os.remove(deb_path)
 
+                # Verify installation
                 vscode_installed = Utils.command_exists("code")
-
                 if vscode_installed:
                     logger.info("Visual Studio Code installed successfully.")
                 else:
@@ -1679,6 +1690,7 @@ class ServiceInstaller:
                 logger.error(f"Failed to install VS Code: {e}")
                 return False
 
+        # Configure desktop file with Wayland support
         desktop_file_path = "/usr/share/applications/code.desktop"
         desktop_content = f"""[Desktop Entry]
 Name=Visual Studio Code
@@ -1699,19 +1711,19 @@ Exec=/usr/share/code/code --new-window --enable-features=UseOzonePlatform --ozon
 Icon=vscode
 """
         try:
+            # Update system-wide desktop file
             with open(desktop_file_path, "w") as f:
                 f.write(desktop_content)
-
             logger.info("Updated system-wide desktop file with Wayland support.")
 
+            # Create user-specific desktop file
             local_app_dir = os.path.join(USER_HOME, ".local/share/applications")
             os.makedirs(local_app_dir, exist_ok=True)
             local_desktop_file = os.path.join(local_app_dir, "code.desktop")
-
             shutil.copy2(desktop_file_path, local_desktop_file)
             Utils.run_command(["chown", f"{USERNAME}:{USERNAME}", local_desktop_file])
-
             logger.info("VS Code configured for Wayland support.")
+
             return True
         except Exception as e:
             logger.warning(f"Failed to configure VS Code for Wayland: {e}")
@@ -1724,24 +1736,26 @@ Icon=vscode
         Returns:
             True if successful, False otherwise
         """
-        logger.info("Installing Caddy web server...")
+        logger.info("Installing Caddy web server for ARM...")
 
+        # Check if already installed
         if Utils.command_exists("caddy"):
             logger.info("Caddy is already installed.")
             caddy_installed = True
         else:
             temp_deb = os.path.join(TEMP_DIR, "caddy.deb")
-
             try:
+                # Download and install
                 Utils.run_command(["curl", "-L", "-o", temp_deb, CADDY_URL])
                 Utils.run_command(["dpkg", "-i", temp_deb])
                 Utils.run_command(["apt", "install", "-f", "-y"])
 
+                # Clean up
                 if os.path.exists(temp_deb):
                     os.remove(temp_deb)
 
+                # Verify installation
                 caddy_installed = Utils.command_exists("caddy")
-
                 if caddy_installed:
                     logger.info("Caddy installed successfully.")
                 else:
@@ -1752,20 +1766,24 @@ Icon=vscode
                 return False
 
         try:
+            # Create required directories
             Utils.ensure_directory("/etc/caddy", "root:root", 0o755)
             Utils.ensure_directory("/var/log/caddy", "caddy:caddy", 0o755)
 
+            # Configure Caddyfile
             caddyfile_source = os.path.join(
                 USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles", "Caddyfile"
             )
             caddyfile_dest = "/etc/caddy/Caddyfile"
 
             if os.path.isfile(caddyfile_source):
+                # Copy from repository if available
                 if os.path.isfile(caddyfile_dest):
                     Utils.backup_file(caddyfile_dest)
                 shutil.copy2(caddyfile_source, caddyfile_dest)
                 logger.info(f"Copied Caddyfile from {caddyfile_source}")
             else:
+                # Create default configuration if needed
                 if not os.path.isfile(caddyfile_dest):
                     with open(caddyfile_dest, "w") as f:
                         f.write(f"""# Caddy default configuration
@@ -1782,12 +1800,15 @@ Icon=vscode
 """)
                     logger.info("Created default Caddyfile.")
 
+            # Set proper permissions
             Utils.run_command(["chown", "root:caddy", caddyfile_dest])
             Utils.run_command(["chmod", "644", caddyfile_dest])
 
+            # Create web root directory
             Utils.ensure_directory("/var/www/html", "caddy:caddy", 0o755)
-            index_file = "/var/www/html/index.html"
 
+            # Create default index file if needed
+            index_file = "/var/www/html/index.html"
             if not os.path.isfile(index_file):
                 with open(index_file, "w") as f:
                     server_name = socket.gethostname()
@@ -1809,19 +1830,21 @@ Icon=vscode
 </html>""")
                 logger.info("Created default index.html file.")
 
+            # Set proper permissions
             Utils.run_command(["chown", "caddy:caddy", index_file])
             Utils.run_command(["chmod", "644", index_file])
 
+            # Enable and start service
             Utils.run_command(["systemctl", "enable", "caddy"])
             Utils.run_command(["systemctl", "restart", "caddy"])
 
+            # Verify service is running
             status = Utils.run_command(
                 ["systemctl", "is-active", "caddy"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-
             if status.stdout.strip() == "active":
                 logger.info("Caddy web server is active and running.")
                 return True
@@ -1834,7 +1857,7 @@ Icon=vscode
 
     def install_nala(self) -> bool:
         """
-        Install Nala as a modern apt frontend.
+        Install Nala (an improved frontend for apt).
 
         Returns:
             True if successful, False otherwise
@@ -1846,24 +1869,34 @@ Icon=vscode
             return True
 
         try:
-            Utils.run_command(["apt", "update"])
-            if not SystemUpdater().install_packages(["nala"]):
-                logger.error("Failed to install Nala.")
-                return False
+            # Update package lists
+            logger.info("Updating package lists...")
+            Utils.run_command(["apt", "update"], check=True)
 
+            # Install Nala
+            logger.info("Installing Nala via apt...")
+            Utils.run_command(["apt", "install", "-y", "nala"], check=True)
+
+            # Verify installation
             if Utils.command_exists("nala"):
                 logger.info("Nala installed successfully.")
+
+                # Configure faster mirrors
                 try:
                     Utils.run_command(["nala", "fetch", "--auto", "--yes"], check=False)
                     logger.info("Configured faster mirrors with Nala.")
                 except subprocess.CalledProcessError:
                     logger.warning("Failed to configure mirrors with Nala.")
+
                 return True
             else:
                 logger.error("Nala installation verification failed.")
                 return False
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Nala installation failed: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Failed to install Nala: {e}")
+            logger.error(f"Unexpected error during Nala installation: {e}")
             return False
 
     def install_enable_tailscale(self) -> bool:
@@ -1880,34 +1913,37 @@ Icon=vscode
             tailscale_installed = True
         else:
             try:
+                # Add repository and install
                 logger.info("Adding Tailscale repository and installing...")
                 temp_key = os.path.join(TEMP_DIR, "tailscale-key.gpg")
                 Utils.run_command(
                     [
                         "curl",
                         "-fsSL",
-                        "https://pkgs.tailscale.com/stable/ubuntu/focal.gpg",
+                        "https://pkgs.tailscale.com/stable/ubuntu/jammy.gpg",
                         "-o",
                         temp_key,
                     ]
                 )
                 Utils.run_command(["apt-key", "add", temp_key])
 
+                # Add repository
                 repo_file = "/etc/apt/sources.list.d/tailscale.list"
                 with open(repo_file, "w") as f:
-                    f.write("deb https://pkgs.tailscale.com/stable/ubuntu focal main\n")
+                    f.write("deb https://pkgs.tailscale.com/stable/ubuntu jammy main\n")
 
+                # Update and install
                 Utils.run_command(["apt", "update"])
-
                 if not SystemUpdater().install_packages(["tailscale"]):
                     logger.error("Failed to install Tailscale.")
                     return False
 
+                # Verify installation
                 tailscale_installed = Utils.command_exists("tailscale")
-
                 if tailscale_installed:
                     logger.info("Tailscale installed successfully.")
                 else:
+                    # Try alternative installation method
                     logger.error("Tailscale installation failed.")
                     try:
                         Utils.run_command(
@@ -1933,16 +1969,17 @@ Icon=vscode
                 return False
 
         try:
+            # Enable and start service
             Utils.run_command(["systemctl", "enable", "tailscaled"])
             Utils.run_command(["systemctl", "start", "tailscaled"])
 
+            # Verify service is running
             status = Utils.run_command(
                 ["systemctl", "is-active", "tailscaled"],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-
             if status.stdout.strip() == "active":
                 logger.info("Tailscale service is active and running.")
                 logger.info("To authenticate, run: tailscale up")
@@ -1956,13 +1993,12 @@ Icon=vscode
 
     def deploy_user_scripts(self) -> bool:
         """
-        Deploy user scripts to the user's bin directory.
+        Deploy user scripts from the repository.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Deploying user scripts...")
-
         script_source = os.path.join(
             USER_HOME, "github", "bash", "linux", "ubuntu", "_scripts"
         )
@@ -1975,9 +2011,12 @@ Icon=vscode
         Utils.ensure_directory(script_target, owner=f"{USERNAME}:{USERNAME}")
 
         try:
+            # Copy scripts
             Utils.run_command(
                 ["rsync", "-ah", "--delete", f"{script_source}/", f"{script_target}/"]
             )
+
+            # Set executable permissions
             Utils.run_command(
                 [
                     "find",
@@ -1991,8 +2030,9 @@ Icon=vscode
                     ";",
                 ]
             )
-            Utils.run_command(["chown", "-R", f"{USERNAME}:{USERNAME}", script_target])
 
+            # Set ownership
+            Utils.run_command(["chown", "-R", f"{USERNAME}:{USERNAME}", script_target])
             logger.info("User scripts deployed successfully.")
             return True
         except subprocess.CalledProcessError as e:
@@ -2004,20 +2044,18 @@ Icon=vscode
 # Phase 6: Maintenance Tasks
 # ------------------------------------------------------------------------------
 class MaintenanceManager:
-    """Configure maintenance tasks and backups."""
-
     def configure_periodic(self) -> bool:
         """
-        Set up daily system maintenance cron job.
+        Set up regular maintenance tasks via cron.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Setting up daily maintenance cron job...")
-
         cron_file = "/etc/cron.daily/ubuntu_maintenance"
         marker = "# Ubuntu maintenance script"
 
+        # Check if already configured
         if os.path.isfile(cron_file):
             with open(cron_file, "r") as f:
                 if marker in f.read():
@@ -2025,8 +2063,9 @@ class MaintenanceManager:
                     return True
             Utils.backup_file(cron_file)
 
+        # Create maintenance script
         content = f"""#!/bin/sh
-# Ubuntu maintenance script
+{marker}
 # Created by ubuntu_server_setup.py on $(date)
 
 LOG="/var/log/daily_maintenance.log"
@@ -2051,7 +2090,6 @@ echo "Daily maintenance completed at $(date)" >> $LOG
         try:
             with open(cron_file, "w") as f:
                 f.write(content)
-
             os.chmod(cron_file, 0o755)
             logger.info(f"Daily maintenance script created at {cron_file}.")
             return True
@@ -2061,13 +2099,12 @@ echo "Daily maintenance completed at $(date)" >> $LOG
 
     def backup_configs(self) -> bool:
         """
-        Back up critical system configuration files.
+        Backup critical configuration files.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Backing up critical configuration files...")
-
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         backup_dir = os.path.join(BACKUP_DIR, f"ubuntu_config_{timestamp}")
         os.makedirs(backup_dir, exist_ok=True)
@@ -2085,6 +2122,7 @@ echo "Daily maintenance completed at $(date)" >> $LOG
             else:
                 logger.debug(f"File {file} not found; skipping.")
 
+        # Create manifest file
         try:
             with open(os.path.join(backup_dir, "MANIFEST.txt"), "w") as f:
                 f.write("Ubuntu Configuration Backup\n")
@@ -2094,7 +2132,6 @@ echo "Daily maintenance completed at $(date)" >> $LOG
                 for file in CONFIG_FILES:
                     if os.path.isfile(os.path.join(backup_dir, os.path.basename(file))):
                         f.write(f"- {file}\n")
-
             logger.info(f"Configuration backups saved to {backup_dir}")
         except Exception as e:
             logger.warning(f"Failed to create backup manifest: {e}")
@@ -2103,7 +2140,7 @@ echo "Daily maintenance completed at $(date)" >> $LOG
 
     def update_ssl_certificates(self) -> bool:
         """
-        Update SSL certificates with certbot.
+        Update SSL certificates using certbot.
 
         Returns:
             True if successful, False otherwise
@@ -2117,15 +2154,16 @@ echo "Daily maintenance completed at $(date)" >> $LOG
                 return False
 
         try:
+            # Test renewal with dry-run
             output = Utils.run_command(
                 ["certbot", "renew", "--dry-run"], capture_output=True, text=True
             ).stdout
-
             logger.info("SSL certificate dry-run completed.")
 
             if "No renewals were attempted" in output:
                 logger.info("No certificates need renewal at this time.")
             else:
+                # Actually renew if needed
                 Utils.run_command(["certbot", "renew"])
                 logger.info("SSL certificates updated successfully.")
 
@@ -2139,21 +2177,20 @@ echo "Daily maintenance completed at $(date)" >> $LOG
 # Phase 7: System Tuning & Permissions
 # ------------------------------------------------------------------------------
 class SystemTuner:
-    """Apply system optimizations and secure permissions."""
-
     def tune_system(self) -> bool:
         """
-        Apply system performance optimizations via sysctl.
+        Apply system performance tuning via sysctl.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Applying system performance tuning...")
-
         sysctl_conf = "/etc/sysctl.conf"
+
         if os.path.isfile(sysctl_conf):
             Utils.backup_file(sysctl_conf)
 
+        # Define tuning parameters
         tuning_settings = {
             "net.core.somaxconn": "1024",
             "net.core.netdev_max_backlog": "5000",
@@ -2175,25 +2212,28 @@ class SystemTuner:
         }
 
         try:
+            # Read existing configuration
             with open(sysctl_conf, "r") as f:
                 content = f.read()
 
+            # Check for existing marker
             marker = "# Performance tuning settings for Ubuntu"
-
             if marker in content:
                 logger.info(
                     "Performance tuning settings already exist. Updating settings..."
                 )
                 content = re.split(marker, content)[0]
 
+            # Add our tuning settings
             content += f"\n{marker}\n"
-
             for key, value in tuning_settings.items():
                 content += f"{key} = {value}\n"
 
+            # Write configuration back
             with open(sysctl_conf, "w") as f:
                 f.write(content)
 
+            # Apply settings
             Utils.run_command(["sysctl", "-p"])
             logger.info("Performance tuning applied successfully.")
             return True
@@ -2203,7 +2243,7 @@ class SystemTuner:
 
     def home_permissions(self) -> bool:
         """
-        Configure secure home directory permissions.
+        Configure secure permissions for the user's home directory.
 
         Returns:
             True if successful, False otherwise
@@ -2211,24 +2251,29 @@ class SystemTuner:
         logger.info("Configuring home directory permissions...")
 
         try:
+            # Set ownership recursively
             Utils.run_command(["chown", "-R", f"{USERNAME}:{USERNAME}", USER_HOME])
+
+            # Set base permissions
             Utils.run_command(["chmod", "750", USER_HOME])
 
+            # Secure sensitive directories
             sensitive_dirs = [
                 os.path.join(USER_HOME, ".ssh"),
                 os.path.join(USER_HOME, ".gnupg"),
                 os.path.join(USER_HOME, ".config"),
             ]
-
             for directory in sensitive_dirs:
                 if os.path.isdir(directory):
                     Utils.run_command(["chmod", "700", directory])
                     logger.info(f"Set secure permissions on {directory}")
 
+            # Set group sticky bit on directories for consistent permissions
             Utils.run_command(
                 ["find", USER_HOME, "-type", "d", "-exec", "chmod", "g+s", "{}", ";"]
             )
 
+            # Set default ACLs if possible
             if Utils.command_exists("setfacl"):
                 Utils.run_command(
                     [
@@ -2255,18 +2300,17 @@ class SystemTuner:
 # Phase 8: Final Checks & Cleanup
 # ------------------------------------------------------------------------------
 class FinalChecker:
-    """Perform final system checks and cleanup tasks."""
-
     def system_health_check(self) -> Dict[str, Any]:
         """
-        Check system health and gather metrics.
+        Perform a comprehensive system health check.
 
         Returns:
-            Dictionary of health metrics
+            Dictionary with health metrics
         """
         logger.info("Performing system health check...")
         health_data = {}
 
+        # Check uptime
         try:
             uptime = subprocess.check_output(["uptime"], text=True).strip()
             logger.info(f"Uptime: {uptime}")
@@ -2274,6 +2318,7 @@ class FinalChecker:
         except Exception as e:
             logger.warning(f"Failed to get uptime: {e}")
 
+        # Check disk usage
         try:
             df_output = (
                 subprocess.check_output(["df", "-h", "/"], text=True)
@@ -2289,6 +2334,8 @@ class FinalChecker:
                     "available": data[3],
                     "percent_used": data[4],
                 }
+
+                # Alert on high usage
                 percent = int(data[4].strip("%"))
                 if percent > 90:
                     logger.warning(f"Critical disk usage: {percent}% used!")
@@ -2297,6 +2344,7 @@ class FinalChecker:
         except Exception as e:
             logger.warning(f"Failed to get disk usage: {e}")
 
+        # Check memory usage
         try:
             free_output = (
                 subprocess.check_output(["free", "-h"], text=True).strip().splitlines()
@@ -2316,6 +2364,7 @@ class FinalChecker:
         except Exception as e:
             logger.warning(f"Failed to get memory usage: {e}")
 
+        # Check load averages
         try:
             with open("/proc/loadavg", "r") as f:
                 load = f.read().strip().split()[:3]
@@ -2325,6 +2374,8 @@ class FinalChecker:
                 "5min": float(load[1]),
                 "15min": float(load[2]),
             }
+
+            # Alert on high load
             cpu_count = os.cpu_count() or 1
             if float(load[1]) > cpu_count:
                 logger.warning(
@@ -2333,6 +2384,7 @@ class FinalChecker:
         except Exception as e:
             logger.warning(f"Failed to get load averages: {e}")
 
+        # Check for kernel errors
         try:
             dmesg = subprocess.check_output(
                 ["dmesg", "--level=err,crit,alert,emerg"],
@@ -2341,7 +2393,7 @@ class FinalChecker:
             ).strip()
             if dmesg:
                 logger.warning("Recent kernel errors detected:")
-                for line in dmesg.splitlines()[-5:]:
+                for line in dmesg.splitlines()[-5:]:  # Show last 5 errors
                     logger.warning(line)
                 health_data["kernel_errors"] = True
             else:
@@ -2350,6 +2402,7 @@ class FinalChecker:
         except Exception as e:
             logger.warning(f"Failed to check kernel errors: {e}")
 
+        # Check for available updates
         try:
             updates = (
                 subprocess.check_output(
@@ -2361,7 +2414,10 @@ class FinalChecker:
                 .splitlines()
             )
             security_updates = sum(1 for line in updates if "security" in line.lower())
-            total_updates = len(updates) - 1
+
+            # Subtract header line
+            total_updates = len(updates) - 1 if len(updates) > 0 else 0
+
             if total_updates > 0:
                 logger.info(
                     f"Available updates: {total_updates} total, {security_updates} security"
@@ -2382,25 +2438,30 @@ class FinalChecker:
 
     def verify_firewall_rules(self) -> bool:
         """
-        Verify UFW firewall rules are correctly applied.
+        Verify that firewall rules are properly configured.
 
         Returns:
-            True if all rules are correctly applied, False otherwise
+            True if all checks pass, False otherwise
         """
         logger.info("Verifying firewall rules...")
         all_correct = True
 
+        # Check UFW status
         try:
             ufw_status = subprocess.check_output(["ufw", "status"], text=True).strip()
             logger.info("Current UFW status:")
+
+            # Display first 10 lines of status
             for line in ufw_status.splitlines()[:10]:
                 logger.info(line)
+
             if "inactive" in ufw_status.lower():
                 logger.warning("UFW is inactive!")
                 return False
         except Exception as e:
             logger.warning(f"Failed to get UFW status: {e}")
 
+        # Check each port
         for port in ALLOWED_PORTS:
             try:
                 result = subprocess.run(
@@ -2423,6 +2484,7 @@ class FinalChecker:
                 logger.warning(f"Failed to check port {port}: {e}")
                 all_correct = False
 
+        # Check external interfaces
         try:
             route = subprocess.check_output(
                 ["ip", "-o", "-4", "route", "show", "default"], text=True
@@ -2437,6 +2499,8 @@ class FinalChecker:
                 .split("/")[0]
             )
             logger.info(f"Default interface: {interface} ({interface_ip})")
+
+            # Check ports on external interface
             for port in ALLOWED_PORTS:
                 try:
                     result = subprocess.run(
@@ -2458,119 +2522,9 @@ class FinalChecker:
 
         return all_correct
 
-    def final_checks(self) -> bool:
-        """
-        Perform comprehensive final system checks.
-
-        Returns:
-            True if all checks pass, False otherwise
-        """
-        logger.info("Performing final system checks...")
-        all_passed = True
-
-        try:
-            kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
-            logger.info(f"Kernel version: {kernel}")
-
-            uptime = subprocess.check_output(["uptime", "-p"], text=True).strip()
-            logger.info(f"System uptime: {uptime}")
-
-            disk_usage = subprocess.check_output(
-                ["df", "-h", "/"], text=True
-            ).splitlines()[1]
-            logger.info(f"Disk usage (root): {disk_usage}")
-            disk_percent = int(disk_usage.split()[4].strip("%"))
-            if disk_percent > 90:
-                logger.warning("Critical: Disk usage over 90%!")
-                all_passed = False
-            elif disk_percent > 80:
-                logger.warning("Warning: Disk usage over 80%.")
-
-            free_output = subprocess.check_output(
-                ["free", "-h"], text=True
-            ).splitlines()
-            mem_line = next(
-                (line for line in free_output if line.startswith("Mem:")), ""
-            )
-            logger.info(f"Memory usage: {mem_line}")
-
-            cpu_model = ""
-            cpu_output = subprocess.check_output(["lscpu"], text=True)
-            for line in cpu_output.splitlines():
-                if "Model name" in line:
-                    cpu_model = line.split(":", 1)[1].strip()
-                    logger.info(f"CPU: {cpu_model}")
-                    break
-
-            interfaces = subprocess.check_output(["ip", "-brief", "address"], text=True)
-            logger.info("Active network interfaces:")
-            for line in interfaces.splitlines():
-                logger.info(line)
-
-            netstat = subprocess.check_output(["ss", "-tuln"], text=True).splitlines()[
-                :10
-            ]
-            logger.info("Active network connections:")
-            for line in netstat:
-                logger.info(line)
-
-            with open("/proc/loadavg", "r") as f:
-                load_avg = f.read().split()[:3]
-            if load_avg:
-                logger.info(f"Load averages (1, 5, 15 min): {', '.join(load_avg)}")
-                cpu_count = os.cpu_count() or 1
-                if float(load_avg[1]) > cpu_count:
-                    logger.warning(
-                        f"Warning: 5min load average ({load_avg[1]}) exceeds CPU count ({cpu_count})."
-                    )
-
-            services_to_check = [
-                "ssh",
-                "ufw",
-                "fail2ban",
-                "caddy",
-                "docker",
-                "tailscaled",
-                "unattended-upgrades",
-            ]
-
-            for service in services_to_check:
-                status = subprocess.run(
-                    ["systemctl", "is-active", service],
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
-                status_str = status.stdout.strip()
-                if status_str == "active":
-                    logger.info(f"{service}: active")
-                else:
-                    logger.warning(f"{service}: {status_str}")
-                    if service in ["ssh", "ufw"]:
-                        all_passed = False
-
-            try:
-                unattended_output = subprocess.check_output(
-                    ["unattended-upgrade", "--dry-run", "--debug"],
-                    text=True,
-                    stderr=subprocess.STDOUT,
-                )
-                for line in unattended_output.splitlines():
-                    if ("Packages that will be upgraded:" in line) and (
-                        "0 upgrades" not in line
-                    ):
-                        logger.warning("Pending security updates detected!")
-                        all_passed = False
-            except Exception:
-                logger.debug("Unable to check for security updates.")
-            return all_passed
-        except Exception as e:
-            logger.error(f"Error during final checks: {e}")
-            return False
-
     def cleanup_system(self) -> bool:
         """
-        Perform system cleanup tasks like removing old packages and logs.
+        Perform system cleanup operations to free up space and remove temporary files.
 
         Returns:
             True if successful, False otherwise
@@ -2579,7 +2533,7 @@ class FinalChecker:
         success = True
 
         try:
-            # Clean up unnecessary packages
+            # Remove unnecessary packages
             if Utils.command_exists("nala"):
                 Utils.run_command(["nala", "autoremove", "-y"])
             else:
@@ -2591,7 +2545,7 @@ class FinalChecker:
             else:
                 Utils.run_command(["apt", "clean"])
 
-            # Remove old kernels
+            # Remove old kernels (keeping current and one previous)
             try:
                 current = subprocess.check_output(["uname", "-r"], text=True).strip()
                 running_image = f"linux-image-{current}"
@@ -2619,7 +2573,8 @@ class FinalChecker:
 
                 if len(old_kernel_packages) > 1:
                     old_kernel_packages.sort()
-                    to_remove = old_kernel_packages[:-1]
+                    to_remove = old_kernel_packages[:-1]  # Keep the newest old kernel
+
                     if to_remove:
                         logger.info(f"Removing {len(to_remove)} old kernel packages...")
                         Utils.run_command(["apt", "purge", "-y"] + to_remove)
@@ -2628,12 +2583,12 @@ class FinalChecker:
             except Exception as e:
                 logger.warning(f"Failed to remove old kernels: {e}")
 
-            # Clean up journal logs
+            # Clean systemd journal logs
             if Utils.command_exists("journalctl"):
                 logger.info("Clearing systemd journal logs older than 7 days...")
                 Utils.run_command(["journalctl", "--vacuum-time=7d"])
 
-            # Clean up temp directories
+            # Clean temporary directories
             for tmp_dir in ["/tmp", "/var/tmp"]:
                 logger.info(f"Cleaning {tmp_dir} directory...")
                 try:
@@ -2669,7 +2624,7 @@ class FinalChecker:
                     with open(log_file, "rb") as f_in:
                         with gzip.open(f"{log_file}.gz", "wb") as f_out:
                             shutil.copyfileobj(f_in, f_out)
-                    open(log_file, "w").close()
+                    open(log_file, "w").close()  # Truncate the original
             except Exception as e:
                 logger.warning(f"Failed to rotate logs: {e}")
 
@@ -2680,21 +2635,13 @@ class FinalChecker:
             return False
 
     def prompt_reboot(self) -> None:
-        """Prompt the user to reboot the system if necessary."""
+        """
+        Prompt the user to reboot the system.
+        """
         logger.info("Prompting for system reboot...")
-
-        console.print(
-            Panel(
-                Text(
-                    "Setup completed! A reboot is recommended to apply all changes.",
-                    style="bold green",
-                ),
-                title="[bold]System Setup Complete[/bold]",
-                border_style="green",
-            )
+        answer = (
+            input(f"{NORD14}Would you like to reboot now? [y/N]: {NC}").strip().lower()
         )
-
-        answer = input("Would you like to reboot now? [y/N]: ").strip().lower()
 
         if answer == "y":
             logger.info("Rebooting system now...")
@@ -2707,19 +2654,144 @@ class FinalChecker:
                 "Reboot canceled. Please reboot later (e.g. with: sudo reboot)."
             )
 
+    def final_checks(self) -> bool:
+        """
+        Perform final system checks before completion.
+
+        Returns:
+            True if all checks pass, False otherwise
+        """
+        logger.info("Performing final system checks...")
+        all_passed = True
+
+        try:
+            # Check kernel version
+            kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
+            logger.info(f"Kernel version: {kernel}")
+
+            # Check uptime
+            uptime = subprocess.check_output(["uptime", "-p"], text=True).strip()
+            logger.info(f"System uptime: {uptime}")
+
+            # Check disk usage
+            df_output = subprocess.check_output(
+                ["df", "-h", "/"], text=True
+            ).splitlines()[1]
+            logger.info(f"Disk usage (root): {df_output}")
+
+            # Alert on high disk usage
+            disk_percent = int(df_output.split()[4].strip("%"))
+            if disk_percent > 90:
+                logger.warning("Critical: Disk usage over 90%!")
+                all_passed = False
+            elif disk_percent > 80:
+                logger.warning("Warning: Disk usage over 80%.")
+
+            # Check memory usage
+            free_output = subprocess.check_output(
+                ["free", "-h"], text=True
+            ).splitlines()
+            mem_line = next(
+                (line for line in free_output if line.startswith("Mem:")), ""
+            )
+            logger.info(f"Memory usage: {mem_line}")
+
+            # Check CPU info
+            cpu_model = ""
+            cpu_output = subprocess.check_output(["lscpu"], text=True)
+            for line in cpu_output.splitlines():
+                if "Model name" in line:
+                    cpu_model = line.split(":", 1)[1].strip()
+                    logger.info(f"CPU: {cpu_model}")
+                    break
+
+            # Check network interfaces
+            interfaces = subprocess.check_output(["ip", "-brief", "address"], text=True)
+            logger.info("Active network interfaces:")
+            for line in interfaces.splitlines():
+                logger.info(line)
+
+            # Check network connections
+            netstat = subprocess.check_output(["ss", "-tuln"], text=True).splitlines()[
+                :10
+            ]
+            logger.info("Active network connections:")
+            for line in netstat:
+                logger.info(line)
+
+            # Check load average
+            with open("/proc/loadavg", "r") as f:
+                load_avg = f.read().split()[:3]
+            if load_avg:
+                logger.info(f"Load averages (1, 5, 15 min): {', '.join(load_avg)}")
+                cpu_count = os.cpu_count() or 1
+                if float(load_avg[1]) > cpu_count:
+                    logger.warning(
+                        f"Warning: 5min load average ({load_avg[1]}) exceeds CPU count ({cpu_count})."
+                    )
+
+            # Check critical services
+            services_to_check = [
+                "ssh",
+                "ufw",
+                "fail2ban",
+                "caddy",
+                "docker",
+                "tailscaled",
+                "unattended-upgrades",
+            ]
+            for service in services_to_check:
+                status = subprocess.run(
+                    ["systemctl", "is-active", service],
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                status_str = status.stdout.strip()
+                if status_str == "active":
+                    logger.info(f"{service}: active")
+                else:
+                    logger.warning(f"{service}: {status_str}")
+                    if service in ["ssh", "ufw"]:
+                        all_passed = False
+
+            # Check for pending security updates
+            try:
+                unattended_output = subprocess.check_output(
+                    ["unattended-upgrade", "--dry-run", "--debug"],
+                    text=True,
+                    stderr=subprocess.STDOUT,
+                )
+                for line in unattended_output.splitlines():
+                    if ("Packages that will be upgraded:" in line) and (
+                        "0 upgrades" not in line
+                    ):
+                        logger.warning("Pending security updates detected!")
+                        all_passed = False
+            except Exception:
+                logger.debug("Unable to check for security updates.")
+
+            return all_passed
+        except Exception as e:
+            logger.error(f"Error during final checks: {e}")
+            return False
+
 
 # ------------------------------------------------------------------------------
 # Main Orchestration
 # ------------------------------------------------------------------------------
 class UbuntuServerSetup:
-    """Main class to orchestrate the entire setup process."""
+    """
+    Main orchestration class for the Ubuntu Server setup process.
+    Manages the execution of all phases in sequence.
+    """
 
     def __init__(self):
-        """Initialize the setup process."""
         self.logger = logger
         self.success = True
         self.start_time = time.time()
 
+        # Initialize components
         self.preflight = PreflightChecker()
         self.updater = SystemUpdater()
         self.user_env = UserEnvironment()
@@ -2731,551 +2803,306 @@ class UbuntuServerSetup:
 
     def run(self) -> int:
         """
-        Run the entire setup process with improved error handling.
+        Execute all setup phases in sequence.
 
         Returns:
             Exit code (0 for success, non-zero for failure)
         """
         try:
-            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            console.print(
-                Panel(
-                    Text(f"Starting Ubuntu Server Setup v6.0.0", style="bold blue"),
-                    title=f"[bold]{now}[/bold]",
-                    border_style="blue",
-                )
-            )
-
-            logger.info(
-                f"Starting Ubuntu Server Setup v6.0.0 on {datetime.datetime.now()}"
+            self.logger.info(
+                f"Starting Ubuntu Server Setup v5.0.0 on {datetime.datetime.now()}"
             )
 
             # Phase 1: Pre-flight Checks
-            print_section("Phase 1: Pre-flight Checks")
-            try:
-                run_with_progress(
-                    "Running Pre-flight Checks...",
-                    self.preflight.check_root,
-                    task_name="preflight",
+            TASK_STATUS["preflight"]["status"] = "in_progress"
+            TASK_STATUS["preflight"]["message"] = "Running pre-flight checks..."
+
+            self.preflight.check_root()
+
+            if not self.preflight.check_network():
+                self.logger.error("Network connectivity check failed. Aborting.")
+                TASK_STATUS["preflight"]["status"] = "failed"
+                TASK_STATUS["preflight"]["message"] = (
+                    "Network connectivity check failed"
                 )
+                sys.exit(1)
 
-                if not self.preflight.check_network():
-                    self.logger.error("Network connectivity check failed. Aborting.")
-                    SETUP_STATUS["preflight"] = {
-                        "status": "failed",
-                        "message": "Network connectivity check failed",
-                    }
-                    sys.exit(1)
+            if not self.preflight.check_os_version():
+                self.logger.warning("OS version check failed; proceeding with caution.")
 
-                if not self.preflight.check_os_version():
-                    self.logger.warning(
-                        "OS version check failed; proceeding with caution."
-                    )
+            self.preflight.save_config_snapshot()
 
-                self.preflight.save_config_snapshot()
-            except AttributeError as e:
-                self.logger.error(f"Method error in preflight phase: {e}")
-                self.success = False
-            except Exception as e:
-                self.logger.error(f"Error in preflight phase: {e}")
-                self.success = False
+            TASK_STATUS["preflight"]["status"] = "success"
+            TASK_STATUS["preflight"]["message"] = (
+                "Pre-flight checks completed successfully"
+            )
 
-            # Phase 2: Install Nala first to ensure subsequent commands use it
-            print_section("Phase 2: Installing Nala Package Manager")
-            try:
-                if not run_with_progress(
-                    "Installing Nala...",
-                    self.services.install_nala,
-                    task_name="nala_install",
-                ):
-                    self.logger.error(
-                        "Nala installation failed. Proceeding with caution."
-                    )
-                    self.success = False
-            except AttributeError as e:
-                self.logger.error(f"Method error in Nala installation phase: {e}")
-                self.success = False
-            except Exception as e:
-                self.logger.error(f"Error in Nala installation phase: {e}")
-                self.success = False
+            # Phase 2: Install Nala first to ensure subsequent commands use it.
+            TASK_STATUS["update"]["status"] = "in_progress"
+            TASK_STATUS["update"]["message"] = "Installing Nala package manager..."
+
+            if not self.services.install_nala():
+                self.logger.error("Nala installation failed. Aborting.")
+                TASK_STATUS["update"]["status"] = "failed"
+                TASK_STATUS["update"]["message"] = "Nala installation failed"
+                sys.exit(1)
 
             # Phase 3: System Update & Basic Configuration
-            print_section("Phase 3: System Update & Basic Configuration")
-            try:
-                if not run_with_progress(
-                    "Updating system...",
-                    self.updater.update_system,
-                    task_name="system_update",
-                ):
-                    self.logger.warning("System update failed; continuing.")
-                    self.success = False
-            except AttributeError as e:
-                self.logger.error(f"Method error in system update: {e}")
-                self.success = False
-            except Exception as e:
-                self.logger.error(f"Error in system update: {e}")
+            if not run_with_progress("Updating system", self.updater.update_system):
+                self.logger.warning("System update failed; continuing.")
                 self.success = False
 
-            try:
-                if not run_with_progress(
-                    "Installing packages...",
-                    self.updater.install_packages,
-                    task_name="packages_install",
-                ):
-                    self.logger.warning("Package installation encountered issues.")
-                    self.success = False
-            except AttributeError as e:
-                self.logger.error(f"Method error in package installation: {e}")
-                self.success = False
-            except Exception as e:
-                self.logger.error(f"Error in package installation: {e}")
+            if not run_with_progress(
+                "Installing packages", self.updater.install_packages
+            ):
+                self.logger.warning("Package installation encountered issues.")
                 self.success = False
 
-            try:
-                if hasattr(self.updater, "configure_timezone"):
-                    if not run_with_progress(
-                        "Configuring timezone...", self.updater.configure_timezone
-                    ):
-                        self.logger.warning("Timezone configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "configure_timezone method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in timezone configuration: {e}")
+            if not run_with_progress(
+                "Configuring timezone", self.updater.configure_timezone
+            ):
+                self.logger.warning("Timezone configuration failed.")
                 self.success = False
 
-            try:
-                if hasattr(self.updater, "configure_locale"):
-                    if not run_with_progress(
-                        "Configuring locale...", self.updater.configure_locale
-                    ):
-                        self.logger.warning("Locale configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("configure_locale method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in locale configuration: {e}")
+            if not run_with_progress(
+                "Configuring locale", self.updater.configure_locale
+            ):
+                self.logger.warning("Locale configuration failed.")
                 self.success = False
+
+            TASK_STATUS["update"]["status"] = "success" if self.success else "partial"
+            TASK_STATUS["update"]["message"] = (
+                "System update and configuration completed"
+                + (" with warnings" if not self.success else "")
+            )
 
             # Phase 4: User Environment Setup
-            print_section("Phase 4: User Environment Setup")
-            try:
-                if hasattr(self.user_env, "setup_repos"):
-                    if not run_with_progress(
-                        "Setting up user repositories...",
-                        self.user_env.setup_repos,
-                        task_name="user_env",
-                    ):
-                        self.logger.warning("Repository setup failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("setup_repos method not found, skipping.")
-                    SETUP_STATUS["user_env"] = {
-                        "status": "skipped",
-                        "message": "setup_repos method not found",
-                    }
-            except Exception as e:
-                self.logger.error(f"Error in repository setup: {e}")
-                self.success = False
+            TASK_STATUS["environment"]["status"] = "in_progress"
+            TASK_STATUS["environment"]["message"] = "Setting up user environment..."
 
-            try:
-                if hasattr(self.user_env, "copy_shell_configs"):
-                    if not run_with_progress(
-                        "Copying shell configs...", self.user_env.copy_shell_configs
-                    ):
-                        self.logger.warning("Shell configuration update failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "copy_shell_configs method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in shell configuration: {e}")
-                self.success = False
+            env_success = True
 
-            try:
-                if hasattr(self.user_env, "copy_config_folders"):
-                    if not run_with_progress(
-                        "Copying config folders...", self.user_env.copy_config_folders
-                    ):
-                        self.logger.warning("Copying configuration folders failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "copy_config_folders method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in copying config folders: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Setting up user repositories", self.user_env.setup_repos
+            ):
+                self.logger.warning("Repository setup failed.")
+                env_success = False
 
-            try:
-                if hasattr(self.user_env, "set_bash_shell"):
-                    if not run_with_progress(
-                        "Setting default shell...", self.user_env.set_bash_shell
-                    ):
-                        self.logger.warning("Default shell update failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("set_bash_shell method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in setting bash shell: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Copying shell configs", self.user_env.copy_shell_configs
+            ):
+                self.logger.warning("Shell configuration update failed.")
+                env_success = False
+
+            if not run_with_progress(
+                "Copying config folders", self.user_env.copy_config_folders
+            ):
+                self.logger.warning("Copying configuration folders failed.")
+                env_success = False
+
+            if not run_with_progress(
+                "Setting default shell", self.user_env.set_bash_shell
+            ):
+                self.logger.warning("Default shell update failed.")
+                env_success = False
+
+            TASK_STATUS["environment"]["status"] = (
+                "success" if env_success else "partial"
+            )
+            TASK_STATUS["environment"]["message"] = (
+                "User environment setup completed"
+                + (" with warnings" if not env_success else "")
+            )
 
             # Phase 5: Security & Access Hardening
-            print_section("Phase 5: Security & Access Hardening")
-            try:
-                if hasattr(self.security, "configure_ssh"):
-                    if not run_with_progress(
-                        "Configuring SSH...",
-                        self.security.configure_ssh,
-                        task_name="security",
-                    ):
-                        self.logger.warning("SSH configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("configure_ssh method not found, skipping.")
-                    SETUP_STATUS["security"] = {
-                        "status": "skipped",
-                        "message": "configure_ssh method not found",
-                    }
-            except Exception as e:
-                self.logger.error(f"Error in SSH configuration: {e}")
-                self.success = False
+            TASK_STATUS["security"]["status"] = "in_progress"
+            TASK_STATUS["security"]["message"] = "Configuring security settings..."
 
-            try:
-                if hasattr(self.security, "setup_sudoers"):
-                    if not run_with_progress(
-                        "Configuring sudoers...", self.security.setup_sudoers
-                    ):
-                        self.logger.warning("Sudoers configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("setup_sudoers method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in sudoers configuration: {e}")
-                self.success = False
+            security_success = True
 
-            try:
-                if hasattr(self.security, "configure_firewall"):
-                    if not run_with_progress(
-                        "Configuring firewall...", self.security.configure_firewall
-                    ):
-                        self.logger.warning("Firewall configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "configure_firewall method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in firewall configuration: {e}")
-                self.success = False
+            if not run_with_progress("Configuring SSH", self.security.configure_ssh):
+                self.logger.warning("SSH configuration failed.")
+                security_success = False
 
-            try:
-                if hasattr(self.security, "configure_fail2ban"):
-                    if not run_with_progress(
-                        "Configuring Fail2ban...", self.security.configure_fail2ban
-                    ):
-                        self.logger.warning("Fail2ban configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "configure_fail2ban method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in Fail2ban configuration: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Configuring sudoers", self.security.setup_sudoers
+            ):
+                self.logger.warning("Sudoers configuration failed.")
+                security_success = False
 
-            try:
-                if hasattr(self.security, "configure_apparmor"):
-                    if not run_with_progress(
-                        "Configuring AppArmor...", self.security.configure_apparmor
-                    ):
-                        self.logger.warning("AppArmor configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "configure_apparmor method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in AppArmor configuration: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Configuring firewall", self.security.configure_firewall
+            ):
+                self.logger.warning("Firewall configuration failed.")
+                security_success = False
+
+            if not run_with_progress(
+                "Configuring Fail2ban", self.security.configure_fail2ban
+            ):
+                self.logger.warning("Fail2ban configuration failed.")
+                security_success = False
+
+            if not run_with_progress(
+                "Configuring AppArmor", self.security.configure_apparmor
+            ):
+                self.logger.warning("AppArmor configuration failed.")
+                security_success = False
+
+            TASK_STATUS["security"]["status"] = (
+                "success" if security_success else "partial"
+            )
+            TASK_STATUS["security"]["message"] = "Security hardening completed" + (
+                " with warnings" if not security_success else ""
+            )
 
             # Phase 6: Service Installations
-            print_section("Phase 6: Service Installations")
-            try:
-                if hasattr(self.services, "install_fastfetch"):
-                    if not run_with_progress(
-                        "Installing Fastfetch...",
-                        self.services.install_fastfetch,
-                        task_name="services",
-                    ):
-                        self.logger.warning("Fastfetch installation failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("install_fastfetch method not found, skipping.")
-                    SETUP_STATUS["services"] = {
-                        "status": "skipped",
-                        "message": "install_fastfetch method not found",
-                    }
-            except Exception as e:
-                self.logger.error(f"Error in Fastfetch installation: {e}")
-                self.success = False
+            TASK_STATUS["services"]["status"] = "in_progress"
+            TASK_STATUS["services"]["message"] = (
+                "Installing and configuring services..."
+            )
 
-            try:
-                if hasattr(self.services, "docker_config"):
-                    if not run_with_progress(
-                        "Configuring Docker...", self.services.docker_config
-                    ):
-                        self.logger.warning("Docker configuration failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("docker_config method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in Docker configuration: {e}")
-                self.success = False
+            services_success = True
 
-            try:
-                if hasattr(self.services, "install_enable_tailscale"):
-                    if not run_with_progress(
-                        "Installing Tailscale...",
-                        self.services.install_enable_tailscale,
-                    ):
-                        self.logger.warning("Tailscale installation failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "install_enable_tailscale method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in Tailscale installation: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Installing Fastfetch", self.services.install_fastfetch
+            ):
+                self.logger.warning("Fastfetch installation failed.")
+                services_success = False
 
-            try:
-                if hasattr(self.services, "install_configure_caddy"):
-                    if not run_with_progress(
-                        "Installing Caddy...", self.services.install_configure_caddy
-                    ):
-                        self.logger.warning("Caddy installation failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "install_configure_caddy method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in Caddy installation: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Configuring Docker", self.services.docker_config
+            ):
+                self.logger.warning("Docker configuration failed.")
+                services_success = False
 
-            try:
-                if hasattr(self.services, "install_configure_vscode_stable"):
-                    if not run_with_progress(
-                        "Installing VS Code...",
-                        self.services.install_configure_vscode_stable,
-                    ):
-                        self.logger.warning("VS Code installation failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "install_configure_vscode_stable method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in VS Code installation: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Installing Tailscale", self.services.install_enable_tailscale
+            ):
+                self.logger.warning("Tailscale installation failed.")
+                services_success = False
 
-            try:
-                if hasattr(self.services, "deploy_user_scripts"):
-                    if not run_with_progress(
-                        "Deploying user scripts...", self.services.deploy_user_scripts
-                    ):
-                        self.logger.warning("User scripts deployment failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "deploy_user_scripts method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in user scripts deployment: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Installing Caddy", self.services.install_configure_caddy
+            ):
+                self.logger.warning("Caddy installation failed.")
+                services_success = False
+
+            if not run_with_progress(
+                "Installing VS Code", self.services.install_configure_vscode_stable
+            ):
+                self.logger.warning("VS Code installation failed.")
+                services_success = False
+
+            if not run_with_progress(
+                "Deploying user scripts", self.services.deploy_user_scripts
+            ):
+                self.logger.warning("User scripts deployment failed.")
+                services_success = False
+
+            TASK_STATUS["services"]["status"] = (
+                "success" if services_success else "partial"
+            )
+            TASK_STATUS["services"]["message"] = "Service installations completed" + (
+                " with warnings" if not services_success else ""
+            )
 
             # Phase 7: Maintenance Tasks
-            print_section("Phase 7: Maintenance Tasks")
-            try:
-                if hasattr(self.maintenance, "configure_periodic"):
-                    if not run_with_progress(
-                        "Configuring periodic maintenance...",
-                        self.maintenance.configure_periodic,
-                        task_name="maintenance",
-                    ):
-                        self.logger.warning(
-                            "Periodic maintenance configuration failed."
-                        )
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "configure_periodic method not found, skipping."
-                    )
-                    SETUP_STATUS["maintenance"] = {
-                        "status": "skipped",
-                        "message": "configure_periodic method not found",
-                    }
-            except Exception as e:
-                self.logger.error(f"Error in periodic maintenance configuration: {e}")
-                self.success = False
+            TASK_STATUS["maintenance"]["status"] = "in_progress"
+            TASK_STATUS["maintenance"]["message"] = "Setting up maintenance tasks..."
 
-            try:
-                if hasattr(self.maintenance, "backup_configs"):
-                    if not run_with_progress(
-                        "Backing up configurations...", self.maintenance.backup_configs
-                    ):
-                        self.logger.warning("Configuration backup failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("backup_configs method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in configuration backup: {e}")
-                self.success = False
+            maintenance_success = True
 
-            try:
-                if hasattr(self.maintenance, "update_ssl_certificates"):
-                    if not run_with_progress(
-                        "Updating SSL certificates...",
-                        self.maintenance.update_ssl_certificates,
-                    ):
-                        self.logger.warning("SSL certificate update failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "update_ssl_certificates method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in SSL certificate update: {e}")
-                self.success = False
+            if not run_with_progress(
+                "Configuring periodic maintenance",
+                self.maintenance.configure_periodic,
+            ):
+                self.logger.warning("Periodic maintenance configuration failed.")
+                maintenance_success = False
+
+            if not run_with_progress(
+                "Backing up configurations", self.maintenance.backup_configs
+            ):
+                self.logger.warning("Configuration backup failed.")
+                maintenance_success = False
+
+            if not run_with_progress(
+                "Updating SSL certificates", self.maintenance.update_ssl_certificates
+            ):
+                self.logger.warning("SSL certificate update failed.")
+                maintenance_success = False
+
+            TASK_STATUS["maintenance"]["status"] = (
+                "success" if maintenance_success else "partial"
+            )
+            TASK_STATUS["maintenance"]["message"] = "Maintenance tasks completed" + (
+                " with warnings" if not maintenance_success else ""
+            )
 
             # Phase 8: System Tuning & Permissions
-            print_section("Phase 8: System Tuning & Permissions")
-            try:
-                if hasattr(self.tuner, "tune_system"):
-                    if not run_with_progress(
-                        "Applying system tuning...",
-                        self.tuner.tune_system,
-                        task_name="tuning",
-                    ):
-                        self.logger.warning("System tuning failed.")
-                        self.success = False
-                else:
-                    self.logger.warning("tune_system method not found, skipping.")
-                    SETUP_STATUS["tuning"] = {
-                        "status": "skipped",
-                        "message": "tune_system method not found",
-                    }
-            except Exception as e:
-                self.logger.error(f"Error in system tuning: {e}")
-                self.success = False
+            TASK_STATUS["tuning"]["status"] = "in_progress"
+            TASK_STATUS["tuning"]["message"] = "Tuning system performance..."
 
-            try:
-                if hasattr(self.tuner, "home_permissions"):
-                    if not run_with_progress(
-                        "Setting home permissions...", self.tuner.home_permissions
-                    ):
-                        self.logger.warning(
-                            "Home directory permission configuration failed."
-                        )
-                        self.success = False
-                else:
-                    self.logger.warning("home_permissions method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in home permissions setup: {e}")
-                self.success = False
+            tuning_success = True
+
+            if not run_with_progress(
+                "Applying system tuning", self.tuner.tune_system
+            ):
+                self.logger.warning("System tuning failed.")
+                tuning_success = False
+
+            if not run_with_progress(
+                "Setting home permissions", self.tuner.home_permissions
+            ):
+                self.logger.warning("Home directory permission configuration failed.")
+                tuning_success = False
+
+            TASK_STATUS["tuning"]["status"] = "success" if tuning_success else "partial"
+            TASK_STATUS["tuning"]["message"] = "System tuning completed" + (
+                " with warnings" if not tuning_success else ""
+            )
 
             # Phase 9: Final Checks & Cleanup
-            print_section("Phase 9: Final Checks & Cleanup")
+            TASK_STATUS["final"]["status"] = "in_progress"
+            TASK_STATUS["final"]["message"] = "Performing final checks..."
 
-            SETUP_STATUS["final"] = {
-                "status": "in_progress",
-                "message": "Running final checks...",
-            }
+            # Run system health check
+            self.final_checker.system_health_check()
 
-            try:
-                if hasattr(self.final_checker, "system_health_check"):
-                    self.final_checker.system_health_check()
-                else:
-                    self.logger.warning(
-                        "system_health_check method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in system health check: {e}")
-                self.success = False
+            # Verify firewall rules
+            if not self.final_checker.verify_firewall_rules():
+                self.logger.warning("Firewall rule verification failed.")
 
-            try:
-                if hasattr(self.final_checker, "verify_firewall_rules"):
-                    if not self.final_checker.verify_firewall_rules():
-                        self.logger.warning("Firewall rule verification failed.")
-                        self.success = False
-                else:
-                    self.logger.warning(
-                        "verify_firewall_rules method not found, skipping."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in firewall rule verification: {e}")
-                self.success = False
+            # Run final checks
+            final_result = self.final_checker.final_checks()
 
-            final_result = True
-            try:
-                if hasattr(self.final_checker, "final_checks"):
-                    final_result = self.final_checker.final_checks()
-                else:
-                    self.logger.warning("final_checks method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in final checks: {e}")
-                self.success = False
-                final_result = False
+            # Clean up the system
+            self.final_checker.cleanup_system()
 
-            try:
-                if hasattr(self.final_checker, "cleanup_system"):
-                    self.final_checker.cleanup_system()
-                else:
-                    self.logger.warning("cleanup_system method not found, skipping.")
-            except Exception as e:
-                self.logger.error(f"Error in system cleanup: {e}")
-                self.success = False
-
+            # Calculate execution time
             duration = time.time() - self.start_time
             minutes, seconds = divmod(duration, 60)
 
+            # Set final status
             if self.success and final_result:
                 self.logger.info(
                     f"Ubuntu Server Setup completed successfully in {int(minutes)}m {int(seconds)}s."
                 )
-                SETUP_STATUS["final"] = {
-                    "status": "success",
-                    "message": f"Completed successfully in {int(minutes)}m {int(seconds)}s.",
-                }
+                TASK_STATUS["final"]["status"] = "success"
+                TASK_STATUS["final"]["message"] = (
+                    f"Setup completed successfully in {int(minutes)}m {int(seconds)}s"
+                )
             else:
                 self.logger.warning(
                     f"Ubuntu Server Setup completed with warnings in {int(minutes)}m {int(seconds)}s."
                 )
-                SETUP_STATUS["final"] = {
-                    "status": "warning",
-                    "message": f"Completed with warnings in {int(minutes)}m {int(seconds)}s.",
-                }
+                TASK_STATUS["final"]["status"] = "partial"
+                TASK_STATUS["final"]["message"] = (
+                    f"Setup completed with warnings in {int(minutes)}m {int(seconds)}s"
+                )
 
-            # Print final status report
-            try:
-                print_status_report()
-            except Exception as e:
-                self.logger.error(f"Error printing status report: {e}")
-
-            # Prompt for reboot if configured
-            try:
-                if hasattr(self.final_checker, "prompt_reboot"):
-                    self.final_checker.prompt_reboot()
-                else:
-                    self.logger.debug(
-                        "prompt_reboot method not found, skipping reboot prompt."
-                    )
-            except Exception as e:
-                self.logger.error(f"Error in reboot prompt: {e}")
+            # Show final report and prompt for reboot
+            print_status_report()
+            self.final_checker.prompt_reboot()
 
             return 0 if self.success and final_result else 1
 
@@ -3295,7 +3122,7 @@ def main() -> int:
     Main entry point for the script.
 
     Returns:
-        Exit code (0 for success, non-zero for failure)
+        Exit code
     """
     setup_instance = UbuntuServerSetup()
     return setup_instance.run()

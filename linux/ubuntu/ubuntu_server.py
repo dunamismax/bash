@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ubuntu Server Initialization & Hardening Utility – Enhanced Version
+Ubuntu Server Initialization & Hardening Utility
 --------------------------------------------------------------------
 Description:
   This script automates the setup, configuration, and maintenance of an Ubuntu server.
@@ -17,14 +17,10 @@ Description:
 
   Features:
     - Comprehensive error handling with detailed logging
-    - Visual progress indicators for long-running tasks
     - Secure configuration of core services (SSH, UFW, Fail2ban, etc.)
     - Installation of modern tooling (Docker, Tailscale, VS Code, etc.)
     - System performance tuning and security hardening
     - Automatic backup of critical configuration files
-
-Usage:
-    sudo ./ubuntu_server_setup.py
 
 Author: Your Name | License: MIT | Version: 6.0.0
 """
@@ -49,11 +45,6 @@ import signal
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 from concurrent.futures import ThreadPoolExecutor
-
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.panel import Panel
-from rich.text import Text
 
 # ------------------------------------------------------------------------------
 # Environment Configuration & Constants
@@ -236,9 +227,6 @@ NORD13 = "\033[38;2;235;203;139m"
 NORD14 = "\033[38;2;163;190;140m"
 NC = "\033[0m"
 
-# Global console setup
-console = Console()
-
 
 # ------------------------------------------------------------------------------
 # CUSTOM LOGGING
@@ -320,9 +308,9 @@ def print_section(title: str):
         title: The section title to display
     """
     border = "─" * 60
-    console.print(f"[#94CEEB]{border}")
-    console.print(f"[#94CEEB]  {title}")
-    console.print(f"[#94CEEB]{border}")
+    print(f"{NORD8}{border}{NC}")
+    print(f"{NORD8}  {title}{NC}")
+    print(f"{NORD8}{border}{NC}")
     logger.info(f"--- {title} ---")
 
 
@@ -384,14 +372,14 @@ atexit.register(cleanup)
 
 
 # ------------------------------------------------------------------------------
-# Run-With-Progress Helper (using rich)
+# Run-With-Progress Helper
 # ------------------------------------------------------------------------------
 def run_with_progress(description: str, func, *args, task_name=None, **kwargs):
     """
-    Run a function in a background thread while displaying a progress spinner.
+    Run a function while displaying status updates.
 
     Args:
-        description: Description to display with the spinner
+        description: Description to display
         func: Function to execute
         task_name: Name of the task for status tracking
         *args, **kwargs: Arguments to pass to the function
@@ -405,37 +393,38 @@ def run_with_progress(description: str, func, *args, task_name=None, **kwargs):
             "message": f"{description} in progress...",
         }
 
+    print(f"{NORD8}[*] {description}...{NC}")
+    start_time = time.time()
+
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(func, *args, **kwargs)
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                TimeElapsedColumn(),
-                transient=True,
-                console=console,
-            ) as progress:
-                task = progress.add_task(description, total=None)
-                while not future.done():
-                    time.sleep(0.1)
-                    progress.refresh()
 
-                # Get the result or exception
-                try:
-                    result = future.result()
-                    if task_name:
-                        SETUP_STATUS[task_name] = {
-                            "status": "success",
-                            "message": f"{description} completed successfully.",
-                        }
-                    return result
-                except Exception as e:
-                    if task_name:
-                        SETUP_STATUS[task_name] = {
-                            "status": "failed",
-                            "message": f"{description} failed: {str(e)}",
-                        }
-                    raise
+            while not future.done():
+                time.sleep(0.5)
+
+            # Get the result or exception
+            try:
+                result = future.result()
+                elapsed = time.time() - start_time
+                print(f"{NORD14}[✓] {description} completed in {elapsed:.2f}s{NC}")
+                if task_name:
+                    SETUP_STATUS[task_name] = {
+                        "status": "success",
+                        "message": f"{description} completed successfully.",
+                    }
+                return result
+            except Exception as e:
+                elapsed = time.time() - start_time
+                print(
+                    f"{NORD11}[✗] {description} failed in {elapsed:.2f}s: {str(e)}{NC}"
+                )
+                if task_name:
+                    SETUP_STATUS[task_name] = {
+                        "status": "failed",
+                        "message": f"{description} failed: {str(e)}",
+                    }
+                raise
     except Exception as e:
         if task_name:
             SETUP_STATUS[task_name] = {
@@ -637,12 +626,12 @@ def print_status_report():
     }
 
     colors = {
-        "success": "green",
-        "failed": "red",
-        "pending": "yellow",
-        "in_progress": "blue",
-        "skipped": "cyan",
-        "warning": "yellow",  # Added warning color
+        "success": NORD14,
+        "failed": NORD11,
+        "pending": NORD13,
+        "in_progress": NORD9,
+        "skipped": NORD8,
+        "warning": NORD13,  # Added warning color
     }
 
     descriptions = {
@@ -666,9 +655,7 @@ def print_status_report():
         icon = icons[status]
         color = colors[status]
 
-        console.print(
-            f"[{color}]{icon} {task_desc}: {status.upper()}[/{color}] - {msg}"
-        )
+        print(f"{color}{icon} {task_desc}: {status.upper()}{NC} - {msg}")
 
 
 # ------------------------------------------------------------------------------
@@ -685,10 +672,8 @@ class PreflightChecker:
             SystemExit: If not running as root
         """
         if os.geteuid() != 0:
-            console.print(
-                f"[bold red]Error: This script must be run as root.[/bold red]"
-            )
-            console.print(f"Please run with: sudo {sys.argv[0]}")
+            print(f"{NORD11}Error: This script must be run as root.{NC}")
+            print(f"Please run with: sudo {sys.argv[0]}")
             sys.exit(1)
 
         logger.info("Root privileges confirmed.")
@@ -2680,15 +2665,8 @@ class FinalChecker:
         """Prompt the user to reboot the system if necessary."""
         logger.info("Prompting for system reboot...")
 
-        console.print(
-            Panel(
-                Text(
-                    "Setup completed! A reboot is recommended to apply all changes.",
-                    style="bold green",
-                ),
-                title="[bold]System Setup Complete[/bold]",
-                border_style="green",
-            )
+        print(
+            f"{NORD14}Setup completed! A reboot is recommended to apply all changes.{NC}"
         )
 
         answer = input("Would you like to reboot now? [y/N]: ").strip().lower()
@@ -2735,13 +2713,10 @@ class UbuntuServerSetup:
         """
         try:
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            console.print(
-                Panel(
-                    Text(f"Starting Ubuntu Server Setup v6.0.0", style="bold blue"),
-                    title=f"[bold]{now}[/bold]",
-                    border_style="blue",
-                )
-            )
+            print(f"{NORD8}----------------------------------------{NC}")
+            print(f"{NORD8}  Starting Ubuntu Server Setup v6.0.0{NC}")
+            print(f"{NORD8}  {now}{NC}")
+            print(f"{NORD8}----------------------------------------{NC}")
 
             logger.info(
                 f"Starting Ubuntu Server Setup v6.0.0 on {datetime.datetime.now()}"

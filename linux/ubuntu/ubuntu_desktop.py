@@ -5,7 +5,7 @@ Ubuntu Desktop Initialization & Maintenance Utility
 Description:
   This automation script configures and optimizes an Ubuntu Desktop environment.
   It executes a comprehensive set of tasks organized in a phase-based, class-structured
-  approach with robust error handling, progress indicators using the rich library,
+  approach with robust error handling, progress indicators using ANSI colors,
   and unified Nord-themed terminal output.
 
   The script performs the following phases:
@@ -44,13 +44,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 
 # ------------------------------------------------------------------------------
@@ -286,8 +283,6 @@ NORD13 = "\033[38;2;235;203;139m"
 NORD14 = "\033[38;2;163;190;140m"
 NC = "\033[0m"
 
-console = Console()
-
 
 # ------------------------------------------------------------------------------
 # CUSTOM LOGGING
@@ -391,14 +386,14 @@ for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
 
 
 # ------------------------------------------------------------------------------
-# PROGRESS HELPER (using rich)
+# PROGRESS HELPER (Simplified version without Rich)
 # ------------------------------------------------------------------------------
 def run_with_progress(description: str, func, *args, **kwargs):
     """
-    Run a blocking function in a background thread while displaying a progress spinner.
+    Run a function while displaying a simple progress indicator.
 
     Args:
-        description: Description of the task for the progress indicator
+        description: Description of the task
         func: Function to run
         *args: Arguments to pass to the function
         **kwargs: Keyword arguments to pass to the function
@@ -406,18 +401,17 @@ def run_with_progress(description: str, func, *args, **kwargs):
     Returns:
         Result of the executed function
     """
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(func, *args, **kwargs)
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            transient=True,
-        ) as progress:
-            task = progress.add_task(description, total=None)
-            while not future.done():
-                progress.refresh()
-            return future.result()
+    logger = logging.getLogger("ubuntu_setup")
+    logger.info(f"{NORD8}⏳ Starting: {description}{NC}")
+    try:
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        elapsed = time.time() - start_time
+        logger.info(f"{NORD14}✓ Completed: {description} in {elapsed:.2f}s{NC}")
+        return result
+    except Exception as e:
+        logger.error(f"{NORD11}✗ Failed: {description} - {str(e)}{NC}")
+        raise
 
 
 # ------------------------------------------------------------------------------
@@ -726,16 +720,10 @@ class UbuntuDesktopSetup:
         """
         self.print_section("System Update & Upgrade")
         try:
-            run_with_progress(
-                "Updating package repositories...",
-                self.run_command,
-                ["apt", "update", "-qq"],
-            )
-            run_with_progress(
-                "Upgrading system packages...",
-                self.run_command,
-                ["apt", "upgrade", "-y"],
-            )
+            self.logger.info("Updating package repositories...")
+            self.run_command(["apt", "update", "-qq"])
+            self.logger.info("Upgrading system packages...")
+            self.run_command(["apt", "upgrade", "-y"])
             self.logger.info("System update and upgrade complete.")
             return True
         except subprocess.CalledProcessError as e:
