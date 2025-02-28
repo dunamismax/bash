@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Production-grade system monitor script.
+Real time system monitor script.
 
 This script uses Click for CLI handling and Rich for a beautiful,
 Nord dark–themed, real–time dashboard that polls system metrics at a
