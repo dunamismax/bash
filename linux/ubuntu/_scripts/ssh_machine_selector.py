@@ -47,7 +47,7 @@ except ImportError:
 # ==============================
 # Configuration & Constants
 # ==============================
-APP_NAME = "SSH Select"  # Shortened name to fix display issues
+APP_NAME = "SSH Selector"  # Adjusted name for better display
 VERSION = "1.1.0"
 DEFAULT_USERNAME = "sawyer"  # Default SSH username
 SSH_COMMAND = "ssh"  # SSH command to use
@@ -163,14 +163,15 @@ class LocalDevice:
 # ==============================
 def print_header(text: str) -> Panel:
     """Create a striking header using pyfiglet."""
-    # Use small font to ensure it fits in the terminal width
-    ascii_art = pyfiglet.figlet_format(text, font="small")
+    # Use standard font with more space
+    ascii_art = pyfiglet.figlet_format(text, font="standard")
     return Panel(
         Text(ascii_art, style=f"bold {NordColors.NORD8}"),
         border_style=NordColors.NORD10,
         box=box.ROUNDED,
-        padding=(0, 1),  # Reduced padding
-        width=TERM_WIDTH - 4,  # Ensure it fits within terminal boundaries
+        padding=(1, 2),  # Added padding
+        title=f"v{VERSION}",
+        title_align="right",
     )
 
 
@@ -387,21 +388,21 @@ def create_machine_table(machines: List[Machine]) -> Table:
         border_style=NordColors.NORD3,
         title_justify="center",
         expand=True,
-        width=None,  # Allow auto-sizing
+        padding=(0, 1),  # Added horizontal padding
     )
 
-    # Define columns with adjusted widths
+    # Define columns with more generous widths
     table.add_column(
         "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True, width=3
     )
     table.add_column(
-        "Machine Name", style=f"{NordColors.NORD8}", justify="left", width=24
+        "Machine Name", style=f"{NordColors.NORD8}", justify="left", width=28
     )
     table.add_column(
-        "IP Address", style=f"{NordColors.NORD4}", justify="left", width=15
+        "IP Address", style=f"{NordColors.NORD4}", justify="left", width=16
     )
-    table.add_column("OS", style=f"{NordColors.NORD7}", justify="left", width=20)
-    table.add_column("Status", justify="center", width=10)
+    table.add_column("OS", style=f"{NordColors.NORD7}", justify="left", width=24)
+    table.add_column("Status", justify="center", width=12)
 
     # Add rows
     for idx, machine in enumerate(machines, 1):
@@ -425,23 +426,24 @@ def create_local_devices_table(devices: List[LocalDevice]) -> Table:
         border_style=NordColors.NORD3,
         title_justify="center",
         expand=True,
-        width=None,  # Allow auto-sizing
+        padding=(0, 1),  # Added horizontal padding
     )
 
-    # Define columns with adjusted widths
+    # Define columns with improved widths for better readability
     table.add_column(
         "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True, width=4
     )
     table.add_column(
-        "Device Name", style=f"{NordColors.NORD8}", justify="left", width=16
+        "Device Name", style=f"{NordColors.NORD8}", justify="left", width=20
     )
     table.add_column(
-        "MAC Address", style=f"{NordColors.NORD4}", justify="center", width=18
+        "MAC Address", style=f"{NordColors.NORD4}", justify="center", width=20
     )
     table.add_column(
-        "IP Address", style=f"{NordColors.NORD7}", justify="center", width=15
+        "IP Address", style=f"{NordColors.NORD7}", justify="center", width=16
     )
-    table.add_column("Status", justify="center", width=10)
+    table.add_column("OS", style=f"{NordColors.NORD4}", justify="left", width=24)
+    table.add_column("Status", justify="center", width=12)
 
     # Add rows
     for idx, device in enumerate(devices, 1):
@@ -450,6 +452,7 @@ def create_local_devices_table(devices: List[LocalDevice]) -> Table:
             device.name,
             device.mac_address,
             device.ip_address,
+            device.get_display_os(),
             device.get_display_status(),
         )
 
@@ -488,18 +491,13 @@ def create_app_layout() -> Layout:
     """Create the application layout structure."""
     layout = Layout()
 
-    # Create main sections with adjusted ratios
+    # Create main sections in vertical arrangement
     layout.split(
-        Layout(name="header", size=5),
-        Layout(name="info", size=5),
-        Layout(name="main", ratio=5),
-        Layout(name="footer", size=6),
-    )
-
-    # Split the main section into two columns (60/40 ratio for better display)
-    layout["main"].split_row(
-        Layout(name="machines", ratio=6),
-        Layout(name="devices", ratio=4),
+        Layout(name="header", size=8),  # More space for header
+        Layout(name="info", size=3),  # Info bar
+        Layout(name="machines", ratio=3),  # Tailscale machines
+        Layout(name="devices", ratio=2),  # Local devices below machines
+        Layout(name="footer", size=6),  # Options footer
     )
 
     return layout
@@ -513,7 +511,6 @@ def render_header() -> Panel:
 def render_info() -> Panel:
     """Render the application info panel."""
     info_text = Text()
-    info_text.append(f"Version: {VERSION}  ", style=NordColors.NORD9)
     info_text.append(
         f"System: {platform.system()} {platform.release()}  ", style=NordColors.NORD9
     )
@@ -527,8 +524,9 @@ def render_info() -> Panel:
         info_text,
         border_style=NordColors.NORD3,
         box=box.ROUNDED,
-        padding=(0, 1),  # Reduced padding
-        width=TERM_WIDTH - 4,  # Controlled width
+        padding=(1, 2),  # Increased padding
+        title="Session Info",
+        title_style=f"bold {NordColors.NORD7}",
     )
 
 
@@ -548,8 +546,9 @@ def render_footer() -> Panel:
         footer_text,
         border_style=NordColors.NORD3,
         box=box.ROUNDED,
-        padding=(0, 1),  # Reduced padding
-        width=TERM_WIDTH - 4,  # Ensure it fits within terminal boundaries
+        padding=(1, 2),  # Increased padding
+        title="Commands",
+        title_style=f"bold {NordColors.NORD13}",
     )
 
 
@@ -576,7 +575,9 @@ def show_main_menu() -> None:
 
         # Get user selection
         try:
-            choice = get_user_input("\nEnter your choice (1-14, L1-L4, or 'q' to quit)")
+            choice = get_user_input(
+                "\nEnter your choice (1-14, L1-L4, or 'q' to quit):"
+            )
 
             if choice.lower() == "q":
                 clear_screen()
@@ -602,7 +603,7 @@ def show_main_menu() -> None:
 
                         username = DEFAULT_USERNAME
                         if use_diff_username:
-                            username = get_user_input("Enter username")
+                            username = get_user_input("Enter username:")
 
                         # Connect to the selected local device
                         connect_to_machine(
@@ -612,12 +613,12 @@ def show_main_menu() -> None:
                         print_error(
                             f"Invalid local device choice. Please enter L1-L{len(local_devices)}."
                         )
-                        input("Press Enter to continue...")
+                        input("\nPress Enter to continue...")
                 except ValueError:
                     print_error(
                         "Invalid local device selection format. Use L1, L2, etc."
                     )
-                    input("Press Enter to continue...")
+                    input("\nPress Enter to continue...")
                 continue
 
             # Handle Tailscale machine selection (1-14)
@@ -636,7 +637,7 @@ def show_main_menu() -> None:
 
                     username = DEFAULT_USERNAME
                     if use_diff_username:
-                        username = get_user_input("Enter username")
+                        username = get_user_input("Enter username:")
 
                     # Connect to the selected Tailscale machine
                     connect_to_machine(
@@ -646,12 +647,12 @@ def show_main_menu() -> None:
                     print_error(
                         f"Invalid choice. Please enter a number between 1 and {len(machines)}."
                     )
-                    input("Press Enter to continue...")
+                    input("\nPress Enter to continue...")
             except ValueError:
                 print_error(
                     "Invalid input. Please enter a machine number (1-14), local device (L1-L4), or 'q'."
                 )
-                input("Press Enter to continue...")
+                input("\nPress Enter to continue...")
         except KeyboardInterrupt:
             clear_screen()
             console.print(print_header("Goodbye!"))
