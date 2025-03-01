@@ -270,8 +270,8 @@ def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
 # ==============================
 def cleanup() -> None:
     """Perform cleanup tasks before exit."""
-    with Status(f"[{NordColors.NORD8}]Performing cleanup tasks...[/]"):
-        time.sleep(0.5)  # Give a visual indication of cleanup
+    print_info("Performing cleanup tasks...")
+    time.sleep(0.5)  # Give a visual indication of cleanup
 
 
 atexit.register(cleanup)
@@ -317,17 +317,15 @@ def run_command(
             print_step(f"Executing: {' '.join(cmd)}")
 
     try:
-        with Status(
-            f"[{NordColors.NORD8}]Running command: {' '.join(cmd) if not shell else cmd}[/]"
-        ):
-            return subprocess.run(
-                cmd,
-                shell=shell,
-                check=check,
-                text=True,
-                capture_output=capture_output,
-                timeout=timeout,
-            )
+        # Execute the command without using Status to avoid nested live displays
+        return subprocess.run(
+            cmd,
+            shell=shell,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
     except subprocess.CalledProcessError as e:
         if shell:
             print_error(f"Command failed: {cmd}")
@@ -402,49 +400,49 @@ def install_system_dependencies() -> bool:
     """Install system-level dependencies using apt-get."""
     print_section("Installing System Dependencies")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        expand=True,
-    ) as progress:
-        try:
-            # Update package lists
-            task = progress.add_task("[bold green]Updating package lists...", total=1)
+    try:
+        # Update package lists
+        with Status("[bold green]Updating package lists...") as status:
             try:
                 run_command(["apt-get", "update"], sudo=True)
-                progress.update(task, advance=1)
                 print_success("Package lists updated.")
             except Exception as e:
                 print_error(f"Failed to update package lists: {e}")
-                progress.update(task, completed=1)
                 return False
 
-            # Install system dependencies
+        # Install system dependencies
+        total_packages = len(SYSTEM_DEPENDENCIES)
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeRemainingColumn(),
+            expand=True,
+        ) as progress:
             task = progress.add_task(
-                "[bold green]Installing system dependencies...",
-                total=len(SYSTEM_DEPENDENCIES),
+                "[bold green]Installing system dependencies...", total=total_packages
             )
+
             for package in SYSTEM_DEPENDENCIES:
                 try:
-                    run_command(["apt-get", "install", "-y", package], sudo=True)
                     progress.update(
-                        task,
-                        advance=1,
-                        description=f"[bold green]Installing {package}...",
+                        task, description=f"[bold green]Installing {package}..."
                     )
+                    run_command(["apt-get", "install", "-y", package], sudo=True)
+                    progress.update(task, advance=1)
                     print_success(f"{package} installed.")
                 except Exception as e:
                     print_error(f"Failed to install {package}: {e}")
                     progress.update(task, advance=1)
 
-            print_success("System dependencies installed successfully.")
-            return True
-        except Exception as e:
-            print_error(f"Error installing system dependencies: {e}")
-            return False
+        print_success("System dependencies installed successfully.")
+        return True
+    except Exception as e:
+        print_error(f"Error installing system dependencies: {e}")
+        return False
 
 
 def install_pyenv() -> bool:
@@ -458,68 +456,67 @@ def install_pyenv() -> bool:
 
     print_step("Installing pyenv...")
 
-    with Status("[bold green]Downloading pyenv installer...") as status:
-        try:
-            # Get the pyenv installer
-            curl_cmd = ["curl", "-fsSL", "https://pyenv.run"]
-            bash_cmd = ["bash"]
+    try:
+        # Get the pyenv installer
+        print_info("Downloading pyenv installer...")
+        curl_cmd = ["curl", "-fsSL", "https://pyenv.run"]
 
-            installer = run_command(curl_cmd).stdout
+        installer = run_command(curl_cmd).stdout
 
-            # Create a temporary file for the installer
-            temp_installer = os.path.join("/tmp", "pyenv_installer.sh")
-            with open(temp_installer, "w") as f:
-                f.write(installer)
+        # Create a temporary file for the installer
+        temp_installer = os.path.join("/tmp", "pyenv_installer.sh")
+        with open(temp_installer, "w") as f:
+            f.write(installer)
 
-            # Make it executable
-            os.chmod(temp_installer, 0o755)
+        # Make it executable
+        os.chmod(temp_installer, 0o755)
 
-            status.update("[bold green]Running pyenv installer...")
+        print_info("Running pyenv installer...")
 
-            # Run the installer
-            run_command([temp_installer])
+        # Run the installer
+        run_command([temp_installer])
 
-            # Check if installation was successful
-            if os.path.exists(PYENV_DIR) and os.path.isfile(PYENV_BIN):
-                print_success("pyenv installed successfully.")
+        # Check if installation was successful
+        if os.path.exists(PYENV_DIR) and os.path.isfile(PYENV_BIN):
+            print_success("pyenv installed successfully.")
 
-                # Setup shell integration
-                status.update("[bold green]Setting up shell configuration...")
-                shell_rc_files = [
-                    os.path.join(HOME_DIR, ".bashrc"),
-                    os.path.join(HOME_DIR, ".zshrc"),
-                ]
+            # Setup shell integration
+            print_info("Setting up shell configuration...")
+            shell_rc_files = [
+                os.path.join(HOME_DIR, ".bashrc"),
+                os.path.join(HOME_DIR, ".zshrc"),
+            ]
 
-                pyenv_init_lines = [
-                    "# pyenv initialization",
-                    'export PYENV_ROOT="$HOME/.pyenv"',
-                    'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"',
-                    'eval "$(pyenv init -)"',
-                    'eval "$(pyenv virtualenv-init -)"',
-                    "",
-                ]
+            pyenv_init_lines = [
+                "# pyenv initialization",
+                'export PYENV_ROOT="$HOME/.pyenv"',
+                'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"',
+                'eval "$(pyenv init -)"',
+                'eval "$(pyenv virtualenv-init -)"',
+                "",
+            ]
 
-                for rc_file in shell_rc_files:
-                    if os.path.exists(rc_file):
-                        with open(rc_file, "r") as f:
-                            content = f.read()
+            for rc_file in shell_rc_files:
+                if os.path.exists(rc_file):
+                    with open(rc_file, "r") as f:
+                        content = f.read()
 
-                        if "pyenv init" not in content:
-                            with open(rc_file, "a") as f:
-                                f.write("\n" + "\n".join(pyenv_init_lines))
-                            print_success(f"Added pyenv initialization to {rc_file}")
+                    if "pyenv init" not in content:
+                        with open(rc_file, "a") as f:
+                            f.write("\n" + "\n".join(pyenv_init_lines))
+                        print_success(f"Added pyenv initialization to {rc_file}")
 
-                # Update PATH for current session
-                os.environ["PATH"] = f"{PYENV_DIR}/bin:{os.environ.get('PATH', '')}"
+            # Update PATH for current session
+            os.environ["PATH"] = f"{PYENV_DIR}/bin:{os.environ.get('PATH', '')}"
 
-                return True
-            else:
-                print_error("pyenv installation failed.")
-                return False
-
-        except Exception as e:
-            print_error(f"Error installing pyenv: {e}")
+            return True
+        else:
+            print_error("pyenv installation failed.")
             return False
+
+    except Exception as e:
+        print_error(f"Error installing pyenv: {e}")
+        return False
 
 
 def install_latest_python_with_pyenv() -> bool:
@@ -530,64 +527,57 @@ def install_latest_python_with_pyenv() -> bool:
         print_error("pyenv is not installed. Please install it first.")
         return False
 
-    with Status("[bold green]Updating pyenv...") as status:
-        try:
-            # Update pyenv first
-            run_command([PYENV_BIN, "update"])
+    try:
+        # Update pyenv first
+        print_info("Updating pyenv...")
+        run_command([PYENV_BIN, "update"])
 
-            # Get latest Python version available
-            status.update("[bold green]Finding latest Python version...")
-            latest_version_output = run_command([PYENV_BIN, "install", "--list"]).stdout
+        # Get latest Python version available
+        print_info("Finding latest Python version...")
+        latest_version_output = run_command([PYENV_BIN, "install", "--list"]).stdout
 
-            # Parse the output to find the latest stable Python version
-            versions = re.findall(
-                r"^\s*(\d+\.\d+\.\d+)$", latest_version_output, re.MULTILINE
-            )
-            if not versions:
-                print_error("Could not find any Python versions to install.")
-                return False
-
-            # Sort versions and get the latest
-            latest_version = sorted(
-                versions, key=lambda v: [int(i) for i in v.split(".")]
-            )[-1]
-
-            status.update(f"[bold green]Installing Python {latest_version}...")
-            console.print(
-                f"Installing Python [bold]{latest_version}[/bold] (this may take several minutes)..."
-            )
-
-            # Install the latest version
-            with Progress(
-                SpinnerColumn(),
-                TextColumn(f"[bold green]Installing Python {latest_version}..."),
-                TimeRemainingColumn(),
-                expand=True,
-            ) as progress:
-                task = progress.add_task("Installing...", total=None)
-                run_command([PYENV_BIN, "install", "--skip-existing", latest_version])
-                progress.update(task, completed=True)
-
-            # Set as global Python version
-            run_command([PYENV_BIN, "global", latest_version])
-
-            # Verify installation
-            pyenv_python = os.path.join(PYENV_DIR, "shims", "python")
-            if os.path.exists(pyenv_python):
-                python_version = run_command([pyenv_python, "--version"]).stdout
-                print_success(f"Successfully installed {python_version.strip()}")
-
-                # Update PATH for current session
-                os.environ["PATH"] = f"{PYENV_DIR}/shims:{os.environ.get('PATH', '')}"
-
-                return True
-            else:
-                print_error("Python installation with pyenv failed.")
-                return False
-
-        except Exception as e:
-            print_error(f"Error installing Python with pyenv: {e}")
+        # Parse the output to find the latest stable Python version
+        versions = re.findall(
+            r"^\s*(\d+\.\d+\.\d+)$", latest_version_output, re.MULTILINE
+        )
+        if not versions:
+            print_error("Could not find any Python versions to install.")
             return False
+
+        # Sort versions and get the latest
+        latest_version = sorted(versions, key=lambda v: [int(i) for i in v.split(".")])[
+            -1
+        ]
+
+        console.print(
+            f"Installing Python [bold]{latest_version}[/bold] (this may take several minutes)..."
+        )
+
+        # Install the latest version
+        print_info(f"Running pyenv install for Python {latest_version}...")
+        run_command([PYENV_BIN, "install", "--skip-existing", latest_version])
+
+        # Set as global Python version
+        print_info("Setting as global Python version...")
+        run_command([PYENV_BIN, "global", latest_version])
+
+        # Verify installation
+        pyenv_python = os.path.join(PYENV_DIR, "shims", "python")
+        if os.path.exists(pyenv_python):
+            python_version = run_command([pyenv_python, "--version"]).stdout
+            print_success(f"Successfully installed {python_version.strip()}")
+
+            # Update PATH for current session
+            os.environ["PATH"] = f"{PYENV_DIR}/shims:{os.environ.get('PATH', '')}"
+
+            return True
+        else:
+            print_error("Python installation with pyenv failed.")
+            return False
+
+    except Exception as e:
+        print_error(f"Error installing Python with pyenv: {e}")
+        return False
 
 
 def install_pipx() -> bool:
@@ -600,37 +590,37 @@ def install_pipx() -> bool:
 
     print_step("Installing pipx...")
 
-    with Status("[bold green]Installing pipx...") as status:
-        try:
-            # Try to get python from pyenv first
-            python_cmd = os.path.join(PYENV_DIR, "shims", "python")
-            if not os.path.exists(python_cmd):
-                python_cmd = shutil.which("python3") or shutil.which("python")
+    try:
+        # Try to get python from pyenv first
+        python_cmd = os.path.join(PYENV_DIR, "shims", "python")
+        if not os.path.exists(python_cmd):
+            python_cmd = shutil.which("python3") or shutil.which("python")
 
-            if not python_cmd:
-                print_error("Could not find a Python executable.")
-                return False
-
-            # Install pipx
-            run_command([python_cmd, "-m", "pip", "install", "--user", "pipx"])
-            run_command([python_cmd, "-m", "pipx", "ensurepath"])
-
-            # Verify installation
-            pipx_path = os.path.join(HOME_DIR, ".local", "bin", "pipx")
-            if os.path.exists(pipx_path):
-                # Add to PATH for current session
-                os.environ["PATH"] = (
-                    f"{os.path.dirname(pipx_path)}:{os.environ.get('PATH', '')}"
-                )
-                print_success("pipx installed successfully.")
-                return True
-            else:
-                print_error("pipx installation could not be verified.")
-                return False
-
-        except Exception as e:
-            print_error(f"Error installing pipx: {e}")
+        if not python_cmd:
+            print_error("Could not find a Python executable.")
             return False
+
+        # Install pipx
+        print_info(f"Using {python_cmd} to install pipx...")
+        run_command([python_cmd, "-m", "pip", "install", "--user", "pipx"])
+        run_command([python_cmd, "-m", "pipx", "ensurepath"])
+
+        # Verify installation
+        pipx_path = os.path.join(HOME_DIR, ".local", "bin", "pipx")
+        if os.path.exists(pipx_path):
+            # Add to PATH for current session
+            os.environ["PATH"] = (
+                f"{os.path.dirname(pipx_path)}:{os.environ.get('PATH', '')}"
+            )
+            print_success("pipx installed successfully.")
+            return True
+        else:
+            print_error("pipx installation could not be verified.")
+            return False
+
+    except Exception as e:
+        print_error(f"Error installing pipx: {e}")
+        return False
 
 
 def install_pipx_tools() -> bool:

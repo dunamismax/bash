@@ -97,8 +97,10 @@ try:
 except ImportError:
     # If Rich is not installed, install it first
     print("Installing required dependencies...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "rich", "pyfiglet"], check=True)
-    
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "rich", "pyfiglet"], check=True
+    )
+
     # Then import again
     from rich.console import Console
     from rich.panel import Panel
@@ -217,12 +219,26 @@ class NordColors:
 def print_header(text: str) -> None:
     """Print a striking header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(Panel(ascii_art, style=f"bold {NordColors.NORD8}", border_style=f"bold {NordColors.NORD9}", expand=False))
+    console.print(
+        Panel(
+            ascii_art,
+            style=f"bold {NordColors.NORD8}",
+            border_style=f"bold {NordColors.NORD9}",
+            expand=False,
+        )
+    )
 
 
 def print_section(title: str) -> None:
     """Print a formatted section header."""
-    console.print(Panel(title, style=f"bold {NordColors.NORD8}", border_style=f"bold {NordColors.NORD9}", expand=True))
+    console.print(
+        Panel(
+            title,
+            style=f"bold {NordColors.NORD8}",
+            border_style=f"bold {NordColors.NORD9}",
+            expand=True,
+        )
+    )
 
 
 def print_info(message: str) -> None:
@@ -279,7 +295,12 @@ def get_user_confirmation(prompt: str) -> bool:
 
 def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
     """Create a Rich table for menu options."""
-    table = Table(title=title, box=box.ROUNDED, title_style=f"bold {NordColors.NORD8}", expand=True)
+    table = Table(
+        title=title,
+        box=box.ROUNDED,
+        title_style=f"bold {NordColors.NORD8}",
+        expand=True,
+    )
     table.add_column("Option", style=f"{NordColors.NORD9}", justify="center", width=8)
     table.add_column("Description", style=f"{NordColors.NORD4}")
 
@@ -294,8 +315,8 @@ def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
 # ==============================
 def cleanup() -> None:
     """Perform cleanup tasks before exit."""
-    with Status(f"[{NordColors.NORD8}]Performing cleanup tasks...[/]"):
-        time.sleep(0.5)  # Give a visual indication of cleanup
+    print_info("Performing cleanup tasks...")
+    time.sleep(0.5)  # Give a visual indication of cleanup
 
 
 atexit.register(cleanup)
@@ -333,7 +354,7 @@ def run_command(
     """Run a shell command and handle errors."""
     if sudo and os.geteuid() != 0:
         cmd = ["sudo"] + cmd
-        
+
     if verbose:
         if shell:
             print_step(f"Executing: {cmd}")
@@ -341,15 +362,15 @@ def run_command(
             print_step(f"Executing: {' '.join(cmd)}")
 
     try:
-        with Status(f"[{NordColors.NORD8}]Running command: {' '.join(cmd) if not shell else cmd}[/]"):
-            return subprocess.run(
-                cmd,
-                shell=shell,
-                check=check,
-                text=True,
-                capture_output=capture_output,
-                timeout=timeout,
-            )
+        # Execute the command without using Status to avoid nested live displays
+        return subprocess.run(
+            cmd,
+            shell=shell,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
     except subprocess.CalledProcessError as e:
         if shell:
             print_error(f"Command failed: {cmd}")
@@ -359,7 +380,13 @@ def run_command(
         if hasattr(e, "stdout") and e.stdout:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
         if hasattr(e, "stderr") and e.stderr:
-            console.print(Panel(e.stderr.strip(), title="Error Output", border_style=f"bold {NordColors.NORD11}"))
+            console.print(
+                Panel(
+                    e.stderr.strip(),
+                    title="Error Output",
+                    border_style=f"bold {NordColors.NORD11}",
+                )
+            )
         raise
     except subprocess.TimeoutExpired:
         print_error(f"Command timed out after {timeout} seconds")
@@ -393,7 +420,7 @@ def check_system() -> bool:
     table = Table(title="System Information", box=box.ROUNDED)
     table.add_column("Component", style=f"bold {NordColors.NORD9}")
     table.add_column("Value", style=f"{NordColors.NORD4}")
-    
+
     table.add_row("Python Version", platform.python_version())
     table.add_row("Operating System", platform.platform())
     table.add_row("User", os.environ.get("USER", "Unknown"))
@@ -404,7 +431,9 @@ def check_system() -> bool:
     missing = [tool for tool in required_tools if shutil.which(tool) is None]
 
     if missing:
-        print_error(f"Missing required tools: {', '.join(missing)}. These will be installed.")
+        print_error(
+            f"Missing required tools: {', '.join(missing)}. These will be installed."
+        )
     else:
         print_success("All basic required tools are present.")
 
@@ -416,42 +445,49 @@ def install_system_dependencies() -> bool:
     """Install system-level dependencies using apt-get."""
     print_section("Installing System Dependencies")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        expand=True,
-    ) as progress:
-        try:
-            # Update package lists
-            task = progress.add_task("[bold green]Updating package lists...", total=1)
+    try:
+        # Update package lists
+        with Status("[bold green]Updating package lists...") as status:
             try:
                 run_command(["apt-get", "update"], sudo=True)
-                progress.update(task, advance=1)
                 print_success("Package lists updated.")
             except Exception as e:
                 print_error(f"Failed to update package lists: {e}")
-                progress.update(task, completed=1)
                 return False
 
-            # Install system dependencies
-            task = progress.add_task("[bold green]Installing system dependencies...", total=len(SYSTEM_DEPENDENCIES))
+        # Install system dependencies
+        total_packages = len(SYSTEM_DEPENDENCIES)
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeRemainingColumn(),
+            expand=True,
+        ) as progress:
+            task = progress.add_task(
+                "[bold green]Installing system dependencies...", total=total_packages
+            )
+
             for package in SYSTEM_DEPENDENCIES:
                 try:
+                    progress.update(
+                        task, description=f"[bold green]Installing {package}..."
+                    )
                     run_command(["apt-get", "install", "-y", package], sudo=True)
-                    progress.update(task, advance=1, description=f"[bold green]Installing {package}...")
+                    progress.update(task, advance=1)
                     print_success(f"{package} installed.")
                 except Exception as e:
                     print_error(f"Failed to install {package}: {e}")
                     progress.update(task, advance=1)
 
-            print_success("System dependencies installed successfully.")
-            return True
-        except Exception as e:
-            print_error(f"Error installing system dependencies: {e}")
-            return False
+        print_success("System dependencies installed successfully.")
+        return True
+    except Exception as e:
+        print_error(f"Error installing system dependencies: {e}")
+        return False
 
 
 def install_pyenv() -> bool:
@@ -464,132 +500,130 @@ def install_pyenv() -> bool:
         return True
 
     print_step("Installing pyenv...")
-    
-    with Status("[bold green]Downloading pyenv installer...") as status:
-        try:
-            # Get the pyenv installer
-            curl_cmd = ["curl", "-fsSL", "https://pyenv.run"]
-            bash_cmd = ["bash"]
-            
-            installer = run_command(curl_cmd).stdout
-            
-            # Create a temporary file for the installer
-            temp_installer = os.path.join("/tmp", "pyenv_installer.sh")
-            with open(temp_installer, "w") as f:
-                f.write(installer)
-            
-            # Make it executable
-            os.chmod(temp_installer, 0o755)
-            
-            status.update("[bold green]Running pyenv installer...")
-            
-            # Run the installer
-            run_command([temp_installer])
-            
-            # Check if installation was successful
-            if os.path.exists(PYENV_DIR) and os.path.isfile(PYENV_BIN):
-                print_success("pyenv installed successfully.")
-                
-                # Setup shell integration
-                status.update("[bold green]Setting up shell configuration...")
-                shell_rc_files = [
-                    os.path.join(HOME_DIR, ".bashrc"),
-                    os.path.join(HOME_DIR, ".zshrc"),
-                ]
-                
-                pyenv_init_lines = [
-                    '# pyenv initialization',
-                    'export PYENV_ROOT="$HOME/.pyenv"',
-                    'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"',
-                    'eval "$(pyenv init -)"',
-                    'eval "$(pyenv virtualenv-init -)"',
-                    ''
-                ]
-                
-                for rc_file in shell_rc_files:
-                    if os.path.exists(rc_file):
-                        with open(rc_file, 'r') as f:
-                            content = f.read()
-                        
-                        if "pyenv init" not in content:
-                            with open(rc_file, 'a') as f:
-                                f.write('\n' + '\n'.join(pyenv_init_lines))
-                            print_success(f"Added pyenv initialization to {rc_file}")
-                
-                # Update PATH for current session
-                os.environ["PATH"] = f"{PYENV_DIR}/bin:{os.environ.get('PATH', '')}"
-                
-                return True
-            else:
-                print_error("pyenv installation failed.")
-                return False
-                
-        except Exception as e:
-            print_error(f"Error installing pyenv: {e}")
+
+    try:
+        # Get the pyenv installer
+        print_info("Downloading pyenv installer...")
+        curl_cmd = ["curl", "-fsSL", "https://pyenv.run"]
+
+        installer = run_command(curl_cmd).stdout
+
+        # Create a temporary file for the installer
+        temp_installer = os.path.join("/tmp", "pyenv_installer.sh")
+        with open(temp_installer, "w") as f:
+            f.write(installer)
+
+        # Make it executable
+        os.chmod(temp_installer, 0o755)
+
+        print_info("Running pyenv installer...")
+
+        # Run the installer
+        run_command([temp_installer])
+
+        # Check if installation was successful
+        if os.path.exists(PYENV_DIR) and os.path.isfile(PYENV_BIN):
+            print_success("pyenv installed successfully.")
+
+            # Setup shell integration
+            print_info("Setting up shell configuration...")
+            shell_rc_files = [
+                os.path.join(HOME_DIR, ".bashrc"),
+                os.path.join(HOME_DIR, ".zshrc"),
+            ]
+
+            pyenv_init_lines = [
+                "# pyenv initialization",
+                'export PYENV_ROOT="$HOME/.pyenv"',
+                'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"',
+                'eval "$(pyenv init -)"',
+                'eval "$(pyenv virtualenv-init -)"',
+                "",
+            ]
+
+            for rc_file in shell_rc_files:
+                if os.path.exists(rc_file):
+                    with open(rc_file, "r") as f:
+                        content = f.read()
+
+                    if "pyenv init" not in content:
+                        with open(rc_file, "a") as f:
+                            f.write("\n" + "\n".join(pyenv_init_lines))
+                        print_success(f"Added pyenv initialization to {rc_file}")
+
+            # Update PATH for current session
+            os.environ["PATH"] = f"{PYENV_DIR}/bin:{os.environ.get('PATH', '')}"
+
+            return True
+        else:
+            print_error("pyenv installation failed.")
             return False
+
+    except Exception as e:
+        print_error(f"Error installing pyenv: {e}")
+        return False
 
 
 def install_latest_python_with_pyenv() -> bool:
     """Install the latest Python version using pyenv."""
     print_section("Installing Latest Python with pyenv")
-    
+
     if not os.path.exists(PYENV_BIN):
         print_error("pyenv is not installed. Please install it first.")
         return False
-        
-    with Status("[bold green]Updating pyenv...") as status:
-        try:
-            # Update pyenv first
-            run_command([PYENV_BIN, "update"])
-            
-            # Get latest Python version available
-            status.update("[bold green]Finding latest Python version...")
-            latest_version_output = run_command([PYENV_BIN, "install", "--list"]).stdout
-            
-            # Parse the output to find the latest stable Python version
-            versions = re.findall(r"^\s*(\d+\.\d+\.\d+)$", latest_version_output, re.MULTILINE)
-            if not versions:
-                print_error("Could not find any Python versions to install.")
-                return False
-                
-            # Sort versions and get the latest
-            latest_version = sorted(versions, key=lambda v: [int(i) for i in v.split('.')])[-1]
-            
-            status.update(f"[bold green]Installing Python {latest_version}...")
-            console.print(f"Installing Python [bold]{latest_version}[/bold] (this may take several minutes)...")
-            
-            # Install the latest version
-            with Progress(
-                SpinnerColumn(),
-                TextColumn(f"[bold green]Installing Python {latest_version}..."),
-                TimeRemainingColumn(),
-                expand=True,
-            ) as progress:
-                task = progress.add_task("Installing...", total=None)
-                run_command([PYENV_BIN, "install", "--skip-existing", latest_version])
-                progress.update(task, completed=True)
-                
-            # Set as global Python version
-            run_command([PYENV_BIN, "global", latest_version])
-            
-            # Verify installation
-            pyenv_python = os.path.join(PYENV_DIR, "shims", "python")
-            if os.path.exists(pyenv_python):
-                python_version = run_command([pyenv_python, "--version"]).stdout
-                print_success(f"Successfully installed {python_version.strip()}")
-                
-                # Update PATH for current session
-                os.environ["PATH"] = f"{PYENV_DIR}/shims:{os.environ.get('PATH', '')}"
-                
-                return True
-            else:
-                print_error("Python installation with pyenv failed.")
-                return False
-                
-        except Exception as e:
-            print_error(f"Error installing Python with pyenv: {e}")
+
+    try:
+        # Update pyenv first
+        print_info("Updating pyenv...")
+        run_command([PYENV_BIN, "update"])
+
+        # Get latest Python version available
+        print_info("Finding latest Python version...")
+        latest_version_output = run_command([PYENV_BIN, "install", "--list"]).stdout
+
+        # Parse the output to find the latest stable Python version
+        versions = re.findall(
+            r"^\s*(\d+\.\d+\.\d+)$", latest_version_output, re.MULTILINE
+        )
+        if not versions:
+            print_error("Could not find any Python versions to install.")
             return False
-            
+
+        # Sort versions and get the latest
+        latest_version = sorted(versions, key=lambda v: [int(i) for i in v.split(".")])[
+            -1
+        ]
+
+        console.print(
+            f"Installing Python [bold]{latest_version}[/bold] (this may take several minutes)..."
+        )
+
+        # Install the latest version
+        print_info(f"Running pyenv install for Python {latest_version}...")
+        run_command([PYENV_BIN, "install", "--skip-existing", latest_version])
+
+        # Set as global Python version
+        print_info("Setting as global Python version...")
+        run_command([PYENV_BIN, "global", latest_version])
+
+        # Verify installation
+        pyenv_python = os.path.join(PYENV_DIR, "shims", "python")
+        if os.path.exists(pyenv_python):
+            python_version = run_command([pyenv_python, "--version"]).stdout
+            print_success(f"Successfully installed {python_version.strip()}")
+
+            # Update PATH for current session
+            os.environ["PATH"] = f"{PYENV_DIR}/shims:{os.environ.get('PATH', '')}"
+
+            return True
+        else:
+            print_error("Python installation with pyenv failed.")
+            return False
+
+    except Exception as e:
+        print_error(f"Error installing Python with pyenv: {e}")
+        return False
+
 
 def install_pipx() -> bool:
     """Ensure pipx is installed; install it using pip if missing."""
@@ -600,36 +634,38 @@ def install_pipx() -> bool:
         return True
 
     print_step("Installing pipx...")
-    
-    with Status("[bold green]Installing pipx...") as status:
-        try:
-            # Try to get python from pyenv first
-            python_cmd = os.path.join(PYENV_DIR, "shims", "python")
-            if not os.path.exists(python_cmd):
-                python_cmd = shutil.which("python3") or shutil.which("python")
-                
-            if not python_cmd:
-                print_error("Could not find a Python executable.")
-                return False
-                
-            # Install pipx
-            run_command([python_cmd, "-m", "pip", "install", "--user", "pipx"])
-            run_command([python_cmd, "-m", "pipx", "ensurepath"])
-            
-            # Verify installation
-            pipx_path = os.path.join(HOME_DIR, ".local", "bin", "pipx")
-            if os.path.exists(pipx_path):
-                # Add to PATH for current session
-                os.environ["PATH"] = f"{os.path.dirname(pipx_path)}:{os.environ.get('PATH', '')}"
-                print_success("pipx installed successfully.")
-                return True
-            else:
-                print_error("pipx installation could not be verified.")
-                return False
-                
-        except Exception as e:
-            print_error(f"Error installing pipx: {e}")
+
+    try:
+        # Try to get python from pyenv first
+        python_cmd = os.path.join(PYENV_DIR, "shims", "python")
+        if not os.path.exists(python_cmd):
+            python_cmd = shutil.which("python3") or shutil.which("python")
+
+        if not python_cmd:
+            print_error("Could not find a Python executable.")
             return False
+
+        # Install pipx
+        print_info(f"Using {python_cmd} to install pipx...")
+        run_command([python_cmd, "-m", "pip", "install", "--user", "pipx"])
+        run_command([python_cmd, "-m", "pipx", "ensurepath"])
+
+        # Verify installation
+        pipx_path = os.path.join(HOME_DIR, ".local", "bin", "pipx")
+        if os.path.exists(pipx_path):
+            # Add to PATH for current session
+            os.environ["PATH"] = (
+                f"{os.path.dirname(pipx_path)}:{os.environ.get('PATH', '')}"
+            )
+            print_success("pipx installed successfully.")
+            return True
+        else:
+            print_error("pipx installation could not be verified.")
+            return False
+
+    except Exception as e:
+        print_error(f"Error installing pipx: {e}")
+        return False
 
 
 def install_pipx_tools() -> bool:
@@ -639,11 +675,11 @@ def install_pipx_tools() -> bool:
     if not install_pipx():
         print_error("Failed to ensure pipx installation.")
         return False
-        
+
     pipx_cmd = os.path.join(HOME_DIR, ".local", "bin", "pipx")
     if not os.path.exists(pipx_cmd):
         pipx_cmd = shutil.which("pipx")
-        
+
     if not pipx_cmd:
         print_error("Could not find pipx executable.")
         return False
@@ -656,7 +692,9 @@ def install_pipx_tools() -> bool:
         TimeRemainingColumn(),
         expand=True,
     ) as progress:
-        task = progress.add_task("[bold green]Installing Python tools...", total=len(PIPX_TOOLS))
+        task = progress.add_task(
+            "[bold green]Installing Python tools...", total=len(PIPX_TOOLS)
+        )
         failed_tools = []
 
         for tool in PIPX_TOOLS:
@@ -671,7 +709,9 @@ def install_pipx_tools() -> bool:
                 progress.update(task, advance=1)
 
         if failed_tools:
-            print_warning(f"Failed to install the following tools: {', '.join(failed_tools)}")
+            print_warning(
+                f"Failed to install the following tools: {', '.join(failed_tools)}"
+            )
             return False
 
         print_success("Python tools installation completed.")
@@ -686,26 +726,30 @@ def interactive_menu() -> None:
     while True:
         clear_screen()
         print_header(APP_NAME)
-        
+
         # System info panel
         info = Table.grid(padding=1)
         info.add_column(style=f"bold {NordColors.NORD9}")
         info.add_column(style=f"{NordColors.NORD4}")
-        
+
         info.add_row("Version:", VERSION)
         info.add_row("System:", f"{platform.system()} {platform.release()}")
         info.add_row("Python:", platform.python_version())
         info.add_row("User:", os.environ.get("USER", "Unknown"))
-        
+
         # Check if pyenv is installed
         pyenv_status = "Installed" if os.path.exists(PYENV_BIN) else "Not installed"
         info.add_row("pyenv:", pyenv_status)
-        
+
         # Check if pipx is installed
-        pipx_status = "Installed" if check_command_available("pipx") else "Not installed"
+        pipx_status = (
+            "Installed" if check_command_available("pipx") else "Not installed"
+        )
         info.add_row("pipx:", pipx_status)
-        
-        console.print(Panel(info, title="System Information", border_style=f"{NordColors.NORD9}"))
+
+        console.print(
+            Panel(info, title="System Information", border_style=f"{NordColors.NORD9}")
+        )
 
         # Main menu options
         menu_options = [
@@ -744,8 +788,12 @@ def interactive_menu() -> None:
         elif choice == "0":
             clear_screen()
             print_header("Goodbye!")
-            console.print(Panel("Thank you for using the Python Dev Setup Tool.", 
-                              border_style=f"bold {NordColors.NORD14}"))
+            console.print(
+                Panel(
+                    "Thank you for using the Python Dev Setup Tool.",
+                    border_style=f"bold {NordColors.NORD14}",
+                )
+            )
             time.sleep(1)
             sys.exit(0)
         else:
@@ -776,7 +824,7 @@ def run_full_setup() -> None:
         if not get_user_confirmation("Continue without pyenv?"):
             print_warning("Setup aborted.")
             return
-    
+
     # Install latest Python with pyenv
     print_step("Installing latest Python version with pyenv...")
     if not install_latest_python_with_pyenv():
@@ -795,29 +843,45 @@ def run_full_setup() -> None:
     summary = Table(title="Installation Results", box=box.ROUNDED)
     summary.add_column("Component", style=f"bold {NordColors.NORD9}")
     summary.add_column("Status", style=f"{NordColors.NORD4}")
-    
-    summary.add_row("System Dependencies", 
-                   "[bold green]✓ Installed[/]" if check_command_available("gcc") else "[bold red]× Failed[/]")
-    
-    summary.add_row("pyenv", 
-                   "[bold green]✓ Installed[/]" if os.path.exists(PYENV_BIN) else "[bold red]× Failed[/]")
-    
+
+    summary.add_row(
+        "System Dependencies",
+        "[bold green]✓ Installed[/]"
+        if check_command_available("gcc")
+        else "[bold red]× Failed[/]",
+    )
+
+    summary.add_row(
+        "pyenv",
+        "[bold green]✓ Installed[/]"
+        if os.path.exists(PYENV_BIN)
+        else "[bold red]× Failed[/]",
+    )
+
     python_installed = os.path.exists(os.path.join(PYENV_DIR, "shims", "python"))
-    summary.add_row("Python (via pyenv)", 
-                   "[bold green]✓ Installed[/]" if python_installed else "[bold red]× Failed[/]")
-    
-    summary.add_row("pipx", 
-                   "[bold green]✓ Installed[/]" if check_command_available("pipx") else "[bold red]× Failed[/]")
-    
+    summary.add_row(
+        "Python (via pyenv)",
+        "[bold green]✓ Installed[/]" if python_installed else "[bold red]× Failed[/]",
+    )
+
+    summary.add_row(
+        "pipx",
+        "[bold green]✓ Installed[/]"
+        if check_command_available("pipx")
+        else "[bold red]× Failed[/]",
+    )
+
     console.print(summary)
-    
+
     # Shell reloading instructions
     shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
-    console.print(Panel(
-        f"To fully apply all changes, you should restart your terminal or run:\n\nsource ~/.{shell_name}rc",
-        title="Next Steps",
-        border_style=f"bold {NordColors.NORD13}"
-    ))
+    console.print(
+        Panel(
+            f"To fully apply all changes, you should restart your terminal or run:\n\nsource ~/.{shell_name}rc",
+            title="Next Steps",
+            border_style=f"bold {NordColors.NORD13}",
+        )
+    )
 
     print_success("Setup process completed!")
 
@@ -831,15 +895,17 @@ def main() -> None:
         # Setup signal handlers
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(sig, signal_handler)
-        
+
         # Check if running as root
         if is_root():
-            console.print(Panel(
-                "This script should NOT be run as root. Please run it as a regular user.\n"
-                "It will use sudo when necessary for system-level operations.",
-                title="⚠️ Warning",
-                border_style=f"bold {NordColors.NORD11}"
-            ))
+            console.print(
+                Panel(
+                    "This script should NOT be run as root. Please run it as a regular user.\n"
+                    "It will use sudo when necessary for system-level operations.",
+                    title="⚠️ Warning",
+                    border_style=f"bold {NordColors.NORD11}",
+                )
+            )
             if not get_user_confirmation("Do you want to continue anyway?"):
                 sys.exit(1)
 
@@ -852,6 +918,7 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -865,6 +932,7 @@ if __name__ == "__main__":
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 </template_script>
