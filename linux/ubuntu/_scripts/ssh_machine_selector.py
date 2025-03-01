@@ -9,6 +9,7 @@ This tool provides:
   • Quick selection by number
   • SSH connection handling with proper terminal management
   • Visual indication of connection status
+  • Local IP device management
 
 Features a Nord-themed interface for easy readability and selection.
 
@@ -16,7 +17,7 @@ Usage:
   Simply run the script or alias it to 'ssh' for quick access.
   Select a machine by number to connect via SSH.
 
-Version: 1.0.0
+Version: 1.1.0
 """
 
 import os
@@ -26,7 +27,7 @@ import shutil
 import platform
 from datetime import datetime
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 try:
     from rich.console import Console
@@ -34,6 +35,9 @@ try:
     from rich.table import Table
     from rich.prompt import Prompt, IntPrompt
     from rich.text import Text
+    from rich.layout import Layout
+    from rich.live import Live
+    from rich import box
     import pyfiglet
 except ImportError:
     print("This script requires the 'rich' and 'pyfiglet' packages.")
@@ -44,7 +48,7 @@ except ImportError:
 # Configuration & Constants
 # ==============================
 APP_NAME = "SSH Machine Selector"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEFAULT_USERNAME = "sawyer"  # Default SSH username
 SSH_COMMAND = "ssh"  # SSH command to use
 
@@ -115,48 +119,74 @@ class Machine:
     def get_display_status(self) -> str:
         """Get formatted status with appropriate coloring."""
         if self.status.lower() == "connected":
-            return f"[bold {NordColors.NORD14}]{self.status}[/]"
+            return Text(self.status, style=f"bold {NordColors.NORD14}")
         elif "disabled" in self.status.lower():
-            return f"[bold {NordColors.NORD13}]{self.status}[/]"
+            return Text(self.status, style=f"bold {NordColors.NORD13}")
         else:
-            return f"[dim]{self.status}[/]"
+            return Text(self.status, style="dim")
+
+
+@dataclass
+class LocalDevice:
+    """Represents a local network device with reserved IP."""
+
+    name: str
+    mac_address: str
+    ip_address: str
+    status: str = "Active"
+
+    def get_display_status(self) -> Text:
+        """Get formatted status with appropriate coloring."""
+        if self.status.lower() == "active":
+            return Text(self.status, style=f"bold {NordColors.NORD14}")
+        elif self.status.lower() == "inactive":
+            return Text(self.status, style="dim")
+        else:
+            return Text(self.status, style=f"bold {NordColors.NORD13}")
 
 
 # ==============================
 # UI Helper Functions
 # ==============================
-def print_header(text: str) -> None:
-    """Print a striking header using pyfiglet."""
+def print_header(text: str) -> Panel:
+    """Create a striking header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style=f"bold {NordColors.NORD8}")
+    return Panel(
+        Text(ascii_art, style=f"bold {NordColors.NORD8}"),
+        border_style=NordColors.NORD10,
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
 
 
-def print_section(title: str) -> None:
-    """Print a formatted section header."""
-    border = "═" * TERM_WIDTH
-    console.print(f"\n[bold {NordColors.NORD8}]{border}[/]")
-    console.print(f"[bold {NordColors.NORD8}]  {title.center(TERM_WIDTH - 4)}[/]")
-    console.print(f"[bold {NordColors.NORD8}]{border}[/]\n")
+def create_section(title: str) -> Panel:
+    """Create a formatted section header."""
+    return Panel(
+        Text(title, style=f"bold {NordColors.NORD8}"),
+        border_style=NordColors.NORD9,
+        box=box.HEAVY_EDGE,
+        padding=(0, 2),
+    )
 
 
 def print_info(message: str) -> None:
     """Print an informational message."""
-    console.print(f"[{NordColors.NORD9}]{message}[/]")
+    console.print(Text(message, style=NordColors.NORD9))
 
 
 def print_success(message: str) -> None:
     """Print a success message."""
-    console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
+    console.print(Text(f"✓ {message}", style=f"bold {NordColors.NORD14}"))
 
 
 def print_warning(message: str) -> None:
     """Print a warning message."""
-    console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
+    console.print(Text(f"⚠ {message}", style=f"bold {NordColors.NORD13}"))
 
 
 def print_error(message: str) -> None:
     """Print an error message."""
-    console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
+    console.print(Text(f"✗ {message}", style=f"bold {NordColors.NORD11}"))
 
 
 def clear_screen() -> None:
@@ -301,18 +331,53 @@ def load_machines() -> List[Machine]:
     return machines
 
 
-def display_machine_list(machines: List[Machine]) -> None:
-    """Display a formatted list of machines with their details."""
+def load_local_devices() -> List[LocalDevice]:
+    """Load the list of local network devices."""
+    # Hardcoded local device list from the provided data
+    devices = [
+        LocalDevice(
+            name="ubuntu-server",
+            mac_address="6C-1F-F7-04-59-50",
+            ip_address="192.168.0.73",
+        ),
+        LocalDevice(
+            name="raspberrypi-5",
+            mac_address="2C-CF-67-59-0E-03",
+            ip_address="192.168.0.40",
+        ),
+        LocalDevice(
+            name="ubuntu-lenovo",
+            mac_address="6C-1F-F7-1A-0B-28",
+            ip_address="192.168.0.45",
+        ),
+        LocalDevice(
+            name="raspberrypi-3",
+            mac_address="B8-27-EB-3A-11-89",
+            ip_address="192.168.0.100",
+        ),
+    ]
+    return devices
+
+
+def create_machine_table(machines: List[Machine]) -> Table:
+    """Create a formatted table of machines with their details."""
     table = Table(
-        title="Available Machines", box=None, title_style=f"bold {NordColors.NORD8}"
+        title="Available Machines",
+        box=box.ROUNDED,
+        title_style=f"bold {NordColors.NORD8}",
+        border_style=NordColors.NORD3,
+        title_justify="center",
+        expand=True,
     )
 
     # Define columns
-    table.add_column("#", style=f"bold {NordColors.NORD9}", justify="right")
+    table.add_column(
+        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
+    )
     table.add_column("Machine Name", style=f"{NordColors.NORD8}", justify="left")
     table.add_column("IP Address", style=f"{NordColors.NORD4}", justify="left")
     table.add_column("OS", style=f"{NordColors.NORD7}", justify="left")
-    table.add_column("Status", justify="left")
+    table.add_column("Status", justify="center")
 
     # Add rows
     for idx, machine in enumerate(machines, 1):
@@ -324,7 +389,40 @@ def display_machine_list(machines: List[Machine]) -> None:
             machine.get_display_status(),
         )
 
-    console.print(table)
+    return table
+
+
+def create_local_devices_table(devices: List[LocalDevice]) -> Table:
+    """Create a formatted table of local network devices."""
+    table = Table(
+        title="Local IP Devices",
+        box=box.ROUNDED,
+        title_style=f"bold {NordColors.NORD8}",
+        border_style=NordColors.NORD3,
+        title_justify="center",
+        expand=True,
+    )
+
+    # Define columns
+    table.add_column("Device Name", style=f"{NordColors.NORD8}", justify="left")
+    table.add_column("MAC Address", style=f"{NordColors.NORD4}", justify="center")
+    table.add_column(
+        "Reserved IP Address", style=f"{NordColors.NORD7}", justify="center"
+    )
+    table.add_column("Status", justify="center")
+    table.add_column("Modify", style=f"{NordColors.NORD10}", justify="center")
+
+    # Add rows
+    for device in devices:
+        table.add_row(
+            device.name,
+            device.mac_address,
+            device.ip_address,
+            device.get_display_status(),
+            "[Edit]",
+        )
+
+    return table
 
 
 # ==============================
@@ -332,7 +430,7 @@ def display_machine_list(machines: List[Machine]) -> None:
 # ==============================
 def connect_to_machine(machine: Machine, username: str = DEFAULT_USERNAME) -> None:
     """Connect to the selected machine via SSH."""
-    print_section(f"Connecting to {machine.name}")
+    console.print(create_section(f"Connecting to {machine.name}"))
     print_info(f"Establishing SSH connection to {username}@{machine.ip_address}...")
 
     try:
@@ -353,40 +451,103 @@ def connect_to_machine(machine: Machine, username: str = DEFAULT_USERNAME) -> No
 # ==============================
 # Main Application Functions
 # ==============================
+def create_app_layout() -> Layout:
+    """Create the application layout structure."""
+    layout = Layout()
+
+    # Create main sections
+    layout.split(
+        Layout(name="header"),
+        Layout(name="info"),
+        Layout(name="main", ratio=4),
+        Layout(name="footer"),
+    )
+
+    # Split the main section into two columns
+    layout["main"].split_row(
+        Layout(name="machines"),
+        Layout(name="devices"),
+    )
+
+    return layout
+
+
+def render_header() -> Panel:
+    """Render the application header."""
+    return print_header(APP_NAME)
+
+
+def render_info() -> Panel:
+    """Render the application info panel."""
+    info_text = Text()
+    info_text.append(f"Version: {VERSION}\n", style=NordColors.NORD9)
+    info_text.append(
+        f"System: {platform.system()} {platform.release()}\n", style=NordColors.NORD9
+    )
+    info_text.append(
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+        style=NordColors.NORD9,
+    )
+    info_text.append(f"Default Username: {DEFAULT_USERNAME}", style=NordColors.NORD9)
+
+    return Panel(
+        info_text, border_style=NordColors.NORD3, box=box.ROUNDED, padding=(1, 2)
+    )
+
+
+def render_footer() -> Panel:
+    """Render the application footer with options."""
+    footer_text = Text()
+    footer_text.append("Options:\n", style=f"bold {NordColors.NORD13}")
+    footer_text.append(
+        "Enter a number to connect to that machine\n", style=NordColors.NORD9
+    )
+    footer_text.append("Type 'l' to manage local devices\n", style=NordColors.NORD9)
+    footer_text.append("Type 'q' to quit", style=NordColors.NORD9)
+
+    return Panel(
+        footer_text, border_style=NordColors.NORD3, box=box.ROUNDED, padding=(1, 2)
+    )
+
+
 def show_main_menu() -> None:
     """Display the main menu and handle user selection."""
     machines = load_machines()
+    local_devices = load_local_devices()
+
+    # Create and configure the layout
+    layout = create_app_layout()
 
     while True:
         clear_screen()
-        print_header(APP_NAME)
 
-        # Show application info
-        print_info(f"Version: {VERSION}")
-        print_info(f"System: {platform.system()} {platform.release()}")
-        print_info(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print_info(f"Default Username: {DEFAULT_USERNAME}")
-        print_section("Machine Selection")
+        # Update layout components
+        layout["header"].update(render_header())
+        layout["info"].update(render_info())
+        layout["machines"].update(create_machine_table(machines))
+        layout["devices"].update(create_local_devices_table(local_devices))
+        layout["footer"].update(render_footer())
 
-        # Display machines
-        display_machine_list(machines)
-
-        # Show options footer
-        console.print(f"\n[bold {NordColors.NORD13}]Options:[/]")
-        console.print(
-            f"[{NordColors.NORD9}]Enter a number to connect to that machine[/]"
-        )
-        console.print(f"[{NordColors.NORD9}]Type 'q' to quit[/]")
+        # Render the layout
+        console.print(layout)
 
         # Get user selection
         try:
-            choice = get_user_input("\nEnter your choice (1-14 or 'q' to quit)")
+            choice = get_user_input(
+                "\nEnter your choice (1-14, 'l' for local devices, or 'q' to quit)"
+            )
 
             if choice.lower() == "q":
                 clear_screen()
-                print_header("Goodbye!")
+                console.print(print_header("Goodbye!"))
                 print_info("Thank you for using the SSH Machine Selector.")
                 sys.exit(0)
+
+            if choice.lower() == "l":
+                # Placeholder for local device management
+                print_info("Local device management feature coming soon...")
+                input("Press Enter to continue...")
+                continue
 
             try:
                 choice_num = int(choice)
@@ -413,11 +574,11 @@ def show_main_menu() -> None:
                     )
                     input("Press Enter to continue...")
             except ValueError:
-                print_error("Invalid input. Please enter a number or 'q'.")
+                print_error("Invalid input. Please enter a number, 'l', or 'q'.")
                 input("Press Enter to continue...")
         except KeyboardInterrupt:
             clear_screen()
-            print_header("Goodbye!")
+            console.print(print_header("Goodbye!"))
             print_info("Thank you for using the SSH Machine Selector.")
             sys.exit(0)
 
