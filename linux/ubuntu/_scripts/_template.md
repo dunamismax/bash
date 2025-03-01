@@ -53,12 +53,10 @@ environment on Ubuntu/Linux systems. This tool provides options to:
   • Perform system checks and install system-level dependencies
   • Install pyenv and the latest version of Python
   • Install pipx (if missing) and use it to install recommended Python tools
-  • Install common development tools via pip
 
 All functionality is menu-driven with an attractive Nord-themed interface.
 
-Note: This script runs as non-root but will invoke sudo for operations that require
-root privileges.
+Note: This script is designed to be run with root/sudo privileges.
 
 Version: 3.0.0
 """
@@ -72,6 +70,7 @@ import signal
 import subprocess
 import sys
 import time
+import getpass
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Tuple, Set, Callable
@@ -97,9 +96,32 @@ try:
 except ImportError:
     # If Rich is not installed, install it first
     print("Installing required dependencies...")
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "rich", "pyfiglet"], check=True
-    )
+    original_user = os.environ.get("SUDO_USER", None)
+    if original_user:
+        # Get the original user's home directory
+        user_home = (
+            subprocess.check_output(["getent", "passwd", original_user])
+            .decode()
+            .split(":")[5]
+        )
+
+        # Install pip packages as the original user, not as root
+        cmd = [
+            "sudo",
+            "-u",
+            original_user,
+            "pip",
+            "install",
+            "--user",
+            "rich",
+            "pyfiglet",
+        ]
+        subprocess.run(cmd, check=True)
+    else:
+        # Fall back to system pip if not run with sudo
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "rich", "pyfiglet"], check=True
+        )
 
     # Then import again
     from rich.console import Console
@@ -125,7 +147,26 @@ except ImportError:
 # ==============================
 APP_NAME = "Python Dev Setup"
 VERSION = "3.0.0"
-HOME_DIR = os.path.expanduser("~")
+
+# Get the original non-root user if the script is run with sudo
+ORIGINAL_USER = os.environ.get("SUDO_USER", getpass.getuser())
+ORIGINAL_UID = int(
+    subprocess.check_output(["id", "-u", ORIGINAL_USER]).decode().strip()
+)
+ORIGINAL_GID = int(
+    subprocess.check_output(["id", "-g", ORIGINAL_USER]).decode().strip()
+)
+
+# Get the original user's home directory
+if ORIGINAL_USER != "root":
+    HOME_DIR = (
+        subprocess.check_output(["getent", "passwd", ORIGINAL_USER])
+        .decode()
+        .split(":")[5]
+    )
+else:
+    HOME_DIR = os.path.expanduser("~")
+
 PYENV_DIR = os.path.join(HOME_DIR, ".pyenv")
 PYENV_BIN = os.path.join(PYENV_DIR, "bin", "pyenv")
 
@@ -152,10 +193,9 @@ SYSTEM_DEPENDENCIES = [
     "wget",
 ]
 
-# Top Python tools to install
-TOP_PYTHON_TOOLS = [
-    "rich",
-    "pyfiglet",
+# Top Python tools to install with pipx
+# Note: Rich is removed from this list as it's a library, not an application
+PIPX_TOOLS = [
     "black",
     "isort",
     "flake8",
@@ -175,8 +215,11 @@ TOP_PYTHON_TOOLS = [
     "httpie",
 ]
 
-# Tools to install via pipx
-PIPX_TOOLS = TOP_PYTHON_TOOLS
+# User libraries to install with pip (not pipx)
+USER_PIP_LIBRARIES = [
+    "rich",
+    "pyfiglet",
+]
 
 # ==============================
 # Nord-Themed Console Setup
@@ -349,12 +392,14 @@ def run_command(
     capture_output: bool = True,
     timeout: int = 300,  # Extended timeout for longer operations
     verbose: bool = False,
-    sudo: bool = False,
+    as_user: bool = False,
 ) -> subprocess.CompletedProcess:
-    """Run a shell command and handle errors."""
-    if sudo and os.geteuid() != 0:
-        cmd = ["sudo"] + cmd
+    """
+    Run a shell command and handle errors.
 
+    If as_user is True, runs the command as the original non-root user when
+    the script is run with sudo.
+    """
     if verbose:
         if shell:
             print_step(f"Executing: {cmd}")
@@ -362,7 +407,12 @@ def run_command(
             print_step(f"Executing: {' '.join(cmd)}")
 
     try:
-        # Execute the command without using Status to avoid nested live displays
+        # If we need to run as the original user
+        if as_user and ORIGINAL_USER != "root":
+            # Modify the command to run as the original user
+            cmd = ["sudo", "-u", ORIGINAL_USER] + cmd
+
+        # Execute the command
         return subprocess.run(
             cmd,
             shell=shell,
@@ -393,9 +443,21 @@ def run_command(
         raise
 
 
-def is_root() -> bool:
-    """Check if script is running with elevated privileges."""
-    return os.geteuid() == 0
+def fix_ownership(path, recursive=True):
+    """Fix ownership of files to be owned by the original user, not root."""
+    if ORIGINAL_USER == "root":
+        return  # No need to change if we're already running as root
+
+    if recursive and os.path.isdir(path):
+        for root, dirs, files in os.walk(path):
+            for d in dirs:
+                os.chown(os.path.join(root, d), ORIGINAL_UID, ORIGINAL_GID)
+            for f in files:
+                os.chown(os.path.join(root, f), ORIGINAL_UID, ORIGINAL_GID)
+
+    # Change the parent path itself
+    if os.path.exists(path):
+        os.chown(path, ORIGINAL_UID, ORIGINAL_GID)
 
 
 def check_command_available(command: str) -> bool:
@@ -410,6 +472,11 @@ def check_system() -> bool:
     """Check system compatibility and required tools."""
     print_section("Checking System Compatibility")
 
+    # Verify root privileges
+    if os.geteuid() != 0:
+        print_error("This script must be run with root privileges (sudo).")
+        return False
+
     os_name = platform.system().lower()
     if os_name != "linux":
         print_warning(f"This script is designed for Linux, not {os_name}.")
@@ -423,8 +490,9 @@ def check_system() -> bool:
 
     table.add_row("Python Version", platform.python_version())
     table.add_row("Operating System", platform.platform())
-    table.add_row("User", os.environ.get("USER", "Unknown"))
-    table.add_row("Home Directory", HOME_DIR)
+    table.add_row("Running as", "root")
+    table.add_row("Setting up for user", ORIGINAL_USER)
+    table.add_row("User home directory", HOME_DIR)
     console.print(table)
 
     required_tools = ["git", "curl", "gcc"]
@@ -447,13 +515,13 @@ def install_system_dependencies() -> bool:
 
     try:
         # Update package lists
-        with Status("[bold green]Updating package lists...") as status:
-            try:
-                run_command(["apt-get", "update"], sudo=True)
-                print_success("Package lists updated.")
-            except Exception as e:
-                print_error(f"Failed to update package lists: {e}")
-                return False
+        print_info("Updating package lists...")
+        try:
+            run_command(["apt-get", "update"])
+            print_success("Package lists updated.")
+        except Exception as e:
+            print_error(f"Failed to update package lists: {e}")
+            return False
 
         # Install system dependencies
         total_packages = len(SYSTEM_DEPENDENCIES)
@@ -476,7 +544,7 @@ def install_system_dependencies() -> bool:
                     progress.update(
                         task, description=f"[bold green]Installing {package}..."
                     )
-                    run_command(["apt-get", "install", "-y", package], sudo=True)
+                    run_command(["apt-get", "install", "-y", package])
                     progress.update(task, advance=1)
                     print_success(f"{package} installed.")
                 except Exception as e:
@@ -490,8 +558,52 @@ def install_system_dependencies() -> bool:
         return False
 
 
+def install_pip_libraries_for_user() -> bool:
+    """Install libraries like Rich for the user (not as root)."""
+    print_section("Installing User Python Libraries")
+
+    if ORIGINAL_USER == "root":
+        python_cmd = sys.executable
+        pip_install_cmd = [python_cmd, "-m", "pip", "install", "--upgrade"]
+    else:
+        # Get the path to the user's pip
+        user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
+        user_pip = os.path.join(user_bin_dir, "pip")
+
+        if not os.path.exists(user_pip):
+            user_pip = "pip"
+
+        pip_install_cmd = [
+            "sudo",
+            "-u",
+            ORIGINAL_USER,
+            user_pip,
+            "install",
+            "--user",
+            "--upgrade",
+        ]
+
+    try:
+        print_info(f"Installing Python libraries for user {ORIGINAL_USER}...")
+
+        for library in USER_PIP_LIBRARIES:
+            try:
+                print_step(f"Installing {library}...")
+                run_command(
+                    pip_install_cmd + [library], as_user=(ORIGINAL_USER != "root")
+                )
+                print_success(f"{library} installed for user {ORIGINAL_USER}.")
+            except Exception as e:
+                print_error(f"Failed to install {library}: {e}")
+
+        return True
+    except Exception as e:
+        print_error(f"Error installing user Python libraries: {e}")
+        return False
+
+
 def install_pyenv() -> bool:
-    """Install pyenv for the current user."""
+    """Install pyenv for the target user."""
     print_section("Installing pyenv")
 
     # Check if pyenv is already installed
@@ -504,22 +616,20 @@ def install_pyenv() -> bool:
     try:
         # Get the pyenv installer
         print_info("Downloading pyenv installer...")
-        curl_cmd = ["curl", "-fsSL", "https://pyenv.run"]
-
-        installer = run_command(curl_cmd).stdout
-
-        # Create a temporary file for the installer
-        temp_installer = os.path.join("/tmp", "pyenv_installer.sh")
-        with open(temp_installer, "w") as f:
-            f.write(installer)
+        installer_script = "/tmp/pyenv_installer.sh"
+        curl_cmd = ["curl", "-fsSL", "https://pyenv.run", "-o", installer_script]
+        run_command(curl_cmd)
 
         # Make it executable
-        os.chmod(temp_installer, 0o755)
+        os.chmod(installer_script, 0o755)
 
         print_info("Running pyenv installer...")
 
-        # Run the installer
-        run_command([temp_installer])
+        # Run the installer as the original user
+        if ORIGINAL_USER != "root":
+            run_command(["sudo", "-u", ORIGINAL_USER, installer_script], as_user=True)
+        else:
+            run_command([installer_script])
 
         # Check if installation was successful
         if os.path.exists(PYENV_DIR) and os.path.isfile(PYENV_BIN):
@@ -543,16 +653,40 @@ def install_pyenv() -> bool:
 
             for rc_file in shell_rc_files:
                 if os.path.exists(rc_file):
+                    # Read the content
                     with open(rc_file, "r") as f:
                         content = f.read()
 
+                    # Only add if not already there
                     if "pyenv init" not in content:
-                        with open(rc_file, "a") as f:
-                            f.write("\n" + "\n".join(pyenv_init_lines))
+                        # Write as the original user
+                        if ORIGINAL_USER != "root":
+                            # Create a temp file with the content to append
+                            temp_file = "/tmp/pyenv_init.txt"
+                            with open(temp_file, "w") as f:
+                                f.write("\n" + "\n".join(pyenv_init_lines))
+
+                            # Append it to the rc file as the original user
+                            run_command(
+                                [
+                                    "sudo",
+                                    "-u",
+                                    ORIGINAL_USER,
+                                    "bash",
+                                    "-c",
+                                    f"cat {temp_file} >> {rc_file}",
+                                ],
+                                as_user=True,
+                            )
+                            os.remove(temp_file)
+                        else:
+                            with open(rc_file, "a") as f:
+                                f.write("\n" + "\n".join(pyenv_init_lines))
+
                         print_success(f"Added pyenv initialization to {rc_file}")
 
-            # Update PATH for current session
-            os.environ["PATH"] = f"{PYENV_DIR}/bin:{os.environ.get('PATH', '')}"
+            # Fix ownership of pyenv directory
+            fix_ownership(PYENV_DIR)
 
             return True
         else:
@@ -573,13 +707,20 @@ def install_latest_python_with_pyenv() -> bool:
         return False
 
     try:
+        # Define command to run pyenv as the original user
+        pyenv_cmd = [PYENV_BIN]
+        if ORIGINAL_USER != "root":
+            pyenv_cmd = ["sudo", "-u", ORIGINAL_USER, PYENV_BIN]
+
         # Update pyenv first
         print_info("Updating pyenv...")
-        run_command([PYENV_BIN, "update"])
+        run_command(pyenv_cmd + ["update"], as_user=(ORIGINAL_USER != "root"))
 
         # Get latest Python version available
         print_info("Finding latest Python version...")
-        latest_version_output = run_command([PYENV_BIN, "install", "--list"]).stdout
+        latest_version_output = run_command(
+            pyenv_cmd + ["install", "--list"], as_user=(ORIGINAL_USER != "root")
+        ).stdout
 
         # Parse the output to find the latest stable Python version
         versions = re.findall(
@@ -600,21 +741,30 @@ def install_latest_python_with_pyenv() -> bool:
 
         # Install the latest version
         print_info(f"Running pyenv install for Python {latest_version}...")
-        run_command([PYENV_BIN, "install", "--skip-existing", latest_version])
+        run_command(
+            pyenv_cmd + ["install", "--skip-existing", latest_version],
+            as_user=(ORIGINAL_USER != "root"),
+        )
 
         # Set as global Python version
         print_info("Setting as global Python version...")
-        run_command([PYENV_BIN, "global", latest_version])
+        run_command(
+            pyenv_cmd + ["global", latest_version], as_user=(ORIGINAL_USER != "root")
+        )
 
         # Verify installation
         pyenv_python = os.path.join(PYENV_DIR, "shims", "python")
         if os.path.exists(pyenv_python):
-            python_version = run_command([pyenv_python, "--version"]).stdout
+            # Run the Python version check as the original user
+            if ORIGINAL_USER != "root":
+                python_version = run_command(
+                    ["sudo", "-u", ORIGINAL_USER, pyenv_python, "--version"],
+                    as_user=True,
+                ).stdout
+            else:
+                python_version = run_command([pyenv_python, "--version"]).stdout
+
             print_success(f"Successfully installed {python_version.strip()}")
-
-            # Update PATH for current session
-            os.environ["PATH"] = f"{PYENV_DIR}/shims:{os.environ.get('PATH', '')}"
-
             return True
         else:
             print_error("Python installation with pyenv failed.")
@@ -626,9 +776,10 @@ def install_latest_python_with_pyenv() -> bool:
 
 
 def install_pipx() -> bool:
-    """Ensure pipx is installed; install it using pip if missing."""
+    """Ensure pipx is installed for the user."""
     print_section("Installing pipx")
 
+    # Check if pipx is available in PATH
     if check_command_available("pipx"):
         print_success("pipx is already installed.")
         return True
@@ -636,27 +787,52 @@ def install_pipx() -> bool:
     print_step("Installing pipx...")
 
     try:
-        # Try to get python from pyenv first
-        python_cmd = os.path.join(PYENV_DIR, "shims", "python")
-        if not os.path.exists(python_cmd):
-            python_cmd = shutil.which("python3") or shutil.which("python")
+        # Try to get python executable
+        if ORIGINAL_USER != "root":
+            # Use the original user's Python if possible
+            python_cmd = os.path.join(PYENV_DIR, "shims", "python")
+            if not os.path.exists(python_cmd):
+                python_cmd = "python3"
 
-        if not python_cmd:
-            print_error("Could not find a Python executable.")
-            return False
+            # Install pipx as the original user
+            print_info(f"Installing pipx for user {ORIGINAL_USER}...")
+            run_command(
+                [
+                    "sudo",
+                    "-u",
+                    ORIGINAL_USER,
+                    python_cmd,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--user",
+                    "pipx",
+                ],
+                as_user=True,
+            )
+            run_command(
+                ["sudo", "-u", ORIGINAL_USER, python_cmd, "-m", "pipx", "ensurepath"],
+                as_user=True,
+            )
+        else:
+            # Running as actual root, install normally
+            python_cmd = os.path.join(PYENV_DIR, "shims", "python")
+            if not os.path.exists(python_cmd):
+                python_cmd = shutil.which("python3") or shutil.which("python")
 
-        # Install pipx
-        print_info(f"Using {python_cmd} to install pipx...")
-        run_command([python_cmd, "-m", "pip", "install", "--user", "pipx"])
-        run_command([python_cmd, "-m", "pipx", "ensurepath"])
+            if not python_cmd:
+                print_error("Could not find a Python executable.")
+                return False
+
+            print_info("Installing pipx...")
+            run_command([python_cmd, "-m", "pip", "install", "pipx"])
+            run_command([python_cmd, "-m", "pipx", "ensurepath"])
 
         # Verify installation
-        pipx_path = os.path.join(HOME_DIR, ".local", "bin", "pipx")
-        if os.path.exists(pipx_path):
-            # Add to PATH for current session
-            os.environ["PATH"] = (
-                f"{os.path.dirname(pipx_path)}:{os.environ.get('PATH', '')}"
-            )
+        user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
+        pipx_path = os.path.join(user_bin_dir, "pipx")
+
+        if os.path.exists(pipx_path) or check_command_available("pipx"):
             print_success("pipx installed successfully.")
             return True
         else:
@@ -676,13 +852,23 @@ def install_pipx_tools() -> bool:
         print_error("Failed to ensure pipx installation.")
         return False
 
-    pipx_cmd = os.path.join(HOME_DIR, ".local", "bin", "pipx")
-    if not os.path.exists(pipx_cmd):
+    # Determine pipx command
+    user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
+    pipx_path = os.path.join(user_bin_dir, "pipx")
+
+    if os.path.exists(pipx_path):
+        pipx_cmd = pipx_path
+    else:
         pipx_cmd = shutil.which("pipx")
 
     if not pipx_cmd:
         print_error("Could not find pipx executable.")
         return False
+
+    # Set up the command for running pipx as the correct user
+    base_cmd = [pipx_cmd, "install", "--force"]
+    if ORIGINAL_USER != "root":
+        base_cmd = ["sudo", "-u", ORIGINAL_USER, pipx_cmd, "install", "--force"]
 
     with Progress(
         SpinnerColumn(),
@@ -700,7 +886,7 @@ def install_pipx_tools() -> bool:
         for tool in PIPX_TOOLS:
             try:
                 progress.update(task, description=f"[bold green]Installing {tool}...")
-                run_command([pipx_cmd, "install", tool, "--force"])
+                run_command(base_cmd + [tool], as_user=(ORIGINAL_USER != "root"))
                 progress.update(task, advance=1)
                 print_success(f"Installed {tool} via pipx.")
             except Exception as e:
@@ -712,6 +898,8 @@ def install_pipx_tools() -> bool:
             print_warning(
                 f"Failed to install the following tools: {', '.join(failed_tools)}"
             )
+            if len(failed_tools) < len(PIPX_TOOLS) / 2:  # If more than half succeeded
+                return True
             return False
 
         print_success("Python tools installation completed.")
@@ -735,7 +923,7 @@ def interactive_menu() -> None:
         info.add_row("Version:", VERSION)
         info.add_row("System:", f"{platform.system()} {platform.release()}")
         info.add_row("Python:", platform.python_version())
-        info.add_row("User:", os.environ.get("USER", "Unknown"))
+        info.add_row("Target User:", ORIGINAL_USER)
 
         # Check if pyenv is installed
         pyenv_status = "Installed" if os.path.exists(PYENV_BIN) else "Not installed"
@@ -755,17 +943,18 @@ def interactive_menu() -> None:
         menu_options = [
             ("1", "Check System Compatibility"),
             ("2", "Install System Dependencies"),
-            ("3", "Install pyenv"),
-            ("4", "Install Latest Python with pyenv"),
-            ("5", "Install pipx and Python Tools"),
-            ("6", "Run Full Setup"),
+            ("3", "Install User Python Libraries (Rich, etc.)"),
+            ("4", "Install pyenv"),
+            ("5", "Install Latest Python with pyenv"),
+            ("6", "Install pipx and Python Tools"),
+            ("7", "Run Full Setup"),
             ("0", "Exit"),
         ]
 
         console.print(create_menu_table("Main Menu", menu_options))
 
         # Get user selection
-        choice = get_user_input("Enter your choice (0-6):")
+        choice = get_user_input("Enter your choice (0-7):")
 
         if choice == "1":
             check_system()
@@ -774,15 +963,18 @@ def interactive_menu() -> None:
             install_system_dependencies()
             pause()
         elif choice == "3":
-            install_pyenv()
+            install_pip_libraries_for_user()
             pause()
         elif choice == "4":
-            install_latest_python_with_pyenv()
+            install_pyenv()
             pause()
         elif choice == "5":
-            install_pipx_tools()
+            install_latest_python_with_pyenv()
             pause()
         elif choice == "6":
+            install_pipx_tools()
+            pause()
+        elif choice == "7":
             run_full_setup()
             pause()
         elif choice == "0":
@@ -813,6 +1005,14 @@ def run_full_setup() -> None:
     print_step("Installing system dependencies...")
     if not install_system_dependencies():
         print_warning("Some system dependencies may not have been installed.")
+        if not get_user_confirmation("Continue with the setup process?"):
+            print_warning("Setup aborted.")
+            return
+
+    # Install user Python libraries like Rich
+    print_step("Installing user Python libraries...")
+    if not install_pip_libraries_for_user():
+        print_warning("Some user Python libraries may not have been installed.")
         if not get_user_confirmation("Continue with the setup process?"):
             print_warning("Setup aborted.")
             return
@@ -852,6 +1052,15 @@ def run_full_setup() -> None:
     )
 
     summary.add_row(
+        "User Python Libraries",
+        "[bold green]✓ Installed[/]"
+        if os.path.exists(
+            os.path.join(HOME_DIR, ".local/lib/python*/site-packages/rich")
+        )
+        else "[bold yellow]⚠ Partial[/]",
+    )
+
+    summary.add_row(
         "pyenv",
         "[bold green]✓ Installed[/]"
         if os.path.exists(PYENV_BIN)
@@ -864,11 +1073,12 @@ def run_full_setup() -> None:
         "[bold green]✓ Installed[/]" if python_installed else "[bold red]× Failed[/]",
     )
 
+    pipx_installed = check_command_available("pipx") or os.path.exists(
+        os.path.join(HOME_DIR, ".local/bin/pipx")
+    )
     summary.add_row(
         "pipx",
-        "[bold green]✓ Installed[/]"
-        if check_command_available("pipx")
-        else "[bold red]× Failed[/]",
+        "[bold green]✓ Installed[/]" if pipx_installed else "[bold red]× Failed[/]",
     )
 
     console.print(summary)
@@ -877,7 +1087,7 @@ def run_full_setup() -> None:
     shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
     console.print(
         Panel(
-            f"To fully apply all changes, you should restart your terminal or run:\n\nsource ~/.{shell_name}rc",
+            f"To fully apply all changes, {ORIGINAL_USER} should restart their terminal or run:\n\nsource ~/.{shell_name}rc",
             title="Next Steps",
             border_style=f"bold {NordColors.NORD13}",
         )
@@ -897,17 +1107,16 @@ def main() -> None:
             signal.signal(sig, signal_handler)
 
         # Check if running as root
-        if is_root():
+        if os.geteuid() != 0:
             console.print(
                 Panel(
-                    "This script should NOT be run as root. Please run it as a regular user.\n"
-                    "It will use sudo when necessary for system-level operations.",
-                    title="⚠️ Warning",
+                    "This script must be run with root privileges.\n"
+                    "Please run it with sudo.",
+                    title="⚠️ Error",
                     border_style=f"bold {NordColors.NORD11}",
                 )
             )
-            if not get_user_confirmation("Do you want to continue anyway?"):
-                sys.exit(1)
+            sys.exit(1)
 
         # Launch the interactive menu
         interactive_menu()
