@@ -47,13 +47,13 @@ except ImportError:
 # ==============================
 # Configuration & Constants
 # ==============================
-APP_NAME = "SSH Machine Selector"
+APP_NAME = "SSH Select"  # Shortened name to fix display issues
 VERSION = "1.1.0"
 DEFAULT_USERNAME = "sawyer"  # Default SSH username
 SSH_COMMAND = "ssh"  # SSH command to use
 
-# Terminal dimensions
-TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
+# Terminal dimensions - adjust to better fit content
+TERM_WIDTH = min(shutil.get_terminal_size().columns, 120)
 TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 
 # ==============================
@@ -163,12 +163,14 @@ class LocalDevice:
 # ==============================
 def print_header(text: str) -> Panel:
     """Create a striking header using pyfiglet."""
-    ascii_art = pyfiglet.figlet_format(text, font="slant")
+    # Use small font to ensure it fits in the terminal width
+    ascii_art = pyfiglet.figlet_format(text, font="small")
     return Panel(
         Text(ascii_art, style=f"bold {NordColors.NORD8}"),
         border_style=NordColors.NORD10,
         box=box.ROUNDED,
-        padding=(1, 2),
+        padding=(0, 1),  # Reduced padding
+        width=TERM_WIDTH - 4,  # Ensure it fits within terminal boundaries
     )
 
 
@@ -379,22 +381,27 @@ def load_local_devices() -> List[LocalDevice]:
 def create_machine_table(machines: List[Machine]) -> Table:
     """Create a formatted table of machines with their details."""
     table = Table(
-        title="Available Machines",
+        title="Tailscale Machines",
         box=box.ROUNDED,
         title_style=f"bold {NordColors.NORD8}",
         border_style=NordColors.NORD3,
         title_justify="center",
         expand=True,
+        width=None,  # Allow auto-sizing
     )
 
-    # Define columns
+    # Define columns with adjusted widths
     table.add_column(
-        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
+        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True, width=3
     )
-    table.add_column("Machine Name", style=f"{NordColors.NORD8}", justify="left")
-    table.add_column("IP Address", style=f"{NordColors.NORD4}", justify="left")
-    table.add_column("OS", style=f"{NordColors.NORD7}", justify="left")
-    table.add_column("Status", justify="center")
+    table.add_column(
+        "Machine Name", style=f"{NordColors.NORD8}", justify="left", width=24
+    )
+    table.add_column(
+        "IP Address", style=f"{NordColors.NORD4}", justify="left", width=15
+    )
+    table.add_column("OS", style=f"{NordColors.NORD7}", justify="left", width=20)
+    table.add_column("Status", justify="center", width=10)
 
     # Add rows
     for idx, machine in enumerate(machines, 1):
@@ -418,17 +425,23 @@ def create_local_devices_table(devices: List[LocalDevice]) -> Table:
         border_style=NordColors.NORD3,
         title_justify="center",
         expand=True,
+        width=None,  # Allow auto-sizing
     )
 
-    # Define columns
+    # Define columns with adjusted widths
     table.add_column(
-        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
+        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True, width=4
     )
-    table.add_column("Device Name", style=f"{NordColors.NORD8}", justify="left")
-    table.add_column("MAC Address", style=f"{NordColors.NORD4}", justify="center")
-    table.add_column("IP Address", style=f"{NordColors.NORD7}", justify="center")
-    table.add_column("OS", style=f"{NordColors.NORD4}", justify="left")
-    table.add_column("Status", justify="center")
+    table.add_column(
+        "Device Name", style=f"{NordColors.NORD8}", justify="left", width=16
+    )
+    table.add_column(
+        "MAC Address", style=f"{NordColors.NORD4}", justify="center", width=18
+    )
+    table.add_column(
+        "IP Address", style=f"{NordColors.NORD7}", justify="center", width=15
+    )
+    table.add_column("Status", justify="center", width=10)
 
     # Add rows
     for idx, device in enumerate(devices, 1):
@@ -437,7 +450,6 @@ def create_local_devices_table(devices: List[LocalDevice]) -> Table:
             device.name,
             device.mac_address,
             device.ip_address,
-            device.get_display_os(),
             device.get_display_status(),
         )
 
@@ -476,18 +488,18 @@ def create_app_layout() -> Layout:
     """Create the application layout structure."""
     layout = Layout()
 
-    # Create main sections
+    # Create main sections with adjusted ratios
     layout.split(
-        Layout(name="header"),
-        Layout(name="info"),
-        Layout(name="main", ratio=4),
-        Layout(name="footer"),
+        Layout(name="header", size=5),
+        Layout(name="info", size=5),
+        Layout(name="main", ratio=5),
+        Layout(name="footer", size=6),
     )
 
-    # Split the main section into two columns
+    # Split the main section into two columns (60/40 ratio for better display)
     layout["main"].split_row(
-        Layout(name="machines"),
-        Layout(name="devices"),
+        Layout(name="machines", ratio=6),
+        Layout(name="devices", ratio=4),
     )
 
     return layout
@@ -501,18 +513,22 @@ def render_header() -> Panel:
 def render_info() -> Panel:
     """Render the application info panel."""
     info_text = Text()
-    info_text.append(f"Version: {VERSION}\n", style=NordColors.NORD9)
+    info_text.append(f"Version: {VERSION}  ", style=NordColors.NORD9)
     info_text.append(
-        f"System: {platform.system()} {platform.release()}\n", style=NordColors.NORD9
+        f"System: {platform.system()} {platform.release()}  ", style=NordColors.NORD9
     )
     info_text.append(
-        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
         style=NordColors.NORD9,
     )
-    info_text.append(f"Default Username: {DEFAULT_USERNAME}", style=NordColors.NORD9)
+    info_text.append(f"Default User: {DEFAULT_USERNAME}", style=NordColors.NORD9)
 
     return Panel(
-        info_text, border_style=NordColors.NORD3, box=box.ROUNDED, padding=(1, 2)
+        info_text,
+        border_style=NordColors.NORD3,
+        box=box.ROUNDED,
+        padding=(0, 1),  # Reduced padding
+        width=TERM_WIDTH - 4,  # Controlled width
     )
 
 
@@ -521,16 +537,19 @@ def render_footer() -> Panel:
     footer_text = Text()
     footer_text.append("Options:\n", style=f"bold {NordColors.NORD13}")
     footer_text.append(
-        "Enter a number (1-14) to connect to a Tailscale machine\n",
-        style=NordColors.NORD9,
+        "• Enter 1-14 to connect to a Tailscale machine\n", style=NordColors.NORD9
     )
     footer_text.append(
-        "Enter L1-L4 to connect to a local IP device\n", style=NordColors.NORD9
+        "• Enter L1-L4 to connect to a local IP device\n", style=NordColors.NORD9
     )
-    footer_text.append("Type 'q' to quit", style=NordColors.NORD9)
+    footer_text.append("• Type 'q' to quit", style=NordColors.NORD9)
 
     return Panel(
-        footer_text, border_style=NordColors.NORD3, box=box.ROUNDED, padding=(1, 2)
+        footer_text,
+        border_style=NordColors.NORD3,
+        box=box.ROUNDED,
+        padding=(0, 1),  # Reduced padding
+        width=TERM_WIDTH - 4,  # Ensure it fits within terminal boundaries
     )
 
 
