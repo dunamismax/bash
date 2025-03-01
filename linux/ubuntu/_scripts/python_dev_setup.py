@@ -562,17 +562,25 @@ def install_pipx_tools():
 
 
 def install_rich_and_pyfiglet():
-    """Install rich and pyfiglet using pip as the original non-root user."""
+    """Install rich and pyfiglet using pip as the original non-root user with override flag."""
     print_step("Installing rich and pyfiglet as non-root user...")
 
-    # Define the base command to run pip with the non-root user's Python
-    base_cmd = ["sudo", "-H", "-u", ORIGINAL_USER, "python3", "-m", "pip", "install"]
+    # Base command using the non-root user's Python, with the override flag.
+    base_cmd = [
+        "sudo",
+        "-H",
+        "-u",
+        ORIGINAL_USER,
+        "python3",
+        "-m",
+        "pip",
+        "install",
+        "--break-system-packages",
+    ]
 
     # Install rich
     try:
-        run_command(
-            base_cmd + ["rich"], as_user=False
-        )  # already using sudo in the command
+        run_command(base_cmd + ["rich"], as_user=False)
         print_success("rich installed successfully.")
     except Exception as e:
         print_warning(f"Failed to install rich: {e}")
