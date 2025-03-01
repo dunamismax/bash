@@ -335,7 +335,7 @@ def get_virtual_machines():
         )
         if sep < 0:
             return []
-        for line in lines[sep + 1:]:
+        for line in lines[sep + 1 :]:
             parts = line.split()
             if len(parts) >= 3:
                 vms.append(
@@ -410,8 +410,12 @@ def start_virtual_machines(vms) -> bool:
                     print_success(f"{name} started")
                     success = True
                 else:
-                    if "Only one live display may be active at once" in (result.stderr or ""):
-                        print_warning(f"{name} failed to start due to active live display. Waiting before retrying...")
+                    if "Only one live display may be active at once" in (
+                        result.stderr or ""
+                    ):
+                        print_warning(
+                            f"{name} failed to start due to active live display. Waiting before retrying..."
+                        )
                         time.sleep(5)
                     else:
                         print_error(f"Failed to start {name}: {result.stderr}")
@@ -521,7 +525,9 @@ def configure_user_groups() -> bool:
     try:
         print_step(f"Adding {sudo_user} to {LIBVIRT_USER_GROUP}")
         run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
-        print_success(f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in.")
+        print_success(
+            f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in."
+        )
         return True
     except Exception as e:
         print_error(f"Failed to add user: {e}")
@@ -583,6 +589,47 @@ def verify_virtualization_setup() -> bool:
     return passed
 
 
+def install_and_enable_service() -> bool:
+    """
+    Installs the virtualization_setup.service systemd unit file,
+    reloads the systemd daemon, enables the service, and starts it.
+    """
+    service_path = Path("/etc/systemd/system/virtualization_setup.service")
+    service_content = """[Unit]
+Description=Virtualization Setup Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/sawyer/.pyenv/versions/3.13.2/bin/python /home/sawyer/bin/virtualization_setup.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+"""
+    try:
+        print_section("Installing systemd service")
+        # Write the service file
+        service_path.write_text(service_content)
+        print_success(f"Service file installed to {service_path}")
+
+        # Reload systemd to pick up the new service file
+        run_command(["systemctl", "daemon-reload"])
+        print_success("Systemd daemon reloaded")
+
+        # Enable the service to start on boot
+        run_command(["systemctl", "enable", "virtualization_setup.service"])
+        print_success("Service enabled")
+
+        # Optionally, start the service immediately
+        run_command(["systemctl", "start", "virtualization_setup.service"])
+        print_success("Service started")
+        return True
+    except Exception as e:
+        print_error(f"Failed to install and enable systemd service: {e}")
+        return False
+
+
 # ------------------------------
 # Main Execution Flow (Non-Interactive)
 # ------------------------------
@@ -612,6 +659,9 @@ def main() -> None:
     if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
         print_warning("Service management issues encountered")
 
+    if not install_and_enable_service():
+        print_warning("Failed to install or enable the virtualization_setup service")
+
     for attempt in range(1, 4):
         print_step(f"Network configuration attempt {attempt}")
         if configure_default_network():
@@ -637,7 +687,9 @@ def main() -> None:
 
     print_header("Setup Complete")
     print_success("Virtualization environment setup complete!")
-    print_step("Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'.")
+    print_step(
+        "Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'."
+    )
 
 
 if __name__ == "__main__":
