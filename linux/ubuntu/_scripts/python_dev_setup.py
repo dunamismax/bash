@@ -561,6 +561,25 @@ def install_pipx_tools():
     return True
 
 
+def install_rich_and_pyfiglet():
+    """Install rich and pyfiglet using pip as the original non-root user."""
+    print_step("Installing rich and pyfiglet...")
+
+    # Install rich
+    try:
+        run_command(["pip", "install", "rich"], as_user=True)
+        print_success("rich installed successfully.")
+    except Exception as e:
+        print_warning(f"Failed to install rich: {e}")
+
+    # Install pyfiglet
+    try:
+        run_command(["pip", "install", "pyfiglet"], as_user=True)
+        print_success("pyfiglet installed successfully.")
+    except Exception as e:
+        print_warning(f"Failed to install pyfiglet: {e}")
+
+
 # ==============================
 # Main Setup Process
 # ==============================
@@ -623,6 +642,9 @@ def run_full_setup():
     )
     pipx_status = "✓ Installed" if pipx_installed else "× Failed"
     print(f"pipx: {pipx_status}")
+
+    # <<-- New function call to install rich and pyfiglet -->
+    install_rich_and_pyfiglet()
 
     # Shell reloading instructions
     shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
