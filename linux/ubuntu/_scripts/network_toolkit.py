@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
 Enhanced Network Information and Diagnostics Tool
+------------------------------------------------
 
-This utility performs comprehensive network analysis and connectivity testing.
-It provides operations including:
-  • interfaces  – List and analyze network interfaces with detailed statistics
-  • ip          – Display IP address information for all interfaces
-  • ping        – Test connectivity to a target with visual response time tracking
-  • traceroute  – Trace network path to a target with hop latency visualization
-  • dns         – Perform DNS lookups with multiple record types
-  • scan        – Scan for open ports on a target host
-  • monitor     – Monitor network latency to a target over time
-  • bandwidth   – Perform a simple bandwidth test
+A beautiful, interactive terminal-based utility for comprehensive network analysis and diagnostics.
+This tool provides operations including:
+  • Network interfaces - List and analyze network interfaces with detailed statistics
+  • IP addresses      - Display IP address information for all interfaces
+  • Ping              - Test connectivity to a target with visual response time tracking
+  • Traceroute        - Trace network path to a target with hop latency visualization
+  • DNS lookup        - Perform DNS lookups with multiple record types
+  • Port scan         - Scan for open ports on a target host
+  • Latency monitor   - Monitor network latency to a target over time
+  • Bandwidth test    - Perform a simple bandwidth test
+
+All functionality is menu-driven with an attractive Nord-themed interface.
 
 Note: Some operations require root privileges.
+
+Version: 1.0.0
 """
 
 import atexit
@@ -31,22 +36,31 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import click
 from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.prompt import Prompt, Confirm
 from rich.progress import (
     Progress,
     SpinnerColumn,
     BarColumn,
     TextColumn,
     TimeRemainingColumn,
+    TaskID,
 )
 import pyfiglet
 
-# ------------------------------
+# ==============================
 # Configuration & Constants
-# ------------------------------
+# ==============================
+APP_NAME = "Network Toolkit"
+VERSION = "1.0.0"
+HOSTNAME = socket.gethostname()
+LOG_FILE = os.path.expanduser("~/network_toolkit_logs/network_toolkit.log")
+
+# Network operation constants
 PING_COUNT_DEFAULT = 4
 PING_INTERVAL_DEFAULT = 1.0
 TRACEROUTE_MAX_HOPS = 30
@@ -79,12 +93,14 @@ DNS_TYPES = ["A", "AAAA", "MX", "NS", "SOA", "TXT", "CNAME"]
 BANDWIDTH_TEST_SIZE = 10 * 1024 * 1024  # 10MB
 BANDWIDTH_CHUNK_SIZE = 64 * 1024  # 64KB
 
+# Visualization constants
 PROGRESS_WIDTH = 50
 UPDATE_INTERVAL = 0.1
 MAX_LATENCY_HISTORY = 100
 RTT_GRAPH_WIDTH = 60
 RTT_GRAPH_HEIGHT = 10
 
+# Common service mappings for port scan
 PORT_SERVICES = {
     21: "FTP",
     22: "SSH",
@@ -107,6 +123,7 @@ PORT_SERVICES = {
     8443: "HTTPS-ALT",
 }
 
+# Check for required commands
 COMMANDS = {
     "ip": shutil.which("ip") is not None,
     "ping": shutil.which("ping") is not None,
@@ -117,40 +134,127 @@ COMMANDS = {
     "ifconfig": shutil.which("ifconfig") is not None,
 }
 
-# ------------------------------
-# Nord‑Themed UI Setup
-# ------------------------------
+# Terminal dimensions
+TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
+TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
+
+# ==============================
+# Nord-Themed Console Setup
+# ==============================
 console = Console()
 
 
+class NordColors:
+    """Nord theme color palette for consistent UI styling."""
+
+    # Polar Night (dark/background)
+    NORD0 = "#2E3440"
+    NORD1 = "#3B4252"
+    NORD2 = "#434C5E"
+    NORD3 = "#4C566A"
+
+    # Snow Storm (light/text)
+    NORD4 = "#D8DEE9"
+    NORD5 = "#E5E9F0"
+    NORD6 = "#ECEFF4"
+
+    # Frost (blue accents)
+    NORD7 = "#8FBCBB"
+    NORD8 = "#88C0D0"
+    NORD9 = "#81A1C1"
+    NORD10 = "#5E81AC"
+
+    # Aurora (status indicators)
+    NORD11 = "#BF616A"  # Red (errors)
+    NORD12 = "#D08770"  # Orange (warnings)
+    NORD13 = "#EBCB8B"  # Yellow (caution)
+    NORD14 = "#A3BE8C"  # Green (success)
+    NORD15 = "#B48EAD"  # Purple (special)
+
+
+# ==============================
+# UI Helper Functions
+# ==============================
 def print_header(text: str) -> None:
-    """Print a striking ASCII art header using pyfiglet."""
+    """Print a striking header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style="bold #88C0D0")
+    console.print(ascii_art, style=f"bold {NordColors.NORD8}")
 
 
-def print_section(text: str) -> None:
-    """Print a section header."""
-    console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+def print_section(title: str) -> None:
+    """Print a formatted section header."""
+    border = "═" * TERM_WIDTH
+    console.print(f"\n[bold {NordColors.NORD8}]{border}[/]")
+    console.print(f"[bold {NordColors.NORD8}]  {title.center(TERM_WIDTH - 4)}[/]")
+    console.print(f"[bold {NordColors.NORD8}]{border}[/]\n")
 
 
-def print_success(text: str) -> None:
+def print_info(message: str) -> None:
+    """Print an informational message."""
+    console.print(f"[{NordColors.NORD9}]{message}[/]")
+
+
+def print_success(message: str) -> None:
     """Print a success message."""
-    console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+    console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
 
 
-def print_warning(text: str) -> None:
+def print_warning(message: str) -> None:
     """Print a warning message."""
-    console.print(f"[bold #EBCB8B]⚠ {text}[/bold #EBCB8B]")
+    console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
 
 
-def print_error(text: str) -> None:
+def print_error(message: str) -> None:
     """Print an error message."""
-    console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+    console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
+
+
+def print_step(text: str) -> None:
+    """Print a step description."""
+    console.print(f"[{NordColors.NORD8}]• {text}[/]")
+
+
+def clear_screen() -> None:
+    """Clear the terminal screen."""
+    console.clear()
+
+
+def pause() -> None:
+    """Pause execution until user presses Enter."""
+    console.input(f"\n[{NordColors.NORD15}]Press Enter to continue...[/]")
+
+
+def get_user_input(prompt: str, default: str = "") -> str:
+    """Get input from the user with a styled prompt."""
+    return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
+
+
+def get_user_choice(prompt: str, choices: List[str]) -> str:
+    """Get a choice from the user with a styled prompt."""
+    return Prompt.ask(
+        f"[bold {NordColors.NORD15}]{prompt}[/]", choices=choices, show_choices=True
+    )
+
+
+def get_user_confirmation(prompt: str) -> bool:
+    """Get confirmation from the user."""
+    return Confirm.ask(f"[bold {NordColors.NORD15}]{prompt}[/]")
+
+
+def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
+    """Create a Rich table for menu options."""
+    table = Table(title=title, box=None, title_style=f"bold {NordColors.NORD8}")
+    table.add_column("Option", style=f"{NordColors.NORD9}", justify="right")
+    table.add_column("Description", style=f"{NordColors.NORD4}")
+
+    for key, description in options:
+        table.add_row(key, description)
+
+    return table
 
 
 def format_time(seconds: float) -> str:
-    """Format seconds to a human-readable string."""
+    """Format seconds into a human-readable time string."""
     if seconds < 60:
         return f"{seconds:.1f}s"
     elif seconds < 3600:
@@ -174,51 +278,176 @@ def format_rate(bps: float) -> str:
         return f"{bps / 1024**3:.1f} GB/s"
 
 
-def is_valid_ip(ip: str) -> bool:
-    """Return True if ip is a valid IP address."""
+# ==============================
+# Logging Setup
+# ==============================
+def setup_logging(log_file: str = LOG_FILE) -> None:
+    """Configure basic logging for the script."""
+    import logging
+
     try:
-        ipaddress.ip_address(ip)
-        return True
-    except ValueError:
-        return False
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
 
-
-def is_valid_hostname(hostname: str) -> bool:
-    """Return True if hostname is valid."""
-    pattern = re.compile(
-        r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?"
-        r"(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
-    )
-    return bool(pattern.match(hostname))
-
-
-def check_root_privileges() -> None:
-    """Warn if not running as root."""
-    if os.geteuid() != 0:
-        print_warning(
-            "Running without root privileges; some operations may be limited."
+        logging.basicConfig(
+            filename=log_file,
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
-
-def validate_target(target: str) -> bool:
-    """Validate that the target is a valid IP or hostname."""
-    if is_valid_ip(target) or is_valid_hostname(target):
-        return True
-    print_error(f"Invalid target: {target}")
-    return False
+        print_step(f"Logging configured to: {log_file}")
+    except Exception as e:
+        print_warning(f"Could not set up logging to {log_file}: {e}")
+        print_step("Continuing without logging to file...")
 
 
-def check_command_availability(command: str) -> bool:
-    """Check if a system command is available."""
-    if not COMMANDS.get(command, False):
-        print_error(f"Required command '{command}' is not available.")
-        return False
-    return True
+# ==============================
+# Signal Handling & Cleanup
+# ==============================
+def cleanup() -> None:
+    """Perform cleanup tasks before exit."""
+    print_step("Performing cleanup tasks...")
+    # Add specific cleanup tasks here if needed
 
 
-# ------------------------------
+atexit.register(cleanup)
+
+
+def signal_handler(signum, frame) -> None:
+    """Handle termination signals gracefully."""
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
+    print_warning(f"\nScript interrupted by {sig_name}.")
+    cleanup()
+    sys.exit(128 + signum)
+
+
+# Register signal handlers
+for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(sig, signal_handler)
+
+
+# ==============================
+# Progress Tracking Classes
+# ==============================
+class ProgressManager:
+    """Unified progress tracking system with multiple display options."""
+
+    def __init__(self):
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold {task.fields[color]}]{task.description}"),
+            BarColumn(bar_width=None),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("[{task.fields[status]}]"),
+            TimeRemainingColumn(),
+            console=console,
+            expand=True,
+        )
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.progress.stop()
+
+    def add_task(
+        self, description: str, total: float, color: str = NordColors.NORD8
+    ) -> TaskID:
+        """Add a new task to the progress manager."""
+        return self.progress.add_task(
+            description, total=total, color=color, status=f"{NordColors.NORD9}starting"
+        )
+
+    def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
+        """Update a task's progress."""
+        self.progress.update(task_id, advance=advance, **kwargs)
+
+    def start(self):
+        """Start displaying the progress bar."""
+        self.progress.start()
+
+    def stop(self):
+        """Stop displaying the progress bar."""
+        self.progress.stop()
+
+
+class Spinner:
+    """Thread-safe spinner for indeterminate progress."""
+
+    def __init__(self, message: str):
+        self.message = message
+        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        self.current = 0
+        self.spinning = False
+        self.thread: Optional[threading.Thread] = None
+        self.start_time = 0
+        self._lock = threading.Lock()
+
+    def _spin(self) -> None:
+        """Internal method to update the spinner."""
+        while self.spinning:
+            elapsed = time.time() - self.start_time
+            time_str = format_time(elapsed)
+            with self._lock:
+                console.print(
+                    f"\r[{NordColors.NORD10}]{self.spinner_chars[self.current]}[/] "
+                    f"[{NordColors.NORD8}]{self.message}[/] "
+                    f"[[dim]elapsed: {time_str}[/dim]]",
+                    end="",
+                )
+                self.current = (self.current + 1) % len(self.spinner_chars)
+            time.sleep(0.1)  # Spinner update interval
+
+    def start(self) -> None:
+        """Start the spinner."""
+        with self._lock:
+            self.spinning = True
+            self.start_time = time.time()
+            self.thread = threading.Thread(target=self._spin, daemon=True)
+            self.thread.start()
+
+    def stop(self, success: bool = True) -> None:
+        """Stop the spinner and display completion message."""
+        with self._lock:
+            self.spinning = False
+            if self.thread:
+                self.thread.join()
+            elapsed = time.time() - self.start_time
+            time_str = format_time(elapsed)
+
+            # Clear the line
+            console.print("\r" + " " * TERM_WIDTH, end="\r")
+
+            if success:
+                console.print(
+                    f"[{NordColors.NORD14}]✓[/] [{NordColors.NORD8}]{self.message}[/] "
+                    f"[{NordColors.NORD14}]completed[/] in {time_str}"
+                )
+            else:
+                console.print(
+                    f"[{NordColors.NORD11}]✗[/] [{NordColors.NORD8}]{self.message}[/] "
+                    f"[{NordColors.NORD11}]failed[/] after {time_str}"
+                )
+
+    def __enter__(self):
+        """Context manager entry."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Context manager exit."""
+        self.stop(success=exc_type is None)
+
+
+# ==============================
 # Latency Tracking
-# ------------------------------
+# ==============================
 class LatencyTracker:
     """
     Tracks network latency measurements and provides statistics and an ASCII graph.
@@ -258,7 +487,7 @@ class LatencyTracker:
                 (self.loss_count / self.total_count * 100) if self.total_count else 0
             )
             min_rtt = self.min_rtt if self.min_rtt != float("inf") else 0
-            console.print(f"[bold #8FBCBB]RTT Statistics:[/bold #8FBCBB]")
+            console.print(f"[bold {NordColors.NORD7}]RTT Statistics:[/]")
             console.print(f"  Min: [dim]{min_rtt:.2f} ms[/dim]")
             console.print(f"  Avg: [dim]{self.avg_rtt:.2f} ms[/dim]")
             console.print(f"  Max: [dim]{self.max_rtt:.2f} ms[/dim]")
@@ -271,7 +500,7 @@ class LatencyTracker:
             valid = [r for r in self.history if r is not None]
             if not valid:
                 console.print(
-                    "[bold #EBCB8B]No latency data to display graph[/bold #EBCB8B]"
+                    f"[bold {NordColors.NORD13}]No latency data to display graph[/]"
                 )
                 return
             min_val, max_val = min(valid), max(valid)
@@ -284,28 +513,117 @@ class LatencyTracker:
                 else:
                     ratio = (rtt - min_val) / (max_val - min_val)
                     if rtt < self.avg_rtt * 0.8:
-                        color = "#8FBCBB"
+                        color = NordColors.NORD7
                     elif rtt < self.avg_rtt * 1.2:
-                        color = "#D8DEE9"
+                        color = NordColors.NORD4
                     else:
-                        color = "#EBCB8B"
+                        color = NordColors.NORD13
                     graph.append(f"[{color}]█[/{color}]")
             console.print("\n[dim]Latency Graph:[/dim]")
             console.print("".join(graph))
             console.print(f"[dim]Min: {min_val:.1f} ms | Max: {max_val:.1f} ms[/dim]")
 
 
-# ------------------------------
+# ==============================
+# System Helper Functions
+# ==============================
+def run_command(
+    cmd: List[str],
+    shell: bool = False,
+    check: bool = True,
+    capture_output: bool = True,
+    timeout: int = 60,
+    verbose: bool = False,
+) -> subprocess.CompletedProcess:
+    """Run a shell command and handle errors."""
+    if verbose:
+        if shell:
+            print_step(f"Executing: {cmd}")
+        else:
+            print_step(f"Executing: {' '.join(cmd)}")
+
+    try:
+        return subprocess.run(
+            cmd,
+            shell=shell,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
+    except subprocess.CalledProcessError as e:
+        if shell:
+            print_error(f"Command failed: {cmd}")
+        else:
+            print_error(f"Command failed: {' '.join(cmd)}")
+
+        if hasattr(e, "stdout") and e.stdout:
+            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
+        if hasattr(e, "stderr") and e.stderr:
+            console.print(f"[bold {NordColors.NORD11}]Stderr: {e.stderr.strip()}[/]")
+        raise
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout} seconds")
+        raise
+
+
+def check_root() -> bool:
+    """Check if script is running with elevated privileges."""
+    return os.geteuid() == 0
+
+
+def ensure_root() -> None:
+    """Ensure the script is run with root privileges."""
+    if not check_root():
+        print_warning("This operation performs better with root privileges.")
+        print_info("Some functionality may be limited.")
+
+
+def is_valid_ip(ip: str) -> bool:
+    """Return True if ip is a valid IP address."""
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_hostname(hostname: str) -> bool:
+    """Return True if hostname is valid."""
+    pattern = re.compile(
+        r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?"
+        r"(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
+    )
+    return bool(pattern.match(hostname))
+
+
+def validate_target(target: str) -> bool:
+    """Validate that the target is a valid IP or hostname."""
+    if is_valid_ip(target) or is_valid_hostname(target):
+        return True
+    print_error(f"Invalid target: {target}")
+    return False
+
+
+def check_command_availability(command: str) -> bool:
+    """Check if a system command is available."""
+    if not COMMANDS.get(command, False):
+        print_error(f"Required command '{command}' is not available.")
+        return False
+    return True
+
+
+# ==============================
 # Network Operation Functions
-# ------------------------------
+# ==============================
 def get_network_interfaces() -> List[Dict[str, Any]]:
     """Retrieve and display network interface information."""
     print_section("Network Interfaces")
     interfaces = []
     spinner = Progress(
-        SpinnerColumn(style="bold #81A1C1"),
+        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
         TextColumn("[progress.description]{task.description}"),
-        BarColumn(style="bold #88C0D0"),
+        BarColumn(style=f"bold {NordColors.NORD8}"),
         TimeRemainingColumn(),
         console=console,
     )
@@ -354,32 +672,33 @@ def get_network_interfaces() -> List[Dict[str, Any]]:
                             for iface in interfaces:
                                 if iface["name"] == current:
                                     iface["mac_address"] = m.group(1)
-            spinner.stop(
-                f"[bold #8FBCBB]Found {len(interfaces)} interfaces[/bold #8FBCBB]"
-            )
+            spinner.stop()
+
             if interfaces:
+                print_success(f"Found {len(interfaces)} interfaces")
                 console.print(
                     f"[bold]{'Interface':<12} {'Status':<10} {'MAC Address':<20}[/bold]"
                 )
                 console.print("─" * 50)
                 for iface in interfaces:
                     status_color = (
-                        "#8FBCBB"
+                        NordColors.NORD14
                         if iface["status"].lower() in ["up", "active"]
-                        else "#BF616A"
+                        else NordColors.NORD11
                     )
                     console.print(
-                        f"[bold #88C0D0]{iface['name']:<12}[/bold #88C0D0] "
-                        f"[{status_color}]{iface['status']:<10}[/{status_color}] "
+                        f"[bold {NordColors.NORD8}]{iface['name']:<12}[/] "
+                        f"[{status_color}]{iface['status']:<10}[/] "
                         f"{iface['mac_address']:<20}"
                     )
             else:
                 console.print(
-                    "[bold #EBCB8B]No network interfaces found[/bold #EBCB8B]"
+                    f"[bold {NordColors.NORD13}]No network interfaces found[/]"
                 )
             return interfaces
         except Exception as e:
-            spinner.stop(f"[bold #BF616A]Error: {e}[/bold #BF616A]")
+            spinner.stop()
+            print_error(f"Error: {e}")
             return []
 
 
@@ -388,7 +707,7 @@ def get_ip_addresses() -> Dict[str, List[Dict[str, str]]]:
     print_section("IP Address Information")
     ip_info = {}
     spinner = Progress(
-        SpinnerColumn(style="bold #81A1C1"),
+        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     )
@@ -439,20 +758,27 @@ def get_ip_addresses() -> Dict[str, List[Dict[str, str]]]:
                             ip_info.setdefault(current, []).append(
                                 {"type": "IPv6", "address": m.group(1)}
                             )
-            spinner.stop(f"[bold #8FBCBB]IP information collected[/bold #8FBCBB]")
+            spinner.stop()
+
             if ip_info:
+                print_success("IP information collected")
                 for iface, addrs in ip_info.items():
-                    console.print(f"[bold #88C0D0]{iface}:[/bold #88C0D0]")
+                    console.print(f"[bold {NordColors.NORD8}]{iface}:[/]")
                     for addr in addrs:
-                        type_color = "#88C0D0" if addr["type"] == "IPv4" else "#B48EAD"
+                        type_color = (
+                            NordColors.NORD8
+                            if addr["type"] == "IPv4"
+                            else NordColors.NORD15
+                        )
                         console.print(
-                            f"  [{type_color}]{addr['type']:<6}[/{type_color}]: {addr['address']}"
+                            f"  [{type_color}]{addr['type']:<6}[/]: {addr['address']}"
                         )
             else:
-                console.print("[bold #EBCB8B]No IP addresses found[/bold #EBCB8B]")
+                console.print(f"[bold {NordColors.NORD13}]No IP addresses found[/]")
             return ip_info
         except Exception as e:
-            spinner.stop(f"[bold #BF616A]Error: {e}[/bold #BF616A]")
+            spinner.stop()
+            print_error(f"Error: {e}")
             return {}
 
 
@@ -466,12 +792,12 @@ def ping_target(
     if not validate_target(target):
         return {}
     if not check_command_availability("ping"):
-        console.print("[bold #BF616A]Ping command not available[/bold #BF616A]")
+        print_error("Ping command not available")
         return {}
     progress_task = Progress(
-        SpinnerColumn(style="bold #81A1C1"),
+        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
         TextColumn("[progress.description]{task.description}"),
-        BarColumn(style="bold #88C0D0"),
+        BarColumn(style=f"bold {NordColors.NORD8}"),
         TimeRemainingColumn(),
         console=console,
     )
@@ -504,7 +830,7 @@ def ping_target(
                     current += 1
                     progress.update(task, advance=1)
                     latency_tracker.add_result(None)
-                    console.print(f"\r[bold #BF616A]Request timed out[/bold #BF616A]")
+                    console.print(f"\r[bold {NordColors.NORD11}]Request timed out[/]")
             # Ensure complete progress
             progress.update(task, completed=count)
             console.print("")
@@ -533,10 +859,10 @@ def traceroute_target(
     if not validate_target(target):
         return []
     if not check_command_availability("traceroute"):
-        console.print("[bold #BF616A]Traceroute command not available[/bold #BF616A]")
+        print_error("Traceroute command not available")
         return []
     spinner = Progress(
-        SpinnerColumn(style="bold #81A1C1"),
+        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     )
@@ -588,32 +914,33 @@ def traceroute_target(
                         )
                     except Exception:
                         continue
-            spinner.stop(
-                f"[bold #8FBCBB]Traceroute completed with {len(hops)} hops[/bold #8FBCBB]"
-            )
+            spinner.stop()
+
             if hops:
-                console.print(f"[bold]{'Hop':<4} {'Host':<20} {'Avg Time':<10}[/bold]")
+                print_success(f"Traceroute completed with {len(hops)} hops")
+                console.print(f"[bold]{'Hop':<4} {'Host':<30} {'Avg Time':<10}[/bold]")
                 console.print("─" * 50)
                 for hop in hops:
                     avg = hop.get("avg_time_ms")
                     if avg is None:
                         avg_str = "---"
-                        color = "#BF616A"
+                        color = NordColors.NORD11
                     else:
                         avg_str = f"{avg:.2f} ms"
                         color = (
-                            "#8FBCBB"
+                            NordColors.NORD14
                             if avg < 20
-                            else ("#EBCB8B" if avg < 100 else "#BF616A")
+                            else (NordColors.NORD13 if avg < 100 else NordColors.NORD11)
                         )
                     console.print(
-                        f"{hop.get('hop', '?'):<4} {hop.get('host', 'Unknown'):<20} [{color}]{avg_str:<10}[/{color}]"
+                        f"{hop.get('hop', '?'):<4} {hop.get('host', 'Unknown'):<30} [{color}]{avg_str:<10}[/]"
                     )
             else:
-                console.print("[bold #EBCB8B]No hops found[/bold #EBCB8B]")
+                console.print(f"[bold {NordColors.NORD13}]No hops found[/]")
             return hops
         except Exception as e:
-            spinner.stop(f"[bold #BF616A]Traceroute error: {e}[/bold #BF616A]")
+            spinner.stop()
+            print_error(f"Traceroute error: {e}")
             return []
 
 
@@ -628,7 +955,7 @@ def dns_lookup(
         record_types = ["A", "AAAA"]
     results = {"hostname": hostname}
     spinner = Progress(
-        SpinnerColumn(style="bold #81A1C1"),
+        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     )
@@ -689,21 +1016,28 @@ def dns_lookup(
                             results[rt] = recs
                     except subprocess.CalledProcessError:
                         continue
-            spinner.stop(f"[bold #8FBCBB]DNS lookup completed[/bold #8FBCBB]")
+            spinner.stop()
+
             if len(results) <= 1:
                 console.print(
-                    f"[bold #EBCB8B]No DNS records found for {hostname}[/bold #EBCB8B]"
+                    f"[bold {NordColors.NORD13}]No DNS records found for {hostname}[/]"
                 )
             else:
+                print_success("DNS lookup completed")
                 for rt, recs in results.items():
                     if rt == "hostname":
                         continue
-                    console.print(f"[bold #88C0D0]{rt} Records:[/bold #88C0D0]")
-                    for rec in recs:
-                        console.print(f"  {rec.get('value')}")
+                    console.print(f"[bold {NordColors.NORD8}]{rt} Records:[/]")
+                    if isinstance(recs, list) and isinstance(recs[0], dict):
+                        for rec in recs:
+                            console.print(f"  {rec.get('value')}")
+                    else:
+                        for rec in recs:
+                            console.print(f"  {rec}")
             return results
         except Exception as e:
-            spinner.stop(f"[bold #BF616A]DNS lookup error: {e}[/bold #BF616A]")
+            spinner.stop()
+            print_error(f"DNS lookup error: {e}")
             return {"hostname": hostname}
 
 
@@ -726,17 +1060,15 @@ def port_scan(
             else:
                 port_list = list(map(int, ports.split(",")))
         except ValueError:
-            console.print(
-                f"[bold #BF616A]Invalid port specification: {ports}[/bold #BF616A]"
-            )
+            print_error(f"Invalid port specification: {ports}")
             return {}
     else:
         port_list = ports
     open_ports = {}
     progress_task = Progress(
-        SpinnerColumn(style="bold #81A1C1"),
+        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
         TextColumn("[progress.description]{task.description}"),
-        BarColumn(style="bold #88C0D0"),
+        BarColumn(style=f"bold {NordColors.NORD8}"),
         console=console,
     )
     with progress_task as progress:
@@ -755,29 +1087,27 @@ def port_scan(
                         service = PORT_SERVICES.get(port, "unknown")
                     open_ports[port] = {"state": "open", "service": service}
                     console.print(
-                        f"\r[bold #8FBCBB]Port {port} is open: {service}[/bold #8FBCBB]"
+                        f"\r[bold {NordColors.NORD14}]Port {port} is open: {service}[/]"
                     )
                 sock.close()
                 progress.update(task, advance=1)
             console.print("")
             if open_ports:
-                console.print(
-                    f"[bold #8FBCBB]Found {len(open_ports)} open ports on {target} ({ip})[/bold #8FBCBB]"
-                )
+                print_success(f"Found {len(open_ports)} open ports on {target} ({ip})")
                 console.print(f"[bold]{'Port':<7} {'State':<10} {'Service':<15}[/bold]")
                 console.print("─" * 40)
                 for port in sorted(open_ports.keys()):
                     info = open_ports[port]
                     console.print(
-                        f"[bold #88C0D0]{port:<7}[/bold #88C0D0] [bold #8FBCBB]{info['state']:<10}[/bold #8FBCBB] {info['service']:<15}"
+                        f"[bold {NordColors.NORD8}]{port:<7}[/] [bold {NordColors.NORD14}]{info['state']:<10}[/] {info['service']:<15}"
                     )
             else:
                 console.print(
-                    f"[bold #EBCB8B]No open ports found on {target} ({ip})[/bold #EBCB8B]"
+                    f"[bold {NordColors.NORD13}]No open ports found on {target} ({ip})[/]"
                 )
             return open_ports
         except Exception as e:
-            console.print(f"[bold #BF616A]Port scan error: {e}[/bold #BF616A]")
+            print_error(f"Port scan error: {e}")
             return {}
 
 
@@ -791,10 +1121,10 @@ def monitor_latency(
     if not validate_target(target):
         return
     latency_tracker = LatencyTracker(width=RTT_GRAPH_WIDTH)
-    console.print(f"Monitoring latency to {target}. Press Ctrl+C to stop.")
+    print_info(f"Monitoring latency to {target}. Press Ctrl+C to stop.")
     try:
         if not check_command_availability("ping"):
-            console.print(f"[bold #BF616A]Ping command not available[/bold #BF616A]")
+            print_error("Ping command not available")
             return
         ping_indefinitely = count == 0
         remaining = count
@@ -813,24 +1143,29 @@ def monitor_latency(
                     latency_tracker.add_result(None)
             except subprocess.CalledProcessError:
                 latency_tracker.add_result(None)
-            os.system("clear")
+
+            # Clear the screen to update the graph
+            clear_screen()
             print_header(f"Latency Monitor: {target}")
             now = datetime.datetime.now().strftime("%H:%M:%S")
             console.print(
-                f"[bold]Time:[/bold] {now} | [bold]Current:[/bold] {latency_tracker.history[-1] if latency_tracker.history[-1] is not None else 'timeout'} ms"
+                f"[bold]Time:[/bold] {now} | [bold]Current:[/bold] {latency_tracker.history[-1] if latency_tracker.history and latency_tracker.history[-1] is not None else 'timeout'} ms"
             )
             latency_tracker.display_graph()
             if not ping_indefinitely:
                 remaining -= 1
+                print_info(f"Remaining pings: {remaining}")
+
             elapsed = time.time() - start
             if elapsed < interval:
                 time.sleep(interval - elapsed)
+
         print_section("Final Statistics")
         latency_tracker.display_statistics()
     except KeyboardInterrupt:
         print("\n")
         print_section("Monitoring Stopped")
-        console.print(f"Total pings: {latency_tracker.total_count}")
+        print_info(f"Total pings: {latency_tracker.total_count}")
         latency_tracker.display_statistics()
 
 
@@ -842,17 +1177,15 @@ def bandwidth_test(
     if not validate_target(target):
         return {}
     results = {"target": target, "download_speed": 0.0, "response_time": 0.0}
-    console.print(f"Starting bandwidth test to {target}...")
-    console.print(
-        "[bold #EBCB8B]Note: This is a simple test and may not be fully accurate.[/bold #EBCB8B]"
-    )
+    print_info(f"Starting bandwidth test to {target}...")
+    print_warning("Note: This is a simple test and may not be fully accurate.")
     try:
         ip = socket.gethostbyname(target)
-        console.print(f"Resolved {target} to {ip}")
+        print_info(f"Resolved {target} to {ip}")
         progress_task = Progress(
-            SpinnerColumn(style="bold #81A1C1"),
+            SpinnerColumn(style=f"bold {NordColors.NORD9}"),
             TextColumn("[progress.description]{task.description}"),
-            BarColumn(style="bold #88C0D0"),
+            BarColumn(style=f"bold {NordColors.NORD8}"),
             console=console,
         )
         with progress_task as progress:
@@ -881,9 +1214,8 @@ def bandwidth_test(
                     results["download_size"] = size_download
                     progress.update(task, completed=1)
                     download_mbps = speed_download * 8 / 1024 / 1024
-                    console.print(
-                        f"\n[bold #8FBCBB]Download test completed:[/bold #8FBCBB]"
-                    )
+                    console.print("")
+                    print_success("Download test completed")
                     console.print(f"  Response time: {total_time:.2f} s")
                     console.print(
                         f"  Downloaded: {size_download / (1024 * 1024):.2f} MB"
@@ -892,9 +1224,7 @@ def bandwidth_test(
                         f"  Speed: {speed_download / (1024 * 1024):.2f} MB/s ({download_mbps:.2f} Mbps)"
                     )
             else:
-                console.print(
-                    f"[bold #EBCB8B]Curl not available, using socket test[/bold #EBCB8B]"
-                )
+                print_warning("Curl not available, using socket test")
                 start = time.time()
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(5.0)
@@ -920,9 +1250,8 @@ def bandwidth_test(
                 results["download_speed"] = speed
                 results["download_size"] = bytes_received
                 download_mbps = speed * 8 / 1024 / 1024
-                console.print(
-                    f"\n[bold #8FBCBB]Basic bandwidth test completed:[/bold #8FBCBB]"
-                )
+                console.print("")
+                print_success("Basic bandwidth test completed")
                 console.print(f"  Connection time: {conn_time:.2f} s")
                 console.print(f"  Downloaded: {bytes_received / 1024:.2f} KB")
                 console.print(
@@ -930,147 +1259,268 @@ def bandwidth_test(
                 )
         return results
     except Exception as e:
-        console.print(f"[bold #BF616A]Bandwidth test error: {e}[/bold #BF616A]")
+        print_error(f"Bandwidth test error: {e}")
         return results
 
 
-# ------------------------------
-# Main CLI Entry Point with Click
-# ------------------------------
-@click.group()
-def cli() -> None:
-    """Enhanced Network Information and Diagnostics Tool"""
-    print_header("Network Toolkit")
-    console.print(
-        f"System: [bold #D8DEE9]{platform.system()} {platform.release()}[/bold #D8DEE9]"
-    )
-    console.print(f"Python: [bold #D8DEE9]{platform.python_version()}[/bold #D8DEE9]")
-    console.print(f"Hostname: [bold #D8DEE9]{socket.gethostname()}[/bold #D8DEE9]")
-    console.print(
-        f"Date: [bold #D8DEE9]{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
-    )
-    check_root_privileges()
+# ==============================
+# Menu Systems
+# ==============================
+def ping_menu() -> None:
+    """Interactive menu for ping operations."""
+    clear_screen()
+    print_header("Ping")
 
+    target = get_user_input("Enter target hostname or IP", "google.com")
+    if not validate_target(target):
+        pause()
+        return
 
-@cli.command()
-def interfaces() -> None:
-    """List and analyze network interfaces."""
-    get_network_interfaces()
-
-
-@cli.command()
-def ip() -> None:
-    """Display IP address information for all interfaces."""
-    get_ip_addresses()
-
-
-@cli.command()
-@click.argument("target")
-@click.option(
-    "-c",
-    "--count",
-    type=int,
-    default=PING_COUNT_DEFAULT,
-    help="Number of ping attempts",
-)
-@click.option(
-    "-i",
-    "--interval",
-    type=float,
-    default=PING_INTERVAL_DEFAULT,
-    help="Ping interval in seconds",
-)
-def ping(target: str, count: int, interval: float) -> None:
-    """Test connectivity to a target."""
-    ping_target(target, count, interval)
-
-
-@cli.command()
-@click.argument("target")
-@click.option(
-    "-m", "--max-hops", type=int, default=TRACEROUTE_MAX_HOPS, help="Maximum hops"
-)
-def traceroute(target: str, max_hops: int) -> None:
-    """Trace network path to a target."""
-    traceroute_target(target, max_hops)
-
-
-@cli.command()
-@click.argument("hostname")
-@click.option(
-    "-t", "--types", default="A,AAAA", help="Comma-separated list of DNS record types"
-)
-def dns(hostname: str, types: str) -> None:
-    """Perform DNS lookup."""
-    rec_types = [t.strip() for t in types.split(",")]
-    dns_lookup(hostname, rec_types)
-
-
-@cli.command()
-@click.argument("target")
-@click.option(
-    "-p",
-    "--ports",
-    default="common",
-    help="Ports to scan: 'common', comma-separated list, or range (e.g., 80-443)",
-)
-@click.option(
-    "-t",
-    "--timeout",
-    type=float,
-    default=PORT_SCAN_TIMEOUT,
-    help="Timeout per port (seconds)",
-)
-def scan(target: str, ports: str, timeout: float) -> None:
-    """Scan for open ports on a target host."""
-    port_scan(target, ports, timeout)
-
-
-@cli.command()
-@click.argument("target")
-@click.option(
-    "-c",
-    "--count",
-    type=int,
-    default=MONITOR_DEFAULT_COUNT,
-    help="Number of pings (0 for unlimited)",
-)
-@click.option(
-    "-i",
-    "--interval",
-    type=float,
-    default=MONITOR_DEFAULT_INTERVAL,
-    help="Ping interval in seconds",
-)
-def monitor(target: str, count: int, interval: float) -> None:
-    """Monitor network latency over time."""
-    monitor_latency(target, count, interval)
-
-
-@cli.command()
-@click.option(
-    "-t", "--target", default="example.com", help="Target hostname for bandwidth test"
-)
-def bandwidth(target: str) -> None:
-    """Perform a simple bandwidth test."""
-    bandwidth_test(target)
-
-
-def main() -> None:
-    """Main entry point."""
+    count = get_user_input("Number of pings", str(PING_COUNT_DEFAULT))
     try:
-        cli()
+        count = int(count)
+        if count <= 0:
+            print_error("Count must be a positive integer")
+            pause()
+            return
+    except ValueError:
+        print_error("Invalid count value")
+        pause()
+        return
+
+    interval = get_user_input(
+        "Time between pings (seconds)", str(PING_INTERVAL_DEFAULT)
+    )
+    try:
+        interval = float(interval)
+        if interval <= 0:
+            print_error("Interval must be a positive number")
+            pause()
+            return
+    except ValueError:
+        print_error("Invalid interval value")
+        pause()
+        return
+
+    ping_target(target, count, interval)
+    pause()
+
+
+def traceroute_menu() -> None:
+    """Interactive menu for traceroute operations."""
+    clear_screen()
+    print_header("Traceroute")
+
+    target = get_user_input("Enter target hostname or IP", "google.com")
+    if not validate_target(target):
+        pause()
+        return
+
+    max_hops = get_user_input("Maximum number of hops", str(TRACEROUTE_MAX_HOPS))
+    try:
+        max_hops = int(max_hops)
+        if max_hops <= 0:
+            print_error("Maximum hops must be a positive integer")
+            pause()
+            return
+    except ValueError:
+        print_error("Invalid maximum hops value")
+        pause()
+        return
+
+    traceroute_target(target, max_hops)
+    pause()
+
+
+def dns_menu() -> None:
+    """Interactive menu for DNS lookup operations."""
+    clear_screen()
+    print_header("DNS Lookup")
+
+    hostname = get_user_input("Enter hostname to lookup", "example.com")
+    if not validate_target(hostname):
+        pause()
+        return
+
+    rec_types_str = get_user_input("Record types (comma-separated)", "A,AAAA,MX,TXT")
+    rec_types = [rt.strip().upper() for rt in rec_types_str.split(",")]
+
+    dns_lookup(hostname, rec_types)
+    pause()
+
+
+def scan_menu() -> None:
+    """Interactive menu for port scanning operations."""
+    clear_screen()
+    print_header("Port Scan")
+
+    target = get_user_input("Enter target hostname or IP", "example.com")
+    if not validate_target(target):
+        pause()
+        return
+
+    port_spec = get_user_input(
+        "Ports to scan (common, comma-separated list, or range like 80-443)", "common"
+    )
+
+    timeout = get_user_input("Timeout per port (seconds)", str(PORT_SCAN_TIMEOUT))
+    try:
+        timeout = float(timeout)
+        if timeout <= 0:
+            print_error("Timeout must be a positive number")
+            pause()
+            return
+    except ValueError:
+        print_error("Invalid timeout value")
+        pause()
+        return
+
+    port_scan(target, port_spec, timeout)
+    pause()
+
+
+def monitor_menu() -> None:
+    """Interactive menu for latency monitoring operations."""
+    clear_screen()
+    print_header("Latency Monitor")
+
+    target = get_user_input("Enter target hostname or IP", "google.com")
+    if not validate_target(target):
+        pause()
+        return
+
+    count = get_user_input(
+        "Number of pings (0 for unlimited)", str(MONITOR_DEFAULT_COUNT)
+    )
+    try:
+        count = int(count)
+        if count < 0:
+            print_error("Count must be a non-negative integer")
+            pause()
+            return
+    except ValueError:
+        print_error("Invalid count value")
+        pause()
+        return
+
+    interval = get_user_input(
+        "Time between pings (seconds)", str(MONITOR_DEFAULT_INTERVAL)
+    )
+    try:
+        interval = float(interval)
+        if interval <= 0:
+            print_error("Interval must be a positive number")
+            pause()
+            return
+    except ValueError:
+        print_error("Invalid interval value")
+        pause()
+        return
+
+    monitor_latency(target, count, interval)
+    pause()
+
+
+def bandwidth_menu() -> None:
+    """Interactive menu for bandwidth testing operations."""
+    clear_screen()
+    print_header("Bandwidth Test")
+
+    target = get_user_input("Enter target hostname or IP", "example.com")
+    if not validate_target(target):
+        pause()
+        return
+
+    bandwidth_test(target)
+    pause()
+
+
+def main_menu() -> None:
+    """Display the main menu and handle user selection."""
+    while True:
+        clear_screen()
+        print_header(APP_NAME)
+        print_info(f"Version: {VERSION}")
+        print_info(f"System: {platform.system()} {platform.release()}")
+        print_info(f"Host: {HOSTNAME}")
+        print_info(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print_info(f"Running as root: {'Yes' if check_root() else 'No'}")
+
+        # Main menu options
+        menu_options = [
+            ("1", "Network Interfaces - List and analyze network interfaces"),
+            ("2", "IP Addresses - Display IP address information"),
+            ("3", "Ping - Test connectivity to a target"),
+            ("4", "Traceroute - Trace network path to a target"),
+            ("5", "DNS Lookup - Perform DNS lookups with multiple record types"),
+            ("6", "Port Scan - Scan for open ports on a target host"),
+            ("7", "Latency Monitor - Monitor network latency over time"),
+            ("8", "Bandwidth Test - Perform a simple bandwidth test"),
+            ("0", "Exit"),
+        ]
+
+        console.print(create_menu_table("Main Menu", menu_options))
+
+        # Get user selection
+        choice = get_user_input("Enter your choice (0-8):")
+
+        if choice == "1":
+            get_network_interfaces()
+            pause()
+        elif choice == "2":
+            get_ip_addresses()
+            pause()
+        elif choice == "3":
+            ping_menu()
+        elif choice == "4":
+            traceroute_menu()
+        elif choice == "5":
+            dns_menu()
+        elif choice == "6":
+            scan_menu()
+        elif choice == "7":
+            monitor_menu()
+        elif choice == "8":
+            bandwidth_menu()
+        elif choice == "0":
+            clear_screen()
+            print_header("Goodbye!")
+            print_info("Thank you for using the Network Toolkit.")
+            time.sleep(1)
+            sys.exit(0)
+        else:
+            print_error("Invalid selection. Please try again.")
+            time.sleep(1)
+
+
+# ==============================
+# Main Entry Point
+# ==============================
+def main() -> None:
+    """Main entry point for the script."""
+    try:
+        # Initial setup
+        setup_logging()
+
+        # Check if root, but don't exit if not
+        if not check_root():
+            print_warning(
+                "Some operations may have limited functionality without root privileges."
+            )
+
+        # Launch the main menu
+        main_menu()
+
     except KeyboardInterrupt:
-        console.print(f"\n[bold #EBCB8B]Operation interrupted by user[/bold #EBCB8B]")
+        print_warning("\nProcess interrupted by user.")
         sys.exit(130)
     except Exception as e:
-        console.print(f"[bold #BF616A]Unexpected error: {e}[/bold #BF616A]")
+        print_error(f"Unexpected error: {e}")
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
 
-
-atexit.register(lambda: console.print("[dim]Cleaning up resources...[/dim]"))
-signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(130))
-signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(128 + sig))
 
 if __name__ == "__main__":
     main()
