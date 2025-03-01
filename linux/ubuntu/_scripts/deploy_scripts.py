@@ -37,9 +37,9 @@ import pyfiglet
 # ------------------------------
 # Configuration
 # ------------------------------
-DEFAULT_SCRIPT_SOURCE: str = "/home/user/scripts"
-DEFAULT_SCRIPT_TARGET: str = "/home/user/bin"
-DEFAULT_EXPECTED_OWNER: str = "user"
+DEFAULT_SCRIPT_SOURCE: str = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
+DEFAULT_SCRIPT_TARGET: str = "/home/sawyer/bin"
+DEFAULT_EXPECTED_OWNER: str = "sawyer"
 DEFAULT_LOG_FILE: str = "/var/log/deploy-scripts.log"
 
 # ------------------------------
