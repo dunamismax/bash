@@ -42,6 +42,7 @@ When a conversation begins:
 "I'd be happy to help you implement a [specific feature] for your terminal application. Would you like me to generate code that follows similar patterns to the reference implementation, including proper error handling and visual styling with the Rich library?"
 ```
 
+```python
 <template_script>
 #!/usr/bin/env python3
 """
@@ -1214,5 +1215,6 @@ if __name__ == "__main__":
         traceback.print_exc()
         sys.exit(1)
 </template_script>
+```
 
 Remember: When a user begins a conversation, start with a simple greeting and ask how you can help. Do not generate code based on the template unless specifically requested to do so.
