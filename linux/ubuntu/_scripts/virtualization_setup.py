@@ -399,31 +399,41 @@ def start_virtual_machines(vms) -> bool:
         print_error("Default network not active")
         return False
     failed = []
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Starting VMs", total=len(to_start))
-        for vm in to_start:
-            name = vm["name"]
-            print_step(f"Starting {name}")
+    for vm in to_start:
+        name = vm["name"]
+        print_step(f"Starting {name}")
+        attempt = 0
+        success = False
+        # Attempt to start the VM up to 3 times
+        while attempt < 3 and not success:
+            attempt += 1
+            print_step(f"Attempt {attempt} for {name}")
             try:
                 with console.status(
                     f"[bold #81A1C1]Starting {name}...", spinner="dots"
                 ):
                     result = run_command(["virsh", "start", name], check=False)
-                    if result.returncode != 0:
-                        print_error(f"Failed to start {name}: {result.stderr}")
-                        failed.append(name)
+                if result.returncode == 0:
+                    print_success(f"{name} started")
+                    success = True
+                else:
+                    if "Only one live display may be active at once" in (
+                        result.stderr or ""
+                    ):
+                        print_warning(
+                            f"{name} failed to start due to active live display. Waiting before retrying..."
+                        )
+                        time.sleep(5)  # Wait extra time before retrying
                     else:
-                        print_success(f"{name} started")
-                time.sleep(3)
+                        print_error(f"Failed to start {name}: {result.stderr}")
+                        break
             except Exception as e:
                 print_error(f"Error starting {name}: {e}")
-                failed.append(name)
-            progress.advance(task)
+                break
+        if not success:
+            failed.append(name)
+        # Delay before starting the next VM to enforce sequential startup
+        time.sleep(5)
     if failed:
         print_warning(f"Failed to start: {', '.join(failed)}")
         return False

@@ -299,7 +299,7 @@ class DeploymentManager:
 
     def execute_deployment(self) -> bool:
         """
-        Deploy the scripts using rsync.
+        Deploy the scripts using rsync with checksum verification to update modified files.
         """
         self.status.update_step("deployment", "in_progress", "Deploying scripts...")
         try:
@@ -314,7 +314,7 @@ class DeploymentManager:
                 result = run_command(
                     [
                         "rsync",
-                        "-av",
+                        "-avc",  # Added the checksum flag to detect modifications
                         "--delete",
                         "--itemize-changes",
                         f"{self.script_source.rstrip('/')}/",
