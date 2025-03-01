@@ -206,8 +206,10 @@ def print_error(message: str) -> None:
 
 
 def clear_screen() -> None:
-    """Clear the terminal screen."""
+    """Clear the terminal screen and add top padding."""
     console.clear()
+    # Add some blank lines at the top for padding
+    console.print("\n", end="")
 
 
 def get_user_input(prompt: str, default: str = "") -> str:
@@ -489,15 +491,22 @@ def connect_to_machine(
 # ==============================
 def create_app_layout() -> Layout:
     """Create the application layout structure."""
-    layout = Layout()
+    layout = Layout(name="root")
+
+    # Add a small margin at the top and bottom
+    layout.split(
+        Layout(name="margin_top", size=1),
+        Layout(name="content"),
+        Layout(name="margin_bottom", size=1),
+    )
 
     # Create main sections in vertical arrangement
-    layout.split(
-        Layout(name="header", size=8),  # More space for header
-        Layout(name="info", size=3),  # Info bar
+    layout["content"].split(
+        Layout(name="header", size=10),  # Fixed size for header
+        Layout(name="info", size=5),  # Increased size for info
         Layout(name="machines", ratio=3),  # Tailscale machines
         Layout(name="devices", ratio=2),  # Local devices below machines
-        Layout(name="footer", size=6),  # Options footer
+        Layout(name="footer", size=7),  # Options footer
     )
 
     return layout
@@ -510,21 +519,21 @@ def render_header() -> Panel:
 
 def render_info() -> Panel:
     """Render the application info panel."""
-    info_text = Text()
-    info_text.append(
-        f"System: {platform.system()} {platform.release()}  ", style=NordColors.NORD9
-    )
-    info_text.append(
-        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ",
-        style=NordColors.NORD9,
-    )
-    info_text.append(f"Default User: {DEFAULT_USERNAME}", style=NordColors.NORD9)
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    info_table = Table(show_header=False, box=None, padding=(0, 1))
+    info_table.add_column(justify="right", style=f"bold {NordColors.NORD8}", width=12)
+    info_table.add_column(style=NordColors.NORD9)
+
+    info_table.add_row("System:", f"{platform.system()} {platform.release()}")
+    info_table.add_row("Time:", current_time)
+    info_table.add_row("User:", DEFAULT_USERNAME)
 
     return Panel(
-        info_text,
+        info_table,
         border_style=NordColors.NORD3,
         box=box.ROUNDED,
-        padding=(1, 2),  # Increased padding
+        padding=(1, 2),
         title=Text("Session Info", style=f"bold {NordColors.NORD7}"),
     )
 
@@ -562,11 +571,13 @@ def show_main_menu() -> None:
         clear_screen()
 
         # Update layout components
-        layout["header"].update(render_header())
-        layout["info"].update(render_info())
-        layout["machines"].update(create_machine_table(machines))
-        layout["devices"].update(create_local_devices_table(local_devices))
-        layout["footer"].update(render_footer())
+        layout["content"]["header"].update(render_header())
+        layout["content"]["info"].update(render_info())
+        layout["content"]["machines"].update(create_machine_table(machines))
+        layout["content"]["devices"].update(create_local_devices_table(local_devices))
+        layout["content"]["footer"].update(render_footer())
+        layout["margin_top"].update(Text(""))
+        layout["margin_bottom"].update(Text(""))
 
         # Render the layout
         console.print(layout)
