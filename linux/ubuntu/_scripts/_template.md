@@ -1,975 +1,694 @@
-# LLM Pre-Prompt for Python Standard Library Script Generation
+LLM Pre-Prompt for Python Script Generation with Rich, Click, and pyfiglet
 
-## Objective
+Objective
 
-Develop Python command-line scripts that rely solely on the standard library to deliver robust functionality, user-friendly progress tracking, and clear feedback. The generated scripts should be modular, maintainable, and adhere to best practices in error handling, resource cleanup, and consistent code styling—all without external dependencies.
+Develop Python command‑line scripts that use the external libraries Rich, Click, and pyfiglet to deliver robust functionality, user‑friendly progress tracking, and clear, beautiful Nord‑themed CLI feedback. The generated scripts must be modular, maintainable, and adhere to best practices in error handling, resource cleanup, and consistent code styling. They should specifically produce interactive progress indicators and ASCII art headers styled in the Nord color palette.
 
-## Requirements & Guidelines
+Requirements & Guidelines
 
-### Core Structure
+Core Structure
+	•	Clear Organization:
+	•	Separate configuration, helper functions, and the main execution flow with descriptive comments.
+	•	Place all configuration and constants at the top of the script.
+	•	Progress Tracking and Spinners:
+	•	Use Rich for progress bars and status spinners to provide real‑time feedback on operations.
+	•	User Interface:
+	•	Use pyfiglet to generate pretty ASCII art headers.
+	•	Use Rich with Nord‑themed hex color values (e.g., #2E3440, #3B4252, #88C0D0, #8FBCBB, #BF616A, etc.) for all CLI output.
+	•	Use Click to handle command‑line options and arguments.
+	•	Error Handling & Cleanup:
+	•	Implement comprehensive try/except blocks.
+	•	Ensure graceful signal handling (e.g., for SIGINT and SIGTERM) and resource cleanup.
+	•	Display clear, styled error messages using Rich.
+	•	Coding Standards:
+	•	Use type hints, clear variable names, and descriptive docstrings.
+	•	Maintain consistent formatting and comment style throughout the code.
 
-- **Clear Organization:**  
-  - Separate configuration, helper functions, and the main execution flow with descriptive comments.
-  - Place all configuration and constants at the top of the script.
-- **Progress Tracking:**  
-  - Implement thread-safe progress bars using only the standard library.
-  - Include file transfer rate displays, ETA calculations, and human-readable size formatting.
-- **Error Handling:**  
-  - Use comprehensive try/except blocks with graceful exit modes.
-  - Display clear, ANSI color-coded error messages and perform necessary process cleanup.
-- **User Interface:**  
-  - Use ANSI color codes for section headers and status updates.
-  - Provide progress indicators during long operations and summary reports upon completion.
+Standard Features
+	•	Mandatory Elements:
+	•	Root privilege verification.
+	•	Signal handling for graceful interrupts.
+	•	Resource cleanup and clear status reporting.
+	•	User Interactivity:
+	•	The scripts should prompt the user for input when needed and use numbered lists for multiple‑choice selections.
+	•	All scripts should be written for Ubuntu/Linux systems and use Click for argument parsing.
 
-### Standard Features
+Pre‑Generation Process
+	•	Clarify Requirements:
+	•	Always ask the user for specific requirements and clarify any ambiguous points before generating code.
+	•	Confirm that the code should use Rich, Click, and pyfiglet and adhere to the CLI design as shown.
+	•	Adherence to Template:
+	•	Ensure that all generated code follows the principles and structure demonstrated in the example template below.
 
-- **Mandatory Elements:**  
-  - Root privilege verification.
-  - Signal handling for graceful interrupts.
-  - Resource cleanup and clear status reporting.
-- **Coding Standards:**  
-  - Use type hints, clear variable names, and descriptive docstrings.
-  - Maintain consistent formatting and comment style throughout the code.
+Example Template
 
-### Pre-Generation Process
+Below is the complete template that demonstrates the desired structure, style, and CLI design. Do not modify this template.
 
-- **Clarify Requirements:**  
-  - Always ask the user for specific requirements and clarify any ambiguous points before generating code.
-- **Adherence to Template:**  
-  - Ensure that all generated code follows the principles and structure demonstrated in the example template below.
-
----
-
-## Example Template
-
-Below is a complete template that demonstrates the desired structure, style, and CLI design for a file restore (backup) script. **Do not modify this template.**
-
-```python
 #!/usr/bin/env python3
 """
-Unified Restic Backup Script
+Enhanced Virtualization Environment Setup Script
 
-This script performs comprehensive backups of multiple system components:
-  • System (root filesystem)
-  • Virtual Machines (libvirt)
-  • Plex Media Server
-
-It uses restic to create efficient, incremental backups to Backblaze B2 storage with
-detailed progress tracking, robust error handling, and clear status reporting.
-The script handles each service independently, with appropriate exclusion patterns
-and repository organization.
+This utility sets up a virtualization environment on Ubuntu. It:
+  • Updates package lists and installs virtualization packages
+  • Manages virtualization services
+  • Configures and recreates the default NAT network
+  • Fixes storage permissions and user group settings
+  • Updates VM network settings, autostart, and starts VMs
+  • Verifies the overall setup
 
 Note: Run this script with root privileges.
 """
 
-import logging
+import atexit
 import os
-import platform
-import shutil
+import pwd
+import grp
 import signal
+import shutil
 import socket
 import subprocess
 import sys
-import threading
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union, Set, Callable
 
-#####################################
+import click
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.spinner import Spinner
+import pyfiglet
+
+# ------------------------------
 # Configuration
-#####################################
-
-# System information
+# ------------------------------
 HOSTNAME = socket.gethostname()
+OPERATION_TIMEOUT = 600  # seconds
 
-# ------------------------------------------------------------------------------
-# Configuration
-# ------------------------------------------------------------------------------
-B2_ACCOUNT_ID = "12345678"
-B2_ACCOUNT_KEY = "12345678"
-B2_BUCKET = "sawyer-backups"
-RESTIC_PASSWORD = "12345678"
+VM_STORAGE_PATHS = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
+VIRTUALIZATION_PACKAGES = [
+    "qemu-kvm",
+    "qemu-utils",
+    "libvirt-daemon-system",
+    "libvirt-clients",
+    "virt-manager",
+    "bridge-utils",
+    "cpu-checker",
+    "ovmf",
+    "virtinst",
+    "libguestfs-tools",
+    "virt-top",
+]
+VIRTUALIZATION_SERVICES = ["libvirtd", "virtlogd"]
 
-# Repository paths
-REPOSITORIES = {
-    "system": f"b2:{B2_BUCKET}:{HOSTNAME}/ubuntu-system-backup",
-    "vm": f"b2:{B2_BUCKET}:{HOSTNAME}/vm-backups",
-    "plex": f"b2:{B2_BUCKET}:{HOSTNAME}/plex-media-server-backup",
-}
+VM_OWNER = "root"
+VM_GROUP = "libvirt-qemu"
+VM_DIR_MODE = 0o2770
+VM_FILE_MODE = 0o0660
+LIBVIRT_USER_GROUP = "libvirt"
 
-# Backup sources and excludes
-BACKUP_CONFIGS = {
-    "system": {
-        "paths": ["/"],
-        "excludes": [
-            "/proc/*",
-            "/sys/*",
-            "/dev/*",
-            "/run/*",
-            "/tmp/*",
-            "/var/tmp/*",
-            "/mnt/*",
-            "/media/*",
-            "/var/cache/*",
-            "/var/log/*",
-            "/home/*/.cache/*",
-            "/swapfile",
-            "/lost+found",
-            "*.vmdk",
-            "*.vdi",
-            "*.qcow2",
-            "*.img",
-            "*.iso",
-            "*.tmp",
-            "*.swap.img",
-            "/var/lib/docker/*",
-            "/var/lib/lxc/*",
-        ],
-        "name": "System",
-        "description": "Root filesystem backup",
-    },
-    "vm": {
-        "paths": ["/etc/libvirt", "/var/lib/libvirt"],
-        "excludes": [],
-        "name": "Virtual Machines",
-        "description": "VM configuration and storage",
-    },
-    "plex": {
-        "paths": ["/var/lib/plexmediaserver", "/etc/default/plexmediaserver"],
-        "excludes": [
-            "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Cache/*",
-            "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Codecs/*",
-            "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Crash Reports/*",
-            "/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Logs/*",
-        ],
-        "name": "Plex Media Server",
-        "description": "Plex configuration and data",
-    },
-}
+DEFAULT_NETWORK_XML = """<network>
+  <name>default</name>
+  <forward mode='nat'/>
+  <bridge name='virbr0' stp='on' delay='0'/>
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+    </dhcp>
+  </ip>
+</network>
+"""
 
-# Progress tracking settings
-PROGRESS_WIDTH = 50
-CHUNK_SIZE = 1024 * 1024  # 1MB chunks for progress tracking
-RETENTION_POLICY = "7d"  # Keep snapshots from last 7 days
-MAX_WORKERS = min(32, (os.cpu_count() or 1) * 2)
+# ------------------------------
+# Nord-Themed Styles & Console Setup
+# ------------------------------
+# Nord color palette (adjust hex values as desired):
+# nord0:  #2E3440, nord1:  #3B4252, nord2:  #434C5E, nord3:  #4C566A
+# nord4:  #D8DEE9, nord5:  #E5E9F0, nord6:  #ECEFF4, nord7:  #8FBCBB
+# nord8:  #88C0D0, nord9:  #81A1C1, nord10: #5E81AC, nord11: #BF616A
 
-#####################################
-# UI and Progress Tracking Classes
-#####################################
+console = Console()
 
+def print_header(text: str) -> None:
+    """Print a pretty ASCII art header using pyfiglet."""
+    ascii_art = pyfiglet.figlet_format(text, font="slant")
+    console.print(ascii_art, style="bold #88C0D0")
 
-class Colors:
-    """ANSI color codes for terminal output"""
+def print_section(text: str) -> None:
+    """Print a section header."""
+    console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
 
-    HEADER = "\033[95m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    BLUE = "\033[94m"
-    ENDC = "\033[0m"
-    BOLD = "\033[1m"
+def print_step(text: str) -> None:
+    """Print a step description."""
+    console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+def print_success(text: str) -> None:
+    """Print a success message."""
+    console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
 
-class ProgressBar:
-    """Thread-safe progress bar with transfer rate display"""
+def print_warning(text: str) -> None:
+    """Print a warning message."""
+    console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
-    def __init__(self, total: int, desc: str = "", width: int = PROGRESS_WIDTH):
-        self.total = total
-        self.desc = desc
-        self.width = width
-        self.current = 0
-        self.start_time = time.time()
-        self._lock = threading.Lock()
+def print_error(text: str) -> None:
+    """Print an error message."""
+    console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
 
-    def update(self, amount: int) -> None:
-        """Update progress safely"""
-        with self._lock:
-            self.current = min(self.current + amount, self.total)
-            self._display()
-
-    def _format_size(self, bytes: int) -> str:
-        """Format bytes to human readable size"""
-        for unit in ["B", "KB", "MB", "GB"]:
-            if bytes < 1024:
-                return f"{bytes:.1f}{unit}"
-            bytes /= 1024
-        return f"{bytes:.1f}TB"
-
-    def _display(self) -> None:
-        """Display progress bar with transfer rate"""
-        filled = int(self.width * self.current / self.total)
-        bar = "=" * filled + "-" * (self.width - filled)
-        percent = self.current / self.total * 100
-
-        elapsed = time.time() - self.start_time
-        rate = self.current / elapsed if elapsed > 0 else 0
-        eta = (self.total - self.current) / rate if rate > 0 else 0
-
-        sys.stdout.write(
-            f"\r{self.desc}: |{bar}| {percent:>5.1f}% "
-            f"({self._format_size(self.current)}/{self._format_size(self.total)}) "
-            f"[{self._format_size(rate)}/s] [ETA: {eta:.0f}s]"
-        )
-        sys.stdout.flush()
-
-        if self.current >= self.total:
-            sys.stdout.write("\n")
-
-
-#####################################
-# Helper Functions
-#####################################
-
-
-def format_size(bytes: int) -> str:
-    """Format bytes to human readable size"""
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if bytes < 1024:
-            return f"{bytes:.1f} {unit}"
-        bytes /= 1024
-    return f"{bytes:.1f} PB"
-
-
-def print_header(message: str) -> None:
-    """Print formatted header"""
-    print(f"\n{Colors.HEADER}{Colors.BOLD}{'=' * 80}")
-    print(message.center(80))
-    print(f"{'=' * 80}{Colors.ENDC}\n")
-
-
-def print_section(message: str) -> None:
-    """Print formatted section header"""
-    print(f"\n{Colors.BLUE}{Colors.BOLD}▶ {message}{Colors.ENDC}")
-
-
-def run_command(
-    cmd: List[str], env: Optional[Dict[str, str]] = None, check: bool = True
-) -> subprocess.CompletedProcess:
-    """Run command with error handling"""
+# ------------------------------
+# Command Execution Helper
+# ------------------------------
+def run_command(cmd, env=None, check=True, capture_output=True, timeout=None):
     try:
-        return subprocess.run(cmd, env=env, check=check, text=True, capture_output=True)
+        result = subprocess.run(
+            cmd,
+            env=env or os.environ.copy(),
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
+        return result
     except subprocess.CalledProcessError as e:
-        print(f"{Colors.RED}Command failed: {' '.join(cmd)}")
-        print(f"Error: {e.stderr}{Colors.ENDC}")
+        print_error(f"Command failed: {' '.join(cmd)}")
+        if e.stdout:
+            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
+        if e.stderr:
+            console.print(f"[bold #BF616A]Stderr: {e.stderr.strip()}[/bold #BF616A]")
+        raise
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        raise
+    except Exception as e:
+        print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+# ------------------------------
+# Signal Handling & Cleanup
+# ------------------------------
+def signal_handler(sig, frame):
+    sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
+    print_warning(f"Process interrupted by {sig_name}. Cleaning up...")
+    cleanup()
+    sys.exit(128 + sig)
 
-def signal_handler(sig, frame) -> None:
-    """Handle interrupt signals gracefully"""
-    print(f"\n{Colors.YELLOW}Backup interrupted. Exiting...{Colors.ENDC}")
-    sys.exit(1)
+def cleanup():
+    print_step("Performing cleanup tasks...")
+    # Add any necessary cleanup steps here.
 
-
-def get_disk_usage(path: str = "/") -> Tuple[int, int, float]:
-    """
-    Get disk usage statistics
-
-    Args:
-        path: The path to check
-
-    Returns:
-        Tuple[int, int, float]: (total_bytes, used_bytes, percent_used)
-    """
-    stat = os.statvfs(path)
-    total = stat.f_blocks * stat.f_frsize
-    free = stat.f_bfree * stat.f_frsize
-    used = total - free
-    percent = (used / total) * 100
-
-    return total, used, percent
-
-
-def check_service_status(service_name: str) -> Tuple[bool, str]:
-    """
-    Check if a service is running
-
-    Args:
-        service_name: Name of the service to check
-
-    Returns:
-        Tuple[bool, str]: (is_running, status_message)
-    """
+# ------------------------------
+# Core Functions
+# ------------------------------
+def update_system_packages() -> bool:
+    print_section("Updating Package Lists")
     try:
-        result = run_command(["systemctl", "is-active", service_name], check=False)
-        is_running = result.returncode == 0
-        status = result.stdout.strip()
-
-        if is_running:
-            return True, "running"
-        else:
-            return False, status
+        with console.status("[bold #81A1C1]Updating package lists...", spinner="dots"):
+            run_command(["apt-get", "update"])
+        print_success("Package lists updated")
+        return True
     except Exception as e:
-        return False, str(e)
-
-
-#####################################
-# Validation Functions
-#####################################
-
-
-def check_root_privileges() -> bool:
-    """Check if script is run with root privileges"""
-    if os.geteuid() != 0:
-        print(
-            f"{Colors.RED}Error: This script must be run with root privileges.{Colors.ENDC}"
-        )
-        return False
-    return True
-
-
-def check_dependencies() -> bool:
-    """Check if required tools are installed"""
-    if not shutil.which("restic"):
-        print(
-            f"{Colors.RED}Error: Restic is not installed. Please install restic first.{Colors.ENDC}"
-        )
-        return False
-    return True
-
-
-def check_environment() -> bool:
-    """Check if required environment variables are set"""
-    missing_vars = []
-
-    if not B2_ACCOUNT_ID:
-        missing_vars.append("B2_ACCOUNT_ID")
-    if not B2_ACCOUNT_KEY:
-        missing_vars.append("B2_ACCOUNT_KEY")
-    if not RESTIC_PASSWORD:
-        missing_vars.append("RESTIC_PASSWORD")
-
-    if missing_vars:
-        print(
-            f"{Colors.RED}Error: The following environment variables are not set:{Colors.ENDC}"
-        )
-        for var in missing_vars:
-            print(f"  - {var}")
+        print_error(f"Failed to update package lists: {e}")
         return False
 
-    return True
-
-
-def check_service_paths(service: str) -> bool:
-    """
-    Check if required paths for a service exist
-
-    Args:
-        service: Service name to check paths for
-
-    Returns:
-        bool: True if all critical paths exist, False otherwise
-    """
-    config = BACKUP_CONFIGS[service]
-
-    if service == "system":
-        # System backup always has valid root path
+def install_virtualization_packages(packages) -> bool:
+    print_section("Installing Virtualization Packages")
+    if not packages:
+        print_warning("No packages specified")
         return True
-
-    elif service == "vm":
-        if not os.path.exists("/etc/libvirt") or not os.path.exists("/var/lib/libvirt"):
-            print(
-                f"{Colors.RED}Error: VM directories not found. Is libvirt installed?{Colors.ENDC}"
-            )
-            return False
-        return True
-
-    elif service == "plex":
-        if not os.path.exists("/var/lib/plexmediaserver"):
-            print(
-                f"{Colors.RED}Error: Plex Media Server installation not found.{Colors.ENDC}"
-            )
-            return False
-        return True
-
-    return False
-
-
-#####################################
-# Repository Management Functions
-#####################################
-
-
-def initialize_repository(service: str) -> bool:
-    """
-    Initialize repository for a service if not already initialized
-
-    Args:
-        service: Service name to initialize repository for
-
-    Returns:
-        bool: True if repository is initialized successfully, False otherwise
-    """
-    repo = REPOSITORIES[service]
-
-    try:
-        # Prepare environment with restic credentials
-        env = os.environ.copy()
-        env.update(
-            {
-                "RESTIC_PASSWORD": RESTIC_PASSWORD,
-                "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-                "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-            }
-        )
-
-        # Check if repository exists
-        try:
-            run_command(["restic", "--repo", repo, "snapshots"], env=env)
-            print(f"{Colors.GREEN}Repository already initialized.{Colors.ENDC}")
-            return True
-        except subprocess.CalledProcessError:
-            # Repository doesn't exist, initialize it
-            print("Repository not found. Initializing...")
-            run_command(["restic", "--repo", repo, "init"], env=env)
-            print(f"{Colors.GREEN}Repository initialized successfully.{Colors.ENDC}")
-            return True
-
-    except Exception as e:
-        print(f"{Colors.RED}Failed to initialize repository: {e}{Colors.ENDC}")
-        return False
-
-
-#####################################
-# Size Estimation Functions
-#####################################
-
-
-def estimate_system_backup_size() -> int:
-    """
-    Estimate the size of a system backup by sampling key directories
-
-    Returns:
-        int: Estimated backup size in bytes
-    """
-    # Get total system disk usage
-    total, used, percent = get_disk_usage("/")
-
-    # Sample key directories to estimate what percentage will be backed up
-    excluded_size = 0
-    excludes = BACKUP_CONFIGS["system"]["excludes"]
-
-    for exclude in excludes:
-        if "*" not in exclude:
-            # This is a directory exclusion
-            path = exclude.rstrip("/*")
+    total = len(packages)
+    print_step(f"Installing {total} packages: {', '.join(packages)}")
+    failed = []
+    with Progress(
+        SpinnerColumn(style="bold #81A1C1"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bold #88C0D0"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Installing packages", total=total)
+        for pkg in packages:
+            print_step(f"Installing: {pkg}")
             try:
-                if os.path.exists(path):
-                    dir_size = 0
-                    try:
-                        dir_size = sum(
-                            os.path.getsize(os.path.join(dirpath, filename))
-                            for dirpath, _, filenames in os.walk(path)
-                            for filename in filenames
-                        )
-                    except (PermissionError, OSError):
-                        pass
-                    excluded_size += dir_size
-            except (PermissionError, OSError):
-                pass
-
-    # Estimate: Used space minus excluded size, with safety margin
-    estimated_size = max(used - excluded_size, 0)
-
-    # Apply a compression factor (restic uses compression)
-    compression_factor = 0.7  # Assume 30% compression ratio
-    estimated_backup_size = int(estimated_size * compression_factor)
-
-    return estimated_backup_size
-
-
-def calculate_directory_size(
-    paths: List[str], excludes: List[str] = None
-) -> Tuple[int, int]:
-    """
-    Calculate the total size and file count for given paths with exclusions
-
-    Args:
-        paths: List of paths to calculate size for
-        excludes: List of exclude patterns
-
-    Returns:
-        Tuple[int, int]: (total_size_bytes, file_count)
-    """
-    total_size = 0
-    file_count = 0
-
-    # Create a list of excluded path prefixes
-    exclude_prefixes = []
-    if excludes:
-        exclude_prefixes = [
-            exclude.rstrip("*") for exclude in excludes if "*" in exclude
-        ]
-
-    # Process each backup path
-    for path in paths:
-        # Skip if path doesn't exist
-        if not os.path.exists(path):
-            print(
-                f"{Colors.YELLOW}Warning: Path {path} does not exist, skipping.{Colors.ENDC}"
-            )
-            continue
-
-        for root, dirs, files in os.walk(path):
-            # Check if this directory should be excluded
-            skip = False
-            for exclude_prefix in exclude_prefixes:
-                if root.startswith(exclude_prefix):
-                    skip = True
-                    break
-
-            if skip:
-                continue
-
-            # Process files in this directory
-            for file in files:
-                file_path = os.path.join(root, file)
-                try:
-                    # Check if file matches any exclude pattern
-                    file_skip = False
-                    if excludes:
-                        for exclude in excludes:
-                            if "*." in exclude:
-                                ext = exclude.split("*.")[-1]
-                                if file.endswith(f".{ext}"):
-                                    file_skip = True
-                                    break
-
-                    if file_skip:
-                        continue
-
-                    stat = os.stat(file_path)
-                    total_size += stat.st_size
-                    file_count += 1
-                except (FileNotFoundError, PermissionError, OSError):
-                    pass
-
-    return total_size, file_count
-
-
-#####################################
-# Backup Execution Functions
-#####################################
-
-
-def perform_backup(service: str) -> bool:
-    """
-    Perform a backup for a specific service
-
-    Args:
-        service: Service name to backup
-
-    Returns:
-        bool: True if backup succeeded, False otherwise
-    """
-    config = BACKUP_CONFIGS[service]
-    repo = REPOSITORIES[service]
-
-    print_header(f"Starting {config['name']} Backup")
-
-    try:
-        # Estimate backup size for progress tracking
-        print_section("Calculating Backup Size")
-
-        if service == "system":
-            estimated_size = estimate_system_backup_size()
-            file_count = 0  # We don't count files for system backup
-            print(f"Estimated backup size: {format_size(estimated_size)}")
-        else:
-            total_size, file_count = calculate_directory_size(
-                config["paths"], config["excludes"]
-            )
-            estimated_size = total_size
-            print(f"Found {file_count} files totaling {format_size(estimated_size)}")
-
-        if estimated_size == 0:
-            print(
-                f"{Colors.YELLOW}Warning: No files found to backup for {config['name']}.{Colors.ENDC}"
-            )
-            return False
-
-        # Prepare environment with restic credentials
-        env = os.environ.copy()
-        env.update(
-            {
-                "RESTIC_PASSWORD": RESTIC_PASSWORD,
-                "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-                "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-            }
-        )
-
-        print_section("Executing Backup")
-
-        # Start a progress monitor
-        progress = ProgressBar(estimated_size, desc="Backup progress")
-
-        # Construct backup command
-        backup_cmd = ["restic", "--repo", repo, "backup"]
-
-        # Add paths
-        backup_cmd.extend(config["paths"])
-
-        # Add excludes
-        for exclude in config["excludes"]:
-            backup_cmd.extend(["--exclude", exclude])
-
-        # Add progress monitoring
-        backup_cmd.append("--verbose")
-
-        # Run backup command with progress tracking
-        process = subprocess.Popen(
-            backup_cmd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            universal_newlines=True,
-        )
-
-        # Parse output to update progress
-        while True:
-            line = process.stdout.readline()
-            if not line:
-                break
-
-            # Skip empty lines
-            if not line.strip():
-                continue
-
-            # Print verbose output in a way that doesn't interfere with progress bar
-            print(f"\r{' ' * (PROGRESS_WIDTH + 60)}\r", end="")
-            print(line.strip())
-
-            # Update progress based on processed files (this is approximate)
-            if "added to the repository" in line:
-                try:
-                    # Extract bytes processed
-                    parts = line.split()
-                    for i, part in enumerate(parts):
-                        if part.endswith("B") and i > 0 and parts[i - 1].isdigit():
-                            bytes_str = parts[i - 1] + part
-
-                            # Convert to bytes for progress
-                            for unit, multiplier in {
-                                "B": 1,
-                                "KiB": 1024,
-                                "MiB": 1024**2,
-                                "GiB": 1024**3,
-                            }.items():
-                                if unit in bytes_str:
-                                    size = float(bytes_str.replace(unit, "").strip())
-                                    bytes_processed = int(size * multiplier)
-                                    progress.update(bytes_processed)
-                                    break
-                except Exception:
-                    # If parsing fails, just update with a small increment
-                    progress.update(CHUNK_SIZE)
-
-            # Ensure progress bar is redrawn
-            progress._display()
-
-        # Wait for process to complete
-        process.wait()
-
-        # Check if backup was successful
-        if process.returncode != 0:
-            print(
-                f"{Colors.RED}Backup failed with return code {process.returncode}.{Colors.ENDC}"
-            )
-            return False
-
-        print(
-            f"{Colors.GREEN}{config['name']} backup completed successfully.{Colors.ENDC}"
-        )
-        return True
-
-    except Exception as e:
-        print(f"{Colors.RED}Backup failed: {str(e)}{Colors.ENDC}")
+                proc = subprocess.Popen(
+                    ["apt-get", "install", "-y", pkg],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                for line in iter(proc.stdout.readline, ""):
+                    if "Unpacking" in line or "Setting up" in line:
+                        console.print("  " + line.strip(), style="#D8DEE9")
+                proc.wait()
+                if proc.returncode != 0:
+                    print_error(f"Failed to install {pkg}")
+                    failed.append(pkg)
+                else:
+                    print_success(f"{pkg} installed")
+            except Exception as e:
+                print_error(f"Error installing {pkg}: {e}")
+                failed.append(pkg)
+            progress.advance(task)
+    if failed:
+        print_warning(f"Failed to install: {', '.join(failed)}")
         return False
-
-
-def perform_retention(service: str) -> bool:
-    """
-    Apply retention policy to keep the repository size manageable
-
-    Args:
-        service: Service name to apply retention policy for
-
-    Returns:
-        bool: True if retention succeeded, False otherwise
-    """
-    repo = REPOSITORIES[service]
-    config = BACKUP_CONFIGS[service]
-
-    print_section("Applying Retention Policy")
-
-    try:
-        # Prepare environment with restic credentials
-        env = os.environ.copy()
-        env.update(
-            {
-                "RESTIC_PASSWORD": RESTIC_PASSWORD,
-                "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-                "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-            }
-        )
-
-        # Construct retention command
-        retention_cmd = [
-            "restic",
-            "--repo",
-            repo,
-            "forget",
-            "--prune",
-            "--keep-within",
-            RETENTION_POLICY,  # Keep snapshots from last 7 days
-        ]
-
-        print(f"Applying retention policy: keeping snapshots within {RETENTION_POLICY}")
-
-        # Run retention command
-        result = run_command(retention_cmd, env=env)
-
-        print(f"{Colors.GREEN}Retention policy applied successfully.{Colors.ENDC}")
-
-        return True
-
-    except Exception as e:
-        print(f"{Colors.RED}Failed to apply retention policy: {str(e)}{Colors.ENDC}")
-        return False
-
-
-def list_snapshots(service: str) -> bool:
-    """
-    List all snapshots in the repository for a service
-
-    Args:
-        service: Service name to list snapshots for
-
-    Returns:
-        bool: True if listing succeeded, False otherwise
-    """
-    repo = REPOSITORIES[service]
-    config = BACKUP_CONFIGS[service]
-
-    print_section("Listing Snapshots")
-
-    try:
-        # Prepare environment with restic credentials
-        env = os.environ.copy()
-        env.update(
-            {
-                "RESTIC_PASSWORD": RESTIC_PASSWORD,
-                "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-                "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-            }
-        )
-
-        # Run snapshots command
-        result = run_command(["restic", "--repo", repo, "snapshots"], env=env)
-
-        if result.stdout.strip():
-            print(result.stdout)
-        else:
-            print(f"{Colors.YELLOW}No snapshots found in the repository.{Colors.ENDC}")
-
-        return True
-
-    except Exception as e:
-        print(f"{Colors.RED}Failed to list snapshots: {str(e)}{Colors.ENDC}")
-        return False
-
-
-#####################################
-# Service-Specific Functions
-#####################################
-
-
-def backup_service(service: str) -> bool:
-    """
-    Execute the full backup workflow for a specific service
-
-    Args:
-        service: Service name to backup
-
-    Returns:
-        bool: True if all steps succeeded, False otherwise
-    """
-    if service not in BACKUP_CONFIGS:
-        print(f"{Colors.RED}Error: Unknown service '{service}'.{Colors.ENDC}")
-        return False
-
-    config = BACKUP_CONFIGS[service]
-
-    print_header(f"Processing {config['name']} Backup")
-    print(f"Description: {config['description']}")
-    print(f"Repository: {REPOSITORIES[service]}")
-    print(f"Paths: {', '.join(config['paths'])}")
-    print(f"Excludes: {len(config['excludes'])} patterns")
-
-    # Check service-specific dependencies
-    if not check_service_paths(service):
-        return False
-
-    # Check service status if applicable
-    if service == "vm":
-        vm_status, status_text = check_service_status("libvirtd")
-        print(f"libvirtd Service Status: {status_text}")
-    elif service == "plex":
-        plex_status, status_text = check_service_status("plexmediaserver")
-        print(f"Plex Service Status: {status_text}")
-
-    # Initialize repository
-    if not initialize_repository(service):
-        return False
-
-    # Perform backup
-    if not perform_backup(service):
-        return False
-
-    # Apply retention policy
-    if not perform_retention(service):
-        print(
-            f"{Colors.YELLOW}Warning: Failed to apply retention policy, but backup was successful.{Colors.ENDC}"
-        )
-
-    # List snapshots
-    list_snapshots(service)
-
+    print_success("All packages installed")
     return True
 
+def manage_virtualization_services(services) -> bool:
+    print_section("Managing Virtualization Services")
+    if not services:
+        print_warning("No services specified")
+        return True
+    total = len(services) * 2
+    failed = []
+    with Progress(
+        SpinnerColumn(style="bold #81A1C1"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bold #88C0D0"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Managing services", total=total)
+        for svc in services:
+            for action, cmd in [
+                ("enable", ["systemctl", "enable", svc]),
+                ("start", ["systemctl", "start", svc]),
+            ]:
+                print_step(f"{action.capitalize()} service: {svc}")
+                try:
+                    run_command(cmd)
+                    print_success(f"{svc} {action}d")
+                except Exception as e:
+                    print_error(f"Failed to {action} {svc}: {e}")
+                    failed.append(f"{svc} ({action})")
+                progress.advance(task)
+    if failed:
+        print_warning(f"Issues with: {', '.join(failed)}")
+        return False
+    print_success("Services managed successfully")
+    return True
 
-def backup_all_services() -> Dict[str, bool]:
-    """
-    Backup all configured services
+def recreate_default_network() -> bool:
+    print_section("Recreating Default Network")
+    try:
+        result = run_command(["virsh", "net-list", "--all"], capture_output=True, check=False)
+        if "default" in result.stdout:
+            print_step("Removing existing default network")
+            run_command(["virsh", "net-destroy", "default"], check=False)
+            autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
+            if autostart_path.exists() or autostart_path.is_symlink():
+                autostart_path.unlink()
+            run_command(["virsh", "net-undefine", "default"], check=False)
+        net_xml_path = Path("/tmp/default_network.xml")
+        net_xml_path.write_text(DEFAULT_NETWORK_XML)
+        print_step("Defining new default network")
+        run_command(["virsh", "net-define", str(net_xml_path)])
+        run_command(["virsh", "net-start", "default"])
+        run_command(["virsh", "net-autostart", "default"])
+        net_list = run_command(["virsh", "net-list"], capture_output=True)
+        if "default" in net_list.stdout and "active" in net_list.stdout:
+            print_success("Default network is active")
+            return True
+        print_error("Default network not running")
+        return False
+    except Exception as e:
+        print_error(f"Error recreating network: {e}")
+        return False
 
-    Returns:
-        Dict[str, bool]: Results of each service backup
-    """
-    results = {}
+def configure_default_network() -> bool:
+    print_section("Configuring Default Network")
+    try:
+        net_list = run_command(["virsh", "net-list", "--all"], capture_output=True)
+        if "default" in net_list.stdout:
+            print_step("Default network exists")
+            if "active" not in net_list.stdout:
+                print_step("Starting default network")
+                try:
+                    run_command(["virsh", "net-start", "default"])
+                    print_success("Default network started")
+                except Exception as e:
+                    print_error(f"Start failed: {e}")
+                    return recreate_default_network()
+        else:
+            print_step("Default network missing, creating it")
+            return recreate_default_network()
+        try:
+            net_info = run_command(["virsh", "net-info", "default"], capture_output=True)
+            if "Autostart:      yes" not in net_info.stdout:
+                print_step("Setting autostart")
+                autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
+                if autostart_path.exists() or autostart_path.is_symlink():
+                    autostart_path.unlink()
+                run_command(["virsh", "net-autostart", "default"])
+                print_success("Autostart enabled")
+            else:
+                print_success("Autostart already enabled")
+        except Exception as e:
+            print_warning(f"Autostart not set: {e}")
+        return True
+    except Exception as e:
+        print_error(f"Network configuration error: {e}")
+        return False
 
-    for service in BACKUP_CONFIGS:
-        print_header(f"--- {BACKUP_CONFIGS[service]['name']} Backup ---")
-        results[service] = backup_service(service)
+def get_virtual_machines():
+    vms = []
+    try:
+        result = run_command(["virsh", "list", "--all"], capture_output=True)
+        lines = result.stdout.strip().splitlines()
+        # Find the header separator (a line starting with dashes)
+        sep = next((i for i, line in enumerate(lines) if line.strip().startswith("----")), -1)
+        if sep < 0:
+            return []
+        for line in lines[sep + 1:]:
+            parts = line.split()
+            if len(parts) >= 3:
+                vms.append({"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])})
+        return vms
+    except Exception as e:
+        print_error(f"Error retrieving VMs: {e}")
+        return []
 
-    return results
+def set_vm_autostart(vms) -> bool:
+    print_section("Configuring VM Autostart")
+    if not vms:
+        print_warning("No VMs found")
+        return True
+    failed = []
+    with Progress(
+        SpinnerColumn(style="bold #81A1C1"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bold #88C0D0"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Setting VM autostart", total=len(vms))
+        for vm in vms:
+            name = vm["name"]
+            try:
+                print_step(f"Setting autostart for {name}")
+                info = run_command(["virsh", "dominfo", name], capture_output=True)
+                if "Autostart:        yes" in info.stdout:
+                    print_success(f"{name} already set")
+                else:
+                    run_command(["virsh", "autostart", name])
+                    print_success(f"{name} set to autostart")
+            except Exception as e:
+                print_error(f"Autostart failed for {name}: {e}")
+                failed.append(name)
+            progress.advance(task)
+    if failed:
+        print_warning(f"Autostart failed for: {', '.join(failed)}")
+        return False
+    return True
 
+def start_virtual_machines(vms) -> bool:
+    print_section("Starting Virtual Machines")
+    if not vms:
+        print_warning("No VMs found")
+        return True
+    to_start = [vm for vm in vms if vm["state"].lower() != "running"]
+    if not to_start:
+        print_success("All VMs are running")
+        return True
+    if not ensure_network_active_before_vm_start():
+        print_error("Default network not active")
+        return False
+    failed = []
+    with Progress(
+        SpinnerColumn(style="bold #81A1C1"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bold #88C0D0"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Starting VMs", total=len(to_start))
+        for vm in to_start:
+            name = vm["name"]
+            print_step(f"Starting {name}")
+            try:
+                with console.status(f"[bold #81A1C1]Starting {name}...", spinner="dots"):
+                    result = run_command(["virsh", "start", name], check=False)
+                    if result.returncode != 0:
+                        print_error(f"Failed to start {name}: {result.stderr}")
+                        failed.append(name)
+                    else:
+                        print_success(f"{name} started")
+                time.sleep(3)
+            except Exception as e:
+                print_error(f"Error starting {name}: {e}")
+                failed.append(name)
+            progress.advance(task)
+    if failed:
+        print_warning(f"Failed to start: {', '.join(failed)}")
+        return False
+    return True
 
-#####################################
-# Main Function
-#####################################
+def ensure_network_active_before_vm_start() -> bool:
+    print_step("Verifying default network before starting VMs")
+    try:
+        net_list = run_command(["virsh", "net-list"], capture_output=True)
+        for line in net_list.stdout.splitlines():
+            if "default" in line and "active" in line:
+                print_success("Default network is active")
+                return True
+        print_warning("Default network inactive; attempting restart")
+        return recreate_default_network()
+    except Exception as e:
+        print_error(f"Network verification error: {e}")
+        return False
 
+def fix_storage_permissions(paths) -> bool:
+    print_section("Fixing VM Storage Permissions")
+    if not paths:
+        print_warning("No storage paths specified")
+        return True
+    try:
+        uid = pwd.getpwnam(VM_OWNER).pw_uid
+        gid = grp.getgrnam(VM_GROUP).gr_gid
+    except KeyError as e:
+        print_error(f"User/group not found: {e}")
+        return False
 
-def main() -> None:
-    """Main execution function"""
-    # Setup signal handlers
+    for path_str in paths:
+        path = Path(path_str)
+        print_step(f"Processing {path}")
+        if not path.exists():
+            print_warning(f"{path} does not exist; creating")
+            path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
+        total_items = sum(1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path)))
+        with Progress(
+            SpinnerColumn(style="bold #81A1C1"),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=None, style="bold #88C0D0"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Updating permissions", total=total_items)
+            try:
+                os.chown(str(path), uid, gid)
+                os.chmod(str(path), VM_DIR_MODE)
+                progress.advance(task)
+                for root, dirs, files in os.walk(str(path)):
+                    for d in dirs:
+                        dpath = Path(root) / d
+                        try:
+                            os.chown(str(dpath), uid, gid)
+                            os.chmod(str(dpath), VM_DIR_MODE)
+                        except Exception as e:
+                            print_warning(f"Error on {dpath}: {e}")
+                        progress.advance(task)
+                    for f in files:
+                        fpath = Path(root) / f
+                        try:
+                            os.chown(str(fpath), uid, gid)
+                            os.chmod(str(fpath), VM_FILE_MODE)
+                        except Exception as e:
+                            print_warning(f"Error on {fpath}: {e}")
+                        progress.advance(task)
+            except Exception as e:
+                print_error(f"Failed on {path}: {e}")
+                return False
+    print_success("Storage permissions updated")
+    return True
+
+def configure_user_groups() -> bool:
+    print_section("Configuring User Group Membership")
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user:
+        print_warning("SUDO_USER not set; skipping group config")
+        return True
+    try:
+        pwd.getpwnam(sudo_user)
+        grp.getgrnam(LIBVIRT_USER_GROUP)
+    except KeyError as e:
+        print_error(f"User or group error: {e}")
+        return False
+    user_groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
+    primary = grp.getgrgid(pwd.getpwnam(sudo_user).pw_gid).gr_name
+    if primary not in user_groups:
+        user_groups.append(primary)
+    if LIBVIRT_USER_GROUP in user_groups:
+        print_success(f"{sudo_user} already in {LIBVIRT_USER_GROUP}")
+        return True
+    try:
+        print_step(f"Adding {sudo_user} to {LIBVIRT_USER_GROUP}")
+        run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
+        print_success(f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in.")
+        return True
+    except Exception as e:
+        print_error(f"Failed to add user: {e}")
+        return False
+
+def verify_virtualization_setup() -> bool:
+    print_section("Verifying Virtualization Setup")
+    passed = True
+    try:
+        svc = run_command(["systemctl", "is-active", "libvirtd"], check=False)
+        if svc.stdout.strip() == "active":
+            print_success("libvirtd is active")
+        else:
+            print_error("libvirtd is not active")
+            passed = False
+    except Exception as e:
+        print_error(f"Error checking libvirtd: {e}")
+        passed = False
+
+    try:
+        net = run_command(["virsh", "net-list"], capture_output=True, check=False)
+        if "default" in net.stdout and "active" in net.stdout:
+            print_success("Default network is active")
+        else:
+            print_error("Default network inactive")
+            passed = False
+    except Exception as e:
+        print_error(f"Network check error: {e}")
+        passed = False
+
+    try:
+        lsmod = run_command(["lsmod"], capture_output=True)
+        if "kvm" in lsmod.stdout:
+            print_success("KVM modules loaded")
+        else:
+            print_error("KVM modules missing")
+            passed = False
+    except Exception as e:
+        print_error(f"KVM check error: {e}")
+        passed = False
+
+    for path_str in VM_STORAGE_PATHS:
+        path = Path(path_str)
+        if path.exists():
+            print_success(f"Storage exists: {path}")
+        else:
+            print_error(f"Storage missing: {path}")
+            try:
+                path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
+                print_success(f"Created storage: {path}")
+            except Exception as e:
+                print_error(f"Failed to create {path}: {e}")
+                passed = False
+    if passed:
+        print_success("All verification checks passed!")
+    else:
+        print_warning("Some verification checks failed.")
+    return passed
+
+# ------------------------------
+# Main CLI Entry Point with click
+# ------------------------------
+@click.command()
+@click.option("--packages", is_flag=True, help="Only install packages")
+@click.option("--network", is_flag=True, help="Only configure network")
+@click.option("--permissions", is_flag=True, help="Only fix storage permissions")
+@click.option("--autostart", is_flag=True, help="Only set VM autostart")
+@click.option("--start", is_flag=True, help="Only start VMs")
+@click.option("--verify", is_flag=True, help="Only verify setup")
+@click.option("--fix", is_flag=True, help="Troubleshoot common issues")
+def main(packages, network, permissions, autostart, start, verify, fix):
+    """Enhanced Virtualization Environment Setup"""
+    # Setup signal handlers and cleanup
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    atexit.register(cleanup)
 
-    # Check root privileges
-    if not check_root_privileges():
+    print_header("Enhanced Virt Setup")
+    console.print(f"Hostname: [bold #D8DEE9]{HOSTNAME}[/bold #D8DEE9]")
+    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+    if os.geteuid() != 0:
+        print_error("Run this script as root (e.g., using sudo)")
         sys.exit(1)
 
-    # Check dependencies
-    if not check_dependencies():
-        sys.exit(1)
+    run_specific = any([packages, network, permissions, autostart, start, verify, fix])
 
-    # Check environment
-    if not check_environment():
-        sys.exit(1)
+    if fix or verify:
+        verify_virtualization_setup()
+        sys.exit(0)
 
-    print_header("Unified Restic Backup Script")
-    print(f"Hostname: {HOSTNAME}")
-    print(f"Platform: {platform.platform()}")
-    print(f"Backup bucket: {B2_BUCKET}")
-    print(f"Retention policy: {RETENTION_POLICY}")
-    print(f"Available services: {', '.join(BACKUP_CONFIGS.keys())}")
+    if not run_specific or packages:
+        if not update_system_packages():
+            print_warning("Package list update failed")
+        if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
+            print_error("Package installation issues encountered")
+        if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
+            print_warning("Service management issues encountered")
 
-    # Prompt for service selection
-    print(f"\nSelect service to backup:")
-    for i, service in enumerate(BACKUP_CONFIGS.keys(), 1):
-        config = BACKUP_CONFIGS[service]
-        print(f"{i}. {config['name']} - {config['description']}")
-    print(f"{len(BACKUP_CONFIGS) + 1}. All Services")
-
-    try:
-        choice = input("\nEnter your choice (1-4): ")
-        choice = int(choice.strip())
-
-        services = list(BACKUP_CONFIGS.keys())
-
-        if choice < 1 or choice > len(services) + 1:
-            print(f"{Colors.RED}Invalid choice. Exiting.{Colors.ENDC}")
-            sys.exit(1)
-
-        start_time = time.time()
-
-        if choice <= len(services):
-            # Single service backup
-            service = services[choice - 1]
-            success = backup_service(service)
-
-            if not success:
-                print(
-                    f"{Colors.RED}Backup of {BACKUP_CONFIGS[service]['name']} failed.{Colors.ENDC}"
-                )
-                sys.exit(1)
+    if not run_specific or network:
+        for attempt in range(1, 4):
+            print_step(f"Network configuration attempt {attempt}")
+            if configure_default_network():
+                break
+            time.sleep(2)
         else:
-            # All services
-            results = backup_all_services()
+            print_error("Failed to configure network after multiple attempts")
+            recreate_default_network()
 
-            # Check for failures
-            failures = [service for service, success in results.items() if not success]
+    if not run_specific or permissions:
+        fix_storage_permissions(VM_STORAGE_PATHS)
+        configure_user_groups()
 
-            if failures:
-                print_header("Backup Summary - FAILURES DETECTED")
-                print(
-                    f"{Colors.RED}The following services failed to backup:{Colors.ENDC}"
-                )
-                for service in failures:
-                    print(f"  • {BACKUP_CONFIGS[service]['name']}")
-                sys.exit(1)
+    if not run_specific or autostart or start:
+        vms = get_virtual_machines()
+        if vms:
+            print_success(f"Found {len(vms)} VMs")
+            if not run_specific or autostart:
+                set_vm_autostart(vms)
+            if not run_specific or start:
+                ensure_network_active_before_vm_start()
+                start_virtual_machines(vms)
+        else:
+            print_step("No VMs found")
 
-        # Calculate elapsed time
-        end_time = time.time()
-        elapsed = end_time - start_time
-        hours, remainder = divmod(elapsed, 3600)
-        minutes, seconds = divmod(remainder, 60)
+    if not run_specific:
+        verify_virtualization_setup()
 
-        # Print final summary
-        print_header("Backup Summary")
-        print(f"{Colors.GREEN}Backup completed successfully.{Colors.ENDC}")
-        print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Elapsed time: {int(hours)}h {int(minutes)}m {int(seconds)}s")
-
-    except KeyboardInterrupt:
-        print(f"\n{Colors.YELLOW}Backup interrupted by user{Colors.ENDC}")
-        sys.exit(130)
-    except ValueError:
-        print(f"{Colors.RED}Invalid input. Please enter a number.{Colors.ENDC}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n{Colors.RED}Backup failed: {e}{Colors.ENDC}")
-        sys.exit(1)
-
+    print_header("Setup Complete")
+    print_success("Virtualization environment setup complete!")
+    print_step("Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'.")
 
 if __name__ == "__main__":
-    main()
-```
+    try:
+        main()
+    except KeyboardInterrupt:
+        print_warning("Setup interrupted by user.")
+        sys.exit(130)
+    except Exception as e:
+        print_error(f"Unhandled error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
----
+Instructions for Code Generation
+	1.	Before Code Generation:
+	•	Ask the user for specific requirements and clarify any ambiguous points.
+	•	Confirm that the generated code must use Rich, Click, and pyfiglet and adhere to the Nord‑themed CLI design as demonstrated in the example template.
+	2.	Script Requirements:
+	•	Leverage Rich for progress tracking and styled output.
+	•	Use Click for argument parsing and interactive CLI.
+	•	Use pyfiglet for generating striking ASCII art headers.
+	•	Implement robust error handling, signal handling, and resource cleanup.
+	•	Maintain a clear structure with configuration, helper functions, and a main execution flow.
+	•	Always produce beautiful, Nord‑themed colored output for all CLI messages.
+	•	Write all scripts specifically for Ubuntu/Linux environments.
+	3.	Final Note:
+	•	Always ensure that the generated script strictly follows the structure and style demonstrated in the example template above while addressing the user’s specific needs.
+	•	Prompt the user for input using numbered lists for multiple choice selections as needed.
+	•	Ask: “What can I help you write now?” at the end of the pre-prompt.
 
-## Instructions for Code Generation
-
-1. **Before Code Generation:**  
-   - Ask the user for specific requirements and clarify any ambiguous points.
-   - Confirm that the code should use only the Python standard library and follow the CLI design as shown.
-
-2. **Script Requirements:**  
-   - Leverage the standard library to implement features such as progress tracking, error handling, signal handling, and resource cleanup.
-   - Use ANSI colors to enhance user feedback and status messages.
-   - Adhere to clear sectioning, include type hints, and maintain consistent formatting and documentation.
-
-3. **Final Note:**  
-   - Always ensure the generated script strictly follows the structure and style demonstrated in the example template above while addressing the user’s specific needs. The scripts you generate should prompt the user for input and use numbered lists for multiple choice selections as needed. They should all be written for Ubuntu / Linux specifically. Always use Argparse and the rest of the standard library as needed for all scripts and all scripts should produce beautiful and Nord themed colored output to the CLI. Ask me what you can help me write now.
+This pre-prompt instructs the AI to use the above template as a definitive guide for generating all future scripts in this style. Ask me what you can help me write now.
