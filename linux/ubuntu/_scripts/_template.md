@@ -1,694 +1,707 @@
-LLM Pre-Prompt for Python Script Generation with Rich, Click, and pyfiglet
+# **Guidelines for Creating Interactive Python Scripts with Rich and Pyfiglet**
 
-Objective
+## **Objective**
 
-Develop Python command‑line scripts that use the external libraries Rich, Click, and pyfiglet to deliver robust functionality, user‑friendly progress tracking, and clear, beautiful Nord‑themed CLI feedback. The generated scripts must be modular, maintainable, and adhere to best practices in error handling, resource cleanup, and consistent code styling. They should specifically produce interactive progress indicators and ASCII art headers styled in the Nord color palette.
+When writing Python scripts, please follow these guidelines to create well-structured, user-friendly programs with beautiful terminal interfaces. All scripts should be fully interactive and menu-driven by default, with no command-line argument parsing. Use the external libraries **Rich** and **pyfiglet** to provide robust functionality, user-friendly progress tracking, and clear, Nord-themed interactive feedback. All scripts should be modular, maintainable, and follow best practices in error handling, resource cleanup, and consistent code styling.
 
-Requirements & Guidelines
+## **Core Structure Requirements**
 
-Core Structure
-	•	Clear Organization:
-	•	Separate configuration, helper functions, and the main execution flow with descriptive comments.
-	•	Place all configuration and constants at the top of the script.
-	•	Progress Tracking and Spinners:
-	•	Use Rich for progress bars and status spinners to provide real‑time feedback on operations.
-	•	User Interface:
-	•	Use pyfiglet to generate pretty ASCII art headers.
-	•	Use Rich with Nord‑themed hex color values (e.g., #2E3440, #3B4252, #88C0D0, #8FBCBB, #BF616A, etc.) for all CLI output.
-	•	Use Click to handle command‑line options and arguments.
-	•	Error Handling & Cleanup:
-	•	Implement comprehensive try/except blocks.
-	•	Ensure graceful signal handling (e.g., for SIGINT and SIGTERM) and resource cleanup.
-	•	Display clear, styled error messages using Rich.
-	•	Coding Standards:
-	•	Use type hints, clear variable names, and descriptive docstrings.
-	•	Maintain consistent formatting and comment style throughout the code.
+- **Organization and Style**
+  - Implement a clear, hierarchical menu system for all functionality
+  - Separate configuration variables, helper functions, and the main execution flow with descriptive comments
+  - Place all configuration and constants at the top of the script
+  - Follow consistent formatting with clear variable names and descriptive docstrings
+  - Use type hints where appropriate
+  - Implement comprehensive try/except blocks for error handling
+  - Include proper signal handling for clean program interruption
+  - Ensure proper resource cleanup
 
-Standard Features
-	•	Mandatory Elements:
-	•	Root privilege verification.
-	•	Signal handling for graceful interrupts.
-	•	Resource cleanup and clear status reporting.
-	•	User Interactivity:
-	•	The scripts should prompt the user for input when needed and use numbered lists for multiple‑choice selections.
-	•	All scripts should be written for Ubuntu/Linux systems and use Click for argument parsing.
+- **Interface Requirements**
+  - Make all scripts fully interactive with intuitive menu-driven navigation
+  - Use **pyfiglet** to generate attractive ASCII art headers for menus and sections
+  - Use **Rich** with Nord-themed hex color values (`#88C0D0`, `#81A1C1`, `#A3BE8C`, `#EBCB8B`, `#BF616A`, etc.)
+  - Implement progress bars and status spinners for time-consuming operations
+  - Apply consistent color coding: green for success, yellow for warnings, red for errors, blue variants for information
+  - Create hierarchical menu structures for complex functionality
+  - Use numbered menu options for user selection
+  - Include confirmation prompts for potentially destructive operations
 
-Pre‑Generation Process
-	•	Clarify Requirements:
-	•	Always ask the user for specific requirements and clarify any ambiguous points before generating code.
-	•	Confirm that the code should use Rich, Click, and pyfiglet and adhere to the CLI design as shown.
-	•	Adherence to Template:
-	•	Ensure that all generated code follows the principles and structure demonstrated in the example template below.
+## **Standard Features**
 
-Example Template
+- Interactive menus as the primary interface for all functionality
+- Appropriate privilege verification when needed
+- Clear error messages that explain both what happened and potential next steps
+- Status tracking during long-running operations
+- User-friendly interactive menus with numbered options
+- Consistent visual styling throughout the interface
 
-Below is the complete template that demonstrates the desired structure, style, and CLI design. Do not modify this template.
+## **Color Palette Reference (Nord Theme)**
 
+- Polar Night (dark/background): `#2E3440`, `#3B4252`, `#434C5E`, `#4C566A`
+- Snow Storm (light/text): `#D8DEE9`, `#E5E9F0`, `#ECEFF4`
+- Frost (blue accents): `#8FBCBB`, `#88C0D0`, `#81A1C1`, `#5E81AC`
+- Aurora (status indicators): 
+  - Red (errors): `#BF616A`
+  - Orange (warnings): `#D08770`
+  - Yellow (caution): `#EBCB8B`
+  - Green (success): `#A3BE8C`
+  - Purple (special): `#B48EAD`
+
+## **Template Structure**
+
+```python
 #!/usr/bin/env python3
 """
-Enhanced Virtualization Environment Setup Script
+Universal Python Utility Template
+---------------------------------
 
-This utility sets up a virtualization environment on Ubuntu. It:
-  • Updates package lists and installs virtualization packages
-  • Manages virtualization services
-  • Configures and recreates the default NAT network
-  • Fixes storage permissions and user group settings
-  • Updates VM network settings, autostart, and starts VMs
-  • Verifies the overall setup
+A beautiful, interactive terminal-based utility template with comprehensive
+error handling, real-time progress tracking, and an intuitive menu system.
+All functionality is menu-driven with an attractive Nord-themed interface.
 
-Note: Run this script with root privileges.
+This template provides a foundation for creating any type of Python utility
+with a focus on user experience and robust implementation.
+
+Version: 1.0.0
 """
 
 import atexit
+import datetime
 import os
-import pwd
-import grp
+import platform
 import signal
-import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
-import xml.etree.ElementTree as ET
-from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
-from rich.spinner import Spinner
+from rich.panel import Panel
+from rich.table import Table
+from rich.prompt import Prompt, Confirm
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TaskID
+)
 import pyfiglet
 
-# ------------------------------
-# Configuration
-# ------------------------------
+# ==============================
+# Configuration & Constants
+# ==============================
+APP_NAME = "Universal Utility"
+VERSION = "1.0.0"
 HOSTNAME = socket.gethostname()
-OPERATION_TIMEOUT = 600  # seconds
+LOG_FILE = os.path.expanduser("~/app_logs/utility.log")
+DEFAULT_WORK_DIR = os.path.expanduser("~/Documents")
 
-VM_STORAGE_PATHS = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
-VIRTUALIZATION_PACKAGES = [
-    "qemu-kvm",
-    "qemu-utils",
-    "libvirt-daemon-system",
-    "libvirt-clients",
-    "virt-manager",
-    "bridge-utils",
-    "cpu-checker",
-    "ovmf",
-    "virtinst",
-    "libguestfs-tools",
-    "virt-top",
-]
-VIRTUALIZATION_SERVICES = ["libvirtd", "virtlogd"]
+# Terminal dimensions
+import shutil
+TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
+TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 
-VM_OWNER = "root"
-VM_GROUP = "libvirt-qemu"
-VM_DIR_MODE = 0o2770
-VM_FILE_MODE = 0o0660
-LIBVIRT_USER_GROUP = "libvirt"
-
-DEFAULT_NETWORK_XML = """<network>
-  <name>default</name>
-  <forward mode='nat'/>
-  <bridge name='virbr0' stp='on' delay='0'/>
-  <ip address='192.168.122.1' netmask='255.255.255.0'>
-    <dhcp>
-      <range start='192.168.122.2' end='192.168.122.254'/>
-    </dhcp>
-  </ip>
-</network>
-"""
-
-# ------------------------------
-# Nord-Themed Styles & Console Setup
-# ------------------------------
-# Nord color palette (adjust hex values as desired):
-# nord0:  #2E3440, nord1:  #3B4252, nord2:  #434C5E, nord3:  #4C566A
-# nord4:  #D8DEE9, nord5:  #E5E9F0, nord6:  #ECEFF4, nord7:  #8FBCBB
-# nord8:  #88C0D0, nord9:  #81A1C1, nord10: #5E81AC, nord11: #BF616A
-
+# ==============================
+# Nord-Themed Console Setup
+# ==============================
 console = Console()
 
-def print_header(text: str) -> None:
-    """Print a pretty ASCII art header using pyfiglet."""
-    ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style="bold #88C0D0")
+# Nord Theme Color Definitions
+class NordColors:
+    """Nord theme color palette for consistent UI styling."""
+    # Polar Night (dark/background)
+    NORD0 = "#2E3440"
+    NORD1 = "#3B4252"
+    NORD2 = "#434C5E"
+    NORD3 = "#4C566A"
+    
+    # Snow Storm (light/text)
+    NORD4 = "#D8DEE9"
+    NORD5 = "#E5E9F0"
+    NORD6 = "#ECEFF4"
+    
+    # Frost (blue accents)
+    NORD7 = "#8FBCBB"
+    NORD8 = "#88C0D0"
+    NORD9 = "#81A1C1"
+    NORD10 = "#5E81AC"
+    
+    # Aurora (status indicators)
+    NORD11 = "#BF616A"  # Red (errors)
+    NORD12 = "#D08770"  # Orange (warnings)
+    NORD13 = "#EBCB8B"  # Yellow (caution)
+    NORD14 = "#A3BE8C"  # Green (success)
+    NORD15 = "#B48EAD"  # Purple (special)
 
-def print_section(text: str) -> None:
-    """Print a section header."""
-    console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+# ==============================
+# UI Helper Functions
+# ==============================
+def print_header(text: str) -> None:
+    """Print a striking header using pyfiglet."""
+    ascii_art = pyfiglet.figlet_format(text, font="slant")
+    console.print(ascii_art, style=f"bold {NordColors.NORD8}")
+    
+def print_section(title: str) -> None:
+    """Print a formatted section header."""
+    border = "═" * TERM_WIDTH
+    console.print(f"\n[bold {NordColors.NORD8}]{border}[/]")
+    console.print(f"[bold {NordColors.NORD8}]  {title.center(TERM_WIDTH - 4)}[/]")
+    console.print(f"[bold {NordColors.NORD8}]{border}[/]\n")
+
+def print_info(message: str) -> None:
+    """Print an informational message."""
+    console.print(f"[{NordColors.NORD9}]{message}[/]")
+
+def print_success(message: str) -> None:
+    """Print a success message."""
+    console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
+
+def print_warning(message: str) -> None:
+    """Print a warning message."""
+    console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
+
+def print_error(message: str) -> None:
+    """Print an error message."""
+    console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
 
 def print_step(text: str) -> None:
     """Print a step description."""
-    console.print(f"[#88C0D0]• {text}[/#88C0D0]")
+    console.print(f"[{NordColors.NORD8}]• {text}[/]")
 
-def print_success(text: str) -> None:
-    """Print a success message."""
-    console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+def format_size(num_bytes: float) -> str:
+    """Convert bytes to a human-readable string."""
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if num_bytes < 1024:
+            return f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024
+    return f"{num_bytes:.1f} PB"
 
-def print_warning(text: str) -> None:
-    """Print a warning message."""
-    console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
+def format_time(seconds: float) -> str:
+    """Format seconds into a human-readable time string."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    elif seconds < 3600:
+        return f"{seconds / 60:.1f}m"
+    else:
+        return f"{seconds / 3600:.1f}h"
 
-def print_error(text: str) -> None:
-    """Print an error message."""
-    console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+def clear_screen() -> None:
+    """Clear the terminal screen."""
+    console.clear()
 
-# ------------------------------
-# Command Execution Helper
-# ------------------------------
-def run_command(cmd, env=None, check=True, capture_output=True, timeout=None):
+def pause() -> None:
+    """Pause execution until user presses Enter."""
+    console.input(f"\n[{NordColors.NORD15}]Press Enter to continue...[/]")
+
+def get_user_input(prompt: str, default: str = "") -> str:
+    """Get input from the user with a styled prompt."""
+    return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
+
+def get_user_choice(prompt: str, choices: List[str]) -> str:
+    """Get a choice from the user with a styled prompt."""
+    return Prompt.ask(
+        f"[bold {NordColors.NORD15}]{prompt}[/]", 
+        choices=choices,
+        show_choices=True
+    )
+
+def get_user_confirmation(prompt: str) -> bool:
+    """Get confirmation from the user."""
+    return Confirm.ask(f"[bold {NordColors.NORD15}]{prompt}[/]")
+
+def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
+    """Create a Rich table for menu options."""
+    table = Table(title=title, box=None, title_style=f"bold {NordColors.NORD8}")
+    table.add_column("Option", style=f"{NordColors.NORD9}", justify="right")
+    table.add_column("Description", style=f"{NordColors.NORD4}")
+    
+    for key, description in options:
+        table.add_row(key, description)
+    
+    return table
+
+# ==============================
+# Logging Setup
+# ==============================
+def setup_logging(log_file: str = LOG_FILE) -> None:
+    """Configure basic logging for the script."""
+    import logging
+
     try:
-        result = subprocess.run(
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+
+        logging.basicConfig(
+            filename=log_file,
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+        print_step(f"Logging configured to: {log_file}")
+    except Exception as e:
+        print_warning(f"Could not set up logging to {log_file}: {e}")
+        print_step("Continuing without logging to file...")
+
+# ==============================
+# Signal Handling & Cleanup
+# ==============================
+def cleanup() -> None:
+    """Perform cleanup tasks before exit."""
+    print_step("Performing cleanup tasks...")
+    # Add cleanup tasks here
+
+atexit.register(cleanup)
+
+def signal_handler(signum, frame) -> None:
+    """Handle termination signals gracefully."""
+    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    print_warning(f"\nScript interrupted by {sig_name}.")
+    cleanup()
+    sys.exit(128 + signum)
+
+# Register signal handlers
+for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(sig, signal_handler)
+
+# ==============================
+# Progress Tracking Classes
+# ==============================
+class ProgressManager:
+    """Unified progress tracking system with multiple display options."""
+    
+    def __init__(self):
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold {task.fields[color]}]{task.description}"),
+            BarColumn(bar_width=None),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("[{task.fields[status]}]"),
+            TimeRemainingColumn(),
+            console=console,
+            expand=True
+        )
+    
+    def __enter__(self):
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.progress.stop()
+    
+    def add_task(self, description: str, total: float, color: str = NordColors.NORD8) -> TaskID:
+        """Add a new task to the progress manager."""
+        return self.progress.add_task(
+            description, 
+            total=total,
+            color=color,
+            status=f"{NordColors.NORD9}starting"
+        )
+        
+    def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
+        """Update a task's progress."""
+        self.progress.update(task_id, advance=advance, **kwargs)
+        
+    def start(self):
+        """Start displaying the progress bar."""
+        self.progress.start()
+        
+    def stop(self):
+        """Stop displaying the progress bar."""
+        self.progress.stop()
+
+class Spinner:
+    """Thread-safe spinner for indeterminate progress."""
+
+    def __init__(self, message: str):
+        self.message = message
+        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        self.current = 0
+        self.spinning = False
+        self.thread: Optional[threading.Thread] = None
+        self.start_time = 0
+        self._lock = threading.Lock()
+
+    def _spin(self) -> None:
+        """Internal method to update the spinner."""
+        while self.spinning:
+            elapsed = time.time() - self.start_time
+            time_str = format_time(elapsed)
+            with self._lock:
+                console.print(
+                    f"\r[{NordColors.NORD10}]{self.spinner_chars[self.current]}[/] "
+                    f"[{NordColors.NORD8}]{self.message}[/] "
+                    f"[[dim]elapsed: {time_str}[/dim]]",
+                    end="",
+                )
+                self.current = (self.current + 1) % len(self.spinner_chars)
+            time.sleep(0.1)  # Spinner update interval
+
+    def start(self) -> None:
+        """Start the spinner."""
+        with self._lock:
+            self.spinning = True
+            self.start_time = time.time()
+            self.thread = threading.Thread(target=self._spin, daemon=True)
+            self.thread.start()
+
+    def stop(self, success: bool = True) -> None:
+        """Stop the spinner and display completion message."""
+        with self._lock:
+            self.spinning = False
+            if self.thread:
+                self.thread.join()
+            elapsed = time.time() - self.start_time
+            time_str = format_time(elapsed)
+
+            # Clear the line
+            console.print("\r" + " " * TERM_WIDTH, end="\r")
+
+            if success:
+                console.print(
+                    f"[{NordColors.NORD14}]✓[/] [{NordColors.NORD8}]{self.message}[/] "
+                    f"[{NordColors.NORD14}]completed[/] in {time_str}"
+                )
+            else:
+                console.print(
+                    f"[{NordColors.NORD11}]✗[/] [{NordColors.NORD8}]{self.message}[/] "
+                    f"[{NordColors.NORD11}]failed[/] after {time_str}"
+                )
+
+    def __enter__(self):
+        """Context manager entry."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Context manager exit."""
+        self.stop(success=exc_type is None)
+
+# ==============================
+# System Helper Functions
+# ==============================
+def run_command(
+    cmd: List[str],
+    env: Optional[Dict[str, str]] = None,
+    check: bool = True,
+    capture_output: bool = False,
+    verbose: bool = False,
+) -> subprocess.CompletedProcess:
+    """Run a shell command and handle errors."""
+    if verbose:
+        print_step(f"Executing: {' '.join(cmd)}")
+    try:
+        return subprocess.run(
             cmd,
             env=env or os.environ.copy(),
             check=check,
             text=True,
             capture_output=capture_output,
-            timeout=timeout,
         )
-        return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
-        if e.stdout:
-            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if e.stderr:
-            console.print(f"[bold #BF616A]Stderr: {e.stderr.strip()}[/bold #BF616A]")
-        raise
-    except subprocess.TimeoutExpired:
-        print_error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
-        raise
-    except Exception as e:
-        print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
+        if hasattr(e, "stderr") and e.stderr:
+            print_error(f"Error details: {e.stderr.strip()}")
         raise
 
-# ------------------------------
-# Signal Handling & Cleanup
-# ------------------------------
-def signal_handler(sig, frame):
-    sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
-    print_warning(f"Process interrupted by {sig_name}. Cleaning up...")
-    cleanup()
-    sys.exit(128 + sig)
-
-def cleanup():
-    print_step("Performing cleanup tasks...")
-    # Add any necessary cleanup steps here.
-
-# ------------------------------
-# Core Functions
-# ------------------------------
-def update_system_packages() -> bool:
-    print_section("Updating Package Lists")
+def check_privileges() -> bool:
+    """Check if script is running with elevated privileges."""
     try:
-        with console.status("[bold #81A1C1]Updating package lists...", spinner="dots"):
-            run_command(["apt-get", "update"])
-        print_success("Package lists updated")
+        if os.name == 'nt':  # Windows
+            import ctypes
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        else:  # Unix/Linux/Mac
+            return os.geteuid() == 0
+    except:
+        return False
+
+def ensure_directory(path: str) -> bool:
+    """Create directory if it doesn't exist."""
+    try:
+        os.makedirs(path, exist_ok=True)
+        print_step(f"Directory ensured: {path}")
         return True
     except Exception as e:
-        print_error(f"Failed to update package lists: {e}")
+        print_error(f"Failed to create directory '{path}': {e}")
         return False
 
-def install_virtualization_packages(packages) -> bool:
-    print_section("Installing Virtualization Packages")
-    if not packages:
-        print_warning("No packages specified")
-        return True
-    total = len(packages)
-    print_step(f"Installing {total} packages: {', '.join(packages)}")
-    failed = []
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Installing packages", total=total)
-        for pkg in packages:
-            print_step(f"Installing: {pkg}")
-            try:
-                proc = subprocess.Popen(
-                    ["apt-get", "install", "-y", pkg],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                )
-                for line in iter(proc.stdout.readline, ""):
-                    if "Unpacking" in line or "Setting up" in line:
-                        console.print("  " + line.strip(), style="#D8DEE9")
-                proc.wait()
-                if proc.returncode != 0:
-                    print_error(f"Failed to install {pkg}")
-                    failed.append(pkg)
-                else:
-                    print_success(f"{pkg} installed")
-            except Exception as e:
-                print_error(f"Error installing {pkg}: {e}")
-                failed.append(pkg)
-            progress.advance(task)
-    if failed:
-        print_warning(f"Failed to install: {', '.join(failed)}")
-        return False
-    print_success("All packages installed")
-    return True
+def check_dependency(cmd: str) -> bool:
+    """Check if a command is available in the system."""
+    return shutil.which(cmd) is not None
 
-def manage_virtualization_services(services) -> bool:
-    print_section("Managing Virtualization Services")
-    if not services:
-        print_warning("No services specified")
-        return True
-    total = len(services) * 2
-    failed = []
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Managing services", total=total)
-        for svc in services:
-            for action, cmd in [
-                ("enable", ["systemctl", "enable", svc]),
-                ("start", ["systemctl", "start", svc]),
-            ]:
-                print_step(f"{action.capitalize()} service: {svc}")
+# ==============================
+# Example Task Functions
+# ==============================
+def task_with_progress_bar() -> None:
+    """Example task that uses a progress bar."""
+    print_section("Progress Bar Demo")
+    
+    total_steps = 100
+    print_info(f"Simulating task with {total_steps} steps")
+    
+    with ProgressManager() as progress:
+        task_id = progress.add_task("Processing", total=total_steps)
+        progress.start()
+        
+        for i in range(total_steps):
+            # Simulate work
+            time.sleep(0.05)
+            # Update progress
+            status_text = f"[{NordColors.NORD9}]Step {i+1}/{total_steps}"
+            progress.update(task_id, advance=1, status=status_text)
+    
+    print_success("Task completed successfully!")
+
+def task_with_spinner() -> None:
+    """Example task that uses a spinner for indeterminate progress."""
+    print_section("Spinner Demo")
+    
+    print_info("Starting process with unknown duration")
+    
+    with Spinner("Processing data") as spinner:
+        # Simulate work that takes a variable amount of time
+        time.sleep(3)
+    
+    print_success("Process completed successfully!")
+
+def task_with_multiple_progress_bars() -> None:
+    """Example task with multiple concurrent progress bars."""
+    print_section("Multiple Progress Bars Demo")
+    
+    print_info("Starting multiple concurrent tasks")
+    
+    with ProgressManager() as progress:
+        # Add multiple tasks
+        task1 = progress.add_task("Downloading", total=100, color=NordColors.NORD8)
+        task2 = progress.add_task("Processing", total=50, color=NordColors.NORD9)
+        task3 = progress.add_task("Uploading", total=75, color=NordColors.NORD10)
+        
+        progress.start()
+        
+        # Task 1 progress
+        for i in range(100):
+            time.sleep(0.02)
+            progress.update(task1, advance=1, status=f"[{NordColors.NORD9}]{i+1}%")
+            
+            # Update other tasks at different rates
+            if i % 2 == 0 and i < 100:
+                progress.update(task2, advance=1, status=f"[{NordColors.NORD9}]Step {(i//2)+1}")
+            
+            if i % 4 == 0 and i < 300:
+                progress.update(task3, advance=1, status=f"[{NordColors.NORD9}]File {(i//4)+1}")
+    
+    print_success("All tasks completed successfully!")
+
+def task_file_operations() -> None:
+    """Example task demonstrating file operations with progress tracking."""
+    print_section("File Operations Demo")
+    
+    # Get source and destination directories
+    source_dir = get_user_input("Enter source directory:", os.path.expanduser("~"))
+    dest_dir = get_user_input("Enter destination directory:", DEFAULT_WORK_DIR)
+    
+    # Ensure destination directory exists
+    if not ensure_directory(dest_dir):
+        print_error("Failed to create destination directory")
+        return
+    
+    # List files in source directory
+    try:
+        files = [f for f in os.listdir(source_dir) if os.path.isfile(os.path.join(source_dir, f))]
+        
+        if not files:
+            print_warning(f"No files found in {source_dir}")
+            return
+        
+        print_info(f"Found {len(files)} files in {source_dir}")
+        
+        # Ask for confirmation
+        if not get_user_confirmation(f"Copy {len(files)} files to {dest_dir}?"):
+            print_info("Operation cancelled")
+            return
+        
+        # Copy files with progress bar
+        with ProgressManager() as progress:
+            task_id = progress.add_task(f"Copying files", total=len(files))
+            progress.start()
+            
+            for i, file in enumerate(files):
+                src_path = os.path.join(source_dir, file)
+                dst_path = os.path.join(dest_dir, file)
+                
                 try:
-                    run_command(cmd)
-                    print_success(f"{svc} {action}d")
+                    # Show current file
+                    progress.update(
+                        task_id, 
+                        advance=0,  # Don't advance yet
+                        status=f"[{NordColors.NORD9}]{file}"
+                    )
+                    
+                    # Simulate file copy (replace with actual file operations)
+                    time.sleep(0.2)  # Simulate copy taking time
+                    
+                    # Update progress
+                    progress.update(task_id, advance=1)
+                    
                 except Exception as e:
-                    print_error(f"Failed to {action} {svc}: {e}")
-                    failed.append(f"{svc} ({action})")
-                progress.advance(task)
-    if failed:
-        print_warning(f"Issues with: {', '.join(failed)}")
-        return False
-    print_success("Services managed successfully")
-    return True
-
-def recreate_default_network() -> bool:
-    print_section("Recreating Default Network")
-    try:
-        result = run_command(["virsh", "net-list", "--all"], capture_output=True, check=False)
-        if "default" in result.stdout:
-            print_step("Removing existing default network")
-            run_command(["virsh", "net-destroy", "default"], check=False)
-            autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
-            if autostart_path.exists() or autostart_path.is_symlink():
-                autostart_path.unlink()
-            run_command(["virsh", "net-undefine", "default"], check=False)
-        net_xml_path = Path("/tmp/default_network.xml")
-        net_xml_path.write_text(DEFAULT_NETWORK_XML)
-        print_step("Defining new default network")
-        run_command(["virsh", "net-define", str(net_xml_path)])
-        run_command(["virsh", "net-start", "default"])
-        run_command(["virsh", "net-autostart", "default"])
-        net_list = run_command(["virsh", "net-list"], capture_output=True)
-        if "default" in net_list.stdout and "active" in net_list.stdout:
-            print_success("Default network is active")
-            return True
-        print_error("Default network not running")
-        return False
+                    print_error(f"Error copying {file}: {e}")
+            
+        print_success(f"Successfully processed {len(files)} files")
+        
     except Exception as e:
-        print_error(f"Error recreating network: {e}")
-        return False
+        print_error(f"Error accessing directory: {e}")
 
-def configure_default_network() -> bool:
-    print_section("Configuring Default Network")
+def task_system_info() -> None:
+    """Display detailed system information."""
+    print_section("System Information")
+    
+    # Create a table for system info
+    table = Table(title="System Information", box=None)
+    table.add_column("Property", style=f"{NordColors.NORD9}")
+    table.add_column("Value", style=f"{NordColors.NORD4}")
+    
+    # System details
+    table.add_row("Hostname", HOSTNAME)
+    table.add_row("Platform", platform.system())
+    table.add_row("Platform Version", platform.version())
+    table.add_row("Architecture", platform.machine())
+    table.add_row("Processor", platform.processor())
+    
+    # Python details
+    table.add_row("Python Version", platform.python_version())
+    table.add_row("Python Implementation", platform.python_implementation())
+    
+    # User details
+    table.add_row("Username", os.environ.get('USER', os.environ.get('USERNAME', 'Unknown')))
+    table.add_row("Home Directory", os.path.expanduser("~"))
+    table.add_row("Current Directory", os.getcwd())
+    
+    # Time details
+    table.add_row("Current Time", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    table.add_row("Timezone", time.tzname[0])
+    
+    console.print(table)
+    
+    # Memory information
     try:
-        net_list = run_command(["virsh", "net-list", "--all"], capture_output=True)
-        if "default" in net_list.stdout:
-            print_step("Default network exists")
-            if "active" not in net_list.stdout:
-                print_step("Starting default network")
-                try:
-                    run_command(["virsh", "net-start", "default"])
-                    print_success("Default network started")
-                except Exception as e:
-                    print_error(f"Start failed: {e}")
-                    return recreate_default_network()
+        import psutil
+        memory = psutil.virtual_memory()
+        
+        print_section("Memory Information")
+        mem_table = Table(box=None)
+        mem_table.add_column("Metric", style=f"{NordColors.NORD9}")
+        mem_table.add_column("Value", style=f"{NordColors.NORD4}")
+        
+        mem_table.add_row("Total Memory", format_size(memory.total))
+        mem_table.add_row("Available Memory", format_size(memory.available))
+        mem_table.add_row("Used Memory", format_size(memory.used))
+        mem_table.add_row("Memory Percentage", f"{memory.percent}%")
+        
+        console.print(mem_table)
+    except ImportError:
+        print_info("Install psutil package for memory information")
+
+# ==============================
+# Menu System
+# ==============================
+def main_menu() -> None:
+    """Display the main menu and handle user selection."""
+    while True:
+        clear_screen()
+        print_header(APP_NAME)
+        print_info(f"Version: {VERSION}")
+        print_info(f"System: {platform.system()} {platform.release()}")
+        print_info(f"User: {os.environ.get('USER', os.environ.get('USERNAME', 'Unknown'))}")
+        print_info(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Main menu options
+        menu_options = [
+            ("1", "Progress Bar Demo"),
+            ("2", "Spinner Demo"),
+            ("3", "Multiple Progress Bars Demo"),
+            ("4", "File Operations Demo"),
+            ("5", "System Information"),
+            ("0", "Exit")
+        ]
+        
+        console.print(create_menu_table("Main Menu", menu_options))
+        
+        # Get user selection
+        choice = get_user_input("Enter your choice (0-5):")
+        
+        if choice == "1":
+            task_with_progress_bar()
+            pause()
+        elif choice == "2":
+            task_with_spinner()
+            pause()
+        elif choice == "3":
+            task_with_multiple_progress_bars()
+            pause()
+        elif choice == "4":
+            task_file_operations()
+            pause()
+        elif choice == "5":
+            task_system_info()
+            pause()
+        elif choice == "0":
+            clear_screen()
+            print_header("Goodbye!")
+            print_info("Thank you for using the Universal Utility.")
+            time.sleep(1)
+            sys.exit(0)
         else:
-            print_step("Default network missing, creating it")
-            return recreate_default_network()
-        try:
-            net_info = run_command(["virsh", "net-info", "default"], capture_output=True)
-            if "Autostart:      yes" not in net_info.stdout:
-                print_step("Setting autostart")
-                autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
-                if autostart_path.exists() or autostart_path.is_symlink():
-                    autostart_path.unlink()
-                run_command(["virsh", "net-autostart", "default"])
-                print_success("Autostart enabled")
-            else:
-                print_success("Autostart already enabled")
-        except Exception as e:
-            print_warning(f"Autostart not set: {e}")
-        return True
-    except Exception as e:
-        print_error(f"Network configuration error: {e}")
-        return False
+            print_error("Invalid selection. Please try again.")
+            time.sleep(1)
 
-def get_virtual_machines():
-    vms = []
+# ==============================
+# Main Entry Point
+# ==============================
+def main() -> None:
+    """Main entry point for the script."""
     try:
-        result = run_command(["virsh", "list", "--all"], capture_output=True)
-        lines = result.stdout.strip().splitlines()
-        # Find the header separator (a line starting with dashes)
-        sep = next((i for i, line in enumerate(lines) if line.strip().startswith("----")), -1)
-        if sep < 0:
-            return []
-        for line in lines[sep + 1:]:
-            parts = line.split()
-            if len(parts) >= 3:
-                vms.append({"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])})
-        return vms
-    except Exception as e:
-        print_error(f"Error retrieving VMs: {e}")
-        return []
-
-def set_vm_autostart(vms) -> bool:
-    print_section("Configuring VM Autostart")
-    if not vms:
-        print_warning("No VMs found")
-        return True
-    failed = []
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Setting VM autostart", total=len(vms))
-        for vm in vms:
-            name = vm["name"]
-            try:
-                print_step(f"Setting autostart for {name}")
-                info = run_command(["virsh", "dominfo", name], capture_output=True)
-                if "Autostart:        yes" in info.stdout:
-                    print_success(f"{name} already set")
-                else:
-                    run_command(["virsh", "autostart", name])
-                    print_success(f"{name} set to autostart")
-            except Exception as e:
-                print_error(f"Autostart failed for {name}: {e}")
-                failed.append(name)
-            progress.advance(task)
-    if failed:
-        print_warning(f"Autostart failed for: {', '.join(failed)}")
-        return False
-    return True
-
-def start_virtual_machines(vms) -> bool:
-    print_section("Starting Virtual Machines")
-    if not vms:
-        print_warning("No VMs found")
-        return True
-    to_start = [vm for vm in vms if vm["state"].lower() != "running"]
-    if not to_start:
-        print_success("All VMs are running")
-        return True
-    if not ensure_network_active_before_vm_start():
-        print_error("Default network not active")
-        return False
-    failed = []
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Starting VMs", total=len(to_start))
-        for vm in to_start:
-            name = vm["name"]
-            print_step(f"Starting {name}")
-            try:
-                with console.status(f"[bold #81A1C1]Starting {name}...", spinner="dots"):
-                    result = run_command(["virsh", "start", name], check=False)
-                    if result.returncode != 0:
-                        print_error(f"Failed to start {name}: {result.stderr}")
-                        failed.append(name)
-                    else:
-                        print_success(f"{name} started")
-                time.sleep(3)
-            except Exception as e:
-                print_error(f"Error starting {name}: {e}")
-                failed.append(name)
-            progress.advance(task)
-    if failed:
-        print_warning(f"Failed to start: {', '.join(failed)}")
-        return False
-    return True
-
-def ensure_network_active_before_vm_start() -> bool:
-    print_step("Verifying default network before starting VMs")
-    try:
-        net_list = run_command(["virsh", "net-list"], capture_output=True)
-        for line in net_list.stdout.splitlines():
-            if "default" in line and "active" in line:
-                print_success("Default network is active")
-                return True
-        print_warning("Default network inactive; attempting restart")
-        return recreate_default_network()
-    except Exception as e:
-        print_error(f"Network verification error: {e}")
-        return False
-
-def fix_storage_permissions(paths) -> bool:
-    print_section("Fixing VM Storage Permissions")
-    if not paths:
-        print_warning("No storage paths specified")
-        return True
-    try:
-        uid = pwd.getpwnam(VM_OWNER).pw_uid
-        gid = grp.getgrnam(VM_GROUP).gr_gid
-    except KeyError as e:
-        print_error(f"User/group not found: {e}")
-        return False
-
-    for path_str in paths:
-        path = Path(path_str)
-        print_step(f"Processing {path}")
-        if not path.exists():
-            print_warning(f"{path} does not exist; creating")
-            path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
-        total_items = sum(1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path)))
-        with Progress(
-            SpinnerColumn(style="bold #81A1C1"),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=None, style="bold #88C0D0"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Updating permissions", total=total_items)
-            try:
-                os.chown(str(path), uid, gid)
-                os.chmod(str(path), VM_DIR_MODE)
-                progress.advance(task)
-                for root, dirs, files in os.walk(str(path)):
-                    for d in dirs:
-                        dpath = Path(root) / d
-                        try:
-                            os.chown(str(dpath), uid, gid)
-                            os.chmod(str(dpath), VM_DIR_MODE)
-                        except Exception as e:
-                            print_warning(f"Error on {dpath}: {e}")
-                        progress.advance(task)
-                    for f in files:
-                        fpath = Path(root) / f
-                        try:
-                            os.chown(str(fpath), uid, gid)
-                            os.chmod(str(fpath), VM_FILE_MODE)
-                        except Exception as e:
-                            print_warning(f"Error on {fpath}: {e}")
-                        progress.advance(task)
-            except Exception as e:
-                print_error(f"Failed on {path}: {e}")
-                return False
-    print_success("Storage permissions updated")
-    return True
-
-def configure_user_groups() -> bool:
-    print_section("Configuring User Group Membership")
-    sudo_user = os.environ.get("SUDO_USER")
-    if not sudo_user:
-        print_warning("SUDO_USER not set; skipping group config")
-        return True
-    try:
-        pwd.getpwnam(sudo_user)
-        grp.getgrnam(LIBVIRT_USER_GROUP)
-    except KeyError as e:
-        print_error(f"User or group error: {e}")
-        return False
-    user_groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
-    primary = grp.getgrgid(pwd.getpwnam(sudo_user).pw_gid).gr_name
-    if primary not in user_groups:
-        user_groups.append(primary)
-    if LIBVIRT_USER_GROUP in user_groups:
-        print_success(f"{sudo_user} already in {LIBVIRT_USER_GROUP}")
-        return True
-    try:
-        print_step(f"Adding {sudo_user} to {LIBVIRT_USER_GROUP}")
-        run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
-        print_success(f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in.")
-        return True
-    except Exception as e:
-        print_error(f"Failed to add user: {e}")
-        return False
-
-def verify_virtualization_setup() -> bool:
-    print_section("Verifying Virtualization Setup")
-    passed = True
-    try:
-        svc = run_command(["systemctl", "is-active", "libvirtd"], check=False)
-        if svc.stdout.strip() == "active":
-            print_success("libvirtd is active")
-        else:
-            print_error("libvirtd is not active")
-            passed = False
-    except Exception as e:
-        print_error(f"Error checking libvirtd: {e}")
-        passed = False
-
-    try:
-        net = run_command(["virsh", "net-list"], capture_output=True, check=False)
-        if "default" in net.stdout and "active" in net.stdout:
-            print_success("Default network is active")
-        else:
-            print_error("Default network inactive")
-            passed = False
-    except Exception as e:
-        print_error(f"Network check error: {e}")
-        passed = False
-
-    try:
-        lsmod = run_command(["lsmod"], capture_output=True)
-        if "kvm" in lsmod.stdout:
-            print_success("KVM modules loaded")
-        else:
-            print_error("KVM modules missing")
-            passed = False
-    except Exception as e:
-        print_error(f"KVM check error: {e}")
-        passed = False
-
-    for path_str in VM_STORAGE_PATHS:
-        path = Path(path_str)
-        if path.exists():
-            print_success(f"Storage exists: {path}")
-        else:
-            print_error(f"Storage missing: {path}")
-            try:
-                path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
-                print_success(f"Created storage: {path}")
-            except Exception as e:
-                print_error(f"Failed to create {path}: {e}")
-                passed = False
-    if passed:
-        print_success("All verification checks passed!")
-    else:
-        print_warning("Some verification checks failed.")
-    return passed
-
-# ------------------------------
-# Main CLI Entry Point with click
-# ------------------------------
-@click.command()
-@click.option("--packages", is_flag=True, help="Only install packages")
-@click.option("--network", is_flag=True, help="Only configure network")
-@click.option("--permissions", is_flag=True, help="Only fix storage permissions")
-@click.option("--autostart", is_flag=True, help="Only set VM autostart")
-@click.option("--start", is_flag=True, help="Only start VMs")
-@click.option("--verify", is_flag=True, help="Only verify setup")
-@click.option("--fix", is_flag=True, help="Troubleshoot common issues")
-def main(packages, network, permissions, autostart, start, verify, fix):
-    """Enhanced Virtualization Environment Setup"""
-    # Setup signal handlers and cleanup
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    atexit.register(cleanup)
-
-    print_header("Enhanced Virt Setup")
-    console.print(f"Hostname: [bold #D8DEE9]{HOSTNAME}[/bold #D8DEE9]")
-    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
-    if os.geteuid() != 0:
-        print_error("Run this script as root (e.g., using sudo)")
-        sys.exit(1)
-
-    run_specific = any([packages, network, permissions, autostart, start, verify, fix])
-
-    if fix or verify:
-        verify_virtualization_setup()
-        sys.exit(0)
-
-    if not run_specific or packages:
-        if not update_system_packages():
-            print_warning("Package list update failed")
-        if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
-            print_error("Package installation issues encountered")
-        if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
-            print_warning("Service management issues encountered")
-
-    if not run_specific or network:
-        for attempt in range(1, 4):
-            print_step(f"Network configuration attempt {attempt}")
-            if configure_default_network():
-                break
-            time.sleep(2)
-        else:
-            print_error("Failed to configure network after multiple attempts")
-            recreate_default_network()
-
-    if not run_specific or permissions:
-        fix_storage_permissions(VM_STORAGE_PATHS)
-        configure_user_groups()
-
-    if not run_specific or autostart or start:
-        vms = get_virtual_machines()
-        if vms:
-            print_success(f"Found {len(vms)} VMs")
-            if not run_specific or autostart:
-                set_vm_autostart(vms)
-            if not run_specific or start:
-                ensure_network_active_before_vm_start()
-                start_virtual_machines(vms)
-        else:
-            print_step("No VMs found")
-
-    if not run_specific:
-        verify_virtualization_setup()
-
-    print_header("Setup Complete")
-    print_success("Virtualization environment setup complete!")
-    print_step("Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'.")
-
-if __name__ == "__main__":
-    try:
-        main()
+        # Initial setup
+        setup_logging()
+        
+        # Launch the main menu
+        main_menu()
+        
     except KeyboardInterrupt:
-        print_warning("Setup interrupted by user.")
+        print_warning("\nProcess interrupted by user.")
         sys.exit(130)
     except Exception as e:
-        print_error(f"Unhandled error: {e}")
+        print_error(f"Unexpected error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
 
-Instructions for Code Generation
-	1.	Before Code Generation:
-	•	Ask the user for specific requirements and clarify any ambiguous points.
-	•	Confirm that the generated code must use Rich, Click, and pyfiglet and adhere to the Nord‑themed CLI design as demonstrated in the example template.
-	2.	Script Requirements:
-	•	Leverage Rich for progress tracking and styled output.
-	•	Use Click for argument parsing and interactive CLI.
-	•	Use pyfiglet for generating striking ASCII art headers.
-	•	Implement robust error handling, signal handling, and resource cleanup.
-	•	Maintain a clear structure with configuration, helper functions, and a main execution flow.
-	•	Always produce beautiful, Nord‑themed colored output for all CLI messages.
-	•	Write all scripts specifically for Ubuntu/Linux environments.
-	3.	Final Note:
-	•	Always ensure that the generated script strictly follows the structure and style demonstrated in the example template above while addressing the user’s specific needs.
-	•	Prompt the user for input using numbered lists for multiple choice selections as needed.
-	•	Ask: “What can I help you write now?” at the end of the pre-prompt.
 
-This pre-prompt instructs the AI to use the above template as a definitive guide for generating all future scripts in this style. Ask me what you can help me write now.
+if __name__ == "__main__":
+    main()
+```
+
+## **Implementation Checklist**
+
+When writing any Python script, make sure to:
+
+1. Create a fully interactive, menu-driven interface with no command-line arguments
+2. Organize your code with configuration at the top, helper functions in the middle, and main functions at the end
+3. Structure the script around a hierarchical menu system that guides users through all functionality
+4. Use Rich for all console output with Nord theme colors
+5. Implement proper error handling and resource cleanup
+6. Ensure all user interaction flows through intuitive, numbered menu options
+7. Use pyfiglet for ASCII art headers in menus and key sections
+8. Add progress indicators (bars and spinners) for all time-consuming operations
+9. Include confirmation prompts for potentially destructive actions
+10. Apply consistent color coding throughout the interface
+11. Make scripts modular and maintainable with clear documentation
+12. Implement status tracking for long-running operations with real-time feedback
+13. Use appropriate visual elements (tables, panels, etc.) to organize information
+14. Add graceful handling of interruptions and cleanup on exit
+
+The template script I've created demonstrates all these principles in action. It provides a foundation for any interactive Python utility with a beautiful, Nord-themed terminal interface, complete with progress tracking, spinners, and a comprehensive menu system. The script is organized for maximum readability and maintainability, with proper error handling throughout.

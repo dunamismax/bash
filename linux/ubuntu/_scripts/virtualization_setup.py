@@ -27,7 +27,6 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-import click
 from rich.console import Console
 from rich.progress import (
     Progress,
@@ -589,19 +588,101 @@ def verify_virtualization_setup() -> bool:
     return passed
 
 
-# ------------------------------
-# Main CLI Entry Point with click
-# ------------------------------
-@click.command()
-@click.option("--packages", is_flag=True, help="Only install packages")
-@click.option("--network", is_flag=True, help="Only configure network")
-@click.option("--permissions", is_flag=True, help="Only fix storage permissions")
-@click.option("--autostart", is_flag=True, help="Only set VM autostart")
-@click.option("--start", is_flag=True, help="Only start VMs")
-@click.option("--verify", is_flag=True, help="Only verify setup")
-@click.option("--fix", is_flag=True, help="Troubleshoot common issues")
-def main(packages, network, permissions, autostart, start, verify, fix):
-    """Enhanced Virtualization Environment Setup"""
+def interactive_menu() -> None:
+    """Display the interactive menu and process user selections."""
+    while True:
+        print_header("Enhanced Virt Setup Menu")
+        console.print("\n[bold #88C0D0]Choose an option:[/bold #88C0D0]")
+        console.print("[#D8DEE9]1. Update and Install Packages[/#D8DEE9]")
+        console.print("[#D8DEE9]2. Configure Network[/#D8DEE9]")
+        console.print(
+            "[#D8DEE9]3. Fix Storage Permissions & Configure User Groups[/#D8DEE9]"
+        )
+        console.print("[#D8DEE9]4. Set VM Autostart & Start VMs[/#D8DEE9]")
+        console.print("[#D8DEE9]5. Verify Virtualization Setup[/#D8DEE9]")
+        console.print("[#D8DEE9]6. Run All Tasks[/#D8DEE9]")
+        console.print("[#D8DEE9]7. Exit[/#D8DEE9]")
+
+        choice = input("\n[?] Select an option (1-7): ").strip()
+
+        if choice == "1":
+            if not update_system_packages():
+                print_warning("Package list update failed")
+            if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
+                print_error("Package installation issues encountered")
+            if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
+                print_warning("Service management issues encountered")
+
+        elif choice == "2":
+            for attempt in range(1, 4):
+                print_step(f"Network configuration attempt {attempt}")
+                if configure_default_network():
+                    break
+                time.sleep(2)
+            else:
+                print_error("Failed to configure network after multiple attempts")
+                recreate_default_network()
+
+        elif choice == "3":
+            fix_storage_permissions(VM_STORAGE_PATHS)
+            configure_user_groups()
+
+        elif choice == "4":
+            vms = get_virtual_machines()
+            if vms:
+                print_success(f"Found {len(vms)} VMs")
+                set_vm_autostart(vms)
+                ensure_network_active_before_vm_start()
+                start_virtual_machines(vms)
+            else:
+                print_step("No VMs found")
+
+        elif choice == "5":
+            verify_virtualization_setup()
+
+        elif choice == "6":
+            # Run all tasks in sequence
+            if not update_system_packages():
+                print_warning("Package list update failed")
+            if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
+                print_error("Package installation issues encountered")
+            if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
+                print_warning("Service management issues encountered")
+
+            for attempt in range(1, 4):
+                print_step(f"Network configuration attempt {attempt}")
+                if configure_default_network():
+                    break
+                time.sleep(2)
+            else:
+                print_error("Failed to configure network after multiple attempts")
+                recreate_default_network()
+
+            fix_storage_permissions(VM_STORAGE_PATHS)
+            configure_user_groups()
+
+            vms = get_virtual_machines()
+            if vms:
+                print_success(f"Found {len(vms)} VMs")
+                set_vm_autostart(vms)
+                ensure_network_active_before_vm_start()
+                start_virtual_machines(vms)
+            else:
+                print_step("No VMs found")
+
+            verify_virtualization_setup()
+
+        elif choice == "7":
+            print_header("Exiting Setup")
+            break
+
+        else:
+            print_warning("Invalid selection, please try again.")
+
+        input("\nPress Enter to return to the menu...")
+
+
+def main() -> None:
     # Setup signal handlers and cleanup
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -612,52 +693,13 @@ def main(packages, network, permissions, autostart, start, verify, fix):
     console.print(
         f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
     )
+
     if os.geteuid() != 0:
         print_error("Run this script as root (e.g., using sudo)")
         sys.exit(1)
 
-    run_specific = any([packages, network, permissions, autostart, start, verify, fix])
-
-    if fix or verify:
-        verify_virtualization_setup()
-        sys.exit(0)
-
-    if not run_specific or packages:
-        if not update_system_packages():
-            print_warning("Package list update failed")
-        if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
-            print_error("Package installation issues encountered")
-        if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
-            print_warning("Service management issues encountered")
-
-    if not run_specific or network:
-        for attempt in range(1, 4):
-            print_step(f"Network configuration attempt {attempt}")
-            if configure_default_network():
-                break
-            time.sleep(2)
-        else:
-            print_error("Failed to configure network after multiple attempts")
-            recreate_default_network()
-
-    if not run_specific or permissions:
-        fix_storage_permissions(VM_STORAGE_PATHS)
-        configure_user_groups()
-
-    if not run_specific or autostart or start:
-        vms = get_virtual_machines()
-        if vms:
-            print_success(f"Found {len(vms)} VMs")
-            if not run_specific or autostart:
-                set_vm_autostart(vms)
-            if not run_specific or start:
-                ensure_network_active_before_vm_start()
-                start_virtual_machines(vms)
-        else:
-            print_step("No VMs found")
-
-    if not run_specific:
-        verify_virtualization_setup()
+    # Launch the interactive menu
+    interactive_menu()
 
     print_header("Setup Complete")
     print_success("Virtualization environment setup complete!")

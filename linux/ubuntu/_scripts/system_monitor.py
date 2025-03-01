@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified System Monitor and Benchmarker
+Interactive System Monitor and Benchmarker
 
 This utility combines benchmarking tools for CPU and GPU performance with a real‑time system
 resource monitor. It benchmarks the CPU via prime number calculations and the GPU via NumPy
@@ -10,7 +10,7 @@ memory, disk, network, and top processes.
 Features:
   • Nord‑themed CLI interface with striking ASCII art headers (pyfiglet)
   • Interactive progress indicators and status messages (Rich)
-  • Command‑line options and interactive menus (Click)
+  • Fully interactive menu-driven interface with numbered options
   • Robust error handling, signal handling, and resource cleanup
   • Data export in JSON or CSV format for the monitoring dashboard
 
@@ -37,8 +37,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import click
-import GPUtil
 import numpy as np
 import psutil
 import pyfiglet
@@ -155,17 +153,22 @@ for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
 # Logging Setup
 # ------------------------------
 def setup_logging() -> None:
-    log_dir = Path(LOG_FILE).parent
-    log_dir.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler(LOG_FILE, mode="a"),
-        ],
-    )
+    """Setup logging configuration."""
+    try:
+        log_dir = Path(LOG_FILE).parent
+        log_dir.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=[
+                logging.StreamHandler(sys.stdout),
+                logging.FileHandler(LOG_FILE, mode="a"),
+            ],
+        )
+        print_success("Logging initialized successfully")
+    except Exception as e:
+        print_error(f"Failed to setup logging: {e}")
 
 
 # ------------------------------
@@ -197,10 +200,28 @@ def cpu_prime_benchmark(benchmark_duration: int) -> dict:
     end_time = start_time + benchmark_duration
     prime_count = 0
     num = 2
-    while time.time() < end_time:
-        if is_prime(num):
-            prime_count += 1
-        num += 1
+
+    with Progress(
+        SpinnerColumn(style=f"bold {NORD_COLORS['cpu']}"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style=f"bold {NORD_COLORS['cpu']}"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(
+            f"Calculating primes for {benchmark_duration} seconds...", total=100
+        )
+
+        while time.time() < end_time:
+            if is_prime(num):
+                prime_count += 1
+            num += 1
+
+            # Update progress based on time passed
+            elapsed = time.time() - start_time
+            percent_complete = min(100, (elapsed / benchmark_duration) * 100)
+            progress.update(task, completed=percent_complete)
+
     elapsed = time.time() - start_time
     return {
         "primes_per_sec": prime_count / elapsed if elapsed > 0 else 0,
@@ -228,79 +249,106 @@ def get_cpu_info() -> dict:
 
 def cpu_benchmark(benchmark_duration: int = DEFAULT_BENCHMARK_DURATION) -> dict:
     """Run a comprehensive CPU benchmark."""
-    with console.status(
-        f"[bold {NORD_COLORS['gpu']}]Running CPU benchmark for {benchmark_duration} seconds...",
-        spinner="dots",
-    ):
+    print_section("Running CPU Benchmark")
+    print_step(f"Running CPU benchmark for {benchmark_duration} seconds...")
+
+    try:
         prime_results = cpu_prime_benchmark(benchmark_duration)
-    cpu_info = get_cpu_info()
-    return {**prime_results, **cpu_info}
+        cpu_info = get_cpu_info()
+        return {**prime_results, **cpu_info}
+    except Exception as e:
+        print_error(f"Error during CPU benchmark: {e}")
+        return {"error": str(e)}
 
 
 def gpu_matrix_benchmark(benchmark_duration: int) -> dict:
     """
     Benchmark GPU performance via matrix multiplication using NumPy.
     Returns:
-      {'iterations_per_sec': float, 'elapsed_time': float, 'gpu_object': GPU info} or error message.
+      {'iterations_per_sec': float, 'elapsed_time': float, 'gpu_info': dict} or error message.
     """
+    gpu_info = {}
     try:
-        gpus = GPUtil.getGPUs()
-        if not gpus:
-            return {
-                "error": "No GPUs detected. Ensure drivers are installed and GPUtil is working correctly."
-            }
-        gpu = gpus[0]
+        # Try to import GPUtil, but handle case where it's not installed
+        try:
+            import GPUtil
+
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu = gpus[0]
+                gpu_info = {
+                    "name": gpu.name,
+                    "load": gpu.load * 100,
+                    "memory_util": gpu.memoryUtil * 100,
+                    "temperature": gpu.temperature,
+                }
+            else:
+                gpu_info = {"error": "No GPUs detected"}
+        except ImportError:
+            gpu_info = {"error": "GPUtil not installed"}
+            print_warning("GPUtil not installed. GPU details will be limited.")
     except Exception as e:
-        return {"error": f"Error retrieving GPU info: {e}"}
+        gpu_info = {"error": f"Error retrieving GPU info: {e}"}
+
+    # Matrix multiplication benchmark
     matrix_size = 1024
-    A = np.random.rand(matrix_size, matrix_size).astype(np.float32)
-    B = np.random.rand(matrix_size, matrix_size).astype(np.float32)
-    iterations = 0
-    start_time = time.time()
-    end_time = start_time + benchmark_duration
-    while time.time() < end_time:
-        np.dot(A, B)
-        iterations += 1
+
+    with Progress(
+        SpinnerColumn(style=f"bold {NORD_COLORS['gpu']}"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style=f"bold {NORD_COLORS['gpu']}"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(
+            f"Running matrix calculations for {benchmark_duration} seconds...",
+            total=100,
+        )
+
+        A = np.random.rand(matrix_size, matrix_size).astype(np.float32)
+        B = np.random.rand(matrix_size, matrix_size).astype(np.float32)
+        iterations = 0
+        start_time = time.time()
+        end_time = start_time + benchmark_duration
+
+        while time.time() < end_time:
+            np.dot(A, B)
+            iterations += 1
+
+            # Update progress based on time passed
+            elapsed = time.time() - start_time
+            percent_complete = min(100, (elapsed / benchmark_duration) * 100)
+            progress.update(task, completed=percent_complete)
+
     elapsed = time.time() - start_time
     return {
         "iterations_per_sec": iterations / elapsed if elapsed > 0 else 0,
         "elapsed_time": elapsed,
-        "gpu_object": gpu,
-    }
-
-
-def get_gpu_info_from_benchmark(result: dict) -> dict:
-    """
-    Extract relevant GPU details from the benchmark result.
-    Returns GPU details or error message.
-    """
-    if "error" in result:
-        return result
-    gpu = result["gpu_object"]
-    return {
-        "name": gpu.name,
-        "load": gpu.load * 100,
-        "memory_util": gpu.memoryUtil * 100,
-        "temperature": gpu.temperature,
+        "gpu_info": gpu_info,
     }
 
 
 def gpu_benchmark(benchmark_duration: int = DEFAULT_BENCHMARK_DURATION) -> dict:
     """Run a comprehensive GPU benchmark."""
-    with console.status(
-        f"[bold {NORD_COLORS['gpu']}]Running GPU benchmark for {benchmark_duration} seconds...",
-        spinner="dots",
-    ):
+    print_section("Running GPU Benchmark")
+    print_step(f"Running GPU benchmark for {benchmark_duration} seconds...")
+
+    try:
         gpu_results = gpu_matrix_benchmark(benchmark_duration)
-    if "error" in gpu_results:
         return gpu_results
-    gpu_info = get_gpu_info_from_benchmark(gpu_results)
-    return {**gpu_results, **gpu_info}
+    except Exception as e:
+        print_error(f"Error during GPU benchmark: {e}")
+        return {"error": str(e)}
 
 
 def display_cpu_results(results: dict) -> None:
     """Display formatted CPU benchmark results."""
     print_header("CPU Benchmark Results")
+
+    if "error" in results:
+        print_error(f"Benchmark Error: {results['error']}")
+        return
+
     console.print(
         f"CPU Cores (Physical): [bold {NORD_COLORS['cpu']}]{results['cores']}[/bold {NORD_COLORS['cpu']}]"
     )
@@ -331,11 +379,16 @@ def display_cpu_results(results: dict) -> None:
 
 def display_gpu_results(results: dict) -> None:
     """Display formatted GPU benchmark results."""
+    print_header("GPU Benchmark Results")
+
     if "error" in results:
-        print_error("GPU Benchmark Error")
-        console.print(
-            f"[bold {NORD_COLORS['error']}]{results['error']}[/bold {NORD_COLORS['error']}]"
-        )
+        print_error(f"Benchmark Error: {results['error']}")
+        return
+
+    gpu_info = results.get("gpu_info", {})
+
+    if "error" in gpu_info:
+        print_warning(f"GPU Detection Issue: {gpu_info['error']}")
         console.print(
             "\n[bold "
             + NORD_COLORS["warning"]
@@ -344,45 +397,50 @@ def display_gpu_results(results: dict) -> None:
             + "]"
         )
         console.print("- Ensure GPU drivers are installed correctly.")
-        console.print("- Verify that GPUtil3 is installed (pip install GPUtil3).")
+        console.print("- Verify that GPUtil is installed (pip install GPUtil3).")
         console.print(
             "- For more intensive benchmarks, consider using libraries like CuPy or TensorFlow."
         )
-    else:
-        print_header("GPU Benchmark Results")
+
+    # Display matrix multiplication benchmark results regardless of GPU detection
+    console.print(
+        f"Benchmark Duration: [bold {NORD_COLORS['gpu']}]{results['elapsed_time']:.2f} seconds[/bold {NORD_COLORS['gpu']}]"
+    )
+    console.print(
+        f"[bold {NORD_COLORS['success']}]✓ Matrix Multiplications per Second: {results['iterations_per_sec']:.2f}[/bold {NORD_COLORS['success']}]"
+    )
+
+    # Display GPU details if available
+    if "name" in gpu_info:
         console.print(
-            f"GPU Name: [bold {NORD_COLORS['gpu']}]{results['name']}[/bold {NORD_COLORS['gpu']}]"
+            f"GPU Name: [bold {NORD_COLORS['gpu']}]{gpu_info['name']}[/bold {NORD_COLORS['gpu']}]"
         )
         console.print(
-            f"Benchmark Duration: [bold {NORD_COLORS['gpu']}]{results['elapsed_time']:.2f} seconds[/bold {NORD_COLORS['gpu']}]"
+            f"GPU Load during Benchmark: [bold {NORD_COLORS['gpu']}]{gpu_info['load']:.2f}%[/bold {NORD_COLORS['gpu']}]"
         )
         console.print(
-            f"[bold {NORD_COLORS['success']}]✓ Matrix Multiplications per Second: {results['iterations_per_sec']:.2f}[/bold {NORD_COLORS['success']}]"
+            f"GPU Memory Utilization: [bold {NORD_COLORS['gpu']}]{gpu_info['memory_util']:.2f}%[/bold {NORD_COLORS['gpu']}]"
         )
         console.print(
-            f"GPU Load during Benchmark: [bold {NORD_COLORS['gpu']}]{results['load']:.2f}%[/bold {NORD_COLORS['gpu']}]"
+            f"GPU Temperature: [bold {NORD_COLORS['gpu']}]{gpu_info['temperature']:.2f}°C[/bold {NORD_COLORS['gpu']}]"
         )
-        console.print(
-            f"GPU Memory Utilization: [bold {NORD_COLORS['gpu']}]{results['memory_util']:.2f}%[/bold {NORD_COLORS['gpu']}]"
-        )
-        console.print(
-            f"GPU Temperature: [bold {NORD_COLORS['gpu']}]{results['temperature']:.2f}°C[/bold {NORD_COLORS['gpu']}]"
-        )
-        console.print(
-            "\n[bold "
-            + NORD_COLORS["gpu"]
-            + "]Benchmark Details:[/bold "
-            + NORD_COLORS["gpu"]
-            + "]"
-        )
-        console.print("- Matrix multiplication (NumPy) is used as the workload.")
-        console.print("- GPU utilization may vary based on system configuration.")
+
+    console.print(
+        "\n[bold "
+        + NORD_COLORS["gpu"]
+        + "]Benchmark Details:[/bold "
+        + NORD_COLORS["gpu"]
+        + "]"
+    )
+    console.print("- Matrix multiplication (NumPy) is used as the workload.")
+    console.print("- GPU utilization may vary based on system configuration.")
 
 
 # ------------------------------
 # System Monitor Functions & Classes
 # ------------------------------
 def get_cpu_metrics() -> Tuple[float, float, List[float]]:
+    """Get current CPU metrics."""
     freq = psutil.cpu_freq()
     current = freq.current if freq else 0.0
     maximum = freq.max if freq else 0.0
@@ -391,6 +449,7 @@ def get_cpu_metrics() -> Tuple[float, float, List[float]]:
 
 
 def get_load_average() -> Tuple[float, float, float]:
+    """Get system load average."""
     try:
         return os.getloadavg()
     except Exception:
@@ -398,11 +457,13 @@ def get_load_average() -> Tuple[float, float, float]:
 
 
 def get_memory_metrics() -> Tuple[float, float, float, float]:
+    """Get memory usage metrics."""
     mem = psutil.virtual_memory()
     return mem.total, mem.used, mem.available, mem.percent
 
 
 def get_cpu_temperature() -> Optional[float]:
+    """Get CPU temperature if available."""
     temps = psutil.sensors_temperatures()
     if temps:
         for key in ("coretemp", "cpu-thermal"):
@@ -417,6 +478,7 @@ def get_cpu_temperature() -> Optional[float]:
 
 
 def get_gpu_frequency() -> Optional[int]:
+    """Get GPU frequency if available (primarily for Raspberry Pi)."""
     try:
         result = subprocess.run(
             ["vcgencmd", "measure_clock", "gpu"],
@@ -435,6 +497,7 @@ def get_gpu_frequency() -> Optional[int]:
 
 
 def get_system_uptime() -> str:
+    """Get formatted system uptime."""
     boot_time = psutil.boot_time()
     uptime = time.time() - boot_time
     days = int(uptime // 86400)
@@ -447,6 +510,7 @@ def get_system_uptime() -> str:
 def get_top_processes(
     limit: int = DEFAULT_TOP_PROCESSES, sort_by: str = "cpu"
 ) -> List[Dict[str, Any]]:
+    """Get list of top processes sorted by CPU or memory usage."""
     procs = []
     for proc in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
         try:
@@ -462,6 +526,8 @@ def get_top_processes(
 
 @dataclass
 class DiskInfo:
+    """Class to hold disk information."""
+
     device: str
     mountpoint: str
     total: int
@@ -473,10 +539,13 @@ class DiskInfo:
 
 
 class DiskMonitor:
+    """Monitor disk usage and IO statistics."""
+
     def __init__(self) -> None:
         self.disks: List[DiskInfo] = []
 
     def update(self) -> None:
+        """Update disk information."""
         self.disks = []
         try:
             df = subprocess.run(
@@ -504,13 +573,13 @@ class DiskMonitor:
                     DiskInfo(device, mount, total, used, free, percent, filesystem=fs)
                 )
         except Exception as e:
-            console.print(
-                f"[bold {NORD_COLORS['error']}]Error updating disk info: {e}[/bold {NORD_COLORS['error']}]"
-            )
+            print_error(f"Error updating disk info: {e}")
 
 
 @dataclass
 class NetworkInfo:
+    """Class to hold network interface information."""
+
     name: str
     ipv4: str = "N/A"
     ipv6: str = "N/A"
@@ -526,11 +595,14 @@ class NetworkInfo:
 
 
 class NetworkMonitor:
+    """Monitor network interfaces and traffic."""
+
     def __init__(self) -> None:
         self.interfaces: List[NetworkInfo] = []
         self.last_stats: Dict[str, Dict[str, int]] = {}
 
     def update(self) -> None:
+        """Update network information."""
         self.interfaces = []
         stats = {}
         try:
@@ -552,12 +624,12 @@ class NetworkMonitor:
                     )
             self.last_stats = stats
         except Exception as e:
-            console.print(
-                f"[bold {NORD_COLORS['error']}]Error updating network info: {e}[/bold {NORD_COLORS['error']}]"
-            )
+            print_error(f"Error updating network info: {e}")
 
 
 class CpuMonitor:
+    """Monitor CPU usage and load."""
+
     def __init__(self) -> None:
         self.usage_percent: float = 0.0
         self.per_core: List[float] = []
@@ -565,6 +637,7 @@ class CpuMonitor:
         self.load_avg: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     def update(self) -> None:
+        """Update CPU metrics."""
         self.usage_percent = psutil.cpu_percent(interval=None)
         self.per_core = psutil.cpu_percent(interval=None, percpu=True)
         self.load_avg = (
@@ -574,6 +647,8 @@ class CpuMonitor:
 
 @dataclass
 class MemoryInfo:
+    """Class to hold memory information."""
+
     total: int = 0
     used: int = 0
     available: int = 0
@@ -584,10 +659,13 @@ class MemoryInfo:
 
 
 class MemoryMonitor:
+    """Monitor system memory usage."""
+
     def __init__(self) -> None:
         self.info = MemoryInfo()
 
     def update(self) -> None:
+        """Update memory metrics."""
         mem = psutil.virtual_memory()
         self.info.total = mem.total
         self.info.used = mem.used
@@ -600,11 +678,14 @@ class MemoryMonitor:
 
 
 class ProcessMonitor:
+    """Monitor top processes by CPU or memory usage."""
+
     def __init__(self, limit: int = DEFAULT_TOP_PROCESSES) -> None:
         self.limit = limit
         self.processes: List[Dict[str, Any]] = []
 
     def update(self, sort_by: str = "cpu") -> None:
+        """Update process list."""
         procs = []
         for proc in psutil.process_iter(
             ["pid", "name", "cpu_percent", "memory_percent"]
@@ -621,6 +702,8 @@ class ProcessMonitor:
 
 
 class UnifiedMonitor:
+    """Unified system monitor combining all monitoring components."""
+
     def __init__(
         self,
         refresh_rate: float = DEFAULT_REFRESH_RATE,
@@ -636,6 +719,7 @@ class UnifiedMonitor:
         self.cpu_history = deque(maxlen=DEFAULT_HISTORY_POINTS)
 
     def update(self) -> None:
+        """Update all monitor components."""
         self.disk_monitor.update()
         self.network_monitor.update()
         self.cpu_monitor.update()
@@ -644,6 +728,7 @@ class UnifiedMonitor:
         self.cpu_history.append(self.cpu_monitor.usage_percent)
 
     def build_dashboard(self, sort_by: str) -> Layout:
+        """Build the live dashboard layout."""
         layout = Layout()
         layout.split_column(
             Layout(name="header", size=3),
@@ -698,6 +783,7 @@ class UnifiedMonitor:
     def export_data(
         self, export_format: str, output_file: Optional[str] = None
     ) -> None:
+        """Export monitoring data to JSON or CSV format."""
         data = {
             "timestamp": datetime.now().isoformat(),
             "cpu": {
@@ -716,11 +802,13 @@ class UnifiedMonitor:
             output_file = os.path.join(
                 EXPORT_DIR, f"system_monitor_{timestamp}.{export_format}"
             )
+
         if export_format.lower() == "json":
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
         elif export_format.lower() == "csv":
             base, _ = os.path.splitext(output_file)
+            # Export CPU data
             with open(f"{base}_cpu.csv", "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(
@@ -741,6 +829,7 @@ class UnifiedMonitor:
                         data["cpu"]["load_avg"][2],
                     ]
                 )
+            # Export memory data
             with open(f"{base}_mem.csv", "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(["timestamp", "total", "used", "available", "percent"])
@@ -754,210 +843,32 @@ class UnifiedMonitor:
                         mem["percent"],
                     ]
                 )
-        console.print(
-            f"[bold {NORD_COLORS['success']}]Data exported to {output_file}[/bold {NORD_COLORS['success']}]"
-        )
+        print_success(f"Data exported to {output_file}")
 
 
 # ------------------------------
-# CLI Commands with Click
+# Interactive Monitor Functions
 # ------------------------------
-@click.group()
-@click.version_option(version=VERSION)
-def cli() -> None:
-    """
-    Unified System Monitor and Benchmarker CLI
-
-    Benchmark your system's CPU and GPU performance and monitor system resources in real‑time.
-    """
-    pass
-
-
-# Benchmark Commands
-@cli.group()
-def bench() -> None:
-    """Run benchmarks for CPU and GPU."""
-    pass
-
-
-@bench.command()
-@click.option(
-    "--duration",
-    default=DEFAULT_BENCHMARK_DURATION,
-    type=int,
-    help="Duration of the CPU benchmark in seconds.",
-    metavar="SECONDS",
-)
-def cpu(duration: int) -> None:
-    """Run CPU benchmark."""
-    print_header("Starting CPU Benchmark")
-    try:
-        results = cpu_benchmark(duration)
-        display_cpu_results(results)
-        print_success("CPU Benchmark Completed")
-    except Exception as e:
-        print_error(f"Error during CPU benchmark: {e}")
-        traceback.print_exc()
-
-
-@bench.command()
-@click.option(
-    "--duration",
-    default=DEFAULT_BENCHMARK_DURATION,
-    type=int,
-    help="Duration of the GPU benchmark in seconds.",
-    metavar="SECONDS",
-)
-def gpu(duration: int) -> None:
-    """Run GPU benchmark."""
-    print_header("Starting GPU Benchmark")
-    try:
-        results = gpu_benchmark(duration)
-        display_gpu_results(results)
-        print_success("GPU Benchmark Completed")
-    except Exception as e:
-        print_error(f"Error during GPU benchmark: {e}")
-        traceback.print_exc()
-
-
-@bench.command()
-@click.option(
-    "--duration",
-    default=DEFAULT_BENCHMARK_DURATION,
-    type=int,
-    help="Duration of both benchmarks in seconds.",
-    metavar="SECONDS",
-)
-def both(duration: int) -> None:
-    """Run both CPU and GPU benchmarks concurrently."""
-    print_header("Starting CPU and GPU Benchmarks")
-    cpu_results = {}
-    gpu_results = {}
-
-    def run_cpu() -> None:
-        nonlocal cpu_results
-        cpu_results = cpu_benchmark(duration)
-
-    def run_gpu() -> None:
-        nonlocal gpu_results
-        gpu_results = gpu_benchmark(duration)
-
-    cpu_thread = threading.Thread(target=run_cpu)
-    gpu_thread = threading.Thread(target=run_gpu)
-    cpu_thread.start()
-    gpu_thread.start()
-    cpu_thread.join()
-    gpu_thread.join()
-    display_cpu_results(cpu_results)
-    display_gpu_results(gpu_results)
-    print_success("CPU and GPU Benchmarks Completed")
-
-
-@bench.command()
-def menu() -> None:
-    """Interactive menu to select and run benchmarks."""
-    while True:
-        print_header("Benchmark Menu")
-        console.print(
-            f"[bold {NORD_COLORS['section']}]Select a benchmark to run:[/bold {NORD_COLORS['section']}]"
-        )
-        console.print(
-            f"[bold {NORD_COLORS['section']}]1.[/bold {NORD_COLORS['section']}] CPU Benchmark"
-        )
-        console.print(
-            f"[bold {NORD_COLORS['section']}]2.[/bold {NORD_COLORS['section']}] GPU Benchmark"
-        )
-        console.print(
-            f"[bold {NORD_COLORS['section']}]3.[/bold {NORD_COLORS['section']}] CPU and GPU Benchmarks"
-        )
-        console.print(
-            f"[bold {NORD_COLORS['section']}]4.[/bold {NORD_COLORS['section']}] Exit"
-        )
-        try:
-            choice = click.prompt(
-                f"[bold {NORD_COLORS['section']}]Enter your choice [1-4][/bold {NORD_COLORS['section']}]",
-                type=click.IntRange(1, 4),
-            )
-        except Exception as e:
-            print_error(f"Invalid input: {e}")
-            continue
-        ctx = click.get_current_context()
-        if choice == 1:
-            ctx.invoke(cpu)
-        elif choice == 2:
-            ctx.invoke(gpu)
-        elif choice == 3:
-            ctx.invoke(both)
-        elif choice == 4:
-            console.print(
-                f"[bold {NORD_COLORS['section']}]Exiting Benchmark Tool...[/bold {NORD_COLORS['section']}]"
-            )
-            break
-        else:
-            print_error("Invalid choice. Please select from 1-4.")
-
-
-# Monitor Command
-@cli.command()
-@click.option(
-    "--refresh",
-    "-r",
-    default=DEFAULT_REFRESH_RATE,
-    type=float,
-    help="Refresh interval in seconds (default: 2.0)",
-)
-@click.option(
-    "--duration",
-    "-d",
-    default=0.0,
-    type=float,
-    help="Total duration to run in seconds (0 means run indefinitely)",
-)
-@click.option(
-    "--export",
-    "-e",
-    type=click.Choice(["json", "csv"]),
-    default=None,
-    help="Export monitoring data in specified format",
-)
-@click.option(
-    "--export-interval",
-    type=float,
-    default=0.0,
-    help="Interval in minutes between exports (0 to disable)",
-)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(),
-    default=None,
-    help="Output file path for export (auto-generated if not specified)",
-)
-@click.option(
-    "--sort-by",
-    type=click.Choice(["cpu", "memory"], case_sensitive=False),
-    default="cpu",
-    help="Sort top processes by CPU or memory usage",
-)
-def monitor(
-    refresh: float,
-    duration: float,
-    export: Optional[str],
-    export_interval: float,
-    output: Optional[str],
-    sort_by: str,
+def run_monitor(
+    refresh: float = DEFAULT_REFRESH_RATE,
+    duration: float = 0.0,
+    export_format: Optional[str] = None,
+    export_interval: float = 0.0,
+    output_file: Optional[str] = None,
+    sort_by: str = "cpu",
 ) -> None:
-    """Unified System Resource Monitor with Live Dashboard and Export capabilities."""
+    """Run the system resource monitor with specified settings."""
     setup_logging()
     if os.geteuid() != 0:
-        console.print(
-            f"[bold {NORD_COLORS['error']}]This script must be run as root.[/bold {NORD_COLORS['error']}]"
-        )
-        sys.exit(1)
+        print_error("This script must be run as root for full functionality.")
+        if input("Continue anyway? (y/n): ").lower() != "y":
+            return
+
     print_header("System Resource Monitor")
     start_time = time.time()
     monitor_obj = UnifiedMonitor(refresh_rate=refresh, top_limit=DEFAULT_TOP_PROCESSES)
     last_export = 0.0
+
     try:
         with Live(
             monitor_obj.build_dashboard(sort_by), refresh_per_second=1, screen=True
@@ -965,35 +876,350 @@ def monitor(
             while True:
                 monitor_obj.update()
                 live.update(monitor_obj.build_dashboard(sort_by))
-                if export and export_interval > 0:
+
+                if export_format and export_interval > 0:
                     if time.time() - last_export >= export_interval * 60:
-                        monitor_obj.export_data(export, output)
+                        monitor_obj.export_data(export_format, output_file)
                         last_export = time.time()
+
                 if duration > 0 and (time.time() - start_time) >= duration:
                     break
+
                 time.sleep(refresh)
     except KeyboardInterrupt:
         console.print(f"\nExiting monitor...", style=f"{NORD_COLORS['header']}")
     except Exception as e:
-        console.print(
-            f"[bold {NORD_COLORS['error']}]Unexpected error: {e}[/bold {NORD_COLORS['error']}]"
-        )
-        sys.exit(1)
-    if export and not export_interval:
-        monitor_obj.export_data(export, output)
+        print_error(f"Unexpected error: {e}")
+        traceback.print_exc()
+
+    if export_format and not export_interval:
+        monitor_obj.export_data(export_format, output_file)
+
     console.print(f"\nMonitor stopped.", style=f"{NORD_COLORS['header']}")
 
 
+def monitor_menu() -> None:
+    """Interactive menu for setting up and running the system monitor."""
+    refresh_rate = DEFAULT_REFRESH_RATE
+    duration = 0.0
+    export_format = None
+    export_interval = 0.0
+    output_file = None
+    sort_by = "cpu"
+
+    while True:
+        print_header("System Monitor Configuration")
+        print_section("Current Settings")
+        console.print(
+            f"1. Refresh Rate: [bold {NORD_COLORS['label']}]{refresh_rate} seconds[/bold {NORD_COLORS['label']}]"
+        )
+        console.print(
+            f"2. Duration: [bold {NORD_COLORS['label']}]{duration if duration > 0 else 'Unlimited'} seconds[/bold {NORD_COLORS['label']}]"
+        )
+        console.print(
+            f"3. Export Format: [bold {NORD_COLORS['label']}]{export_format if export_format else 'None'}[/bold {NORD_COLORS['label']}]"
+        )
+        console.print(
+            f"4. Export Interval: [bold {NORD_COLORS['label']}]{export_interval} minutes[/bold {NORD_COLORS['label']}]"
+        )
+        console.print(
+            f"5. Output File: [bold {NORD_COLORS['label']}]{output_file if output_file else 'Auto-generated'}[/bold {NORD_COLORS['label']}]"
+        )
+        console.print(
+            f"6. Sort Processes By: [bold {NORD_COLORS['label']}]{sort_by.upper()}[/bold {NORD_COLORS['label']}]"
+        )
+        console.print(
+            f"7. [bold {NORD_COLORS['success']}]Start Monitor[/bold {NORD_COLORS['success']}]"
+        )
+        console.print(f"8. Return to Main Menu")
+
+        try:
+            choice = input("\nEnter your choice [1-8]: ").strip()
+
+            if choice == "1":
+                try:
+                    value = float(input("Enter refresh rate in seconds: "))
+                    if value <= 0:
+                        print_error("Refresh rate must be greater than 0")
+                    else:
+                        refresh_rate = value
+                except ValueError:
+                    print_error("Please enter a valid number")
+
+            elif choice == "2":
+                try:
+                    value = float(
+                        input("Enter duration in seconds (0 for unlimited): ")
+                    )
+                    if value < 0:
+                        print_error("Duration cannot be negative")
+                    else:
+                        duration = value
+                except ValueError:
+                    print_error("Please enter a valid number")
+
+            elif choice == "3":
+                print_section("Export Formats")
+                console.print("1. None")
+                console.print("2. JSON")
+                console.print("3. CSV")
+                format_choice = input("Choose export format [1-3]: ").strip()
+                if format_choice == "1":
+                    export_format = None
+                elif format_choice == "2":
+                    export_format = "json"
+                elif format_choice == "3":
+                    export_format = "csv"
+                else:
+                    print_error("Invalid choice")
+
+            elif choice == "4":
+                try:
+                    value = float(
+                        input(
+                            "Enter export interval in minutes (0 for export at end only): "
+                        )
+                    )
+                    if value < 0:
+                        print_error("Interval cannot be negative")
+                    else:
+                        export_interval = value
+                except ValueError:
+                    print_error("Please enter a valid number")
+
+            elif choice == "5":
+                path = input(
+                    "Enter output file path (empty for auto-generated): "
+                ).strip()
+                output_file = path if path else None
+
+            elif choice == "6":
+                print_section("Sort Options")
+                console.print("1. CPU Usage")
+                console.print("2. Memory Usage")
+                sort_choice = input("Choose sort criteria [1-2]: ").strip()
+                if sort_choice == "1":
+                    sort_by = "cpu"
+                elif sort_choice == "2":
+                    sort_by = "memory"
+                else:
+                    print_error("Invalid choice")
+
+            elif choice == "7":
+                run_monitor(
+                    refresh=refresh_rate,
+                    duration=duration,
+                    export_format=export_format,
+                    export_interval=export_interval,
+                    output_file=output_file,
+                    sort_by=sort_by,
+                )
+
+            elif choice == "8":
+                break
+
+            else:
+                print_error("Invalid choice. Please select 1-8.")
+
+        except KeyboardInterrupt:
+            print_warning("Operation cancelled.")
+
+        input("\nPress Enter to continue...")
+
+
 # ------------------------------
-# Main Execution
+# Interactive Benchmarking Menu
 # ------------------------------
-if __name__ == "__main__":
+def benchmark_menu() -> None:
+    """Interactive menu for running benchmarks."""
+    duration = DEFAULT_BENCHMARK_DURATION
+
+    while True:
+        print_header("Benchmark Menu")
+        print_section("Current Settings")
+        console.print(
+            f"Benchmark Duration: [bold {NORD_COLORS['label']}]{duration} seconds[/bold {NORD_COLORS['label']}]"
+        )
+
+        print_section("Available Benchmarks")
+        console.print("1. Change Benchmark Duration")
+        console.print("2. Run CPU Benchmark")
+        console.print("3. Run GPU Benchmark")
+        console.print("4. Run Both CPU and GPU Benchmarks")
+        console.print("5. Return to Main Menu")
+
+        try:
+            choice = input("\nEnter your choice [1-5]: ").strip()
+
+            if choice == "1":
+                try:
+                    value = int(input("Enter benchmark duration in seconds: "))
+                    if value <= 0:
+                        print_error("Duration must be greater than 0")
+                    else:
+                        duration = value
+                except ValueError:
+                    print_error("Please enter a valid number")
+
+            elif choice == "2":
+                print_header("Running CPU Benchmark")
+                results = cpu_benchmark(duration)
+                display_cpu_results(results)
+
+            elif choice == "3":
+                print_header("Running GPU Benchmark")
+                results = gpu_benchmark(duration)
+                display_gpu_results(results)
+
+            elif choice == "4":
+                print_header("Running CPU and GPU Benchmarks")
+                cpu_results = {}
+                gpu_results = {}
+
+                def run_cpu() -> None:
+                    nonlocal cpu_results
+                    cpu_results = cpu_benchmark(duration)
+
+                def run_gpu() -> None:
+                    nonlocal gpu_results
+                    gpu_results = gpu_benchmark(duration)
+
+                with console.status(
+                    f"[bold {NORD_COLORS['cpu']}]Running benchmarks for {duration} seconds...",
+                    spinner="dots",
+                ):
+                    cpu_thread = threading.Thread(target=run_cpu)
+                    gpu_thread = threading.Thread(target=run_gpu)
+                    cpu_thread.start()
+                    gpu_thread.start()
+                    cpu_thread.join()
+                    gpu_thread.join()
+
+                display_cpu_results(cpu_results)
+                display_gpu_results(gpu_results)
+                print_success("CPU and GPU Benchmarks Completed")
+
+            elif choice == "5":
+                break
+
+            else:
+                print_error("Invalid choice. Please select 1-5.")
+
+        except KeyboardInterrupt:
+            print_warning("Benchmark interrupted.")
+
+        input("\nPress Enter to continue...")
+
+
+# ------------------------------
+# Main Menu and Entry Point
+# ------------------------------
+def check_root_privileges() -> bool:
+    """Check if script is running with root privileges."""
+    return os.geteuid() == 0
+
+
+def display_system_info() -> None:
+    """Display basic system information."""
+    hostname = socket.gethostname()
+    console.print(
+        f"Hostname: [bold {NORD_COLORS['label']}]{hostname}[/bold {NORD_COLORS['label']}]"
+    )
+    console.print(
+        f"Time: [bold {NORD_COLORS['label']}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold {NORD_COLORS['label']}]"
+    )
+    console.print(
+        f"Uptime: [bold {NORD_COLORS['label']}]{get_system_uptime()}[/bold {NORD_COLORS['label']}]"
+    )
+
+    cpu_info = get_cpu_info()
+    console.print(
+        f"CPU: [bold {NORD_COLORS['cpu']}]{cpu_info['cores']} cores / {cpu_info['threads']} threads[/bold {NORD_COLORS['cpu']}]"
+    )
+
+    mem = psutil.virtual_memory()
+    console.print(
+        f"Memory: [bold {NORD_COLORS['mem']}]{mem.total / (1024**3):.2f} GB total[/bold {NORD_COLORS['mem']}]"
+    )
+
+    if not check_root_privileges():
+        print_warning(
+            "Running without root privileges. Some functionality may be limited."
+        )
+
+
+def main_menu() -> None:
+    """Display and handle the main menu."""
+    while True:
+        print_header("System Monitor and Benchmarker")
+        display_system_info()
+
+        print_section("Main Menu")
+        console.print("1. System Monitor")
+        console.print("2. Benchmarks")
+        console.print("3. Quick CPU Status")
+        console.print("4. Exit")
+
+        try:
+            choice = input("\nEnter your choice [1-4]: ").strip()
+
+            if choice == "1":
+                monitor_menu()
+            elif choice == "2":
+                benchmark_menu()
+            elif choice == "3":
+                # Quick CPU status display
+                print_section("Current CPU Status")
+                cpu_usage = psutil.cpu_percent(interval=1, percpu=True)
+                for i, usage in enumerate(cpu_usage):
+                    console.print(
+                        f"Core {i}: [bold {NORD_COLORS['cpu']}]{usage}%[/bold {NORD_COLORS['cpu']}]"
+                    )
+                console.print(
+                    f"Average: [bold {NORD_COLORS['cpu']}]{sum(cpu_usage) / len(cpu_usage):.1f}%[/bold {NORD_COLORS['cpu']}]"
+                )
+
+                load1, load5, load15 = get_load_average()
+                console.print(
+                    f"Load Average: [bold {NORD_COLORS['load']}]{load1:.2f}, {load5:.2f}, {load15:.2f}[/bold {NORD_COLORS['load']}]"
+                )
+
+                temp = get_cpu_temperature()
+                if temp:
+                    console.print(
+                        f"Temperature: [bold {NORD_COLORS['temp']}]{temp:.1f}°C[/bold {NORD_COLORS['temp']}]"
+                    )
+            elif choice == "4":
+                print_header("Exiting")
+                break
+            else:
+                print_error("Invalid choice. Please select 1-4.")
+
+        except KeyboardInterrupt:
+            print_warning("Operation cancelled.")
+            continue
+
+        if choice != "3":  # Don't prompt after quick status
+            input("\nPress Enter to continue...")
+
+
+def main() -> None:
+    """Main entry point for the application."""
+    # Setup signal handlers and cleanup
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    atexit.register(cleanup)
+
     try:
-        cli()
+        main_menu()
     except KeyboardInterrupt:
-        print_warning("Setup interrupted by user.")
+        print_warning("Program interrupted by user.")
         sys.exit(130)
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         traceback.print_exc()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
