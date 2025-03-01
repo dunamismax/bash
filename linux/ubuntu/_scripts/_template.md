@@ -52,15 +52,20 @@ When writing Python scripts, please follow these guidelines to create well-struc
 ```python
 #!/usr/bin/env python3
 """
-Universal Python Utility Template
----------------------------------
+Enhanced Tailscale Reset Utility
+--------------------------------
 
-A beautiful, interactive terminal-based utility template with comprehensive
-error handling, real-time progress tracking, and an intuitive menu system.
+A beautiful, interactive terminal-based utility for managing Tailscale on Ubuntu systems.
+This tool provides options to:
+  • Stop and disable the tailscaled service
+  • Uninstall tailscale and remove configuration/data directories
+  • Reinstall tailscale via the official install script
+  • Enable and start the tailscaled service
+  • Run "tailscale up" to bring the daemon up
+
 All functionality is menu-driven with an attractive Nord-themed interface.
 
-This template provides a foundation for creating any type of Python utility
-with a focus on user experience and robust implementation.
+Note: Some operations require root privileges.
 
 Version: 1.0.0
 """
@@ -75,6 +80,7 @@ import subprocess
 import sys
 import threading
 import time
+import shutil
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -88,21 +94,21 @@ from rich.progress import (
     BarColumn,
     TextColumn,
     TimeRemainingColumn,
-    TaskID
+    TaskID,
 )
 import pyfiglet
 
 # ==============================
 # Configuration & Constants
 # ==============================
-APP_NAME = "Universal Utility"
+APP_NAME = "Tailscale Reset Utility"
 VERSION = "1.0.0"
 HOSTNAME = socket.gethostname()
-LOG_FILE = os.path.expanduser("~/app_logs/utility.log")
-DEFAULT_WORK_DIR = os.path.expanduser("~/Documents")
+LOG_FILE = os.path.expanduser("~/tailscale_reset_logs/tailscale_reset.log")
+TAILSCALE_INSTALL_URL = "https://tailscale.com/install.sh"
+CHECK_INTERVAL = 2  # seconds between steps
 
 # Terminal dimensions
-import shutil
 TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
 TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 
@@ -111,32 +117,35 @@ TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 # ==============================
 console = Console()
 
+
 # Nord Theme Color Definitions
 class NordColors:
     """Nord theme color palette for consistent UI styling."""
+
     # Polar Night (dark/background)
     NORD0 = "#2E3440"
     NORD1 = "#3B4252"
     NORD2 = "#434C5E"
     NORD3 = "#4C566A"
-    
+
     # Snow Storm (light/text)
     NORD4 = "#D8DEE9"
     NORD5 = "#E5E9F0"
     NORD6 = "#ECEFF4"
-    
+
     # Frost (blue accents)
     NORD7 = "#8FBCBB"
     NORD8 = "#88C0D0"
     NORD9 = "#81A1C1"
     NORD10 = "#5E81AC"
-    
+
     # Aurora (status indicators)
     NORD11 = "#BF616A"  # Red (errors)
     NORD12 = "#D08770"  # Orange (warnings)
     NORD13 = "#EBCB8B"  # Yellow (caution)
     NORD14 = "#A3BE8C"  # Green (success)
     NORD15 = "#B48EAD"  # Purple (special)
+
 
 # ==============================
 # UI Helper Functions
@@ -145,7 +154,8 @@ def print_header(text: str) -> None:
     """Print a striking header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style=f"bold {NordColors.NORD8}")
-    
+
+
 def print_section(title: str) -> None:
     """Print a formatted section header."""
     border = "═" * TERM_WIDTH
@@ -153,77 +163,70 @@ def print_section(title: str) -> None:
     console.print(f"[bold {NordColors.NORD8}]  {title.center(TERM_WIDTH - 4)}[/]")
     console.print(f"[bold {NordColors.NORD8}]{border}[/]\n")
 
+
 def print_info(message: str) -> None:
     """Print an informational message."""
     console.print(f"[{NordColors.NORD9}]{message}[/]")
+
 
 def print_success(message: str) -> None:
     """Print a success message."""
     console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
 
+
 def print_warning(message: str) -> None:
     """Print a warning message."""
     console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
+
 
 def print_error(message: str) -> None:
     """Print an error message."""
     console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
 
+
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[{NordColors.NORD8}]• {text}[/]")
 
-def format_size(num_bytes: float) -> str:
-    """Convert bytes to a human-readable string."""
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if num_bytes < 1024:
-            return f"{num_bytes:.1f} {unit}"
-        num_bytes /= 1024
-    return f"{num_bytes:.1f} PB"
-
-def format_time(seconds: float) -> str:
-    """Format seconds into a human-readable time string."""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    elif seconds < 3600:
-        return f"{seconds / 60:.1f}m"
-    else:
-        return f"{seconds / 3600:.1f}h"
 
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
 
+
 def pause() -> None:
     """Pause execution until user presses Enter."""
     console.input(f"\n[{NordColors.NORD15}]Press Enter to continue...[/]")
+
 
 def get_user_input(prompt: str, default: str = "") -> str:
     """Get input from the user with a styled prompt."""
     return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
 
+
 def get_user_choice(prompt: str, choices: List[str]) -> str:
     """Get a choice from the user with a styled prompt."""
     return Prompt.ask(
-        f"[bold {NordColors.NORD15}]{prompt}[/]", 
-        choices=choices,
-        show_choices=True
+        f"[bold {NordColors.NORD15}]{prompt}[/]", choices=choices, show_choices=True
     )
+
 
 def get_user_confirmation(prompt: str) -> bool:
     """Get confirmation from the user."""
     return Confirm.ask(f"[bold {NordColors.NORD15}]{prompt}[/]")
+
 
 def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
     """Create a Rich table for menu options."""
     table = Table(title=title, box=None, title_style=f"bold {NordColors.NORD8}")
     table.add_column("Option", style=f"{NordColors.NORD9}", justify="right")
     table.add_column("Description", style=f"{NordColors.NORD4}")
-    
+
     for key, description in options:
         table.add_row(key, description)
-    
+
     return table
+
 
 # ==============================
 # Logging Setup
@@ -249,33 +252,42 @@ def setup_logging(log_file: str = LOG_FILE) -> None:
         print_warning(f"Could not set up logging to {log_file}: {e}")
         print_step("Continuing without logging to file...")
 
+
 # ==============================
 # Signal Handling & Cleanup
 # ==============================
 def cleanup() -> None:
     """Perform cleanup tasks before exit."""
     print_step("Performing cleanup tasks...")
-    # Add cleanup tasks here
+    # Add specific cleanup tasks here if needed
+
 
 atexit.register(cleanup)
 
+
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     print_warning(f"\nScript interrupted by {sig_name}.")
     cleanup()
     sys.exit(128 + signum)
 
+
 # Register signal handlers
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ==============================
 # Progress Tracking Classes
 # ==============================
 class ProgressManager:
     """Unified progress tracking system with multiple display options."""
-    
+
     def __init__(self):
         self.progress = Progress(
             SpinnerColumn(),
@@ -285,35 +297,35 @@ class ProgressManager:
             TextColumn("[{task.fields[status]}]"),
             TimeRemainingColumn(),
             console=console,
-            expand=True
+            expand=True,
         )
-    
+
     def __enter__(self):
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.progress.stop()
-    
-    def add_task(self, description: str, total: float, color: str = NordColors.NORD8) -> TaskID:
+
+    def add_task(
+        self, description: str, total: float, color: str = NordColors.NORD8
+    ) -> TaskID:
         """Add a new task to the progress manager."""
         return self.progress.add_task(
-            description, 
-            total=total,
-            color=color,
-            status=f"{NordColors.NORD9}starting"
+            description, total=total, color=color, status=f"{NordColors.NORD9}starting"
         )
-        
+
     def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
         """Update a task's progress."""
         self.progress.update(task_id, advance=advance, **kwargs)
-        
+
     def start(self):
         """Start displaying the progress bar."""
         self.progress.start()
-        
+
     def stop(self):
         """Stop displaying the progress bar."""
         self.progress.stop()
+
 
 class Spinner:
     """Thread-safe spinner for indeterminate progress."""
@@ -382,229 +394,252 @@ class Spinner:
         """Context manager exit."""
         self.stop(success=exc_type is None)
 
+
+def format_time(seconds: float) -> str:
+    """Format seconds into a human-readable time string."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    elif seconds < 3600:
+        return f"{seconds / 60:.1f}m"
+    else:
+        return f"{seconds / 3600:.1f}h"
+
+
 # ==============================
 # System Helper Functions
 # ==============================
 def run_command(
     cmd: List[str],
-    env: Optional[Dict[str, str]] = None,
+    shell: bool = False,
     check: bool = True,
-    capture_output: bool = False,
+    capture_output: bool = True,
+    timeout: int = 60,
     verbose: bool = False,
 ) -> subprocess.CompletedProcess:
     """Run a shell command and handle errors."""
     if verbose:
-        print_step(f"Executing: {' '.join(cmd)}")
+        if shell:
+            print_step(f"Executing: {cmd}")
+        else:
+            print_step(f"Executing: {' '.join(cmd)}")
+
     try:
         return subprocess.run(
             cmd,
-            env=env or os.environ.copy(),
+            shell=shell,
             check=check,
             text=True,
             capture_output=capture_output,
+            timeout=timeout,
         )
     except subprocess.CalledProcessError as e:
-        print_error(f"Command failed: {' '.join(cmd)}")
+        if shell:
+            print_error(f"Command failed: {cmd}")
+        else:
+            print_error(f"Command failed: {' '.join(cmd)}")
+
+        if hasattr(e, "stdout") and e.stdout:
+            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
         if hasattr(e, "stderr") and e.stderr:
-            print_error(f"Error details: {e.stderr.strip()}")
+            console.print(f"[bold {NordColors.NORD11}]Stderr: {e.stderr.strip()}[/]")
+        raise
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout} seconds")
         raise
 
-def check_privileges() -> bool:
+
+def check_root() -> bool:
     """Check if script is running with elevated privileges."""
-    try:
-        if os.name == 'nt':  # Windows
-            import ctypes
-            return ctypes.windll.shell32.IsUserAnAdmin() != 0
-        else:  # Unix/Linux/Mac
-            return os.geteuid() == 0
-    except:
-        return False
+    return os.geteuid() == 0
 
-def ensure_directory(path: str) -> bool:
-    """Create directory if it doesn't exist."""
-    try:
-        os.makedirs(path, exist_ok=True)
-        print_step(f"Directory ensured: {path}")
-        return True
-    except Exception as e:
-        print_error(f"Failed to create directory '{path}': {e}")
-        return False
 
-def check_dependency(cmd: str) -> bool:
-    """Check if a command is available in the system."""
-    return shutil.which(cmd) is not None
+def ensure_root() -> None:
+    """Ensure the script is run with root privileges."""
+    if not check_root():
+        print_error("This operation requires root privileges.")
+        print_info("Please run the script with sudo.")
+        sys.exit(1)
+
 
 # ==============================
-# Example Task Functions
+# Tailscale Operation Functions
 # ==============================
-def task_with_progress_bar() -> None:
-    """Example task that uses a progress bar."""
-    print_section("Progress Bar Demo")
-    
-    total_steps = 100
-    print_info(f"Simulating task with {total_steps} steps")
-    
+def uninstall_tailscale() -> None:
+    """Stop tailscaled, uninstall tailscale, and remove configuration/data directories."""
+    ensure_root()
+    print_section("Uninstalling Tailscale")
+
+    # Define steps for uninstallation
+    steps = [
+        ("Stopping tailscaled service", ["systemctl", "stop", "tailscaled"]),
+        ("Disabling tailscaled service", ["systemctl", "disable", "tailscaled"]),
+        (
+            "Removing tailscale package",
+            ["apt-get", "remove", "--purge", "tailscale", "-y"],
+        ),
+        ("Autoremoving unused packages", ["apt-get", "autoremove", "-y"]),
+    ]
+
+    # Execute each step with progress tracking
     with ProgressManager() as progress:
-        task_id = progress.add_task("Processing", total=total_steps)
+        task = progress.add_task("Uninstalling Tailscale", total=len(steps))
         progress.start()
-        
-        for i in range(total_steps):
-            # Simulate work
-            time.sleep(0.05)
-            # Update progress
-            status_text = f"[{NordColors.NORD9}]Step {i+1}/{total_steps}"
-            progress.update(task_id, advance=1, status=status_text)
-    
-    print_success("Task completed successfully!")
 
-def task_with_spinner() -> None:
-    """Example task that uses a spinner for indeterminate progress."""
-    print_section("Spinner Demo")
-    
-    print_info("Starting process with unknown duration")
-    
-    with Spinner("Processing data") as spinner:
-        # Simulate work that takes a variable amount of time
-        time.sleep(3)
-    
-    print_success("Process completed successfully!")
+        for desc, cmd in steps:
+            print_step(desc)
+            try:
+                run_command(cmd)
+                progress.update(
+                    task, advance=1, status=f"[{NordColors.NORD9}]Completed"
+                )
+            except Exception as e:
+                print_error(f"Error during {desc}: {e}")
+                if not get_user_confirmation("Continue with remaining steps?"):
+                    print_warning("Uninstallation aborted.")
+                    return
+                progress.update(task, advance=1, status=f"[{NordColors.NORD11}]Failed")
 
-def task_with_multiple_progress_bars() -> None:
-    """Example task with multiple concurrent progress bars."""
-    print_section("Multiple Progress Bars Demo")
-    
-    print_info("Starting multiple concurrent tasks")
-    
+    # Remove configuration/data directories
+    config_paths = ["/var/lib/tailscale", "/etc/tailscale", "/usr/share/tailscale"]
+    print_step("Removing configuration directories...")
+
+    for path in config_paths:
+        if os.path.exists(path):
+            try:
+                shutil.rmtree(path)
+                print_success(f"Removed {path}")
+            except Exception as e:
+                print_warning(f"Failed to remove {path}: {e}")
+
+    print_success("Tailscale uninstalled and cleaned up.")
+
+
+def install_tailscale() -> None:
+    """Install tailscale using the official install script."""
+    ensure_root()
+    print_section("Installing Tailscale")
+
+    print_step("Running tailscale install script")
+    install_cmd = f"curl -fsSL {TAILSCALE_INSTALL_URL} | sh"
+
+    with Spinner("Installing Tailscale") as spinner:
+        try:
+            result = run_command(install_cmd, shell=True)
+            if result.returncode == 0:
+                print_success("Tailscale installed successfully.")
+            else:
+                print_warning("Tailscale installation may have issues.")
+        except Exception as e:
+            print_error(f"Installation failed: {e}")
+            spinner.stop(success=False)
+            raise
+
+
+def start_tailscale_service() -> None:
+    """Enable and start the tailscaled service."""
+    ensure_root()
+    print_section("Enabling and Starting Tailscale Service")
+
+    steps = [
+        ("Enabling tailscaled service", ["systemctl", "enable", "tailscaled"]),
+        ("Starting tailscaled service", ["systemctl", "start", "tailscaled"]),
+    ]
+
     with ProgressManager() as progress:
-        # Add multiple tasks
-        task1 = progress.add_task("Downloading", total=100, color=NordColors.NORD8)
-        task2 = progress.add_task("Processing", total=50, color=NordColors.NORD9)
-        task3 = progress.add_task("Uploading", total=75, color=NordColors.NORD10)
-        
+        task = progress.add_task("Configuring Tailscale Service", total=len(steps))
         progress.start()
-        
-        # Task 1 progress
-        for i in range(100):
-            time.sleep(0.02)
-            progress.update(task1, advance=1, status=f"[{NordColors.NORD9}]{i+1}%")
-            
-            # Update other tasks at different rates
-            if i % 2 == 0 and i < 100:
-                progress.update(task2, advance=1, status=f"[{NordColors.NORD9}]Step {(i//2)+1}")
-            
-            if i % 4 == 0 and i < 300:
-                progress.update(task3, advance=1, status=f"[{NordColors.NORD9}]File {(i//4)+1}")
-    
-    print_success("All tasks completed successfully!")
 
-def task_file_operations() -> None:
-    """Example task demonstrating file operations with progress tracking."""
-    print_section("File Operations Demo")
-    
-    # Get source and destination directories
-    source_dir = get_user_input("Enter source directory:", os.path.expanduser("~"))
-    dest_dir = get_user_input("Enter destination directory:", DEFAULT_WORK_DIR)
-    
-    # Ensure destination directory exists
-    if not ensure_directory(dest_dir):
-        print_error("Failed to create destination directory")
-        return
-    
-    # List files in source directory
-    try:
-        files = [f for f in os.listdir(source_dir) if os.path.isfile(os.path.join(source_dir, f))]
-        
-        if not files:
-            print_warning(f"No files found in {source_dir}")
-            return
-        
-        print_info(f"Found {len(files)} files in {source_dir}")
-        
-        # Ask for confirmation
-        if not get_user_confirmation(f"Copy {len(files)} files to {dest_dir}?"):
-            print_info("Operation cancelled")
-            return
-        
-        # Copy files with progress bar
-        with ProgressManager() as progress:
-            task_id = progress.add_task(f"Copying files", total=len(files))
-            progress.start()
-            
-            for i, file in enumerate(files):
-                src_path = os.path.join(source_dir, file)
-                dst_path = os.path.join(dest_dir, file)
-                
-                try:
-                    # Show current file
-                    progress.update(
-                        task_id, 
-                        advance=0,  # Don't advance yet
-                        status=f"[{NordColors.NORD9}]{file}"
+        for desc, cmd in steps:
+            print_step(desc)
+            try:
+                run_command(cmd)
+                progress.update(
+                    task, advance=1, status=f"[{NordColors.NORD9}]Completed"
+                )
+            except Exception as e:
+                print_error(f"Error during {desc}: {e}")
+                progress.update(task, advance=1, status=f"[{NordColors.NORD11}]Failed")
+                if not get_user_confirmation("Continue with remaining steps?"):
+                    print_warning("Service configuration aborted.")
+                    return
+
+    print_success("Tailscale service enabled and started.")
+
+
+def tailscale_up() -> None:
+    """Run 'tailscale up' to bring up the daemon."""
+    ensure_root()
+    print_section("Running 'tailscale up'")
+
+    with Spinner("Executing tailscale up") as spinner:
+        try:
+            result = run_command(["tailscale", "up"])
+            spinner.stop(success=True)
+            print_success("Tailscale is up!")
+            console.print(f"\n[bold]tailscale up output:[/bold]\n{result.stdout}")
+        except Exception as e:
+            spinner.stop(success=False)
+            print_error(f"Failed to bring Tailscale up: {e}")
+            raise
+
+
+def check_tailscale_status() -> None:
+    """Check and display the current Tailscale status."""
+    print_section("Tailscale Status")
+
+    with Spinner("Checking Tailscale status") as spinner:
+        try:
+            result = run_command(["tailscale", "status"])
+            spinner.stop(success=True)
+
+            if result.stdout.strip():
+                console.print(
+                    Panel(
+                        result.stdout,
+                        title="Tailscale Status",
+                        border_style=f"bold {NordColors.NORD8}",
                     )
-                    
-                    # Simulate file copy (replace with actual file operations)
-                    time.sleep(0.2)  # Simulate copy taking time
-                    
-                    # Update progress
-                    progress.update(task_id, advance=1)
-                    
-                except Exception as e:
-                    print_error(f"Error copying {file}: {e}")
-            
-        print_success(f"Successfully processed {len(files)} files")
-        
-    except Exception as e:
-        print_error(f"Error accessing directory: {e}")
+                )
+            else:
+                print_warning(
+                    "No status information available. Tailscale may not be running."
+                )
+        except Exception as e:
+            spinner.stop(success=False)
+            print_error(f"Failed to check Tailscale status: {e}")
+            print_info("Tailscale may not be installed or running.")
 
-def task_system_info() -> None:
-    """Display detailed system information."""
-    print_section("System Information")
-    
-    # Create a table for system info
-    table = Table(title="System Information", box=None)
-    table.add_column("Property", style=f"{NordColors.NORD9}")
-    table.add_column("Value", style=f"{NordColors.NORD4}")
-    
-    # System details
-    table.add_row("Hostname", HOSTNAME)
-    table.add_row("Platform", platform.system())
-    table.add_row("Platform Version", platform.version())
-    table.add_row("Architecture", platform.machine())
-    table.add_row("Processor", platform.processor())
-    
-    # Python details
-    table.add_row("Python Version", platform.python_version())
-    table.add_row("Python Implementation", platform.python_implementation())
-    
-    # User details
-    table.add_row("Username", os.environ.get('USER', os.environ.get('USERNAME', 'Unknown')))
-    table.add_row("Home Directory", os.path.expanduser("~"))
-    table.add_row("Current Directory", os.getcwd())
-    
-    # Time details
-    table.add_row("Current Time", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-    table.add_row("Timezone", time.tzname[0])
-    
-    console.print(table)
-    
-    # Memory information
+
+def reset_tailscale() -> None:
+    """Perform a complete reset of Tailscale: uninstall, install, start, up."""
+    ensure_root()
+    print_section("Complete Tailscale Reset")
+
+    if not get_user_confirmation("This will completely reset Tailscale. Continue?"):
+        print_info("Reset cancelled.")
+        return
+
     try:
-        import psutil
-        memory = psutil.virtual_memory()
-        
-        print_section("Memory Information")
-        mem_table = Table(box=None)
-        mem_table.add_column("Metric", style=f"{NordColors.NORD9}")
-        mem_table.add_column("Value", style=f"{NordColors.NORD4}")
-        
-        mem_table.add_row("Total Memory", format_size(memory.total))
-        mem_table.add_row("Available Memory", format_size(memory.available))
-        mem_table.add_row("Used Memory", format_size(memory.used))
-        mem_table.add_row("Memory Percentage", f"{memory.percent}%")
-        
-        console.print(mem_table)
-    except ImportError:
-        print_info("Install psutil package for memory information")
+        # Step 1: Uninstall
+        uninstall_tailscale()
+        time.sleep(CHECK_INTERVAL)
+
+        # Step 2: Install
+        install_tailscale()
+        time.sleep(CHECK_INTERVAL)
+
+        # Step 3: Start service
+        start_tailscale_service()
+        time.sleep(CHECK_INTERVAL)
+
+        # Step 4: Bring up
+        tailscale_up()
+
+        print_success("Tailscale has been completely reset!")
+    except Exception as e:
+        print_error(f"Reset process failed: {e}")
+        print_warning("Tailscale may be in an inconsistent state.")
+
 
 # ==============================
 # Menu System
@@ -616,48 +651,56 @@ def main_menu() -> None:
         print_header(APP_NAME)
         print_info(f"Version: {VERSION}")
         print_info(f"System: {platform.system()} {platform.release()}")
-        print_info(f"User: {os.environ.get('USER', os.environ.get('USERNAME', 'Unknown'))}")
+        print_info(
+            f"User: {os.environ.get('USER', os.environ.get('USERNAME', 'Unknown'))}"
+        )
         print_info(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
+        print_info(f"Running as root: {'Yes' if check_root() else 'No'}")
+
         # Main menu options
         menu_options = [
-            ("1", "Progress Bar Demo"),
-            ("2", "Spinner Demo"),
-            ("3", "Multiple Progress Bars Demo"),
-            ("4", "File Operations Demo"),
-            ("5", "System Information"),
-            ("0", "Exit")
+            ("1", "Complete Tailscale Reset (uninstall, reinstall, restart)"),
+            ("2", "Uninstall Tailscale"),
+            ("3", "Install Tailscale"),
+            ("4", "Start Tailscale Service"),
+            ("5", "Run 'tailscale up'"),
+            ("6", "Check Tailscale Status"),
+            ("0", "Exit"),
         ]
-        
+
         console.print(create_menu_table("Main Menu", menu_options))
-        
+
         # Get user selection
-        choice = get_user_input("Enter your choice (0-5):")
-        
+        choice = get_user_input("Enter your choice (0-6):")
+
         if choice == "1":
-            task_with_progress_bar()
+            reset_tailscale()
             pause()
         elif choice == "2":
-            task_with_spinner()
+            uninstall_tailscale()
             pause()
         elif choice == "3":
-            task_with_multiple_progress_bars()
+            install_tailscale()
             pause()
         elif choice == "4":
-            task_file_operations()
+            start_tailscale_service()
             pause()
         elif choice == "5":
-            task_system_info()
+            tailscale_up()
+            pause()
+        elif choice == "6":
+            check_tailscale_status()
             pause()
         elif choice == "0":
             clear_screen()
             print_header("Goodbye!")
-            print_info("Thank you for using the Universal Utility.")
+            print_info("Thank you for using the Tailscale Reset Utility.")
             time.sleep(1)
             sys.exit(0)
         else:
             print_error("Invalid selection. Please try again.")
             time.sleep(1)
+
 
 # ==============================
 # Main Entry Point
@@ -667,16 +710,17 @@ def main() -> None:
     try:
         # Initial setup
         setup_logging()
-        
+
         # Launch the main menu
         main_menu()
-        
+
     except KeyboardInterrupt:
         print_warning("\nProcess interrupted by user.")
         sys.exit(130)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
