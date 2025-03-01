@@ -1,130 +1,150 @@
 #!/usr/bin/env python3
 """
-Real time system monitor script.
+Unified System Resource Monitor
 
-This script uses Click for CLI handling and Rich for a beautiful,
-Nord dark–themed, real–time dashboard that polls system metrics at a
-configurable interval. It displays:
-  - CPU frequency (current and max) and per-core usage,
-  - Load averages,
-  - Memory usage,
-  - CPU temperature (if available),
-  - System uptime,
-  - GPU frequency (using vcgencmd, if available or enabled),
-  - (Optionally) Disk usage,
-  - (Optionally) Network I/O,
-  - Top processes sorted by CPU or memory usage.
+This utility provides a real‑time dashboard of system metrics for Linux systems.
+It monitors:
+  • CPU frequencies, usage (overall and per‑core), temperature, and load averages
+  • Memory consumption (RAM and swap)
+  • Disk usage and I/O statistics
+  • Network I/O and interface status
+  • Top processes sorted by CPU or memory usage
+  • GPU frequency (if available)
 
-Command–line options allow you to adjust the refresh interval, run duration,
-sorting criteria, enable/disable additional metrics, and even log metrics to a file.
-Tested on Raspberry Pi (with vcgencmd installed); if GPU data is not available,
-it will show "N/A" (or "Disabled" if --no-gpu is specified).
+It also supports data export (JSON or CSV) and uses a Nord‑themed, visually appealing dashboard.
+Use command‑line options to adjust refresh rates, run duration, export settings, and which metrics to show.
+
+Note: Some metrics (e.g., GPU) may not be available on all systems.
+Run this script with root privileges for full functionality.
 """
 
-import time
+import atexit
+import csv
+import json
+import logging
+import math
 import os
+import platform
+import re
+import signal
+import socket
 import subprocess
+import sys
+import tempfile
+import time
+from collections import deque
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Tuple, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-import psutil
 import click
 from rich.console import Console
-from rich.live import Live
-from rich.table import Table
-from rich.panel import Panel
 from rich.layout import Layout
-from rich.theme import Theme
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
+import pyfiglet
+import psutil
 
-# Define a Nord dark theme (colors inspired by Nord)
-nord_theme = Theme({
-    "header": "#81A1C1",    # Light blue
-    "cpu": "#88C0D0",       # Bright blue
-    "mem": "#8FBCBB",       # Soft cyan
-    "load": "#BF616A",      # Red-ish
-    "proc": "#EBCB8B",      # Yellow
-    "gpu": "#81A1C1",       # Same as header
-    "label": "#D8DEE9",     # Almost white
-    "temp": "#D08770",      # Orange-ish for temperature
-    "uptime": "#A3BE8C",    # Green-ish for uptime
-})
+# ------------------------------
+# Configuration Constants
+# ------------------------------
+DEFAULT_REFRESH_RATE = 2.0         # seconds between dashboard updates
+DEFAULT_HISTORY_POINTS = 60        # data points for trend graphs
+DEFAULT_TOP_PROCESSES = 5          # top processes to display
+EXPORT_DIR = os.path.expanduser("~/system_monitor_exports")
 
-console = Console(theme=nord_theme)
+# ------------------------------
+# Nord‑Themed Colors & Console Setup
+# ------------------------------
+# Using Nord colors for Rich theme
+nord_theme = {
+    "header": "#81A1C1",    # light blue
+    "cpu": "#88C0D0",       # bright blue
+    "mem": "#8FBCBB",       # soft cyan
+    "load": "#BF616A",      # red-ish
+    "proc": "#EBCB8B",      # yellow
+    "gpu": "#81A1C1",       # same as header
+    "label": "#D8DEE9",     # almost white
+    "temp": "#D08770",      # orange-ish
+    "uptime": "#A3BE8C",    # green-ish
+}
+console = Console(theme=console.theme if console.theme else None)
 
+def print_header(text: str) -> None:
+    """Print a striking ASCII art header using pyfiglet."""
+    ascii_art = pyfiglet.figlet_format(text, font="slant")
+    console.print(ascii_art, style="bold #88C0D0")
+
+# ------------------------------
+# Logging Setup
+# ------------------------------
+LOG_FILE = "/var/log/system_monitor.log"
+def setup_logging() -> None:
+    log_dir = Path(LOG_FILE).parent
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler(LOG_FILE, mode="a")],
+    )
+
+# ------------------------------
+# Signal Handling & Cleanup
+# ------------------------------
+SHUTDOWN_FLAG = False
+def signal_handler(sig: int, frame: Any) -> None:
+    global SHUTDOWN_FLAG
+    SHUTDOWN_FLAG = True
+    console.print(f"[bold #BF616A]Interrupted by {signal.Signals(sig).name}. Shutting down...[/]")
+    sys.exit(128 + sig)
+
+for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(s, signal_handler)
+
+def cleanup() -> None:
+    # Placeholder for any cleanup routines if needed.
+    pass
+atexit.register(cleanup)
+
+# ------------------------------
+# Helper Functions for Basic Metrics
+# ------------------------------
 def get_cpu_metrics() -> Tuple[float, float, List[float]]:
-    """Retrieve current and max CPU frequencies and per-core usage percentages."""
     freq = psutil.cpu_freq()
-    current_freq = freq.current if freq else 0.0
-    max_freq = freq.max if freq else 0.0
+    current = freq.current if freq else 0.0
+    maximum = freq.max if freq else 0.0
     usage = psutil.cpu_percent(interval=None, percpu=True)
-    return current_freq, max_freq, usage
+    return current, maximum, usage
 
 def get_load_average() -> Tuple[float, float, float]:
-    """Retrieve system load averages (1, 5, and 15 minutes)."""
     try:
         return os.getloadavg()
-    except (AttributeError, OSError):
+    except Exception:
         return (0.0, 0.0, 0.0)
 
 def get_memory_metrics() -> Tuple[float, float, float, float]:
-    """Retrieve memory usage statistics: total, used, available, and percent used."""
     mem = psutil.virtual_memory()
     return mem.total, mem.used, mem.available, mem.percent
 
 def get_cpu_temperature() -> Optional[float]:
-    """
-    Retrieve CPU temperature in Celsius using psutil if available or fallback
-    to reading /sys/class/thermal/thermal_zone0/temp.
-    """
     temps = psutil.sensors_temperatures()
     if temps:
         for key in ("coretemp", "cpu-thermal"):
             if key in temps and temps[key]:
                 sensor = temps[key]
                 return sum(t.current for t in sensor) / len(sensor)
-    # Fallback for Linux systems
     try:
         with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
             return float(f.read().strip()) / 1000.0
     except Exception:
         return None
 
-def get_top_processes(limit: int = 5, sort_by: str = "cpu") -> List[dict]:
-    """
-    Return a list of the top processes sorted by CPU or memory usage.
-
-    Args:
-        limit (int): Number of processes to return.
-        sort_by (str): Sorting criteria: "cpu" or "memory".
-
-    Returns:
-        List of process info dictionaries.
-    """
-    procs = []
-    for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
-        try:
-            procs.append(proc.info)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    if sort_by.lower() == "memory":
-        procs.sort(key=lambda p: p.get('memory_percent', 0), reverse=True)
-    else:
-        procs.sort(key=lambda p: p.get('cpu_percent', 0), reverse=True)
-    return procs[:limit]
-
 def get_gpu_frequency() -> Optional[int]:
-    """
-    Retrieve GPU frequency using the 'vcgencmd' command.
-    Expected output format: frequency(1)=<value>
-    
-    Returns:
-        Frequency in Hz or None if unavailable.
-    """
     try:
-        result = subprocess.run(
-            ["vcgencmd", "measure_clock", "gpu"],
-            capture_output=True, text=True, timeout=1
-        )
+        result = subprocess.run(["vcgencmd", "measure_clock", "gpu"], capture_output=True, text=True, timeout=1)
         output = result.stdout.strip()
         if output.startswith("frequency("):
             parts = output.split("=")
@@ -135,183 +155,307 @@ def get_gpu_frequency() -> Optional[int]:
     return None
 
 def get_system_uptime() -> str:
-    """Return system uptime as a formatted string."""
     boot_time = psutil.boot_time()
-    uptime_seconds = time.time() - boot_time
-    days = int(uptime_seconds // 86400)
-    hours = int((uptime_seconds % 86400) // 3600)
-    minutes = int((uptime_seconds % 3600) // 60)
-    seconds = int(uptime_seconds % 60)
+    uptime = time.time() - boot_time
+    days = int(uptime // 86400)
+    hours = int((uptime % 86400) // 3600)
+    minutes = int((uptime % 3600) // 60)
+    seconds = int(uptime % 60)
     return f"{days}d {hours:02d}h {minutes:02d}m {seconds:02d}s"
 
-def build_metrics_table(no_gpu: bool, enable_disk: bool, enable_net: bool) -> Table:
-    """
-    Build a Rich Table containing system metrics.
-    """
-    table = Table(title="System Monitor", expand=True, style="header")
-    table.add_column("Metric", style="label", no_wrap=True)
-    table.add_column("Value", style="label")
-    
-    # CPU metrics
-    cpu_current, cpu_max, cpu_usage = get_cpu_metrics()
-    table.add_row("CPU Frequency", f"{cpu_current:.2f} MHz (Max: {cpu_max:.2f} MHz)")
-    table.add_row("CPU Usage", ", ".join(f"{u:.1f}%" for u in cpu_usage))
-    
-    # Load averages
-    load1, load5, load15 = get_load_average()
-    table.add_row("Load Average", f"{load1:.2f}, {load5:.2f}, {load15:.2f}")
-    
-    # Memory usage
-    total, used, available, mem_percent = get_memory_metrics()
-    table.add_row("Memory Usage", f"{mem_percent:.1f}% ({used/1e9:.2f}GB / {total/1e9:.2f}GB)")
-    
-    # CPU temperature
-    cpu_temp = get_cpu_temperature()
-    temp_str = f"{cpu_temp:.1f} °C" if cpu_temp is not None else "N/A"
-    table.add_row("CPU Temp", temp_str, style="temp")
-    
-    # System uptime
-    table.add_row("Uptime", get_system_uptime(), style="uptime")
-    
-    # GPU frequency
-    if no_gpu:
-        gpu_str = "Disabled"
+def get_top_processes(limit: int = DEFAULT_TOP_PROCESSES, sort_by: str = "cpu") -> List[Dict[str, Any]]:
+    procs = []
+    for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+        try:
+            procs.append(proc.info)
+        except Exception:
+            continue
+    if sort_by.lower() == "memory":
+        procs.sort(key=lambda p: p.get('memory_percent', 0), reverse=True)
     else:
-        gpu_freq = get_gpu_frequency()
-        gpu_str = f"{gpu_freq/1e6:.2f} MHz" if gpu_freq is not None else "N/A"
-    table.add_row("GPU Frequency", gpu_str, style="gpu")
-    
-    # Disk usage
-    if enable_disk:
-        try:
-            disk = psutil.disk_usage('/')
-            table.add_row("Disk Usage", f"{disk.percent:.1f}% ({disk.used/1e9:.2f}GB / {disk.total/1e9:.2f}GB)")
-        except Exception:
-            table.add_row("Disk Usage", "N/A")
-    
-    # Network I/O
-    if enable_net:
-        try:
-            net = psutil.net_io_counters()
-            table.add_row("Network I/O", f"Sent: {net.bytes_sent/1e6:.2f}MB, Recv: {net.bytes_recv/1e6:.2f}MB")
-        except Exception:
-            table.add_row("Network I/O", "N/A")
-    
-    return table
+        procs.sort(key=lambda p: p.get('cpu_percent', 0), reverse=True)
+    return procs[:limit]
 
-def build_processes_table(limit: int = 5, sort_by: str = "cpu") -> Table:
-    """
-    Build a Rich Table displaying the top processes.
-    """
-    proc_table = Table(title="Top Processes", expand=True, style="proc")
-    proc_table.add_column("PID", style="label")
-    proc_table.add_column("Name", style="label")
-    proc_table.add_column("CPU %", style="label")
-    proc_table.add_column("Mem %", style="label")
-    
-    for proc in get_top_processes(limit, sort_by):
-        proc_table.add_row(
-            str(proc.get('pid', '')),
-            (proc.get('name') or "")[:20],
-            f"{proc.get('cpu_percent', 0):.1f}",
-            f"{proc.get('memory_percent', 0):.1f}"
+# ------------------------------
+# Monitor Classes (Disk, Network, CPU, Memory, Process)
+# ------------------------------
+@dataclass
+class DiskInfo:
+    device: str
+    mountpoint: str
+    total: int
+    used: int
+    free: int
+    percent: float
+    filesystem: str = "unknown"
+    io_stats: Dict[str, Union[int, float]] = field(default_factory=dict)
+
+class DiskMonitor:
+    def __init__(self) -> None:
+        self.disks: List[DiskInfo] = []
+        self.last_update: float = 0
+        self.last_stats: Dict[str, Dict[str, int]] = {}
+    def update(self) -> None:
+        self.disks = []
+        try:
+            df = subprocess.run(["df", "-P", "-k", "-T"], capture_output=True, text=True, check=True).stdout
+            lines = df.splitlines()[1:]
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 7:
+                    continue
+                device, fs, _, _, _, usage, mount = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]
+                total = int(parts[2]) * 1024
+                used = int(parts[3]) * 1024
+                free = int(parts[4]) * 1024
+                percent = float(usage.rstrip("%"))
+                self.disks.append(DiskInfo(device, mount, total, used, free, percent, filesystem=fs))
+        except Exception as e:
+            console.print(f"[bold #BF616A]Error updating disk info: {e}[/bold #BF616A]")
+
+@dataclass
+class NetworkInfo:
+    name: str
+    ipv4: str = "N/A"
+    ipv6: str = "N/A"
+    mac: str = "N/A"
+    bytes_sent: int = 0
+    bytes_recv: int = 0
+    packets_sent: int = 0
+    packets_recv: int = 0
+    bytes_sent_rate: float = 0.0
+    bytes_recv_rate: float = 0.0
+    is_up: bool = True
+    mtu: int = 0
+
+class NetworkMonitor:
+    def __init__(self) -> None:
+        self.interfaces: List[NetworkInfo] = []
+        self.last_update: float = 0
+        self.last_stats: Dict[str, Dict[str, int]] = {}
+    def update(self) -> None:
+        current_time = time.time()
+        self.interfaces = []
+        stats = {}
+        try:
+            with open("/proc/net/dev", "r") as f:
+                lines = f.readlines()[2:]
+                for line in lines:
+                    if ":" not in line:
+                        continue
+                    name, data = line.split(":", 1)
+                    name = name.strip()
+                    fields = data.split()
+                    bytes_recv = int(fields[0])
+                    packets_recv = int(fields[1])
+                    bytes_sent = int(fields[8])
+                    packets_sent = int(fields[9])
+                    stats[name] = {"bytes_recv": bytes_recv, "bytes_sent": bytes_sent}
+                    # For simplicity, skip detailed IP/MAC info
+                    self.interfaces.append(NetworkInfo(name=name, ipv4="N/A", mac="N/A", is_up=True))
+            self.last_stats = stats
+            self.last_update = current_time
+        except Exception as e:
+            console.print(f"[bold #BF616A]Error updating network info: {e}[/bold #BF616A]")
+
+class CpuMonitor:
+    def __init__(self) -> None:
+        self.usage_percent: float = 0.0
+        self.per_core: List[float] = []
+        self.core_count: int = os.cpu_count() or 1
+        self.load_avg: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    def update(self) -> None:
+        self.usage_percent = psutil.cpu_percent(interval=None)
+        self.per_core = psutil.cpu_percent(interval=None, percpu=True)
+        self.load_avg = os.getloadavg() if hasattr(os, "getloadavg") else (0.0, 0.0, 0.0)
+
+@dataclass
+class MemoryInfo:
+    total: int = 0
+    used: int = 0
+    available: int = 0
+    percent: float = 0.0
+    swap_total: int = 0
+    swap_used: int = 0
+    swap_percent: float = 0.0
+
+class MemoryMonitor:
+    def __init__(self) -> None:
+        self.info = MemoryInfo()
+    def update(self) -> None:
+        mem = psutil.virtual_memory()
+        self.info.total = mem.total
+        self.info.used = mem.used
+        self.info.available = mem.available
+        self.info.percent = mem.percent
+        swap = psutil.swap_memory()
+        self.info.swap_total = swap.total
+        self.info.swap_used = swap.used
+        self.info.swap_percent = swap.percent
+
+class ProcessMonitor:
+    def __init__(self, limit: int = DEFAULT_TOP_PROCESSES) -> None:
+        self.limit = limit
+        self.processes: List[Dict[str, Any]] = []
+    def update(self, sort_by: str = "cpu") -> None:
+        procs = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                procs.append(proc.info)
+            except Exception:
+                continue
+        if sort_by.lower() == "memory":
+            procs.sort(key=lambda p: p.get('memory_percent', 0), reverse=True)
+        else:
+            procs.sort(key=lambda p: p.get('cpu_percent', 0), reverse=True)
+        self.processes = procs[:self.limit]
+
+# ------------------------------
+# Unified Monitor Class
+# ------------------------------
+class UnifiedMonitor:
+    def __init__(self, refresh_rate: float = DEFAULT_REFRESH_RATE, top_limit: int = DEFAULT_TOP_PROCESSES) -> None:
+        self.refresh_rate = refresh_rate
+        self.start_time = time.time()
+        self.disk_monitor = DiskMonitor()
+        self.network_monitor = NetworkMonitor()
+        self.cpu_monitor = CpuMonitor()
+        self.memory_monitor = MemoryMonitor()
+        self.process_monitor = ProcessMonitor(limit=top_limit)
+        # History for graphing CPU usage
+        self.cpu_history = deque(maxlen=DEFAULT_HISTORY_POINTS)
+    def update(self) -> None:
+        self.disk_monitor.update()
+        self.network_monitor.update()
+        self.cpu_monitor.update()
+        self.memory_monitor.update()
+        self.process_monitor.update()
+        self.cpu_history.append(self.cpu_monitor.usage_percent)
+    def build_dashboard(self, sort_by: str) -> Layout:
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=3),
+            Layout(name="body", ratio=1),
+            Layout(name="footer", size=3)
         )
-    return proc_table
+        header_text = f"[header]Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Uptime: {get_system_uptime()}[/header]"
+        layout["header"].update(Panel(header_text, style="header"))
+        # Build Metrics Table (CPU, Memory, Load, GPU, etc.)
+        metrics = []
+        cpu_current, cpu_max, per_core = get_cpu_metrics()
+        cpu_temp = get_cpu_temperature()
+        gpu_freq = get_gpu_frequency()
+        load = self.cpu_monitor.load_avg
+        mem_total, mem_used, mem_avail, mem_percent = get_memory_metrics()
+        metrics.append(f"CPU: {cpu_current:.1f} MHz (Max: {cpu_max:.1f} MHz), Usage: {self.cpu_monitor.usage_percent:.1f}%")
+        metrics.append(f"Load: {load[0]:.2f}, {load[1]:.2f}, {load[2]:.2f}")
+        metrics.append(f"Memory: {mem_percent:.1f}% used ({mem_used/1e9:.2f}GB / {mem_total/1e9:.2f}GB)")
+        if cpu_temp is not None:
+            metrics.append(f"CPU Temp: {cpu_temp:.1f} °C")
+        if gpu_freq is not None:
+            metrics.append(f"GPU Frequency: {gpu_freq/1e6:.2f} MHz")
+        # Combine metrics into one panel
+        metrics_panel = Panel("\n".join(metrics), title="System Metrics", border_style="cpu")
+        # Build Top Processes Panel
+        proc_lines = ["PID   Name                CPU%   MEM%"]
+        for proc in self.process_monitor.processes:
+            proc_lines.append(f"{proc.get('pid', ''):<5} {proc.get('name', '')[:18]:<18} {proc.get('cpu_percent',0):>5.1f} {proc.get('memory_percent',0):>5.1f}")
+        proc_panel = Panel("\n".join(proc_lines), title="Top Processes", border_style="proc")
+        body = Layout()
+        body.split_row(
+            Layout(metrics_panel, name="metrics"),
+            Layout(proc_panel, name="processes")
+        )
+        layout["body"].update(body)
+        footer_text = "[label]Press Ctrl+C to exit.[/label]"
+        layout["footer"].update(Panel(footer_text, style="header"))
+        return layout
 
-def build_header() -> Panel:
-    """Build header panel with current time and uptime."""
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    uptime_str = get_system_uptime()
-    header_text = f"[header]Time: {current_time} | Uptime: {uptime_str}[/header]"
-    return Panel(header_text, style="header")
+    def export_data(self, export_format: str, output_file: Optional[str] = None) -> None:
+        data = {
+            "timestamp": datetime.now().isoformat(),
+            "cpu": {
+                "usage_percent": self.cpu_monitor.usage_percent,
+                "per_core": self.cpu_monitor.per_core,
+                "load_avg": self.cpu_monitor.load_avg,
+            },
+            "memory": asdict(self.memory_monitor.info),
+            "disks": [asdict(d) for d in self.disk_monitor.disks],
+            "network": [asdict(n) for n in self.network_monitor.interfaces],
+            "processes": self.process_monitor.processes,
+        }
+        os.makedirs(EXPORT_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if not output_file:
+            output_file = os.path.join(EXPORT_DIR, f"system_monitor_{timestamp}.{export_format}")
+        if export_format.lower() == "json":
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=str)
+        elif export_format.lower() == "csv":
+            # For brevity, export only CPU and Memory metrics as CSV.
+            base, _ = os.path.splitext(output_file)
+            with open(f"{base}_cpu.csv", "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["timestamp", "usage_percent", "load_avg_1m", "load_avg_5m", "load_avg_15m"])
+                writer.writerow([data["timestamp"],
+                                 data["cpu"]["usage_percent"],
+                                 data["cpu"]["load_avg"][0],
+                                 data["cpu"]["load_avg"][1],
+                                 data["cpu"]["load_avg"][2]])
+            with open(f"{base}_mem.csv", "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["timestamp", "total", "used", "available", "percent"])
+                mem = data["memory"]
+                writer.writerow([data["timestamp"], mem["total"], mem["used"], mem["available"], mem["percent"]])
+        console.print(f"[bold #8FBCBB]Data exported to {output_file}[/bold #8FBCBB]")
 
-def build_footer() -> Panel:
-    """Build footer panel with exit instruction."""
-    return Panel("[label]Press Ctrl+C to exit.[/label]", style="header")
-
-def build_dashboard(no_gpu: bool, enable_disk: bool, enable_net: bool, sort_by: str) -> Layout:
-    """
-    Construct the overall dashboard layout.
-    """
-    layout = Layout()
-    layout.split_column(
-        Layout(name="header", size=3),
-        Layout(name="body", ratio=1),
-        Layout(name="footer", size=3)
-    )
-    layout["body"].split_row(
-        Layout(name="metrics"),
-        Layout(name="processes")
-    )
-    layout["header"].update(build_header())
-    layout["metrics"].update(Panel(build_metrics_table(no_gpu, enable_disk, enable_net),
-                                    title="System Metrics", border_style="cpu"))
-    layout["processes"].update(Panel(build_processes_table(limit=5, sort_by=sort_by),
-                                      title="Top Processes", border_style="proc"))
-    layout["footer"].update(build_footer())
-    return layout
-
+# ------------------------------
+# Main CLI Entry Point with Click
+# ------------------------------
 @click.command()
-@click.option('--interval', '-i', default=1.0, type=float,
-              help="Refresh interval in seconds (default: 1.0)")
-@click.option('--duration', '-d', default=0.0, type=float,
+@click.option("--refresh", "-r", default=DEFAULT_REFRESH_RATE, type=float,
+              help="Refresh interval in seconds (default: 2.0)")
+@click.option("--duration", "-d", default=0.0, type=float,
               help="Total duration to run in seconds (0 means run indefinitely)")
-@click.option('--no-gpu', is_flag=True,
-              help="Disable GPU metrics (if GPU data is not needed or unavailable)")
-@click.option('--enable-disk', is_flag=True,
-              help="Include disk usage metrics")
-@click.option('--enable-net', is_flag=True,
-              help="Include network I/O metrics")
-@click.option('--sort-by', type=click.Choice(['cpu', 'memory'], case_sensitive=False),
-              default='cpu', help="Sort top processes by CPU or memory usage")
-@click.option('--log-file', type=click.Path(), default=None,
-              help="Optional file path to log metrics (appends data)")
-def monitor(interval: float, duration: float, no_gpu: bool, enable_disk: bool,
-            enable_net: bool, sort_by: str, log_file: Optional[str]) -> None:
-    """
-    Real-time system monitor.
-
-    Polls and displays CPU, GPU (if enabled), load, memory, CPU temperature,
-    uptime, and top process metrics. Optionally includes disk usage and network I/O.
-    The dashboard refreshes every INTERVAL seconds. Use DURATION to run for a fixed period.
-    Top processes are sorted by the criteria specified in --sort-by.
-    If LOG_FILE is provided, metrics are logged to the specified file.
-    """
+@click.option("--export", "-e", type=click.Choice(["json", "csv"]), default=None,
+              help="Export monitoring data in specified format")
+@click.option("--export-interval", type=float, default=0.0,
+              help="Interval in minutes between exports (0 to disable)")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Output file path for export (auto-generated if not specified)")
+@click.option("--sort-by", type=click.Choice(["cpu", "memory"], case_sensitive=False), default="cpu",
+              help="Sort top processes by CPU or memory usage")
+def main(refresh: float, duration: float, export: Optional[str],
+         export_interval: float, output: Optional[str], sort_by: str) -> None:
+    """Unified System Resource Monitor with Live Dashboard and Export capabilities."""
+    setup_logging()
+    if os.geteuid() != 0:
+        console.print("[bold #BF616A]This script must be run as root.[/bold #BF616A]")
+        sys.exit(1)
+    print_header("System Resource Monitor")
     start_time = time.time()
-    log_fp = open(log_file, "a") if log_file else None
-
+    monitor = UnifiedMonitor(refresh_rate=refresh, top_limit=DEFAULT_TOP_PROCESSES)
+    last_export = 0.0
     try:
-        with Live(build_dashboard(no_gpu, enable_disk, enable_net, sort_by),
-                  refresh_per_second=1, screen=True) as live:
+        with Live(monitor.build_dashboard(sort_by), refresh_per_second=1, screen=True) as live:
             while True:
-                live.update(build_dashboard(no_gpu, enable_disk, enable_net, sort_by))
-                if log_fp:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    cpu_current, cpu_max, cpu_usage = get_cpu_metrics()
-                    load1, load5, load15 = get_load_average()
-                    total, used, available, mem_percent = get_memory_metrics()
-                    cpu_temp = get_cpu_temperature()
-                    temp_str = f"{cpu_temp:.1f}°C" if cpu_temp is not None else "N/A"
-                    gpu_freq = get_gpu_frequency() if not no_gpu else None
-                    gpu_str = f"{gpu_freq/1e6:.2f}MHz" if gpu_freq is not None else "N/A"
-                    log_line = (
-                        f"{timestamp} | CPU: {cpu_current:.2f}/{cpu_max:.2f}MHz, "
-                        f"Usage: {','.join(f'{u:.1f}%' for u in cpu_usage)} | "
-                        f"Load: {load1:.2f}/{load5:.2f}/{load15:.2f} | "
-                        f"Memory: {mem_percent:.1f}% | CPU Temp: {temp_str} | "
-                        f"GPU: {gpu_str} | Uptime: {get_system_uptime()}\n"
-                    )
-                    log_fp.write(log_line)
-                    log_fp.flush()
-                time.sleep(interval)
+                monitor.update()
+                live.update(monitor.build_dashboard(sort_by))
+                if export and export_interval > 0:
+                    if time.time() - last_export >= export_interval * 60:
+                        monitor.export_data(export, output)
+                        last_export = time.time()
                 if duration > 0 and (time.time() - start_time) >= duration:
                     break
+                time.sleep(refresh)
     except KeyboardInterrupt:
         console.print("\nExiting monitor...", style="header")
-    finally:
-        if log_fp:
-            log_fp.close()
+    except Exception as e:
+        console.print(f"[bold #BF616A]Unexpected error: {e}[/bold #BF616A]")
+        sys.exit(1)
+    if export and not export_interval:
+        monitor.export_data(export, output)
     console.print("\nMonitor stopped.", style="header")
 
 if __name__ == "__main__":
-    monitor()
+    main()
