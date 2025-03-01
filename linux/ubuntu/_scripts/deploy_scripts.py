@@ -2,15 +2,15 @@
 """
 Script Deployment System
 
-Deploys scripts from a source directory to a target directory with comprehensive
-verification, dry run analysis, and permission enforcement. Designed for Ubuntu/Linux
-systems.
+This utility deploys scripts from a source directory to a target directory
+with comprehensive verification, dry run analysis, and permission enforcement.
+It uses Rich for progress and status output, Click for argument parsing, and
+pyfiglet for a striking ASCII art header. Designed for Ubuntu/Linux systems.
 
 Note: Run this script with root privileges.
 """
 
 import atexit
-import datetime
 import os
 import pwd
 import shutil
@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
@@ -43,8 +44,7 @@ DEFAULT_LOG_FILE: str = "/var/log/deploy-scripts.log"
 # ------------------------------
 # Nord‑Themed Styles & Console Setup
 # ------------------------------
-# Nord color palette examples:
-# nord0: #2E3440, nord4: #D8DEE9, nord8: #88C0D0, nord10: #5E81AC, nord11: #BF616A
+# Nord palette examples: nord0: #2E3440, nord4: #D8DEE9, nord8: #88C0D0, nord10: #5E81AC, nord11: #BF616A
 console = Console()
 
 
@@ -101,7 +101,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 
 # ------------------------------
-# Helper Function: Command Execution
+# Command Execution Helper
 # ------------------------------
 def run_command(
     cmd: list[str], check: bool = True, timeout: int = 30
@@ -383,7 +383,7 @@ class DeploymentManager:
 
 
 # ------------------------------
-# CLI Entry Point with Click
+# Main CLI Entry Point with Click
 # ------------------------------
 @click.command()
 @click.option(
@@ -414,9 +414,8 @@ def main(source: str, target: str, owner: str, log_file: str) -> None:
     Deploy scripts from a source directory to a target directory with verification,
     dry run analysis, and permission enforcement.
     """
-    # (Optional) Set up file logging if needed.
-    # For this example, we use console output for all status messages.
     print_header("Script Deployment System")
+    # (Optional) Setup file logging here if required.
     manager = DeploymentManager(source=source, target=target, expected_owner=owner)
     manager.check_root()
     manager.check_dependencies()
