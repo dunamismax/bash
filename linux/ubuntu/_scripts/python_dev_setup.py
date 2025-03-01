@@ -355,6 +355,11 @@ def run_command(
     If as_user is True, runs the command as the original non-root user when
     the script is run with sudo.
     """
+    # If we need to run as the original user and the command isn't already prefixed
+    if as_user and ORIGINAL_USER != "root" and not (cmd and cmd[0] == "sudo"):
+        # Modify the command to run as the original user
+        cmd = ["sudo", "-u", ORIGINAL_USER] + cmd
+
     if verbose:
         if shell:
             print_step(f"Executing: {cmd}")
@@ -362,11 +367,6 @@ def run_command(
             print_step(f"Executing: {' '.join(cmd)}")
 
     try:
-        # If we need to run as the original user
-        if as_user and ORIGINAL_USER != "root":
-            # Modify the command to run as the original user
-            cmd = ["sudo", "-u", ORIGINAL_USER] + cmd
-
         # Execute the command
         return subprocess.run(
             cmd,
@@ -517,39 +517,79 @@ def install_pip_libraries_for_user() -> bool:
     """Install libraries like Rich for the user (not as root)."""
     print_section("Installing User Python Libraries")
 
-    if ORIGINAL_USER == "root":
-        python_cmd = sys.executable
-        pip_install_cmd = [python_cmd, "-m", "pip", "install", "--upgrade"]
-    else:
-        # Get the path to the user's pip
-        user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
-        user_pip = os.path.join(user_bin_dir, "pip")
-
-        if not os.path.exists(user_pip):
-            user_pip = "pip"
-
-        pip_install_cmd = [
-            "sudo",
-            "-u",
-            ORIGINAL_USER,
-            user_pip,
-            "install",
-            "--user",
-            "--upgrade",
-        ]
-
     try:
         print_info(f"Installing Python libraries for user {ORIGINAL_USER}...")
 
-        for library in USER_PIP_LIBRARIES:
+        # Strategy 1: Try to use apt first (recommended for Debian/Ubuntu systems)
+        apt_available = check_command_available("apt-get")
+        apt_success = False
+
+        if apt_available:
+            print_info("Attempting to install libraries via apt...")
             try:
-                print_step(f"Installing {library}...")
-                run_command(
-                    pip_install_cmd + [library], as_user=(ORIGINAL_USER != "root")
-                )
-                print_success(f"{library} installed for user {ORIGINAL_USER}.")
+                for library in USER_PIP_LIBRARIES:
+                    apt_pkg = f"python3-{library.lower()}"
+                    print_step(f"Installing {apt_pkg} via apt...")
+                    try:
+                        run_command(["apt-get", "install", "-y", apt_pkg])
+                        print_success(f"{library} installed via apt.")
+                        apt_success = True
+                    except:
+                        print_info(
+                            f"Package {apt_pkg} not available in apt repositories."
+                        )
             except Exception as e:
-                print_error(f"Failed to install {library}: {e}")
+                print_warning(f"Error using apt: {e}")
+
+        # If apt failed or wasn't available, create a venv and install there
+        if not apt_success:
+            print_info("Setting up a virtual environment for Python libraries...")
+
+            # Create a venv in /opt/pysetup
+            venv_dir = "/opt/pysetup"
+            if not os.path.exists(venv_dir):
+                os.makedirs(venv_dir, exist_ok=True)
+
+            # Create the virtual environment
+            run_command(["python3", "-m", "venv", venv_dir])
+
+            # Install libraries in the venv
+            venv_pip = os.path.join(venv_dir, "bin", "pip")
+            for library in USER_PIP_LIBRARIES:
+                print_step(f"Installing {library} in virtual environment...")
+                run_command([venv_pip, "install", library])
+                print_success(f"{library} installed in virtual environment.")
+
+            # Make it accessible to the user
+            fix_ownership(venv_dir)
+
+            # Create symlinks to the executables
+            bin_dir = "/usr/local/bin"
+            for library in USER_PIP_LIBRARIES:
+                # Common patterns for executable names
+                possible_execs = [
+                    os.path.join(venv_dir, "bin", library),
+                    os.path.join(venv_dir, "bin", library.lower()),
+                ]
+
+                for exec_path in possible_execs:
+                    if os.path.exists(exec_path):
+                        symlink_path = os.path.join(
+                            bin_dir, os.path.basename(exec_path)
+                        )
+                        # Create the symlink if it doesn't exist
+                        if not os.path.exists(symlink_path):
+                            try:
+                                os.symlink(exec_path, symlink_path)
+                                print_success(
+                                    f"Created symlink for {library} in {bin_dir}"
+                                )
+                            except Exception as e:
+                                print_warning(f"Failed to create symlink: {e}")
+
+            # Inform the user about the virtual environment
+            print_info(f"Python libraries installed in virtual environment: {venv_dir}")
+            print_info(f"To use this environment: source {venv_dir}/bin/activate")
 
         return True
     except Exception as e:
@@ -667,9 +707,23 @@ def install_latest_python_with_pyenv() -> bool:
         if ORIGINAL_USER != "root":
             pyenv_cmd = ["sudo", "-u", ORIGINAL_USER, PYENV_BIN]
 
-        # Update pyenv first
-        print_info("Updating pyenv...")
-        run_command(pyenv_cmd + ["update"], as_user=(ORIGINAL_USER != "root"))
+        # Update pyenv repository first (pyenv doesn't have an update command)
+        print_info("Updating pyenv repository...")
+        pyenv_root = os.path.dirname(os.path.dirname(PYENV_BIN))
+
+        # Use git pull to update the pyenv repository
+        if os.path.exists(os.path.join(pyenv_root, ".git")):
+            if ORIGINAL_USER != "root":
+                run_command(
+                    ["sudo", "-u", ORIGINAL_USER, "git", "-C", pyenv_root, "pull"],
+                    as_user=True,
+                )
+            else:
+                run_command(["git", "-C", pyenv_root, "pull"])
+        else:
+            print_warning(
+                "Could not update pyenv (not a git repository). Continuing anyway."
+            )
 
         # Get latest Python version available
         print_info("Finding latest Python version...")
@@ -803,27 +857,26 @@ def install_pipx_tools() -> bool:
     """Install Python tools via pipx."""
     print_section("Installing Python Tools via pipx")
 
-    if not install_pipx():
-        print_error("Failed to ensure pipx installation.")
-        return False
+    # Make sure pipx is installed
+    if not check_command_available("pipx"):
+        # Install pipx system-wide first
+        print_info("Installing pipx system-wide...")
+        try:
+            run_command(["apt-get", "install", "-y", "pipx"])
+        except Exception as e:
+            print_warning(f"Could not install pipx via apt: {e}")
+            # If apt installation failed, fall back to pip
+            if not install_pipx():
+                print_error("Failed to ensure pipx installation.")
+                return False
 
     # Determine pipx command
-    user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
-    pipx_path = os.path.join(user_bin_dir, "pipx")
-
-    if os.path.exists(pipx_path):
-        pipx_cmd = pipx_path
-    else:
-        pipx_cmd = shutil.which("pipx")
-
+    pipx_cmd = shutil.which("pipx")
     if not pipx_cmd:
         print_error("Could not find pipx executable.")
         return False
 
-    # Set up the command for running pipx as the correct user
-    base_cmd = [pipx_cmd, "install", "--force"]
-    if ORIGINAL_USER != "root":
-        base_cmd = ["sudo", "-u", ORIGINAL_USER, pipx_cmd, "install", "--force"]
+    print_info("Installing Python tools using pipx...")
 
     with Progress(
         SpinnerColumn(),
@@ -838,12 +891,28 @@ def install_pipx_tools() -> bool:
         )
         failed_tools = []
 
+        # For each tool, figure out the best way to install it
         for tool in PIPX_TOOLS:
             try:
                 progress.update(task, description=f"[bold green]Installing {tool}...")
-                run_command(base_cmd + [tool], as_user=(ORIGINAL_USER != "root"))
+
+                # First, try to install via apt if available
+                apt_pkg = f"python3-{tool.lower()}"
+                try:
+                    apt_check = run_command(["apt-cache", "show", apt_pkg], check=False)
+                    if apt_check.returncode == 0:
+                        run_command(["apt-get", "install", "-y", apt_pkg])
+                        print_success(f"Installed {tool} via apt.")
+                        progress.update(task, advance=1)
+                        continue
+                except Exception:
+                    pass  # If apt fails, continue to pipx
+
+                # Try using pipx (which creates isolated environments)
+                run_command([pipx_cmd, "install", tool, "--force"])
                 progress.update(task, advance=1)
                 print_success(f"Installed {tool} via pipx.")
+
             except Exception as e:
                 print_warning(f"Failed to install {tool}: {e}")
                 failed_tools.append(tool)
