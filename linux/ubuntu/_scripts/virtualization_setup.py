@@ -29,7 +29,13 @@ from pathlib import Path
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 from rich.spinner import Spinner
 import pyfiglet
 
@@ -83,30 +89,37 @@ DEFAULT_NETWORK_XML = """<network>
 
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a pretty ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+
 
 # ------------------------------
 # Command Execution Helper
@@ -136,6 +149,7 @@ def run_command(cmd, env=None, check=True, capture_output=True, timeout=None):
         print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+
 # ------------------------------
 # Signal Handling & Cleanup
 # ------------------------------
@@ -145,9 +159,11 @@ def signal_handler(sig, frame):
     cleanup()
     sys.exit(128 + sig)
 
+
 def cleanup():
     print_step("Performing cleanup tasks...")
     # Add any necessary cleanup steps here.
+
 
 # ------------------------------
 # Core Functions
@@ -162,6 +178,7 @@ def update_system_packages() -> bool:
     except Exception as e:
         print_error(f"Failed to update package lists: {e}")
         return False
+
 
 def install_virtualization_packages(packages) -> bool:
     print_section("Installing Virtualization Packages")
@@ -208,6 +225,7 @@ def install_virtualization_packages(packages) -> bool:
     print_success("All packages installed")
     return True
 
+
 def manage_virtualization_services(services) -> bool:
     print_section("Managing Virtualization Services")
     if not services:
@@ -242,10 +260,13 @@ def manage_virtualization_services(services) -> bool:
     print_success("Services managed successfully")
     return True
 
+
 def recreate_default_network() -> bool:
     print_section("Recreating Default Network")
     try:
-        result = run_command(["virsh", "net-list", "--all"], capture_output=True, check=False)
+        result = run_command(
+            ["virsh", "net-list", "--all"], capture_output=True, check=False
+        )
         if "default" in result.stdout:
             print_step("Removing existing default network")
             run_command(["virsh", "net-destroy", "default"], check=False)
@@ -269,6 +290,7 @@ def recreate_default_network() -> bool:
         print_error(f"Error recreating network: {e}")
         return False
 
+
 def configure_default_network() -> bool:
     print_section("Configuring Default Network")
     try:
@@ -287,10 +309,14 @@ def configure_default_network() -> bool:
             print_step("Default network missing, creating it")
             return recreate_default_network()
         try:
-            net_info = run_command(["virsh", "net-info", "default"], capture_output=True)
+            net_info = run_command(
+                ["virsh", "net-info", "default"], capture_output=True
+            )
             if "Autostart:      yes" not in net_info.stdout:
                 print_step("Setting autostart")
-                autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
+                autostart_path = Path(
+                    "/etc/libvirt/qemu/networks/autostart/default.xml"
+                )
                 if autostart_path.exists() or autostart_path.is_symlink():
                     autostart_path.unlink()
                 run_command(["virsh", "net-autostart", "default"])
@@ -304,23 +330,29 @@ def configure_default_network() -> bool:
         print_error(f"Network configuration error: {e}")
         return False
 
+
 def get_virtual_machines():
     vms = []
     try:
         result = run_command(["virsh", "list", "--all"], capture_output=True)
         lines = result.stdout.strip().splitlines()
         # Find the header separator (a line starting with dashes)
-        sep = next((i for i, line in enumerate(lines) if line.strip().startswith("----")), -1)
+        sep = next(
+            (i for i, line in enumerate(lines) if line.strip().startswith("----")), -1
+        )
         if sep < 0:
             return []
-        for line in lines[sep + 1:]:
+        for line in lines[sep + 1 :]:
             parts = line.split()
             if len(parts) >= 3:
-                vms.append({"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])})
+                vms.append(
+                    {"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])}
+                )
         return vms
     except Exception as e:
         print_error(f"Error retrieving VMs: {e}")
         return []
+
 
 def set_vm_autostart(vms) -> bool:
     print_section("Configuring VM Autostart")
@@ -354,6 +386,7 @@ def set_vm_autostart(vms) -> bool:
         return False
     return True
 
+
 def start_virtual_machines(vms) -> bool:
     print_section("Starting Virtual Machines")
     if not vms:
@@ -378,7 +411,9 @@ def start_virtual_machines(vms) -> bool:
             name = vm["name"]
             print_step(f"Starting {name}")
             try:
-                with console.status(f"[bold #81A1C1]Starting {name}...", spinner="dots"):
+                with console.status(
+                    f"[bold #81A1C1]Starting {name}...", spinner="dots"
+                ):
                     result = run_command(["virsh", "start", name], check=False)
                     if result.returncode != 0:
                         print_error(f"Failed to start {name}: {result.stderr}")
@@ -395,6 +430,7 @@ def start_virtual_machines(vms) -> bool:
         return False
     return True
 
+
 def ensure_network_active_before_vm_start() -> bool:
     print_step("Verifying default network before starting VMs")
     try:
@@ -408,6 +444,7 @@ def ensure_network_active_before_vm_start() -> bool:
     except Exception as e:
         print_error(f"Network verification error: {e}")
         return False
+
 
 def fix_storage_permissions(paths) -> bool:
     print_section("Fixing VM Storage Permissions")
@@ -428,7 +465,9 @@ def fix_storage_permissions(paths) -> bool:
             print_warning(f"{path} does not exist; creating")
             path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
         # Count total items for progress
-        total_items = sum(1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path)))
+        total_items = sum(
+            1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path))
+        )
         with Progress(
             SpinnerColumn(style="bold #81A1C1"),
             TextColumn("[progress.description]{task.description}"),
@@ -463,6 +502,7 @@ def fix_storage_permissions(paths) -> bool:
     print_success("Storage permissions updated")
     return True
 
+
 def configure_user_groups() -> bool:
     print_section("Configuring User Group Membership")
     sudo_user = os.environ.get("SUDO_USER")
@@ -485,11 +525,14 @@ def configure_user_groups() -> bool:
     try:
         print_step(f"Adding {sudo_user} to {LIBVIRT_USER_GROUP}")
         run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
-        print_success(f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in.")
+        print_success(
+            f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in."
+        )
         return True
     except Exception as e:
         print_error(f"Failed to add user: {e}")
         return False
+
 
 def verify_virtualization_setup() -> bool:
     print_section("Verifying Virtualization Setup")
@@ -545,6 +588,7 @@ def verify_virtualization_setup() -> bool:
         print_warning("Some verification checks failed.")
     return passed
 
+
 # ------------------------------
 # Main CLI Entry Point with click
 # ------------------------------
@@ -565,7 +609,9 @@ def main(packages, network, permissions, autostart, start, verify, fix):
 
     print_header("Enhanced Virt Setup")
     console.print(f"Hostname: [bold #D8DEE9]{HOSTNAME}[/bold #D8DEE9]")
-    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+    console.print(
+        f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
+    )
     if os.geteuid() != 0:
         print_error("Run this script as root (e.g., using sudo)")
         sys.exit(1)
@@ -615,7 +661,10 @@ def main(packages, network, permissions, autostart, start, verify, fix):
 
     print_header("Setup Complete")
     print_success("Virtualization environment setup complete!")
-    print_step("Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'.")
+    print_step(
+        "Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'."
+    )
+
 
 if __name__ == "__main__":
     try:
@@ -626,5 +675,6 @@ if __name__ == "__main__":
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

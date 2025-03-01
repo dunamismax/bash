@@ -25,7 +25,13 @@ from pathlib import Path
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -33,15 +39,42 @@ import pyfiglet
 # ------------------------------
 DEFAULT_PROJECT_DIR = os.getcwd()
 SYSTEM_DEPENDENCIES = [
-    "build-essential", "libssl-dev", "zlib1g-dev", "libbz2-dev", "libreadline-dev",
-    "libsqlite3-dev", "libncurses5-dev", "libncursesw5-dev", "xz-utils", "tk-dev",
-    "libffi-dev", "liblzma-dev", "python3-dev"
+    "build-essential",
+    "libssl-dev",
+    "zlib1g-dev",
+    "libbz2-dev",
+    "libreadline-dev",
+    "libsqlite3-dev",
+    "libncurses5-dev",
+    "libncursesw5-dev",
+    "xz-utils",
+    "tk-dev",
+    "libffi-dev",
+    "liblzma-dev",
+    "python3-dev",
 ]
 # Top 20 recommended Python libraries and tools (including our CLI dependencies)
 TOP_PYTHON_TOOLS = [
-    "rich", "click", "pyfiglet", "black", "isort", "flake8", "mypy", "pytest",
-    "pre-commit", "ipython", "cookiecutter", "virtualenv", "pylint", "sphinx",
-    "twine", "autopep8", "bandit", "poetry", "pydocstyle", "yapf"
+    "rich",
+    "click",
+    "pyfiglet",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+    "pytest",
+    "pre-commit",
+    "ipython",
+    "cookiecutter",
+    "virtualenv",
+    "pylint",
+    "sphinx",
+    "twine",
+    "autopep8",
+    "bandit",
+    "poetry",
+    "pydocstyle",
+    "yapf",
 ]
 PIPX_TOOLS = TOP_PYTHON_TOOLS  # Tools to be installed via pipx
 
@@ -50,30 +83,37 @@ PIPX_TOOLS = TOP_PYTHON_TOOLS  # Tools to be installed via pipx
 # ------------------------------
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a pretty ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+
 
 # ------------------------------
 # Signal Handling & Cleanup
@@ -81,7 +121,9 @@ def print_error(text: str) -> None:
 def cleanup() -> None:
     print_step("Performing cleanup tasks...")
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(sig, frame) -> None:
     sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
@@ -89,16 +131,22 @@ def signal_handler(sig, frame) -> None:
     cleanup()
     sys.exit(128 + sig)
 
+
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
+
 
 # ------------------------------
 # Helper Functions for Command Execution
 # ------------------------------
-def run_command(cmd: list[str], capture_output: bool = True, check: bool = True) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: list[str], capture_output: bool = True, check: bool = True
+) -> subprocess.CompletedProcess:
     try:
         print_step(f"Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=capture_output, text=True, check=check)
+        result = subprocess.run(
+            cmd, capture_output=capture_output, text=True, check=check
+        )
         return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
@@ -107,6 +155,7 @@ def run_command(cmd: list[str], capture_output: bool = True, check: bool = True)
         if e.stderr:
             console.print(f"[bold #BF616A]Stderr: {e.stderr.strip()}[/bold #BF616A]")
         raise
+
 
 # ------------------------------
 # Core Functions
@@ -120,9 +169,12 @@ def check_system() -> None:
     required_tools = ["git", "curl", "gcc"]
     missing = [tool for tool in required_tools if shutil.which(tool) is None]
     if missing:
-        print_error(f"Missing required tools: {', '.join(missing)}. Install these before continuing.")
+        print_error(
+            f"Missing required tools: {', '.join(missing)}. Install these before continuing."
+        )
         sys.exit(1)
     print_success("System check passed.")
+
 
 def install_system_dependencies() -> None:
     """Install system-level dependencies using apt-get."""
@@ -135,6 +187,7 @@ def install_system_dependencies() -> None:
         print_error(f"Error installing system dependencies: {e}")
         sys.exit(1)
 
+
 def install_pipx() -> None:
     """Ensure pipx is installed; install it using pip if missing."""
     print_section("Installing pipx")
@@ -142,12 +195,15 @@ def install_pipx() -> None:
         try:
             run_command(["python3", "-m", "pip", "install", "--user", "pipx"])
             run_command(["python3", "-m", "pipx", "ensurepath"])
-            print_success("pipx installed successfully. You may need to restart your shell.")
+            print_success(
+                "pipx installed successfully. You may need to restart your shell."
+            )
         except Exception as e:
             print_error(f"Error installing pipx: {e}")
             sys.exit(1)
     else:
         print_success("pipx is already installed.")
+
 
 def install_pipx_tools() -> None:
     """Install top Python tools system-wide via pipx."""
@@ -169,6 +225,7 @@ def install_pipx_tools() -> None:
             progress.advance(task)
     print_success("pipx tools installation completed.")
 
+
 def setup_virtual_environment(project_path: str = DEFAULT_PROJECT_DIR) -> None:
     """Create a Python virtual environment and an activation script."""
     print_section("Setting Up Virtual Environment")
@@ -189,16 +246,29 @@ source {venv_path}/bin/activate
         print_error(f"Error setting up virtual environment: {e}")
         sys.exit(1)
 
+
 def install_development_tools() -> None:
     """Install common Python development tools via pip."""
     print_section("Installing Development Tools via pip")
     try:
-        dev_tools = ["pip", "setuptools", "wheel", "black", "isort", "mypy", "flake8", "pytest"]
-        run_command(["python3", "-m", "pip", "install", "--user", "--upgrade"] + dev_tools)
+        dev_tools = [
+            "pip",
+            "setuptools",
+            "wheel",
+            "black",
+            "isort",
+            "mypy",
+            "flake8",
+            "pytest",
+        ]
+        run_command(
+            ["python3", "-m", "pip", "install", "--user", "--upgrade"] + dev_tools
+        )
         print_success("Development tools installed successfully.")
     except Exception as e:
         print_error(f"Error installing development tools: {e}")
         sys.exit(1)
+
 
 def create_project_template(project_name: str) -> None:
     """Create a basic Python project template with package and test directories."""
@@ -213,7 +283,9 @@ def create_project_template(project_name: str) -> None:
         with open(os.path.join(package_dir, "__init__.py"), "w") as f:
             f.write("# Package initialization\n")
         with open(os.path.join(package_dir, "main.py"), "w") as f:
-            f.write("def main():\n    print('Hello, World!')\n\nif __name__ == '__main__':\n    main()\n")
+            f.write(
+                "def main():\n    print('Hello, World!')\n\nif __name__ == '__main__':\n    main()\n"
+            )
         with open(os.path.join(tests_dir, "test_main.py"), "w") as f:
             f.write("def test_main():\n    assert True  # Placeholder test\n")
         with open(os.path.join(project_path, "README.md"), "w") as f:
@@ -225,6 +297,7 @@ def create_project_template(project_name: str) -> None:
     except Exception as e:
         print_error(f"Error creating project template: {e}")
         sys.exit(1)
+
 
 # ------------------------------
 # Main CLI Entry Point with Click
@@ -239,7 +312,10 @@ def cli() -> None:
     creates a virtual environment, installs development tools, and builds a project template.
     """
     if os.geteuid() != 0:
-        print_warning("Some operations may require root privileges. Use sudo if needed.")
+        print_warning(
+            "Some operations may require root privileges. Use sudo if needed."
+        )
+
 
 @cli.command()
 def system() -> None:
@@ -248,18 +324,23 @@ def system() -> None:
     check_system()
     install_system_dependencies()
 
+
 @cli.command()
 def pipx_install() -> None:
     """Install pipx and top Python tools via pipx."""
     print_header("pipx and Tools Installation")
     install_pipx_tools()
 
+
 @cli.command()
-@click.option("--path", default=DEFAULT_PROJECT_DIR, help="Directory for the virtual environment")
+@click.option(
+    "--path", default=DEFAULT_PROJECT_DIR, help="Directory for the virtual environment"
+)
 def venv(path: str) -> None:
     """Create a Python virtual environment."""
     print_header("Virtual Environment Setup")
     setup_virtual_environment(path)
+
 
 @cli.command()
 def devtools() -> None:
@@ -267,12 +348,14 @@ def devtools() -> None:
     print_header("Development Tools Installation")
     install_development_tools()
 
+
 @cli.command()
 @click.argument("project_name", required=True)
 def project(project_name: str) -> None:
     """Create a new Python project template."""
     print_header("Project Template Creation")
     create_project_template(project_name)
+
 
 if __name__ == "__main__":
     try:

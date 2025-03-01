@@ -230,18 +230,26 @@ def print_status_report(results: Dict[str, bool]) -> None:
 # Menu Functions
 #####################################
 
+
 def display_menu() -> None:
     """
     Display the interactive menu for restore tasks.
     """
     print(f"\n{NordColors.HEADER}{NordColors.BOLD}Restore Menu{NordColors.RESET}")
-    print(f"{NordColors.INFO}Choose a restore task from the list below:{NordColors.RESET}")
+    print(
+        f"{NordColors.INFO}Choose a restore task from the list below:{NordColors.RESET}"
+    )
     task_list = list(RESTORE_TASKS.keys())
     for i, task_key in enumerate(task_list):
-        print(f"  {NordColors.BOLD}{i + 1}.{NordColors.RESET} {RESTORE_TASKS[task_key]['name']}")
-    print(f"  {NordColors.BOLD}{len(task_list) + 1}.{NordColors.RESET} Restore All Tasks")
+        print(
+            f"  {NordColors.BOLD}{i + 1}.{NordColors.RESET} {RESTORE_TASKS[task_key]['name']}"
+        )
+    print(
+        f"  {NordColors.BOLD}{len(task_list) + 1}.{NordColors.RESET} Restore All Tasks"
+    )
     print(f"  {NordColors.BOLD}0.{NordColors.RESET} Exit")
     print("-" * 30)
+
 
 def get_user_choice() -> int:
     """
@@ -250,18 +258,26 @@ def get_user_choice() -> int:
     task_count = len(RESTORE_TASKS)
     while True:
         try:
-            choice_str = input(f"{NordColors.INFO}Enter your choice (0-{task_count + 1}): {NordColors.RESET}")
+            choice_str = input(
+                f"{NordColors.INFO}Enter your choice (0-{task_count + 1}): {NordColors.RESET}"
+            )
             choice = int(choice_str)
             if 0 <= choice <= task_count + 1:
                 return choice
             else:
-                print(f"{NordColors.ERROR}Invalid choice. Please enter a number between 0 and {task_count + 1}.{NordColors.RESET}")
+                print(
+                    f"{NordColors.ERROR}Invalid choice. Please enter a number between 0 and {task_count + 1}.{NordColors.RESET}"
+                )
         except ValueError:
-            print(f"{NordColors.ERROR}Invalid input. Please enter a number.{NordColors.RESET}")
+            print(
+                f"{NordColors.ERROR}Invalid input. Please enter a number.{NordColors.RESET}"
+            )
+
 
 #####################################
 # Main Execution Flow
 #####################################
+
 
 def main() -> None:
     if os.geteuid() != 0:
@@ -284,28 +300,42 @@ def main() -> None:
             print(f"{NordColors.INFO}Exiting restore script.{NordColors.RESET}")
             break
         elif choice == len(RESTORE_TASKS) + 1:
-            print(f"{NordColors.HEADER}Starting Restore of All Tasks...{NordColors.RESET}")
+            print(
+                f"{NordColors.HEADER}Starting Restore of All Tasks...{NordColors.RESET}"
+            )
             results = restore_all()
         elif 1 <= choice <= len(RESTORE_TASKS):
             task_keys = list(RESTORE_TASKS.keys())
             selected_task_key = task_keys[choice - 1]
-            print(f"{NordColors.HEADER}Starting Restore for {RESTORE_TASKS[selected_task_key]['name']}...{NordColors.RESET}")
+            print(
+                f"{NordColors.HEADER}Starting Restore for {RESTORE_TASKS[selected_task_key]['name']}...{NordColors.RESET}"
+            )
             results = {selected_task_key: restore_task(selected_task_key)}
         else:
-            print(f"{NordColors.ERROR}Invalid choice. Please try again.{NordColors.RESET}")
-            continue # Go back to menu
+            print(
+                f"{NordColors.ERROR}Invalid choice. Please try again.{NordColors.RESET}"
+            )
+            continue  # Go back to menu
 
-        if 'results' in locals(): # check if results is defined, meaning a restore operation was performed
+        if (
+            "results" in locals()
+        ):  # check if results is defined, meaning a restore operation was performed
             print_status_report(results)
             if not all(results.values()):
-                print(f"{NordColors.WARNING}Some restore tasks failed. Check the status report.{NordColors.RESET}")
+                print(
+                    f"{NordColors.WARNING}Some restore tasks failed. Check the status report.{NordColors.RESET}"
+                )
             else:
-                print(f"{NordColors.SUCCESS}All selected restore tasks completed successfully.{NordColors.RESET}")
-            del results # Clean up results to avoid carrying over to next loop if user chooses exit next
+                print(
+                    f"{NordColors.SUCCESS}All selected restore tasks completed successfully.{NordColors.RESET}"
+                )
+            del results  # Clean up results to avoid carrying over to next loop if user chooses exit next
 
         elapsed = time.time() - start_time
-        print(f"{NordColors.INFO}Current session completed in {elapsed:.1f} seconds{NordColors.RESET}")
-        if choice != 0: # If not exiting, reset start time for next operation
+        print(
+            f"{NordColors.INFO}Current session completed in {elapsed:.1f} seconds{NordColors.RESET}"
+        )
+        if choice != 0:  # If not exiting, reset start time for next operation
             start_time = time.time()
 
 

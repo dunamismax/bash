@@ -27,7 +27,13 @@ from typing import List, Optional
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -41,25 +47,30 @@ TEMP_DEB: str = "/tmp/plexmediaserver.deb"
 LOG_FILE: str = "/var/log/update_plex.log"
 DEFAULT_LOG_LEVEL = logging.INFO
 
+
 # ------------------------------
 # Nord‑Themed Colors & Console Setup
 # ------------------------------
 class Colors:
     """Nord‑themed ANSI color codes."""
-    HEADER = "\033[38;5;81m"     # Nord9 (Blue)
-    GREEN = "\033[38;5;108m"     # Nord14 (Green)
-    YELLOW = "\033[38;5;179m"    # Nord13 (Yellow)
-    RED = "\033[38;5;196m"       # Nord11 (Red)
-    CYAN = "\033[38;5;110m"      # Nord8 (Light Blue)
+
+    HEADER = "\033[38;5;81m"  # Nord9 (Blue)
+    GREEN = "\033[38;5;108m"  # Nord14 (Green)
+    YELLOW = "\033[38;5;179m"  # Nord13 (Yellow)
+    RED = "\033[38;5;196m"  # Nord11 (Red)
+    CYAN = "\033[38;5;110m"  # Nord8 (Light Blue)
     BOLD = "\033[1m"
     ENDC = "\033[0m"
 
+
 console = Console()
+
 
 def print_header(text: str) -> None:
     """Print a striking ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style=f"bold {Colors.HEADER}")
+
 
 def print_section(title: str) -> None:
     """Print a formatted section header."""
@@ -68,21 +79,35 @@ def print_section(title: str) -> None:
     console.print(f"[bold {Colors.HEADER}]  {title}[/bold {Colors.HEADER}]")
     console.print(f"[bold {Colors.HEADER}]{border}[/bold {Colors.HEADER}]\n")
 
+
 def print_info(message: str) -> None:
     """Print an informational message."""
     console.print(f"[{Colors.CYAN}]{message}[/{Colors.CYAN}]")
+
 
 def print_success(message: str) -> None:
     """Print a success message."""
     console.print(f"[bold {Colors.GREEN}]✓ {message}[/{Colors.GREEN}]")
 
+
 def print_warning(message: str) -> None:
     """Print a warning message."""
     console.print(f"[bold {Colors.YELLOW}]⚠ {message}[/{Colors.YELLOW}]")
 
+
 def print_error(message: str) -> None:
     """Print an error message."""
     console.print(f"[bold {Colors.RED}]✗ {message}[/{Colors.RED}]")
+
+
+def format_size(num_bytes: float) -> str:
+    """Convert bytes to a human‑readable string."""
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if num_bytes < 1024:
+            return f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024
+    return f"{num_bytes:.1f} PB"
+
 
 # ------------------------------
 # Logging Setup
@@ -111,6 +136,7 @@ def setup_logging() -> None:
         logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
         logger.warning("Continuing with console logging only")
 
+
 # ------------------------------
 # Signal Handling & Cleanup
 # ------------------------------
@@ -124,11 +150,17 @@ def cleanup() -> None:
         except Exception as e:
             logging.warning(f"Failed to remove temporary file {TEMP_DEB}: {e}")
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     logging.error(f"Script interrupted by {sig_name}.")
     cleanup()
     if signum == signal.SIGINT:
@@ -138,8 +170,10 @@ def signal_handler(signum, frame) -> None:
     else:
         sys.exit(128 + signum)
 
+
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ------------------------------
 # Dependency & Privilege Checks
@@ -153,12 +187,18 @@ def check_dependencies() -> None:
     missing: List[str] = []
     for cmd in required_commands:
         try:
-            subprocess.run(["which", cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            subprocess.run(
+                ["which", cmd],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
         except subprocess.CalledProcessError:
             missing.append(cmd)
     if missing:
         logging.error(f"Missing required commands: {', '.join(missing)}")
         sys.exit(1)
+
 
 def check_root() -> None:
     """Ensure the script is run as root."""
@@ -166,14 +206,19 @@ def check_root() -> None:
         logging.error("This script must be run as root.")
         sys.exit(1)
 
+
 # ------------------------------
 # Helper Functions
 # ------------------------------
-def run_command(cmd: List[str], check: bool = True, capture_output: bool = False) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: List[str], check: bool = True, capture_output: bool = False
+) -> subprocess.CompletedProcess:
     """Execute a command and log its output."""
     logging.info(f"Executing: {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, check=check, capture_output=capture_output, text=True)
+        result = subprocess.run(
+            cmd, check=check, capture_output=capture_output, text=True
+        )
         if result.stdout:
             logging.info(result.stdout.strip())
         return result
@@ -185,13 +230,14 @@ def run_command(cmd: List[str], check: bool = True, capture_output: bool = False
             raise
         return e
 
+
 # ------------------------------
 # Plex Update Functions
 # ------------------------------
 def download_plex(plex_url: str) -> None:
     """
     Download the Plex Media Server package using urllib.
-    
+
     Args:
         plex_url: URL of the Plex package.
     """
@@ -204,10 +250,13 @@ def download_plex(plex_url: str) -> None:
         urllib.request.urlretrieve(plex_url, TEMP_DEB)
         elapsed = time.time() - start_time
         file_size = os.path.getsize(TEMP_DEB)
-        logging.info(f"Downloaded in {elapsed:.2f} seconds, size: {format_size(file_size)}")
+        logging.info(
+            f"Downloaded in {elapsed:.2f} seconds, size: {format_size(file_size)}"
+        )
     except Exception as e:
         logging.error(f"Failed to download Plex package: {e}")
         sys.exit(1)
+
 
 def install_plex() -> None:
     """
@@ -227,6 +276,7 @@ def install_plex() -> None:
             sys.exit(1)
     logging.info("Plex installed successfully.")
 
+
 def restart_plex() -> None:
     """
     Restart the Plex Media Server service.
@@ -240,11 +290,17 @@ def restart_plex() -> None:
         logging.error("Failed to restart Plex service.")
         sys.exit(1)
 
+
 # ------------------------------
 # CLI Argument Parsing with Click
 # ------------------------------
 @click.command()
-@click.option("--plex-url", type=str, default=DEFAULT_PLEX_URL, help="URL to download the Plex package")
+@click.option(
+    "--plex-url",
+    type=str,
+    default=DEFAULT_PLEX_URL,
+    help="URL to download the Plex package",
+)
 def cli(plex_url: str) -> None:
     """Download, install, and restart Plex Media Server."""
     print_header(f"Plex Updater v1.0.0")
@@ -266,6 +322,7 @@ def cli(plex_url: str) -> None:
     logging.info(f"PLEX UPDATE COMPLETED SUCCESSFULLY AT {now}")
     logging.info("=" * 80)
 
+
 # ------------------------------
 # Main Entry Point
 # ------------------------------
@@ -275,6 +332,7 @@ def main() -> None:
     except Exception as e:
         logging.error(f"Unhandled exception: {e}", exc_info=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

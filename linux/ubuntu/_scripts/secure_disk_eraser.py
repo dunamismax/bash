@@ -32,7 +32,13 @@ from typing import Any, Dict, List, Optional
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -66,47 +72,56 @@ ERASURE_METHODS: Dict[str, Dict[str, Any]] = {
 DEFAULT_METHOD = "zeros"
 DEFAULT_PASSES = 1
 
+
 # ------------------------------
 # Nord‑Themed Colors & Console Setup
 # ------------------------------
 # The following colors are defined using Nord palette hex values.
 class Colors:
-    HEADER = "#5E81AC"      # Nord10
-    SUCCESS = "#8FBCBB"     # Nord7
-    WARNING = "#EBCB8B"     # Nord13
-    ERROR = "#BF616A"       # Nord11
-    INFO = "#88C0D0"        # Nord8
-    DETAIL = "#D8DEE9"      # Nord4
-    PROMPT = "#B48EAD"      # Nord15
+    HEADER = "#5E81AC"  # Nord10
+    SUCCESS = "#8FBCBB"  # Nord7
+    WARNING = "#EBCB8B"  # Nord13
+    ERROR = "#BF616A"  # Nord11
+    INFO = "#88C0D0"  # Nord8
+    DETAIL = "#D8DEE9"  # Nord4
+    PROMPT = "#B48EAD"  # Nord15
     BOLD = "[bold]"
     END = "[/bold]"
 
+
 console = Console()
+
 
 def print_header(text: str) -> None:
     """Print a pretty ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style=f"bold {Colors.HEADER}")
 
+
 def print_section(text: str) -> None:
     """Print a formatted section header."""
     console.print(f"\n[bold {Colors.INFO}]{text}[/bold {Colors.INFO}]")
+
 
 def print_info(message: str) -> None:
     """Print an informational message."""
     console.print(f"[{Colors.INFO}]{message}[/{Colors.INFO}]")
 
+
 def print_success(message: str) -> None:
     """Print a success message."""
     console.print(f"[bold {Colors.SUCCESS}]✓ {message}[/bold {Colors.SUCCESS}]")
+
 
 def print_warning(message: str) -> None:
     """Print a warning message."""
     console.print(f"[bold {Colors.WARNING}]⚠ {message}[/bold {Colors.WARNING}]")
 
+
 def print_error(message: str) -> None:
     """Print an error message."""
     console.print(f"[bold {Colors.ERROR}]✗ {message}[/bold {Colors.ERROR}]")
+
 
 def format_size(num_bytes: float) -> str:
     """Convert bytes to a human‑readable string."""
@@ -116,11 +131,26 @@ def format_size(num_bytes: float) -> str:
         num_bytes /= 1024
     return f"{num_bytes:.1f} PB"
 
+
+def format_time(seconds: float) -> str:
+    """Convert seconds to a human‑readable time string (HH:MM:SS or MM:SS)."""
+    seconds = int(seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    elif minutes:
+        return f"{minutes:02d}:{secs:02d}"
+    else:
+        return f"{secs:02d} sec"
+
+
 # ------------------------------
 # Progress Tracking Class
 # ------------------------------
 class ProgressBar:
     """Thread‑safe progress bar with rate and ETA display."""
+
     def __init__(self, total: int, desc: str = "", width: int = PROGRESS_WIDTH):
         self.total = total
         self.desc = desc
@@ -137,7 +167,9 @@ class ProgressBar:
             self.current = min(self.current + amount, self.total)
             now = time.time()
             if now - self.last_update_time >= 0.5:
-                self.rate = (self.current - self.last_update_value) / (now - self.last_update_time)
+                self.rate = (self.current - self.last_update_value) / (
+                    now - self.last_update_time
+                )
                 self.last_update_time = now
                 self.last_update_value = self.current
             self._display()
@@ -148,21 +180,26 @@ class ProgressBar:
         percent = self.current / self.total * 100 if self.total else 0
         elapsed = time.time() - self.start_time
         eta = (self.total - self.current) / self.rate if self.rate > 0 else 0
-        progress_line = (f"\r[{Colors.DETAIL}]{self.desc}:{Colors.END} |"
-                         f"[{Colors.HEADER}]{bar}{Colors.END}| "
-                         f"[{Colors.INFO}]{percent:5.1f}%{Colors.END} "
-                         f"({format_size(self.current)}/{format_size(self.total)}) "
-                         f"[{format_size(self.rate)}/s] "
-                         f"[ETA: {format_time(eta)}]")
+        progress_line = (
+            f"\r[{Colors.DETAIL}]{self.desc}:{Colors.END} |"
+            f"[{Colors.HEADER}]{bar}{Colors.END}| "
+            f"[{Colors.INFO}]{percent:5.1f}%{Colors.END} "
+            f"({format_size(self.current)}/{format_size(self.total)}) "
+            f"[{format_size(self.rate)}/s] "
+            f"[ETA: {format_time(eta)}]"
+        )
         sys.stdout.write(progress_line)
         sys.stdout.flush()
         if self.current >= self.total:
             sys.stdout.write("\n")
 
+
 # ------------------------------
 # Helper Functions
 # ------------------------------
-def run_command(cmd: List[str], env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: List[str], env: Optional[Dict[str, str]] = None
+) -> subprocess.CompletedProcess:
     """Run a shell command with error handling."""
     try:
         return subprocess.run(cmd, env=env, check=True, text=True, capture_output=True)
@@ -172,10 +209,12 @@ def run_command(cmd: List[str], env: Optional[Dict[str, str]] = None) -> subproc
             print_error(f"Error details: {e.stderr.strip()}")
         raise
 
+
 def signal_handler(sig, frame) -> None:
     """Handle interrupts gracefully."""
     print_warning("\nOperation interrupted. Exiting...")
     sys.exit(1)
+
 
 # ------------------------------
 # Validation Functions
@@ -188,6 +227,7 @@ def check_root_privileges() -> bool:
         return False
     return True
 
+
 def check_dependencies() -> bool:
     """Verify that required system tools are available."""
     required = ["lsblk", "dd", "shred"]
@@ -197,6 +237,7 @@ def check_dependencies() -> bool:
         print_info("Please install them using your package manager.")
         return False
     return True
+
 
 def is_valid_device(device_path: str) -> bool:
     """Check if the provided path is a valid block device."""
@@ -209,11 +250,13 @@ def is_valid_device(device_path: str) -> bool:
     # For Linux, check if device exists in /sys/block or as a partition.
     device_name = os.path.basename(device_path)
     if not os.path.exists(f"/sys/block/{device_name}") and not any(
-        os.path.exists(f"/sys/block/{bd}/{device_name}") for bd in os.listdir("/sys/block")
+        os.path.exists(f"/sys/block/{bd}/{device_name}")
+        for bd in os.listdir("/sys/block")
     ):
         print_error(f"{device_path} is not recognized as a block device.")
         return False
     return True
+
 
 # ------------------------------
 # Disk Eraser Class
@@ -235,7 +278,9 @@ class DiskEraser:
     def list_disks(self) -> List[Dict[str, Any]]:
         """List all block devices using lsblk (JSON output)."""
         try:
-            result = self.run_command(["lsblk", "-d", "-o", "NAME,SIZE,MODEL", "--json"])
+            result = self.run_command(
+                ["lsblk", "-d", "-o", "NAME,SIZE,MODEL", "--json"]
+            )
             data = json.loads(result.stdout)
             disks = data.get("blockdevices", [])
             for disk in disks:
@@ -263,14 +308,24 @@ class DiskEraser:
             path = disk.get("path", "")
             system = "✓" if disk.get("system_disk", False) else ""
             model = disk.get("model", "").strip() or "N/A"
-            name_style = Colors.AURORA_YELLOW if disk.get("system_disk", False) else Colors.SNOW_STORM1
-            type_color = Colors.FROST3 if dtype == "SSD" else (Colors.AURORA_PURPLE if dtype == "NVMe" else Colors.FROST1)
-            console.print(f"[{name_style}]{name:<12}[/{name_style}] "
-                          f"[{Colors.DETAIL}]{size:<10}[/{Colors.DETAIL}] "
-                          f"[{type_color}]{dtype:<8}[/{type_color}] "
-                          f"[{Colors.SNOW_STORM1}]{path:<12}[/{Colors.SNOW_STORM1}] "
-                          f"{system:<8} "
-                          f"[{Colors.DETAIL}]{model:<30}[/{Colors.DETAIL}]")
+            name_style = (
+                Colors.AURORA_YELLOW
+                if disk.get("system_disk", False)
+                else Colors.SNOW_STORM1
+            )
+            type_color = (
+                Colors.FROST3
+                if dtype == "SSD"
+                else (Colors.AURORA_PURPLE if dtype == "NVMe" else Colors.FROST1)
+            )
+            console.print(
+                f"[{name_style}]{name:<12}[/{name_style}] "
+                f"[{Colors.DETAIL}]{size:<10}[/{Colors.DETAIL}] "
+                f"[{type_color}]{dtype:<8}[/{type_color}] "
+                f"[{Colors.SNOW_STORM1}]{path:<12}[/{Colors.SNOW_STORM1}] "
+                f"{system:<8} "
+                f"[{Colors.DETAIL}]{model:<30}[/{Colors.DETAIL}]"
+            )
 
     def detect_disk_type(self, disk: str) -> str:
         """Detect whether disk is NVMe, HDD, or SSD."""
@@ -333,9 +388,21 @@ class DiskEraser:
         try:
             disk_size = self.get_disk_size(disk)
             progress = ProgressBar(disk_size, desc=f"Wiping {Path(disk).name}")
-            dd_cmd = ["dd", f"if={source}", f"of={disk}", f"bs={4 * 1024 * 1024}", "conv=fsync,noerror"]
-            process = subprocess.Popen(dd_cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                                       text=True, bufsize=1, universal_newlines=True)
+            dd_cmd = [
+                "dd",
+                f"if={source}",
+                f"of={disk}",
+                f"bs={4 * 1024 * 1024}",
+                "conv=fsync,noerror",
+            ]
+            process = subprocess.Popen(
+                dd_cmd,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
             bytes_written = 0
             while True:
                 line = process.stderr.readline()
@@ -345,7 +412,11 @@ class DiskEraser:
                     try:
                         parts = line.split()
                         for i, part in enumerate(parts):
-                            if part.isdigit() and i < len(parts) - 1 and parts[i + 1].startswith("byte"):
+                            if (
+                                part.isdigit()
+                                and i < len(parts) - 1
+                                and parts[i + 1].startswith("byte")
+                            ):
                                 current = int(part)
                                 delta = current - bytes_written
                                 if delta > 0:
@@ -371,8 +442,14 @@ class DiskEraser:
             total_work = disk_size * (passes + 1)
             progress = ProgressBar(total_work, desc=f"Erasing {Path(disk).name}")
             shred_cmd = ["shred", "-n", str(passes), "-z", "-v", disk]
-            process = subprocess.Popen(shred_cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                                       text=True, bufsize=1, universal_newlines=True)
+            process = subprocess.Popen(
+                shred_cmd,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
             current_bytes = 0
             for line in iter(process.stderr.readline, ""):
                 if "overwriting" in line:
@@ -397,7 +474,9 @@ class DiskEraser:
             print_error(f"Error during shred wipe: {e}")
             return False
 
-    def erase_disk(self, disk: str, method: str, passes: int = DEFAULT_PASSES, force: bool = False) -> bool:
+    def erase_disk(
+        self, disk: str, method: str, passes: int = DEFAULT_PASSES, force: bool = False
+    ) -> bool:
         """Erase the specified disk using the chosen method."""
         if method not in ERASURE_METHODS:
             print_error(f"Unknown erasure method: {method}")
@@ -418,7 +497,9 @@ class DiskEraser:
                 print_error(f"Failed to unmount: {e}")
             if self.is_mounted(disk):
                 if not force:
-                    choice = input(f"[bold {Colors.PROMPT}]Force unmount and continue? (y/N): [/{Colors.PROMPT}]").lower()
+                    choice = input(
+                        f"[bold {Colors.PROMPT}]Force unmount and continue? (y/N): [/{Colors.PROMPT}]"
+                    ).lower()
                     if choice != "y":
                         print_info("Disk erasure cancelled")
                         return False
@@ -434,9 +515,13 @@ class DiskEraser:
             print_info(f"Passes: {passes}")
         disk_name = os.path.basename(disk)
         if self.is_system_disk(disk_name):
-            print_error("⚠ WARNING: THIS APPEARS TO BE A SYSTEM DISK! Erasing it will destroy your OS!")
+            print_error(
+                "⚠ WARNING: THIS APPEARS TO BE A SYSTEM DISK! Erasing it will destroy your OS!"
+            )
         if not force:
-            confirm = input(f"\n[bold {Colors.AURORA_RED}]Type 'YES' to confirm disk erasure: [/{Colors.AURORA_RED}]")
+            confirm = input(
+                f"\n[bold {Colors.AURORA_RED}]Type 'YES' to confirm disk erasure: [/{Colors.AURORA_RED}]"
+            )
             if confirm != "YES":
                 print_info("Disk erasure cancelled")
                 return False
@@ -455,6 +540,7 @@ class DiskEraser:
             print_error(f"Disk {disk} erasure failed")
         return success
 
+
 # ------------------------------
 # Main CLI Entry Point with Click
 # ------------------------------
@@ -463,11 +549,14 @@ def cli() -> None:
     """Enhanced Disk Eraser Tool"""
     print_header("Disk Eraser Tool")
     console.print(f"Hostname: [bold {Colors.INFO}]{HOSTNAME}[/{Colors.INFO}]")
-    console.print(f"Date: [bold {Colors.INFO}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/{Colors.INFO}]")
+    console.print(
+        f"Date: [bold {Colors.INFO}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/{Colors.INFO}]"
+    )
     if not check_root_privileges():
         sys.exit(1)
     if not check_dependencies():
         sys.exit(1)
+
 
 @cli.command()
 def list() -> None:
@@ -476,10 +565,25 @@ def list() -> None:
     disks = eraser.list_disks()
     eraser.print_disk_list(disks)
 
+
 @cli.command()
-@click.option("-d", "--disk", required=True, help="Disk device to erase (e.g., /dev/sdb)")
-@click.option("-m", "--method", type=click.Choice(list(ERASURE_METHODS.keys())), default=DEFAULT_METHOD, help="Erasure method")
-@click.option("-p", "--passes", type=int, default=DEFAULT_PASSES, help="Number of passes for DoD method")
+@click.option(
+    "-d", "--disk", required=True, help="Disk device to erase (e.g., /dev/sdb)"
+)
+@click.option(
+    "-m",
+    "--method",
+    type=click.Choice(list(ERASURE_METHODS.keys())),
+    default=DEFAULT_METHOD,
+    help="Erasure method",
+)
+@click.option(
+    "-p",
+    "--passes",
+    type=int,
+    default=DEFAULT_PASSES,
+    help="Number of passes for DoD method",
+)
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation (use with caution)")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
 def erase(disk: str, method: str, passes: int, yes: bool, verbose: bool) -> None:
@@ -490,6 +594,7 @@ def erase(disk: str, method: str, passes: int, yes: bool, verbose: bool) -> None
         sys.exit(1)
     eraser.erase_disk(disk, method, passes, force=yes)
 
+
 def main() -> None:
     try:
         cli()
@@ -499,6 +604,7 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         sys.exit(1)
+
 
 atexit.register(lambda: console.print("[dim]Cleaning up resources...[/dim]"))
 signal.signal(signal.SIGINT, signal_handler)

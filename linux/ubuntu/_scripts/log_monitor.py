@@ -27,7 +27,13 @@ from typing import Any, Dict, List, Optional, Pattern
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -77,25 +83,28 @@ NETWORK_PATTERNS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-SUMMARY_INTERVAL = 30          # Seconds between summary reports
-UPDATE_INTERVAL = 0.1          # Seconds between log checks
+SUMMARY_INTERVAL = 30  # Seconds between summary reports
+UPDATE_INTERVAL = 0.1  # Seconds between log checks
 ANIMATION_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-MAX_LINE_LENGTH = 120          # Maximum length of displayed log lines
-MAX_STORED_ENTRIES = 1000      # Limit on stored log entries
+MAX_LINE_LENGTH = 120  # Maximum length of displayed log lines
+MAX_STORED_ENTRIES = 1000  # Limit on stored log entries
 
 # ------------------------------
 # Nord‑Themed Styles & Console Setup
 # ------------------------------
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a striking ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a formatted section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_status(message: str, status_type: str = "info") -> None:
     """Print a status message with Nord‑themed colors."""
@@ -109,21 +118,26 @@ def print_status(message: str, status_type: str = "info") -> None:
     color = colors.get(status_type.lower(), "#D8DEE9")
     console.print(message, style=color)
 
+
 def print_error(message: str) -> None:
     """Print an error message."""
     print_status(message, "error")
+
 
 def print_warning(message: str) -> None:
     """Print a warning message."""
     print_status(message, "warning")
 
+
 def print_success(message: str) -> None:
     """Print a success message."""
     print_status(message, "success")
 
+
 def truncate_line(line: str, max_length: int = MAX_LINE_LENGTH) -> str:
     """Truncate a line to the maximum length."""
-    return line if len(line) <= max_length else line[:max_length - 3] + "..."
+    return line if len(line) <= max_length else line[: max_length - 3] + "..."
+
 
 def format_timestamp(timestamp: Optional[float] = None) -> str:
     """Format a timestamp to a human-readable string."""
@@ -131,10 +145,14 @@ def format_timestamp(timestamp: Optional[float] = None) -> str:
         timestamp = time.time()
     return datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
+
 def check_root_privileges() -> None:
     """Warn the user if the script is not run with root privileges."""
     if os.geteuid() != 0:
-        print_warning("Running without root privileges. Some log files may be inaccessible.")
+        print_warning(
+            "Running without root privileges. Some log files may be inaccessible."
+        )
+
 
 # ------------------------------
 # Data Classes & Statistics
@@ -142,27 +160,34 @@ def check_root_privileges() -> None:
 @dataclass
 class LogPattern:
     """Represents a pattern to search for in log files."""
+
     name: str
     pattern: Pattern
     description: str
     severity: int
 
+
 @dataclass
 class LogMatch:
     """Represents a match of a pattern in a log file."""
+
     timestamp: float
     log_file: str
     pattern_name: str
     severity: int
     line: str
 
+
 class LogStatistics:
     """Tracks statistics for log matches."""
+
     def __init__(self) -> None:
         self.total_lines: int = 0
         self.total_matches: int = 0
         self.pattern_matches: Dict[str, int] = defaultdict(int)
-        self.file_matches: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.file_matches: Dict[str, Dict[str, int]] = defaultdict(
+            lambda: defaultdict(int)
+        )
         self.severity_counts: Dict[int, int] = defaultdict(int)
         self.start_time: float = time.time()
         self.lock = threading.Lock()
@@ -178,6 +203,7 @@ class LogStatistics:
         with self.lock:
             self.total_lines += 1
 
+
 # ------------------------------
 # Core Log Monitor Class
 # ------------------------------
@@ -186,6 +212,7 @@ class LogMonitor:
     Monitors log files in real‑time for specified patterns. Supports
     custom pattern matching, summary reporting, and export of detected issues.
     """
+
     def __init__(
         self,
         log_files: List[str],
@@ -254,7 +281,9 @@ class LogMonitor:
                     with self.file_lock:
                         self.file_positions[log_path] = f.tell()
         except PermissionError:
-            print_status(f"Permission denied: {log_path}. Try running as root.", "error")
+            print_status(
+                f"Permission denied: {log_path}. Try running as root.", "error"
+            )
         except Exception as e:
             print_status(f"Error monitoring {log_path}: {str(e)}", "error")
 
@@ -302,36 +331,57 @@ class LogMonitor:
         if not self.stats.total_matches and not force:
             return
         elapsed = now - self.stats.start_time
-        elapsed_str = f"{int(elapsed//3600)}h {int((elapsed%3600)//60)}m {int(elapsed%60)}s"
+        elapsed_str = f"{int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s"
         print_section("Log Monitor Summary")
-        console.print(f"Monitoring Duration: [bold #D8DEE9]{elapsed_str}[/bold #D8DEE9]")
-        console.print(f"Total Lines Processed: [bold #D8DEE9]{self.stats.total_lines}[/bold #D8DEE9]")
-        console.print(f"Total Matches: [bold #D8DEE9]{self.stats.total_matches}[/bold #D8DEE9]")
+        console.print(
+            f"Monitoring Duration: [bold #D8DEE9]{elapsed_str}[/bold #D8DEE9]"
+        )
+        console.print(
+            f"Total Lines Processed: [bold #D8DEE9]{self.stats.total_lines}[/bold #D8DEE9]"
+        )
+        console.print(
+            f"Total Matches: [bold #D8DEE9]{self.stats.total_matches}[/bold #D8DEE9]"
+        )
         if self.stats.severity_counts:
             console.print("\n[bold #88C0D0]Severity Breakdown:[/bold #88C0D0]")
             for severity in sorted(self.stats.severity_counts.keys()):
                 count = self.stats.severity_counts[severity]
                 color = self._get_severity_color(severity)
-                severity_name = {1: "Critical", 2: "Error", 3: "Warning", 4: "Notice"}.get(severity, f"Level {severity}")
-                console.print(f"  [bold {color}]{severity_name}: {count}[/bold {color}]")
+                severity_name = {
+                    1: "Critical",
+                    2: "Error",
+                    3: "Warning",
+                    4: "Notice",
+                }.get(severity, f"Level {severity}")
+                console.print(
+                    f"  [bold {color}]{severity_name}: {count}[/bold {color}]"
+                )
         if self.stats.pattern_matches:
             console.print("\n[bold #88C0D0]Pattern Matches:[/bold #88C0D0]")
-            for pattern, count in sorted(self.stats.pattern_matches.items(), key=lambda x: x[1], reverse=True):
+            for pattern, count in sorted(
+                self.stats.pattern_matches.items(), key=lambda x: x[1], reverse=True
+            ):
                 pattern_obj = self.patterns.get(pattern)
                 if pattern_obj:
                     color = self._get_severity_color(pattern_obj.severity)
-                    console.print(f"  [bold {color}]{pattern.upper()}: {count}[/bold {color}]")
+                    console.print(
+                        f"  [bold {color}]{pattern.upper()}: {count}[/bold {color}]"
+                    )
         if self.stats.file_matches:
             console.print("\n[bold #88C0D0]Log File Activity:[/bold #88C0D0]")
             for log_file, patterns in self.stats.file_matches.items():
                 total = sum(patterns.values())
                 filename = Path(log_file).name
                 console.print(f"  [#D8DEE9]{filename}[/#D8DEE9]: {total} matches")
-                for pattern, count in sorted(patterns.items(), key=lambda x: x[1], reverse=True)[:3]:
+                for pattern, count in sorted(
+                    patterns.items(), key=lambda x: x[1], reverse=True
+                )[:3]:
                     pattern_obj = self.patterns.get(pattern)
                     if pattern_obj:
                         color = self._get_severity_color(pattern_obj.severity)
-                        console.print(f"    [bold {color}]{pattern.upper()}: {count}[/bold {color}]")
+                        console.print(
+                            f"    [bold {color}]{pattern.upper()}: {count}[/bold {color}]"
+                        )
         console.print("\n")
 
     def export_results(self, export_format: str, output_file: str) -> bool:
@@ -344,31 +394,39 @@ class LogMonitor:
             if export_format.lower() == "json":
                 serializable = []
                 for match in matches_copy:
-                    serializable.append({
-                        "timestamp": format_timestamp(match.timestamp),
-                        "log_file": match.log_file,
-                        "pattern_name": match.pattern_name,
-                        "severity": match.severity,
-                        "line": match.line,
-                    })
+                    serializable.append(
+                        {
+                            "timestamp": format_timestamp(match.timestamp),
+                            "log_file": match.log_file,
+                            "pattern_name": match.pattern_name,
+                            "severity": match.severity,
+                            "line": match.line,
+                        }
+                    )
                 with open(output_file, "w", encoding="utf-8") as f:
                     json.dump(serializable, f, indent=2)
             elif export_format.lower() == "csv":
                 with open(output_file, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-                    writer.writerow(["Timestamp", "Log File", "Pattern", "Severity", "Line"])
+                    writer.writerow(
+                        ["Timestamp", "Log File", "Pattern", "Severity", "Line"]
+                    )
                     for match in matches_copy:
-                        writer.writerow([
-                            format_timestamp(match.timestamp),
-                            match.log_file,
-                            match.pattern_name,
-                            match.severity,
-                            match.line,
-                        ])
+                        writer.writerow(
+                            [
+                                format_timestamp(match.timestamp),
+                                match.log_file,
+                                match.pattern_name,
+                                match.severity,
+                                match.line,
+                            ]
+                        )
             else:
                 print_status(f"Unsupported export format: {export_format}", "error")
                 return False
-            print_status(f"Exported {len(matches_copy)} matches to {output_file}", "success")
+            print_status(
+                f"Exported {len(matches_copy)} matches to {output_file}", "success"
+            )
             return True
         except Exception as e:
             print_status(f"Export failed: {str(e)}", "error")
@@ -383,9 +441,15 @@ class LogMonitor:
         SHUTDOWN_FLAG = False
 
         print_header("Enhanced System Log Monitor")
-        console.print(f"Starting log monitor at: [bold #D8DEE9]{format_timestamp()}[/bold #D8DEE9]")
-        console.print(f"Monitoring [bold #D8DEE9]{len(self.log_files)}[/bold #D8DEE9] log file(s)")
-        console.print(f"Tracking [bold #D8DEE9]{len(self.patterns)}[/bold #D8DEE9] pattern(s)")
+        console.print(
+            f"Starting log monitor at: [bold #D8DEE9]{format_timestamp()}[/bold #D8DEE9]"
+        )
+        console.print(
+            f"Monitoring [bold #D8DEE9]{len(self.log_files)}[/bold #D8DEE9] log file(s)"
+        )
+        console.print(
+            f"Tracking [bold #D8DEE9]{len(self.patterns)}[/bold #D8DEE9] pattern(s)"
+        )
         console.print("Press Ctrl+C to stop monitoring\n", style="dim")
 
         for log_file in self.log_files:
@@ -397,7 +461,9 @@ class LogMonitor:
 
         threads = []
         for log_file in self.log_files:
-            thread = threading.Thread(target=self._process_log_file, args=(log_file,), daemon=True)
+            thread = threading.Thread(
+                target=self._process_log_file, args=(log_file,), daemon=True
+            )
             thread.start()
             threads.append(thread)
 
@@ -418,6 +484,7 @@ class LogMonitor:
             for thread in threads:
                 thread.join(timeout=0.5)
 
+
 # ------------------------------
 # Signal Handling & Cleanup
 # ------------------------------
@@ -427,25 +494,65 @@ def signal_handler(sig: int, frame: Any) -> None:
     global SHUTDOWN_FLAG
     SHUTDOWN_FLAG = True
 
+
 atexit.register(lambda: console.print("[dim]Cleaning up resources...[/dim]"))
+
 
 # ------------------------------
 # Main CLI Entry Point with Click
 # ------------------------------
 @click.command()
 @click.argument("logs", nargs=-1)
-@click.option("-q", "--quiet", is_flag=True, help="Only show summaries, not individual matches")
-@click.option("-s", "--stats-only", is_flag=True, help="Only show final statistics when monitoring ends")
-@click.option("-i", "--interval", default=SUMMARY_INTERVAL, help="Interval in seconds between summary reports")
-@click.option("-p", "--patterns", type=click.Choice(["default", "network", "all"], case_sensitive=False),
-              default="default", help="Pattern set to use for monitoring")
-@click.option("--custom-pattern", "custom_patterns", multiple=True,
-              help="Add custom pattern in format 'name:regex:severity'")
-@click.option("-e", "--export", type=click.Choice(["json", "csv"], case_sensitive=False),
-              help="Export results in the specified format when done")
-@click.option("-o", "--output", default="log_monitor_results", help="Output file name for export (without extension)")
-def main(logs: List[str], quiet: bool, stats_only: bool, interval: int, patterns: str,
-         custom_patterns: List[str], export: Optional[str], output: str) -> None:
+@click.option(
+    "-q", "--quiet", is_flag=True, help="Only show summaries, not individual matches"
+)
+@click.option(
+    "-s",
+    "--stats-only",
+    is_flag=True,
+    help="Only show final statistics when monitoring ends",
+)
+@click.option(
+    "-i",
+    "--interval",
+    default=SUMMARY_INTERVAL,
+    help="Interval in seconds between summary reports",
+)
+@click.option(
+    "-p",
+    "--patterns",
+    type=click.Choice(["default", "network", "all"], case_sensitive=False),
+    default="default",
+    help="Pattern set to use for monitoring",
+)
+@click.option(
+    "--custom-pattern",
+    "custom_patterns",
+    multiple=True,
+    help="Add custom pattern in format 'name:regex:severity'",
+)
+@click.option(
+    "-e",
+    "--export",
+    type=click.Choice(["json", "csv"], case_sensitive=False),
+    help="Export results in the specified format when done",
+)
+@click.option(
+    "-o",
+    "--output",
+    default="log_monitor_results",
+    help="Output file name for export (without extension)",
+)
+def main(
+    logs: List[str],
+    quiet: bool,
+    stats_only: bool,
+    interval: int,
+    patterns: str,
+    custom_patterns: List[str],
+    export: Optional[str],
+    output: str,
+) -> None:
     """Enhanced System Log Monitor"""
     global SUMMARY_INTERVAL
     SUMMARY_INTERVAL = interval
@@ -460,7 +567,11 @@ def main(logs: List[str], quiet: bool, stats_only: bool, interval: int, patterns
 
     valid_logs = []
     for log_file in log_files:
-        if os.path.exists(log_file) and os.path.isfile(log_file) and os.access(log_file, os.R_OK):
+        if (
+            os.path.exists(log_file)
+            and os.path.isfile(log_file)
+            and os.access(log_file, os.R_OK)
+        ):
             valid_logs.append(log_file)
         else:
             print_status(f"Invalid log file: {log_file}", "warning")
@@ -482,7 +593,10 @@ def main(logs: List[str], quiet: bool, stats_only: bool, interval: int, patterns
                 }
                 print_status(f"Added custom pattern: {name}", "success")
             except ValueError:
-                print_status(f"Invalid custom pattern format: {custom}. Expected format: name:regex:severity", "error")
+                print_status(
+                    f"Invalid custom pattern format: {custom}. Expected format: name:regex:severity",
+                    "error",
+                )
 
     monitor = LogMonitor(valid_logs, pattern_set)
     try:
@@ -494,6 +608,7 @@ def main(logs: List[str], quiet: bool, stats_only: bool, interval: int, patterns
     except Exception as e:
         print_status(f"Unexpected error: {str(e)}", "error")
         sys.exit(1)
+
 
 # Global shutdown flag
 SHUTDOWN_FLAG = False

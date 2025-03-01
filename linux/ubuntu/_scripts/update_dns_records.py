@@ -29,10 +29,18 @@ import time
 from datetime import datetime
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
+from typing import List, Dict, Any
+
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -52,41 +60,52 @@ IP_SERVICES = [
     "https://checkip.amazonaws.com",
 ]
 
+
 # ------------------------------
 # Nord‑Themed Colors & Console Setup
 # ------------------------------
 class Colors:
     """Nord-themed ANSI color codes for terminal output."""
-    HEADER = "\033[38;5;81m"     # Nord9 - Blue
-    GREEN = "\033[38;5;108m"     # Nord14 - Green
-    YELLOW = "\033[38;5;179m"    # Nord13 - Yellow
-    RED = "\033[38;5;174m"       # Nord11 - Red
-    BLUE = "\033[38;5;67m"       # Nord10 - Deep Blue
-    CYAN = "\033[38;5;110m"      # Nord8 - Light Blue
-    MAGENTA = "\033[38;5;139m"   # Nord15 - Purple
-    WHITE = "\033[38;5;253m"     # Nord4 - Light foreground
+
+    HEADER = "\033[38;5;81m"  # Nord9 - Blue
+    GREEN = "\033[38;5;108m"  # Nord14 - Green
+    YELLOW = "\033[38;5;179m"  # Nord13 - Yellow
+    RED = "\033[38;5;174m"  # Nord11 - Red
+    BLUE = "\033[38;5;67m"  # Nord10 - Deep Blue
+    CYAN = "\033[38;5;110m"  # Nord8 - Light Blue
+    MAGENTA = "\033[38;5;139m"  # Nord15 - Purple
+    WHITE = "\033[38;5;253m"  # Nord4 - Light foreground
     BOLD = "\033[1m"
     ENDC = "\033[0m"
 
+
 console = Console()
+
 
 def print_header(text: str) -> None:
     """Print a striking header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style=f"bold {Colors.HEADER}")
 
+
 def print_section(title: str) -> None:
     """Print a formatted section header."""
     border = "═" * 60
-    console.print(f"[{Colors.BOLD}{Colors.HEADER}]{border}[/{Colors.HEADER}{Colors.BOLD}]")
-    console.print(f"[{Colors.BOLD}{Colors.HEADER}]  {title}[/{Colors.HEADER}{Colors.BOLD}]")
+    console.print(
+        f"[{Colors.BOLD}{Colors.HEADER}]{border}[/{Colors.HEADER}{Colors.BOLD}]"
+    )
+    console.print(
+        f"[{Colors.BOLD}{Colors.HEADER}]  {title}[/{Colors.HEADER}{Colors.BOLD}]"
+    )
     console.print(f"[{Colors.HEADER}]{border}[/{Colors.HEADER}]\n")
+
 
 # ------------------------------
 # Console Spinner for Progress Indication
 # ------------------------------
 class ConsoleSpinner:
     """A simple spinner to indicate progress for operations with unknown duration."""
+
     def __init__(self, message: str):
         self.message = message
         self.spinning = True
@@ -114,6 +133,7 @@ class ConsoleSpinner:
         self.thread.join()
         sys.stdout.write("\r" + " " * 80 + "\r")
         sys.stdout.flush()
+
 
 # ------------------------------
 # Logging Configuration
@@ -144,6 +164,7 @@ def setup_logging() -> None:
         logger.warning(f"Failed to set up log file {LOG_FILE}: {e}")
         logger.warning("Continuing with console logging only")
 
+
 # ------------------------------
 # Signal Handling & Cleanup
 # ------------------------------
@@ -151,7 +172,9 @@ def cleanup() -> None:
     """Perform cleanup tasks before exiting."""
     logging.info("Performing cleanup tasks before exit.")
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
@@ -164,8 +187,10 @@ def signal_handler(signum, frame) -> None:
     else:
         sys.exit(128 + signum)
 
+
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ------------------------------
 # Dependency & Privilege Checks
@@ -174,20 +199,27 @@ def check_dependencies() -> None:
     """No additional external dependencies beyond the standard library are required."""
     pass  # All dependencies are from the standard library.
 
+
 def check_root() -> None:
     """Ensure the script is run as root."""
     if os.geteuid() != 0:
         logging.error("This script must be run as root.")
         sys.exit(1)
 
+
 def validate_config() -> None:
     """Ensure required environment variables are set."""
     if not CF_API_TOKEN:
-        logging.error("Environment variable 'CF_API_TOKEN' is not set. Please set it in /etc/environment.")
+        logging.error(
+            "Environment variable 'CF_API_TOKEN' is not set. Please set it in /etc/environment."
+        )
         sys.exit(1)
     if not CF_ZONE_ID:
-        logging.error("Environment variable 'CF_ZONE_ID' is not set. Please set it in /etc/environment.")
+        logging.error(
+            "Environment variable 'CF_ZONE_ID' is not set. Please set it in /etc/environment."
+        )
         sys.exit(1)
+
 
 # ------------------------------
 # Helper Functions
@@ -210,6 +242,7 @@ def get_public_ip() -> str:
     logging.error("Failed to retrieve public IP from all services.")
     sys.exit(1)
 
+
 def fetch_dns_records() -> List[Dict[str, Any]]:
     """Fetch all DNS A records from Cloudflare."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records?type=A"
@@ -229,7 +262,10 @@ def fetch_dns_records() -> List[Dict[str, Any]]:
         logging.error(f"Failed to fetch DNS records from Cloudflare: {e}")
         sys.exit(1)
 
-def update_dns_record(record_id: str, record_name: str, current_ip: str, proxied: bool) -> bool:
+
+def update_dns_record(
+    record_id: str, record_name: str, current_ip: str, proxied: bool
+) -> bool:
     """Update a single DNS A record with the new IP address."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records/{record_id}"
     headers = {
@@ -249,7 +285,10 @@ def update_dns_record(record_id: str, record_name: str, current_ip: str, proxied
         with urlopen(req, timeout=10) as response:
             result = json.loads(response.read().decode())
             if not result.get("success"):
-                errors = ", ".join(error.get("message", "Unknown error") for error in result.get("errors", []))
+                errors = ", ".join(
+                    error.get("message", "Unknown error")
+                    for error in result.get("errors", [])
+                )
                 logging.warning(f"Failed to update record '{record_name}': {errors}")
                 return False
             logging.info(f"Successfully updated DNS record '{record_name}'.")
@@ -257,6 +296,7 @@ def update_dns_record(record_id: str, record_name: str, current_ip: str, proxied
     except Exception as e:
         logging.warning(f"Error updating DNS record '{record_name}': {e}")
         return False
+
 
 # ------------------------------
 # Main Functionality
@@ -302,6 +342,7 @@ def update_cloudflare_dns() -> bool:
         logging.info("No DNS records required updating.")
         return True
 
+
 # ------------------------------
 # Main Entry Point
 # ------------------------------
@@ -329,12 +370,14 @@ def cli() -> None:
         logging.warning(f"DNS UPDATE COMPLETED WITH ERRORS AT {now}")
     logging.info("=" * 80)
 
+
 def main() -> None:
     try:
         cli()
     except Exception as e:
         logging.error(f"Unhandled exception: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -23,7 +23,13 @@ from typing import Any, Dict
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -41,30 +47,37 @@ DEFAULT_LOG_FILE: str = "/var/log/deploy-scripts.log"
 # nord0: #2E3440, nord4: #D8DEE9, nord8: #88C0D0, nord10: #5E81AC, nord11: #BF616A
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a striking ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+
 
 # ------------------------------
 # Signal Handling & Cleanup
@@ -72,7 +85,9 @@ def print_error(text: str) -> None:
 def cleanup() -> None:
     print_step("Performing cleanup tasks...")
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(sig, frame) -> None:
     sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
@@ -80,13 +95,17 @@ def signal_handler(sig, frame) -> None:
     cleanup()
     sys.exit(128 + sig)
 
+
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
+
 
 # ------------------------------
 # Helper Function: Command Execution
 # ------------------------------
-def run_command(cmd: list[str], check: bool = True, timeout: int = 30) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: list[str], check: bool = True, timeout: int = 30
+) -> subprocess.CompletedProcess:
     """
     Run a system command with error handling.
 
@@ -100,7 +119,9 @@ def run_command(cmd: list[str], check: bool = True, timeout: int = 30) -> subpro
     """
     try:
         print_step(f"Executing: {' '.join(cmd)}")
-        result = subprocess.run(cmd, check=check, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            cmd, check=check, capture_output=True, text=True, timeout=timeout
+        )
         return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
@@ -111,6 +132,7 @@ def run_command(cmd: list[str], check: bool = True, timeout: int = 30) -> subpro
         print_error(f"Command timed out: {' '.join(cmd)}")
         raise
 
+
 # ------------------------------
 # Deployment Status Tracking
 # ------------------------------
@@ -118,6 +140,7 @@ class DeploymentStatus:
     """
     Tracks deployment steps and statistics.
     """
+
     def __init__(self) -> None:
         self.steps: Dict[str, Dict[str, str]] = {
             "ownership_check": {"status": "pending", "message": ""},
@@ -142,6 +165,7 @@ class DeploymentStatus:
             if key in self.stats:
                 self.stats[key] = value
 
+
 # ------------------------------
 # Deployment Manager
 # ------------------------------
@@ -149,6 +173,7 @@ class DeploymentManager:
     """
     Manages the deployment process.
     """
+
     def __init__(self, source: str, target: str, expected_owner: str) -> None:
         self.script_source: str = source
         self.script_target: str = target
@@ -185,7 +210,9 @@ class DeploymentManager:
         """
         Verify that the source directory is owned by the expected owner.
         """
-        self.status.update_step("ownership_check", "in_progress", "Checking ownership...")
+        self.status.update_step(
+            "ownership_check", "in_progress", "Checking ownership..."
+        )
         try:
             stat_info = os.stat(self.script_source)
             owner = pwd.getpwuid(stat_info.st_uid).pw_name
@@ -210,15 +237,30 @@ class DeploymentManager:
         """
         self.status.update_step("dry_run", "in_progress", "Performing dry run...")
         try:
-            result = run_command([
-                "rsync", "--dry-run", "-av", "--delete", "--itemize-changes",
-                f"{self.script_source.rstrip('/')}/", self.script_target
-            ])
-            changes = [line for line in result.stdout.splitlines() if line and not line.startswith(">")]
+            result = run_command(
+                [
+                    "rsync",
+                    "--dry-run",
+                    "-av",
+                    "--delete",
+                    "--itemize-changes",
+                    f"{self.script_source.rstrip('/')}/",
+                    self.script_target,
+                ]
+            )
+            changes = [
+                line
+                for line in result.stdout.splitlines()
+                if line and not line.startswith(">")
+            ]
             new_files = sum(1 for line in changes if line.startswith(">f+"))
             updated_files = sum(1 for line in changes if line.startswith(">f."))
             deleted_files = sum(1 for line in changes if line.startswith("*deleting"))
-            self.status.update_stats(new_files=new_files, updated_files=updated_files, deleted_files=deleted_files)
+            self.status.update_stats(
+                new_files=new_files,
+                updated_files=updated_files,
+                deleted_files=deleted_files,
+            )
             msg = f"Dry run: {new_files} new, {updated_files} updated, {deleted_files} deletions."
             self.status.update_step("dry_run", "success", msg)
             print_success(msg)
@@ -235,15 +277,29 @@ class DeploymentManager:
         """
         self.status.update_step("deployment", "in_progress", "Deploying scripts...")
         try:
-            result = run_command([
-                "rsync", "-av", "--delete", "--itemize-changes",
-                f"{self.script_source.rstrip('/')}/", self.script_target
-            ])
-            changes = [line for line in result.stdout.splitlines() if line and not line.startswith(">")]
+            result = run_command(
+                [
+                    "rsync",
+                    "-av",
+                    "--delete",
+                    "--itemize-changes",
+                    f"{self.script_source.rstrip('/')}/",
+                    self.script_target,
+                ]
+            )
+            changes = [
+                line
+                for line in result.stdout.splitlines()
+                if line and not line.startswith(">")
+            ]
             new_files = sum(1 for line in changes if line.startswith(">f+"))
             updated_files = sum(1 for line in changes if line.startswith(">f."))
             deleted_files = sum(1 for line in changes if line.startswith("*deleting"))
-            self.status.update_stats(new_files=new_files, updated_files=updated_files, deleted_files=deleted_files)
+            self.status.update_stats(
+                new_files=new_files,
+                updated_files=updated_files,
+                deleted_files=deleted_files,
+            )
             msg = f"Deployment: {new_files} new, {updated_files} updated, {deleted_files} deleted."
             self.status.update_step("deployment", "success", msg)
             print_success(msg)
@@ -258,9 +314,23 @@ class DeploymentManager:
         """
         Set executable permissions on deployed files.
         """
-        self.status.update_step("permission_set", "in_progress", "Setting permissions...")
+        self.status.update_step(
+            "permission_set", "in_progress", "Setting permissions..."
+        )
         try:
-            run_command(["find", self.script_target, "-type", "f", "-exec", "chmod", "755", "{}", ";"])
+            run_command(
+                [
+                    "find",
+                    self.script_target,
+                    "-type",
+                    "f",
+                    "-exec",
+                    "chmod",
+                    "755",
+                    "{}",
+                    ";",
+                ]
+            )
             msg = "Permissions set successfully."
             self.status.update_step("permission_set", "success", msg)
             print_success(msg)
@@ -282,7 +352,9 @@ class DeploymentManager:
         }
         for step, data in self.status.steps.items():
             icon = icons.get(data["status"], "?")
-            console.print(f"{icon} {step}: [bold]{data['status'].upper()}[/bold] - {data['message']}")
+            console.print(
+                f"{icon} {step}: [bold]{data['status'].upper()}[/bold] - {data['message']}"
+            )
         if self.status.stats["start_time"]:
             elapsed = time.time() - self.status.stats["start_time"]
             console.print("\n[bold]Deployment Statistics:[/bold]")
@@ -309,18 +381,34 @@ class DeploymentManager:
         self.status.stats["end_time"] = time.time()
         return success
 
+
 # ------------------------------
 # CLI Entry Point with Click
 # ------------------------------
 @click.command()
-@click.option("--source", type=click.Path(exists=True), default=DEFAULT_SCRIPT_SOURCE,
-              help="Directory containing the source scripts.")
-@click.option("--target", type=click.Path(), default=DEFAULT_SCRIPT_TARGET,
-              help="Directory to deploy the scripts to.")
-@click.option("--owner", default=DEFAULT_EXPECTED_OWNER,
-              help="Expected owner of the source directory.")
-@click.option("--log-file", type=click.Path(), default=DEFAULT_LOG_FILE,
-              help="Path to the log file.")
+@click.option(
+    "--source",
+    type=click.Path(exists=True),
+    default=DEFAULT_SCRIPT_SOURCE,
+    help="Directory containing the source scripts.",
+)
+@click.option(
+    "--target",
+    type=click.Path(),
+    default=DEFAULT_SCRIPT_TARGET,
+    help="Directory to deploy the scripts to.",
+)
+@click.option(
+    "--owner",
+    default=DEFAULT_EXPECTED_OWNER,
+    help="Expected owner of the source directory.",
+)
+@click.option(
+    "--log-file",
+    type=click.Path(),
+    default=DEFAULT_LOG_FILE,
+    help="Path to the log file.",
+)
 def main(source: str, target: str, owner: str, log_file: str) -> None:
     """
     Deploy scripts from a source directory to a target directory with verification,
@@ -338,6 +426,7 @@ def main(source: str, target: str, owner: str, log_file: str) -> None:
         sys.exit(1)
     manager.print_status_report()
     print_success("Deployment completed successfully.")
+
 
 if __name__ == "__main__":
     try:

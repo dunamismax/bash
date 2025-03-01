@@ -32,7 +32,13 @@ from typing import List, Tuple
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -60,34 +66,42 @@ CHECKSUM_ALGORITHMS = ["md5", "sha1", "sha256", "sha512"]
 #   nord8:  #88C0D0, nord11: #BF616A, and others.
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a pretty ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
 
+
 def cleanup() -> None:
     """Perform any necessary cleanup tasks."""
     print_step("Cleaning up resources...")
+
 
 def signal_handler(sig, frame) -> None:
     sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
@@ -95,9 +109,11 @@ def signal_handler(sig, frame) -> None:
     cleanup()
     sys.exit(128 + sig)
 
+
 atexit.register(cleanup)
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
+
 
 # ------------------------------
 # Helper Functions
@@ -110,6 +126,7 @@ def format_size(num_bytes: float) -> str:
         num_bytes /= 1024
     return f"{num_bytes:.1f}PB"
 
+
 def format_time(seconds: float) -> str:
     """Format seconds to a human-readable time string."""
     if seconds < 60:
@@ -121,6 +138,7 @@ def format_time(seconds: float) -> str:
         h, remainder = divmod(seconds, 3600)
         m, s = divmod(remainder, 60)
         return f"{int(h)}h {int(m)}m {int(s)}s"
+
 
 def get_file_category(filename: str) -> str:
     """Determine file category based on extension."""
@@ -139,14 +157,19 @@ def get_file_category(filename: str) -> str:
         return "code"
     return "other"
 
+
 def format_date(timestamp: float) -> str:
     """Return formatted date string from timestamp."""
     return datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
+
 def check_root_privileges() -> None:
     """Warn if not run as root (but continue)."""
     if os.geteuid() != 0:
-        print_warning("Running without root privileges. Some operations may be restricted.")
+        print_warning(
+            "Running without root privileges. Some operations may be restricted."
+        )
+
 
 # ------------------------------
 # File Operation Functions
@@ -162,7 +185,9 @@ def copy_item(src: str, dest: str) -> bool:
     try:
         if Path(src).is_dir():
             # Calculate total size for progress tracking.
-            total_size = sum(f.stat().st_size for f in Path(src).rglob("*") if f.is_file())
+            total_size = sum(
+                f.stat().st_size for f in Path(src).rglob("*") if f.is_file()
+            )
             if total_size == 0:
                 print_warning("No files to copy.")
                 return True
@@ -179,7 +204,9 @@ def copy_item(src: str, dest: str) -> bool:
                 # Walk directory and copy files.
                 for root, dirs, files in os.walk(src):
                     rel_path = os.path.relpath(root, src)
-                    target_dir = Path(dest) / rel_path if rel_path != "." else Path(dest)
+                    target_dir = (
+                        Path(dest) / rel_path if rel_path != "." else Path(dest)
+                    )
                     target_dir.mkdir(parents=True, exist_ok=True)
                     for file in files:
                         src_file = Path(root) / file
@@ -193,7 +220,9 @@ def copy_item(src: str, dest: str) -> bool:
                                 progress.update(task, advance=len(buf))
                         shutil.copystat(src_file, dest_file)
             elapsed = time.time() - start_time
-            print_success(f"Copied directory ({format_size(total_size)}) in {format_time(elapsed)}")
+            print_success(
+                f"Copied directory ({format_size(total_size)}) in {format_time(elapsed)}"
+            )
         else:
             # Single file copy with progress.
             file_size = Path(src).stat().st_size
@@ -215,11 +244,14 @@ def copy_item(src: str, dest: str) -> bool:
                         progress.update(task, advance=len(buf))
             shutil.copystat(src, dest)
             elapsed = time.time() - start_time
-            print_success(f"Copied file ({format_size(file_size)}) in {format_time(elapsed)}")
+            print_success(
+                f"Copied file ({format_size(file_size)}) in {format_time(elapsed)}"
+            )
         return True
     except Exception as e:
         print_error(f"Error copying {src}: {e}")
         return False
+
 
 def move_item(src: str, dest: str) -> bool:
     """Move a file or directory with progress tracking."""
@@ -248,6 +280,7 @@ def move_item(src: str, dest: str) -> bool:
         print_error(f"Error moving {src}: {e}")
         return False
 
+
 def delete_item(path: str, force: bool = False) -> bool:
     """Delete a file or directory with confirmation."""
     print_section(f"Deleting {Path(path).name}")
@@ -272,6 +305,7 @@ def delete_item(path: str, force: bool = False) -> bool:
         print_error(f"Error deleting {path}: {e}")
         return False
 
+
 def find_files(directory: str, pattern: str, details: bool) -> List[str]:
     """Search for files matching a pattern with optional detailed metadata."""
     print_section(f"Searching for files in {directory}")
@@ -286,7 +320,9 @@ def find_files(directory: str, pattern: str, details: bool) -> List[str]:
                 matches.append(str(Path(root) / file))
     print_success(f"Found {len(matches)} matching files")
     if details and matches:
-        console.print(f"[bold #88C0D0]{'File Path':<50} {'Size':<10} {'Modified':<20}[/bold #88C0D0]")
+        console.print(
+            f"[bold #88C0D0]{'File Path':<50} {'Size':<10} {'Modified':<20}[/bold #88C0D0]"
+        )
         console.print("-" * 90)
         for match in matches:
             try:
@@ -300,6 +336,7 @@ def find_files(directory: str, pattern: str, details: bool) -> List[str]:
         for match in matches:
             console.print(match)
     return matches
+
 
 def compress_files(src: str, dest: str) -> bool:
     """Compress a file or directory into a tar.gz archive with progress tracking."""
@@ -328,12 +365,15 @@ def compress_files(src: str, dest: str) -> bool:
         ) as progress:
             task = progress.add_task("Compressing files", total=total_size)
             with open(dest, "wb") as f_out:
-                with tarfile.open(fileobj=f_out, mode="w:gz", compresslevel=COMPRESSION_LEVEL) as tar:
+                with tarfile.open(
+                    fileobj=f_out, mode="w:gz", compresslevel=COMPRESSION_LEVEL
+                ) as tar:
                     # Define a filter to update progress as files are added.
                     def filter_func(tarinfo):
                         if tarinfo.size:
                             progress.update(task, advance=tarinfo.size)
                         return tarinfo
+
                     tar.add(src, arcname=Path(src).name, filter=filter_func)
         elapsed = time.time() - start_time
         out_size = Path(dest).stat().st_size
@@ -351,6 +391,7 @@ def compress_files(src: str, dest: str) -> bool:
             except Exception:
                 pass
         return False
+
 
 def calculate_checksum(path: str, algorithm: str) -> bool:
     """Calculate and display the checksum of a file using the specified algorithm."""
@@ -379,12 +420,15 @@ def calculate_checksum(path: str, algorithm: str) -> bool:
                     progress.update(task, advance=len(chunk))
         checksum = hash_func.hexdigest()
         elapsed = time.time() - start_time
-        print_success(f"{algorithm.upper()} Checksum: [bold #8FBCBB]{checksum}[/bold #8FBCBB]")
+        print_success(
+            f"{algorithm.upper()} Checksum: [bold #8FBCBB]{checksum}[/bold #8FBCBB]"
+        )
         console.print(f"Time taken: {format_time(elapsed)}")
         return True
     except Exception as e:
         print_error(f"Error calculating checksum: {e}")
         return False
+
 
 def disk_usage(directory: str, threshold: int) -> bool:
     """Analyze disk usage in a directory and display summary information."""
@@ -405,24 +449,63 @@ def disk_usage(directory: str, threshold: int) -> bool:
     print_success(f"Total files: {file_count}")
     console.print(f"Total size: [bold #8FBCBB]{format_size(total_size)}[/bold #8FBCBB]")
     if total_size >= threshold:
-        console.print(f"[bold #BF616A]Warning:[/bold #BF616A] Directory size exceeds threshold.")
+        console.print(
+            f"[bold #BF616A]Warning:[/bold #BF616A] Directory size exceeds threshold."
+        )
     return True
+
 
 # ------------------------------
 # Main CLI Entry Point with Click
 # ------------------------------
 @click.command()
-@click.argument("operation", type=click.Choice(["copy", "move", "delete", "find", "compress", "checksum", "du"], case_sensitive=False))
+@click.argument(
+    "operation",
+    type=click.Choice(
+        ["copy", "move", "delete", "find", "compress", "checksum", "du"],
+        case_sensitive=False,
+    ),
+)
 @click.argument("paths", nargs=-1)
-@click.option("-p", "--pattern", default=".*", help="Pattern for find operation (regex style, default: .*)")
-@click.option("-a", "--algorithm", default="md5", type=click.Choice(CHECKSUM_ALGORITHMS), help="Checksum algorithm (default: md5)")
-@click.option("-f", "--force", is_flag=True, help="Force operation without confirmation")
-@click.option("-d", "--details", is_flag=True, help="Show detailed information (for find)")
-@click.option("-t", "--threshold", default=LARGE_FILE_THRESHOLD // (1024*1024), help="Threshold for disk usage analysis in MB (default: 100)")
-def main(operation: str, paths: List[str], pattern: str, algorithm: str, force: bool, details: bool, threshold: int) -> None:
+@click.option(
+    "-p",
+    "--pattern",
+    default=".*",
+    help="Pattern for find operation (regex style, default: .*)",
+)
+@click.option(
+    "-a",
+    "--algorithm",
+    default="md5",
+    type=click.Choice(CHECKSUM_ALGORITHMS),
+    help="Checksum algorithm (default: md5)",
+)
+@click.option(
+    "-f", "--force", is_flag=True, help="Force operation without confirmation"
+)
+@click.option(
+    "-d", "--details", is_flag=True, help="Show detailed information (for find)"
+)
+@click.option(
+    "-t",
+    "--threshold",
+    default=LARGE_FILE_THRESHOLD // (1024 * 1024),
+    help="Threshold for disk usage analysis in MB (default: 100)",
+)
+def main(
+    operation: str,
+    paths: List[str],
+    pattern: str,
+    algorithm: str,
+    force: bool,
+    details: bool,
+    threshold: int,
+) -> None:
     """Enhanced File Operations Toolkit"""
     print_header("File Toolkit")
-    console.print(f"Timestamp: [bold #D8DEE9]{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+    console.print(
+        f"Timestamp: [bold #D8DEE9]{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
+    )
     check_root_privileges()
 
     try:
@@ -510,6 +593,7 @@ def main(operation: str, paths: List[str], pattern: str, algorithm: str, force: 
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

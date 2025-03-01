@@ -29,7 +29,13 @@ from typing import Any, Dict, List, Optional, Union
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -53,49 +59,59 @@ MAX_RETRIES = 3
 RATE_CALCULATION_WINDOW = 5  # seconds to average download rate
 TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
 
+
 # ------------------------------
 # Nord‑Themed Colors & Console Setup
 # ------------------------------
 class Colors:
     """Nord-themed ANSI color codes for terminal output"""
-    HEADER = "\033[38;5;81m"    # Blue (Nord9)
-    GREEN = "\033[38;5;108m"    # Green (Nord14)
-    YELLOW = "\033[38;5;179m"   # Yellow (Nord13)
-    RED = "\033[38;5;174m"      # Red (Nord11)
-    BLUE = "\033[38;5;67m"      # Deep Blue (Nord10)
-    CYAN = "\033[38;5;110m"     # Light Blue (Nord8)
+
+    HEADER = "\033[38;5;81m"  # Blue (Nord9)
+    GREEN = "\033[38;5;108m"  # Green (Nord14)
+    YELLOW = "\033[38;5;179m"  # Yellow (Nord13)
+    RED = "\033[38;5;174m"  # Red (Nord11)
+    BLUE = "\033[38;5;67m"  # Deep Blue (Nord10)
+    CYAN = "\033[38;5;110m"  # Light Blue (Nord8)
     MAGENTA = "\033[38;5;139m"  # Purple (Nord15)
-    WHITE = "\033[38;5;253m"    # Light foreground (Nord4)
+    WHITE = "\033[38;5;253m"  # Light foreground (Nord4)
     BOLD = "\033[1m"
     DIM = "\033[2m"
     ENDC = "\033[0m"
 
+
 console = Console()
+
 
 def print_header(message: str) -> None:
     """Print a striking ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(message, font="slant")
     console.print(ascii_art, style=f"bold {Colors.HEADER}")
 
+
 def print_section(message: str) -> None:
     """Print a formatted section header."""
     console.print(f"\n[bold {Colors.BLUE}]{message}[/bold {Colors.BLUE}]")
+
 
 def print_info(message: str) -> None:
     """Print an informational message."""
     console.print(f"[{Colors.CYAN}]{message}[/{Colors.CYAN}]")
 
+
 def print_success(message: str) -> None:
     """Print a success message."""
     console.print(f"[bold {Colors.GREEN}]✓ {message}[/{Colors.GREEN}]")
+
 
 def print_warning(message: str) -> None:
     """Print a warning message."""
     console.print(f"[bold {Colors.YELLOW}]⚠ {message}[/{Colors.YELLOW}]")
 
+
 def print_error(message: str) -> None:
     """Print an error message."""
     console.print(f"[bold {Colors.RED}]✗ {message}[/{Colors.RED}]")
+
 
 def format_size(num_bytes: float) -> str:
     """Convert bytes to a human‑readable string."""
@@ -105,11 +121,24 @@ def format_size(num_bytes: float) -> str:
         num_bytes /= 1024
     return f"{num_bytes:.1f} PB"
 
+
+def print_step(message: str) -> None:
+    """Print a step description message in a Nord-themed style."""
+    console.print(f"[bold {Colors.CYAN}]• {message}[/{Colors.CYAN}]")
+
+
+def signal_handler(sig, frame) -> None:
+    """Handle interrupts gracefully."""
+    print_warning("\nOperation interrupted. Exiting...")
+    sys.exit(128 + sig)
+
+
 # ------------------------------
 # Progress Tracking Classes
 # ------------------------------
 class ProgressBar:
     """Thread‑safe progress bar with transfer rate and ETA display."""
+
     def __init__(self, total: int, desc: str = "", width: int = PROGRESS_WIDTH):
         self.total = max(1, total)
         self.desc = desc
@@ -160,8 +189,10 @@ class ProgressBar:
         if self.current >= self.total:
             sys.stdout.write("\n")
 
+
 class Spinner:
     """Thread‑safe spinner for indeterminate progress."""
+
     def __init__(self, message: str):
         self.message = message
         self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -206,9 +237,13 @@ class Spinner:
                 time_str = f"{elapsed:.1f}s"
             sys.stdout.write("\r" + " " * TERM_WIDTH + "\r")
             if success:
-                sys.stdout.write(f"{Colors.GREEN}✓{Colors.ENDC} {Colors.CYAN}{self.message}{Colors.ENDC} {Colors.GREEN}completed{Colors.ENDC} in {time_str}\n")
+                sys.stdout.write(
+                    f"{Colors.GREEN}✓{Colors.ENDC} {Colors.CYAN}{self.message}{Colors.ENDC} {Colors.GREEN}completed{Colors.ENDC} in {time_str}\n"
+                )
             else:
-                sys.stdout.write(f"{Colors.RED}✗{Colors.ENDC} {Colors.CYAN}{self.message}{Colors.ENDC} {Colors.RED}failed{Colors.ENDC} after {time_str}\n")
+                sys.stdout.write(
+                    f"{Colors.RED}✗{Colors.ENDC} {Colors.CYAN}{self.message}{Colors.ENDC} {Colors.RED}failed{Colors.ENDC} after {time_str}\n"
+                )
             sys.stdout.flush()
 
     def __enter__(self):
@@ -218,20 +253,33 @@ class Spinner:
     def __exit__(self, exc_type, exc_value, traceback):
         self.stop(success=exc_type is None)
 
+
 # ------------------------------
 # Helper Functions
 # ------------------------------
-def run_command(cmd: List[str], env: Optional[Dict[str, str]] = None, check: bool = True,
-                capture_output: bool = False, verbose: bool = False) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: List[str],
+    env: Optional[Dict[str, str]] = None,
+    check: bool = True,
+    capture_output: bool = False,
+    verbose: bool = False,
+) -> subprocess.CompletedProcess:
     if verbose:
         print_step(f"Executing: {' '.join(cmd)}")
     try:
-        return subprocess.run(cmd, env=env or os.environ.copy(), check=check, text=True, capture_output=capture_output)
+        return subprocess.run(
+            cmd,
+            env=env or os.environ.copy(),
+            check=check,
+            text=True,
+            capture_output=capture_output,
+        )
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
         if hasattr(e, "stderr") and e.stderr:
             print_error(f"Error details: {e.stderr.strip()}")
         raise
+
 
 def ensure_directory(path: str) -> None:
     try:
@@ -240,6 +288,7 @@ def ensure_directory(path: str) -> None:
     except Exception as e:
         print_error(f"Failed to create directory '{path}': {e}")
         sys.exit(1)
+
 
 def get_file_size(url: str) -> int:
     try:
@@ -252,19 +301,28 @@ def get_file_size(url: str) -> int:
         print_warning(f"Could not determine file size for {url}: {e}")
         return 0
 
+
 def estimate_youtube_size(url: str) -> int:
     try:
-        result = run_command(["yt-dlp", "--print", "filesize", url], capture_output=True, check=False)
+        result = run_command(
+            ["yt-dlp", "--print", "filesize", url], capture_output=True, check=False
+        )
         if result.stdout.strip() and result.stdout.strip().isdigit():
             return int(result.stdout.strip())
-        result = run_command(["yt-dlp", "--print", "duration", url], capture_output=True, check=False)
-        if result.stdout.strip() and result.stdout.strip().replace(".", "", 1).isdigit():
+        result = run_command(
+            ["yt-dlp", "--print", "duration", url], capture_output=True, check=False
+        )
+        if (
+            result.stdout.strip()
+            and result.stdout.strip().replace(".", "", 1).isdigit()
+        ):
             duration = float(result.stdout.strip())
             return int(duration * 60 * 10 * 1024 * 1024)
         return 100 * 1024 * 1024
     except Exception as e:
         print_warning(f"Could not estimate video size: {e}")
         return 100 * 1024 * 1024
+
 
 def check_root_privileges() -> bool:
     if os.geteuid() != 0:
@@ -273,6 +331,7 @@ def check_root_privileges() -> bool:
         return False
     return True
 
+
 def check_dependencies(required: List[str]) -> bool:
     missing = [cmd for cmd in required if not shutil.which(cmd)]
     if missing:
@@ -280,13 +339,18 @@ def check_dependencies(required: List[str]) -> bool:
         return False
     return True
 
+
 def install_dependencies(deps: List[str], verbose: bool = False) -> bool:
     print_section(f"Installing Dependencies: {', '.join(deps)}")
     try:
         with Spinner("Updating package lists") as spinner:
             run_command(["apt", "update"], verbose=verbose, capture_output=not verbose)
         with Spinner(f"Installing {len(deps)} packages") as spinner:
-            run_command(["apt", "install", "-y"] + deps, verbose=verbose, capture_output=not verbose)
+            run_command(
+                ["apt", "install", "-y"] + deps,
+                verbose=verbose,
+                capture_output=not verbose,
+            )
         missing = [cmd for cmd in deps if not shutil.which(cmd)]
         if missing:
             print_error(f"Failed to install: {', '.join(missing)}")
@@ -297,12 +361,16 @@ def install_dependencies(deps: List[str], verbose: bool = False) -> bool:
         print_error(f"Failed to install dependencies: {e}")
         return False
 
+
 def check_internet_connectivity() -> bool:
     try:
-        result = run_command(["ping", "-c", "1", "-W", "2", "8.8.8.8"], check=False, capture_output=True)
+        result = run_command(
+            ["ping", "-c", "1", "-W", "2", "8.8.8.8"], check=False, capture_output=True
+        )
         return result.returncode == 0
     except Exception:
         return False
+
 
 # ------------------------------
 # Download Functions
@@ -321,9 +389,14 @@ def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool
             print_warning("File size unknown. Progress will be indeterminate.")
         if file_size > 0:
             progress = ProgressBar(file_size, "Downloading")
-            def progress_callback(block_count: int, block_size: int, total_size: int) -> None:
+
+            def progress_callback(
+                block_count: int, block_size: int, total_size: int
+            ) -> None:
                 progress.update(block_size)
+
             import urllib.request
+
             urllib.request.urlretrieve(url, output_path, reporthook=progress_callback)
         else:
             with Spinner(f"Downloading {filename}") as spinner:
@@ -338,6 +411,7 @@ def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool
         print_error(f"Download failed: {e}")
         return False
 
+
 def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bool:
     try:
         ensure_directory(output_dir)
@@ -345,7 +419,9 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
         if estimated_size:
             print_step(f"Estimated size: {format_size(estimated_size)}")
         try:
-            result = run_command(["yt-dlp", "--print", "title", url], capture_output=True)
+            result = run_command(
+                ["yt-dlp", "--print", "title", url], capture_output=True
+            )
             video_title = result.stdout.strip()
             print_step(f"Video title: {video_title}")
         except Exception:
@@ -353,9 +429,12 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
         output_template = os.path.join(output_dir, "%(title)s.%(ext)s")
         cmd = [
             "yt-dlp",
-            "-f", "bestvideo+bestaudio",
-            "--merge-output-format", "mp4",
-            "-o", output_template,
+            "-f",
+            "bestvideo+bestaudio",
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            output_template,
         ]
         if verbose:
             cmd.append("--verbose")
@@ -365,8 +444,12 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
                 run_command(cmd, verbose=True)
         else:
             process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, universal_newlines=True
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
             )
             progress = None
             while True:
@@ -398,17 +481,26 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
         print_error(f"Download failed: {e}")
         return False
 
+
 # ------------------------------
 # Interactive Menu
 # ------------------------------
 def download_menu() -> None:
     print_header("Universal Downloader")
     console.print(f"[{Colors.CYAN}]Select download method:[/{Colors.CYAN}]")
-    console.print(f"  [bold]{Colors.BOLD}1){Colors.ENDC} wget  - Download files from the web")
-    console.print(f"  [bold]{Colors.BOLD}2){Colors.ENDC} yt-dlp - Download YouTube videos/playlists")
+    console.print(
+        f"  [bold]{Colors.BOLD}1){Colors.ENDC} wget  - Download files from the web"
+    )
+    console.print(
+        f"  [bold]{Colors.BOLD}2){Colors.ENDC} yt-dlp - Download YouTube videos/playlists"
+    )
     console.print(f"  [bold]{Colors.BOLD}q){Colors.ENDC} Quit\n")
     while True:
-        choice = input(f"{Colors.BOLD}Enter your choice (1, 2, or q): {Colors.ENDC}").strip().lower()
+        choice = (
+            input(f"{Colors.BOLD}Enter your choice (1, 2, or q): {Colors.ENDC}")
+            .strip()
+            .lower()
+        )
         if choice == "1":
             deps = DEPENDENCIES["common"] + DEPENDENCIES["wget"]
             if not check_dependencies(deps):
@@ -417,13 +509,17 @@ def download_menu() -> None:
                         print_error("Failed to install dependencies.")
                         return
                 else:
-                    print_error("Missing dependencies and not running as root to install them.")
+                    print_error(
+                        "Missing dependencies and not running as root to install them."
+                    )
                     return
             url = input(f"\n{Colors.BOLD}Enter URL to download: {Colors.ENDC}").strip()
             if not url:
                 print_error("URL cannot be empty.")
                 return
-            output_dir = input(f"{Colors.BOLD}Enter output directory [{DEFAULT_DOWNLOAD_DIR}]: {Colors.ENDC}").strip()
+            output_dir = input(
+                f"{Colors.BOLD}Enter output directory [{DEFAULT_DOWNLOAD_DIR}]: {Colors.ENDC}"
+            ).strip()
             if not output_dir:
                 output_dir = DEFAULT_DOWNLOAD_DIR
             download_with_wget(url, output_dir)
@@ -436,13 +532,17 @@ def download_menu() -> None:
                         print_error("Failed to install dependencies.")
                         return
                 else:
-                    print_error("Missing dependencies and not running as root to install them.")
+                    print_error(
+                        "Missing dependencies and not running as root to install them."
+                    )
                     return
             url = input(f"\n{Colors.BOLD}Enter YouTube URL: {Colors.ENDC}").strip()
             if not url:
                 print_error("URL cannot be empty.")
                 return
-            output_dir = input(f"{Colors.BOLD}Enter output directory [{DEFAULT_DOWNLOAD_DIR}]: {Colors.ENDC}").strip()
+            output_dir = input(
+                f"{Colors.BOLD}Enter output directory [{DEFAULT_DOWNLOAD_DIR}]: {Colors.ENDC}"
+            ).strip()
             if not output_dir:
                 output_dir = DEFAULT_DOWNLOAD_DIR
             download_with_yt_dlp(url, output_dir)
@@ -453,6 +553,7 @@ def download_menu() -> None:
         else:
             print_error("Invalid selection. Please choose 1, 2, or q.")
 
+
 # ------------------------------
 # Cleanup & Signal Handling
 # ------------------------------
@@ -460,9 +561,11 @@ def cleanup() -> None:
     """Cleanup tasks before exit."""
     pass
 
+
 atexit.register(lambda: console.print("[dim]Cleaning up resources...[/dim]"))
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(128 + sig))
+
 
 # ------------------------------
 # Main CLI Entry Point with Click
@@ -471,19 +574,33 @@ signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(128 + sig))
 def cli() -> None:
     """Enhanced Universal Downloader Script"""
     print_header(f"Universal Downloader v{VERSION}")
-    console.print(f"System: [bold {Colors.CYAN}]{platform.system()} {platform.release()}[/{Colors.CYAN}]")
-    console.print(f"User: [bold {Colors.CYAN}]{os.environ.get('USER', 'unknown')}[/{Colors.CYAN}]")
-    console.print(f"Time: [bold {Colors.CYAN}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/{Colors.CYAN}]")
-    console.print(f"Working directory: [bold {Colors.CYAN}]{os.getcwd()}[/{Colors.CYAN}]")
+    console.print(
+        f"System: [bold {Colors.CYAN}]{platform.system()} {platform.release()}[/{Colors.CYAN}]"
+    )
+    console.print(
+        f"User: [bold {Colors.CYAN}]{os.environ.get('USER', 'unknown')}[/{Colors.CYAN}]"
+    )
+    console.print(
+        f"Time: [bold {Colors.CYAN}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/{Colors.CYAN}]"
+    )
+    console.print(
+        f"Working directory: [bold {Colors.CYAN}]{os.getcwd()}[/{Colors.CYAN}]"
+    )
     if not check_internet_connectivity():
         print_error("No internet connectivity detected. Please check your connection.")
         sys.exit(1)
     # Root privileges are recommended but not forced for downloads
     check_root_privileges()
 
+
 @cli.command()
 @click.argument("url")
-@click.option("-o", "--output-dir", default=DEFAULT_DOWNLOAD_DIR, help=f"Output directory (default: {DEFAULT_DOWNLOAD_DIR})")
+@click.option(
+    "-o",
+    "--output-dir",
+    default=DEFAULT_DOWNLOAD_DIR,
+    help=f"Output directory (default: {DEFAULT_DOWNLOAD_DIR})",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
 def wget(url: str, output_dir: str, verbose: bool) -> None:
     """Download a file using wget."""
@@ -499,9 +616,15 @@ def wget(url: str, output_dir: str, verbose: bool) -> None:
     success = download_with_wget(url, output_dir, verbose)
     sys.exit(0 if success else 1)
 
+
 @cli.command()
 @click.argument("url")
-@click.option("-o", "--output-dir", default=DEFAULT_DOWNLOAD_DIR, help=f"Output directory (default: {DEFAULT_DOWNLOAD_DIR})")
+@click.option(
+    "-o",
+    "--output-dir",
+    default=DEFAULT_DOWNLOAD_DIR,
+    help=f"Output directory (default: {DEFAULT_DOWNLOAD_DIR})",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
 def ytdlp(url: str, output_dir: str, verbose: bool) -> None:
     """Download a video/playlist using yt-dlp."""
@@ -517,10 +640,12 @@ def ytdlp(url: str, output_dir: str, verbose: bool) -> None:
     success = download_with_yt_dlp(url, output_dir, verbose)
     sys.exit(0 if success else 1)
 
+
 @cli.command()
 def menu() -> None:
     """Interactive download menu."""
     download_menu()
+
 
 def main() -> None:
     try:
@@ -531,6 +656,7 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

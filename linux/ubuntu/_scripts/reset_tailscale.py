@@ -23,7 +23,13 @@ from datetime import datetime
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -37,51 +43,67 @@ CHECK_INTERVAL = 2  # seconds between steps
 # ------------------------------
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a striking ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
 
+
 # ------------------------------
 # Helper Functions
 # ------------------------------
-def run_command(cmd: list[str], shell: bool = False, timeout: int = 30) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: list[str], shell: bool = False, timeout: int = 30
+) -> subprocess.CompletedProcess:
     """
     Execute a command and return the CompletedProcess.
-    
+
     Args:
         cmd: Command to run as a list of strings.
         shell: Whether to run the command in shell.
         timeout: Timeout in seconds.
-    
+
     Returns:
         CompletedProcess object.
-    
+
     Raises:
         subprocess.CalledProcessError if command fails.
     """
     try:
-        return subprocess.run(cmd, shell=shell, check=True, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(
+            cmd,
+            shell=shell,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd) if not shell else cmd}")
         if e.stdout:
@@ -90,11 +112,13 @@ def run_command(cmd: list[str], shell: bool = False, timeout: int = 30) -> subpr
             console.print(f"[bold #BF616A]Stderr: {e.stderr.strip()}[/bold #BF616A]")
         raise
 
+
 def check_root() -> None:
     """Ensure the script is run with root privileges."""
     if os.geteuid() != 0:
         print_error("This script must be run as root (e.g., with sudo).")
         sys.exit(1)
+
 
 # ------------------------------
 # Tailscale Operations
@@ -105,7 +129,10 @@ def uninstall_tailscale() -> None:
     steps = [
         ("Stopping tailscaled service", ["systemctl", "stop", "tailscaled"]),
         ("Disabling tailscaled service", ["systemctl", "disable", "tailscaled"]),
-        ("Removing tailscale package", ["apt-get", "remove", "--purge", "tailscale", "-y"]),
+        (
+            "Removing tailscale package",
+            ["apt-get", "remove", "--purge", "tailscale", "-y"],
+        ),
         ("Autoremoving unused packages", ["apt-get", "autoremove", "-y"]),
     ]
     with Progress(
@@ -132,6 +159,7 @@ def uninstall_tailscale() -> None:
                 print_warning(f"Failed to remove {path}: {e}")
     print_success("Tailscale uninstalled and cleaned up.")
 
+
 def install_tailscale() -> None:
     """Install tailscale using the official install script."""
     print_section("Installing Tailscale")
@@ -146,6 +174,7 @@ def install_tailscale() -> None:
         run_command(install_cmd, shell=True)
         progress.advance(task)
     print_success("Tailscale installed.")
+
 
 def start_tailscale_service() -> None:
     """Enable and start the tailscaled service."""
@@ -169,6 +198,7 @@ def start_tailscale_service() -> None:
             progress.advance(task)
     print_success("Tailscale service enabled and started.")
 
+
 def tailscale_up() -> None:
     """Run 'tailscale up' to bring up the daemon."""
     print_section("Running 'tailscale up'")
@@ -182,6 +212,7 @@ def tailscale_up() -> None:
         progress.advance(task)
     print_success("Tailscale is up!")
     console.print(f"\n[bold]tailscale up output:[/bold]\n{result.stdout}")
+
 
 # ------------------------------
 # Main CLI Entry Point with Click
@@ -198,7 +229,9 @@ def main() -> None:
     """
     check_root()
     print_header("Tailscale Reset Script")
-    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+    console.print(
+        f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
+    )
     uninstall_tailscale()
     time.sleep(CHECK_INTERVAL)
     install_tailscale()
@@ -207,6 +240,7 @@ def main() -> None:
     time.sleep(CHECK_INTERVAL)
     tailscale_up()
     print_header("Tailscale Reset Complete")
+
 
 if __name__ == "__main__":
     try:
@@ -217,5 +251,6 @@ if __name__ == "__main__":
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

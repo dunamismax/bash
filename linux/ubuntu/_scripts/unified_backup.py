@@ -29,7 +29,13 @@ from typing import Dict, List, Optional, Tuple
 
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 import shutil
 
@@ -56,10 +62,28 @@ BACKUP_CONFIGS: Dict[str, Dict] = {
     "system": {
         "paths": ["/"],
         "excludes": [
-            "/proc/*", "/sys/*", "/dev/*", "/run/*", "/tmp/*", "/var/tmp/*",
-            "/mnt/*", "/media/*", "/var/cache/*", "/var/log/*", "/home/*/.cache/*",
-            "/swapfile", "/lost+found", "*.vmdk", "*.vdi", "*.qcow2", "*.img",
-            "*.iso", "*.tmp", "*.swap.img", "/var/lib/docker/*", "/var/lib/lxc/*",
+            "/proc/*",
+            "/sys/*",
+            "/dev/*",
+            "/run/*",
+            "/tmp/*",
+            "/var/tmp/*",
+            "/mnt/*",
+            "/media/*",
+            "/var/cache/*",
+            "/var/log/*",
+            "/home/*/.cache/*",
+            "/swapfile",
+            "/lost+found",
+            "*.vmdk",
+            "*.vdi",
+            "*.qcow2",
+            "*.img",
+            "*.iso",
+            "*.tmp",
+            "*.swap.img",
+            "/var/lib/docker/*",
+            "/var/lib/lxc/*",
         ],
         "name": "System",
         "description": "Root filesystem backup",
@@ -97,30 +121,37 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Nord color palette examples: #2E3440, #3B4252, #88C0D0, #8FBCBB, #BF616A
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a pretty ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+
 
 # ------------------------------
 # Command Execution Helper
@@ -157,6 +188,7 @@ def run_command(
         print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+
 # ------------------------------
 # Signal Handling & Cleanup
 # ------------------------------
@@ -166,9 +198,11 @@ def signal_handler(sig, frame) -> None:
     cleanup()
     sys.exit(128 + sig)
 
+
 def cleanup() -> None:
     print_step("Performing cleanup tasks...")
     # Add any necessary cleanup steps here.
+
 
 # ------------------------------
 # Helper Functions
@@ -179,6 +213,7 @@ def check_root_privileges() -> bool:
         print_error("This script must be run as root (e.g., using sudo).")
         return False
     return True
+
 
 def check_dependencies() -> bool:
     """Ensure restic is installed."""
@@ -193,6 +228,7 @@ def check_dependencies() -> bool:
         print_warning(f"Could not determine restic version: {e}")
     return True
 
+
 def check_environment() -> bool:
     """Ensure that necessary environment variables are set."""
     missing_vars = []
@@ -206,6 +242,7 @@ def check_environment() -> bool:
         print_error(f"Missing environment variables: {', '.join(missing_vars)}")
         return False
     return True
+
 
 def check_service_paths(service: str) -> bool:
     """Check that required paths exist for the given service."""
@@ -225,6 +262,7 @@ def check_service_paths(service: str) -> bool:
         return True
     return False
 
+
 def get_disk_usage(path: str = "/") -> Tuple[int, int, float]:
     """Return total, used, and percentage used for the given path."""
     stat = os.statvfs(path)
@@ -233,6 +271,7 @@ def get_disk_usage(path: str = "/") -> Tuple[int, int, float]:
     used = total - free
     percent = (used / total) * 100 if total > 0 else 0
     return total, used, percent
+
 
 def setup_logging() -> None:
     """Setup logging to file and console."""
@@ -248,7 +287,10 @@ def setup_logging() -> None:
         logging.info(f"Logging initialized. Log file: {LOG_FILE}")
     except Exception as e:
         print_warning(f"Could not set up logging: {e}")
-        logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+        logging.basicConfig(
+            level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_DATE_FORMAT
+        )
+
 
 # ------------------------------
 # Repository and Backup Functions
@@ -259,11 +301,13 @@ def initialize_repository(service: str) -> bool:
     """
     repo = REPOSITORIES[service]
     env = os.environ.copy()
-    env.update({
-        "RESTIC_PASSWORD": RESTIC_PASSWORD,
-        "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-        "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-    })
+    env.update(
+        {
+            "RESTIC_PASSWORD": RESTIC_PASSWORD,
+            "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
+            "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
+        }
+    )
     try:
         run_command(["restic", "--repo", repo, "snapshots"], env=env)
         print_success("Repository already initialized.")
@@ -288,6 +332,7 @@ def initialize_repository(service: str) -> bool:
         print_error(f"Error during repository initialization: {e}")
         return False
 
+
 def estimate_backup_size(service: str) -> int:
     """
     Estimate the backup size for the given service.
@@ -311,6 +356,7 @@ def estimate_backup_size(service: str) -> int:
         console.print(f"Calculated backup size: [bold]{total_size} bytes[/bold]")
         return total_size
 
+
 def perform_backup(service: str) -> bool:
     """
     Execute the restic backup command for the given service,
@@ -326,11 +372,13 @@ def perform_backup(service: str) -> bool:
         return False
 
     env = os.environ.copy()
-    env.update({
-        "RESTIC_PASSWORD": RESTIC_PASSWORD,
-        "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-        "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-    })
+    env.update(
+        {
+            "RESTIC_PASSWORD": RESTIC_PASSWORD,
+            "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
+            "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
+        }
+    )
 
     print_section("Executing Backup")
     backup_cmd = ["restic", "--repo", repo, "backup"] + config["paths"]
@@ -369,6 +417,7 @@ def perform_backup(service: str) -> bool:
     print_success(f"{config['name']} backup completed successfully.")
     return True
 
+
 def perform_retention(service: str) -> bool:
     """
     Apply the retention policy to the restic repository for the given service.
@@ -377,12 +426,22 @@ def perform_retention(service: str) -> bool:
     print_section("Applying Retention Policy")
     console.print(f"Keeping snapshots within [bold]{RETENTION_POLICY}[/bold]")
     env = os.environ.copy()
-    env.update({
-        "RESTIC_PASSWORD": RESTIC_PASSWORD,
-        "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-        "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-    })
-    retention_cmd = ["restic", "--repo", repo, "forget", "--prune", "--keep-within", RETENTION_POLICY]
+    env.update(
+        {
+            "RESTIC_PASSWORD": RESTIC_PASSWORD,
+            "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
+            "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
+        }
+    )
+    retention_cmd = [
+        "restic",
+        "--repo",
+        repo,
+        "forget",
+        "--prune",
+        "--keep-within",
+        RETENTION_POLICY,
+    ]
     with Progress(
         SpinnerColumn(style="bold #81A1C1"),
         TextColumn("[progress.description]{task.description}"),
@@ -398,6 +457,7 @@ def perform_retention(service: str) -> bool:
     print_success("Retention policy applied successfully.")
     return True
 
+
 def list_snapshots(service: str) -> bool:
     """
     List available snapshots from the repository in a formatted output.
@@ -405,11 +465,13 @@ def list_snapshots(service: str) -> bool:
     repo = REPOSITORIES[service]
     print_section("Listing Snapshots")
     env = os.environ.copy()
-    env.update({
-        "RESTIC_PASSWORD": RESTIC_PASSWORD,
-        "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
-        "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
-    })
+    env.update(
+        {
+            "RESTIC_PASSWORD": RESTIC_PASSWORD,
+            "B2_ACCOUNT_ID": B2_ACCOUNT_ID,
+            "B2_ACCOUNT_KEY": B2_ACCOUNT_KEY,
+        }
+    )
     try:
         result = run_command(["restic", "--repo", repo, "snapshots", "--json"], env=env)
         snapshots = json.loads(result.stdout)
@@ -435,6 +497,7 @@ def list_snapshots(service: str) -> bool:
         print_error(f"Failed to list snapshots: {e}")
         return False
 
+
 def backup_service(service: str) -> bool:
     """
     Backup a specific service by checking prerequisites, initializing the repository,
@@ -448,14 +511,20 @@ def backup_service(service: str) -> bool:
     console.print(f"[#88C0D0]Description: [#D8DEE9]{config['description']}[/#D8DEE9]")
     console.print(f"[#88C0D0]Repository: [#D8DEE9]{REPOSITORIES[service]}[/#D8DEE9]")
     console.print(f"[#88C0D0]Paths: [#D8DEE9]{', '.join(config['paths'])}[/#D8DEE9]")
-    console.print(f"[#88C0D0]Excludes: [#D8DEE9]{len(config['excludes'])} patterns[/#D8DEE9]")
+    console.print(
+        f"[#88C0D0]Excludes: [#D8DEE9]{len(config['excludes'])} patterns[/#D8DEE9]"
+    )
     if not check_service_paths(service):
         return False
     if service == "vm":
-        status = run_command(["systemctl", "is-active", "libvirtd"], check=False).stdout.strip()
+        status = run_command(
+            ["systemctl", "is-active", "libvirtd"], check=False
+        ).stdout.strip()
         console.print(f"[#88C0D0]libvirtd Status: [#D8DEE9]{status}[/#D8DEE9]")
     elif service == "plex":
-        status = run_command(["systemctl", "is-active", "plexmediaserver"], check=False).stdout.strip()
+        status = run_command(
+            ["systemctl", "is-active", "plexmediaserver"], check=False
+        ).stdout.strip()
         console.print(f"[#88C0D0]Plex Status: [#D8DEE9]{status}[/#D8DEE9]")
     if not initialize_repository(service):
         return False
@@ -467,8 +536,11 @@ def backup_service(service: str) -> bool:
     list_snapshots(service)
     elapsed = time.time() - start_time
     print_section("Service Backup Summary")
-    console.print(f"[bold #8FBCBB]Backup completed in {int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s[/bold #8FBCBB]")
+    console.print(
+        f"[bold #8FBCBB]Backup completed in {int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s[/bold #8FBCBB]"
+    )
     return True
+
 
 def backup_all_services() -> Dict[str, bool]:
     """
@@ -482,22 +554,31 @@ def backup_all_services() -> Dict[str, bool]:
         results[service] = backup_service(service)
     elapsed = time.time() - start_time
     print_header("Overall Backup Summary")
-    console.print(f"[bold #8FBCBB]Total elapsed time: {int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s[/bold #8FBCBB]")
+    console.print(
+        f"[bold #8FBCBB]Total elapsed time: {int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s[/bold #8FBCBB]"
+    )
     return results
+
 
 # ------------------------------
 # Main CLI Entry Point with click
 # ------------------------------
 @click.command()
-@click.option("--service", type=click.Choice(list(BACKUP_CONFIGS.keys()) + ["all"]),
-              help="Service to backup (system, vm, plex, or all)")
-@click.option("--non-interactive", is_flag=True,
-              help="Run without prompts (requires --service)")
-@click.option("--retention", default=RETENTION_POLICY,
-              help="Retention policy (e.g., 7d)")
-@click.option("--debug", is_flag=True,
-              help="Enable debug logging")
-def main(service: Optional[str], non_interactive: bool, retention: str, debug: bool) -> None:
+@click.option(
+    "--service",
+    type=click.Choice(list(BACKUP_CONFIGS.keys()) + ["all"]),
+    help="Service to backup (system, vm, plex, or all)",
+)
+@click.option(
+    "--non-interactive", is_flag=True, help="Run without prompts (requires --service)"
+)
+@click.option(
+    "--retention", default=RETENTION_POLICY, help="Retention policy (e.g., 7d)"
+)
+@click.option("--debug", is_flag=True, help="Enable debug logging")
+def main(
+    service: Optional[str], non_interactive: bool, retention: str, debug: bool
+) -> None:
     """Enhanced Unified Restic Backup Script"""
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -514,7 +595,9 @@ def main(service: Optional[str], non_interactive: bool, retention: str, debug: b
     console.print(f"Platform: [bold #D8DEE9]{platform.platform()}[/bold #D8DEE9]")
     console.print(f"Backup bucket: [bold #D8DEE9]{B2_BUCKET}[/bold #D8DEE9]")
     console.print(f"Retention policy: [bold #D8DEE9]{RETENTION_POLICY}[/bold #D8DEE9]")
-    console.print(f"Available services: [bold #D8DEE9]{', '.join(BACKUP_CONFIGS.keys())}[/bold #D8DEE9]")
+    console.print(
+        f"Available services: [bold #D8DEE9]{', '.join(BACKUP_CONFIGS.keys())}[/bold #D8DEE9]"
+    )
 
     if not (check_root_privileges() and check_dependencies() and check_environment()):
         sys.exit(1)
@@ -534,8 +617,10 @@ def main(service: Optional[str], non_interactive: bool, retention: str, debug: b
         services_list = list(BACKUP_CONFIGS.keys())
         for i, svc in enumerate(services_list, 1):
             conf = BACKUP_CONFIGS[svc]
-            console.print(f"{i}. {conf['name']} - {conf['description']}", style="#D8DEE9")
-        console.print(f"{len(services_list)+1}. All Services", style="#D8DEE9")
+            console.print(
+                f"{i}. {conf['name']} - {conf['description']}", style="#D8DEE9"
+            )
+        console.print(f"{len(services_list) + 1}. All Services", style="#D8DEE9")
         try:
             choice = int(click.prompt("Enter your choice", type=int))
             start_time = time.time()
@@ -552,9 +637,15 @@ def main(service: Optional[str], non_interactive: bool, retention: str, debug: b
             sys.exit(1)
 
     print_header("Final Backup Summary")
-    console.print(f"[bold #8FBCBB]Backup completed successfully at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #8FBCBB]")
-    console.print(f"Total elapsed time: {int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s", style="#8FBCBB")
+    console.print(
+        f"[bold #8FBCBB]Backup completed successfully at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #8FBCBB]"
+    )
+    console.print(
+        f"Total elapsed time: {int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s",
+        style="#8FBCBB",
+    )
     console.print(f"Log file: [bold #D8DEE9]{LOG_FILE}[/bold #D8DEE9]")
+
 
 if __name__ == "__main__":
     try:
@@ -565,5 +656,6 @@ if __name__ == "__main__":
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
