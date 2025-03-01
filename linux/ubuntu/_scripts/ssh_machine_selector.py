@@ -134,6 +134,7 @@ class LocalDevice:
     mac_address: str
     ip_address: str
     status: str = "Active"
+    os: str = "Unknown"  # Added OS field for consistency with Machine class
 
     def get_display_status(self) -> Text:
         """Get formatted status with appropriate coloring."""
@@ -143,6 +144,18 @@ class LocalDevice:
             return Text(self.status, style="dim")
         else:
             return Text(self.status, style=f"bold {NordColors.NORD13}")
+
+    def get_display_name(self) -> str:
+        """Get formatted display name for the local device."""
+        return f"{self.name}"
+
+    def get_display_ip(self) -> str:
+        """Get formatted IP address."""
+        return f"{self.ip_address}"
+
+    def get_display_os(self) -> str:
+        """Get formatted OS info."""
+        return f"{self.os}"
 
 
 # ==============================
@@ -339,21 +352,25 @@ def load_local_devices() -> List[LocalDevice]:
             name="ubuntu-server",
             mac_address="6C-1F-F7-04-59-50",
             ip_address="192.168.0.73",
+            os="Linux 6.11.0-18-generic",
         ),
         LocalDevice(
             name="raspberrypi-5",
             mac_address="2C-CF-67-59-0E-03",
             ip_address="192.168.0.40",
+            os="Linux 6.11.0-1008-raspi",
         ),
         LocalDevice(
             name="ubuntu-lenovo",
             mac_address="6C-1F-F7-1A-0B-28",
             ip_address="192.168.0.45",
+            os="Linux 6.11.0-18-generic",
         ),
         LocalDevice(
             name="raspberrypi-3",
             mac_address="B8-27-EB-3A-11-89",
             ip_address="192.168.0.100",
+            os="Linux 6.11.0-1008-raspi",
         ),
     ]
     return devices
@@ -404,22 +421,24 @@ def create_local_devices_table(devices: List[LocalDevice]) -> Table:
     )
 
     # Define columns
+    table.add_column(
+        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
+    )
     table.add_column("Device Name", style=f"{NordColors.NORD8}", justify="left")
     table.add_column("MAC Address", style=f"{NordColors.NORD4}", justify="center")
-    table.add_column(
-        "Reserved IP Address", style=f"{NordColors.NORD7}", justify="center"
-    )
+    table.add_column("IP Address", style=f"{NordColors.NORD7}", justify="center")
+    table.add_column("OS", style=f"{NordColors.NORD4}", justify="left")
     table.add_column("Status", justify="center")
-    table.add_column("Modify", style=f"{NordColors.NORD10}", justify="center")
 
     # Add rows
-    for device in devices:
+    for idx, device in enumerate(devices, 1):
         table.add_row(
+            f"L{idx}",  # "L" prefix to differentiate from machine list
             device.name,
             device.mac_address,
             device.ip_address,
+            device.get_display_os(),
             device.get_display_status(),
-            "[Edit]",
         )
 
     return table
@@ -428,14 +447,16 @@ def create_local_devices_table(devices: List[LocalDevice]) -> Table:
 # ==============================
 # SSH Connection Functions
 # ==============================
-def connect_to_machine(machine: Machine, username: str = DEFAULT_USERNAME) -> None:
-    """Connect to the selected machine via SSH."""
-    console.print(create_section(f"Connecting to {machine.name}"))
-    print_info(f"Establishing SSH connection to {username}@{machine.ip_address}...")
+def connect_to_machine(
+    name: str, ip_address: str, username: str = DEFAULT_USERNAME
+) -> None:
+    """Connect to a machine (either Tailscale or Local) via SSH."""
+    console.print(create_section(f"Connecting to {name}"))
+    print_info(f"Establishing SSH connection to {username}@{ip_address}...")
 
     try:
         # Build the SSH command
-        ssh_args = [SSH_COMMAND, f"{username}@{machine.ip_address}"]
+        ssh_args = [SSH_COMMAND, f"{username}@{ip_address}"]
 
         # Use os.execvp to replace the current process with SSH
         # This ensures proper terminal handling and STDIN/STDOUT passthrough
@@ -500,9 +521,12 @@ def render_footer() -> Panel:
     footer_text = Text()
     footer_text.append("Options:\n", style=f"bold {NordColors.NORD13}")
     footer_text.append(
-        "Enter a number to connect to that machine\n", style=NordColors.NORD9
+        "Enter a number (1-14) to connect to a Tailscale machine\n",
+        style=NordColors.NORD9,
     )
-    footer_text.append("Type 'l' to manage local devices\n", style=NordColors.NORD9)
+    footer_text.append(
+        "Enter L1-L4 to connect to a local IP device\n", style=NordColors.NORD9
+    )
     footer_text.append("Type 'q' to quit", style=NordColors.NORD9)
 
     return Panel(
@@ -533,9 +557,7 @@ def show_main_menu() -> None:
 
         # Get user selection
         try:
-            choice = get_user_input(
-                "\nEnter your choice (1-14, 'l' for local devices, or 'q' to quit)"
-            )
+            choice = get_user_input("\nEnter your choice (1-14, L1-L4, or 'q' to quit)")
 
             if choice.lower() == "q":
                 clear_screen()
@@ -543,12 +565,43 @@ def show_main_menu() -> None:
                 print_info("Thank you for using the SSH Machine Selector.")
                 sys.exit(0)
 
-            if choice.lower() == "l":
-                # Placeholder for local device management
-                print_info("Local device management feature coming soon...")
-                input("Press Enter to continue...")
+            # Handle local device selection (L1-L4)
+            if choice.upper().startswith("L"):
+                try:
+                    # Extract the number after "L"
+                    local_idx = int(choice[1:])
+                    if 1 <= local_idx <= len(local_devices):
+                        selected_device = local_devices[local_idx - 1]
+
+                        # Option to use a different username
+                        use_diff_username = (
+                            get_user_input(
+                                f"Use default username '{DEFAULT_USERNAME}'? (y/n)", "y"
+                            ).lower()
+                            != "y"
+                        )
+
+                        username = DEFAULT_USERNAME
+                        if use_diff_username:
+                            username = get_user_input("Enter username")
+
+                        # Connect to the selected local device
+                        connect_to_machine(
+                            selected_device.name, selected_device.ip_address, username
+                        )
+                    else:
+                        print_error(
+                            f"Invalid local device choice. Please enter L1-L{len(local_devices)}."
+                        )
+                        input("Press Enter to continue...")
+                except ValueError:
+                    print_error(
+                        "Invalid local device selection format. Use L1, L2, etc."
+                    )
+                    input("Press Enter to continue...")
                 continue
 
+            # Handle Tailscale machine selection (1-14)
             try:
                 choice_num = int(choice)
                 if 1 <= choice_num <= len(machines):
@@ -566,15 +619,19 @@ def show_main_menu() -> None:
                     if use_diff_username:
                         username = get_user_input("Enter username")
 
-                    # Connect to the selected machine
-                    connect_to_machine(selected_machine, username)
+                    # Connect to the selected Tailscale machine
+                    connect_to_machine(
+                        selected_machine.name, selected_machine.ip_address, username
+                    )
                 else:
                     print_error(
                         f"Invalid choice. Please enter a number between 1 and {len(machines)}."
                     )
                     input("Press Enter to continue...")
             except ValueError:
-                print_error("Invalid input. Please enter a number, 'l', or 'q'.")
+                print_error(
+                    "Invalid input. Please enter a machine number (1-14), local device (L1-L4), or 'q'."
+                )
                 input("Press Enter to continue...")
         except KeyboardInterrupt:
             clear_screen()
