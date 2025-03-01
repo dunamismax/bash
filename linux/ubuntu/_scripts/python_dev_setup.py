@@ -65,6 +65,8 @@ SYSTEM_DEPENDENCIES = [
     "libsqlite3-dev",
     "libncurses5-dev",
     "libncursesw5-dev",
+    "python3-rich",
+    "python3-pyfiglet",
     "xz-utils",
     "tk-dev",
     "libffi-dev",
