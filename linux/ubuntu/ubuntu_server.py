@@ -107,6 +107,8 @@ PACKAGES = [
     "python3-dev",
     "python3-pip",
     "python3-venv",
+    "python3-rich",
+    "python3-pyfiglet",
     "libssl-dev",
     "libffi-dev",
     "zlib1g-dev",
