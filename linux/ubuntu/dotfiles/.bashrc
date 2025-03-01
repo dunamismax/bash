@@ -268,7 +268,7 @@ export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PW
 #   sudo $(pyenv which python) script.py
 # -------------------------------------------------------------------------------
 python() {
-    sudo "$(pyenv which python)" "$@"
+    sudo -E "$(pyenv which python)" "$@"
 }
 
 ###############################################################################
