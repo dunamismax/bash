@@ -21,3 +21,6 @@
     *└── vscode_wayland_setup.py --DONE
     *└── zfs_setup.py --DONE
 ```
+
+Now rewrite the below Python script following your template / guide / instructions and remove click from it entirely:
+
