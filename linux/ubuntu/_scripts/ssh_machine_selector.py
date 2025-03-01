@@ -525,8 +525,7 @@ def render_info() -> Panel:
         border_style=NordColors.NORD3,
         box=box.ROUNDED,
         padding=(1, 2),  # Increased padding
-        title="Session Info",
-        title_style=f"bold {NordColors.NORD7}",
+        title=Text("Session Info", style=f"bold {NordColors.NORD7}"),
     )
 
 
@@ -547,8 +546,7 @@ def render_footer() -> Panel:
         border_style=NordColors.NORD3,
         box=box.ROUNDED,
         padding=(1, 2),  # Increased padding
-        title="Commands",
-        title_style=f"bold {NordColors.NORD13}",
+        title=Text("Commands", style=f"bold {NordColors.NORD13}"),
     )
 
 
