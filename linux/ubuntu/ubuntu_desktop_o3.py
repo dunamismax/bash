@@ -80,6 +80,7 @@ def print_status_report() -> None:
     console.print(table)
 
 
+# Replace run_with_progress with this simpler version that doesn't use live display
 def run_with_progress(
     description: str, func, *args, task_name: Optional[str] = None, **kwargs
 ) -> Any:
@@ -88,31 +89,28 @@ def run_with_progress(
             "status": "in_progress",
             "message": f"{description} in progress...",
         }
-    with console.status(f"[bold]{description}...", spinner="dots"):
-        start = time.time()
-        try:
-            result = func(*args, **kwargs)
-            elapsed = time.time() - start
-            console.print(
-                f"[success]✓ {description} completed in {elapsed:.2f}s[/success]"
-            )
-            if task_name:
-                SETUP_STATUS[task_name] = {
-                    "status": "success",
-                    "message": f"{description} completed successfully.",
-                }
-            return result
-        except Exception as e:
-            elapsed = time.time() - start
-            console.print(
-                f"[error]✗ {description} failed in {elapsed:.2f}s: {e}[/error]"
-            )
-            if task_name:
-                SETUP_STATUS[task_name] = {
-                    "status": "failed",
-                    "message": f"{description} failed: {e}",
-                }
-            raise
+
+    console.print(f"[bold]▶ Starting: {description}...[/bold]")
+    start = time.time()
+    try:
+        result = func(*args, **kwargs)
+        elapsed = time.time() - start
+        console.print(f"[success]✓ {description} completed in {elapsed:.2f}s[/success]")
+        if task_name:
+            SETUP_STATUS[task_name] = {
+                "status": "success",
+                "message": f"{description} completed successfully.",
+            }
+        return result
+    except Exception as e:
+        elapsed = time.time() - start
+        console.print(f"[error]✗ {description} failed in {elapsed:.2f}s: {e}[/error]")
+        if task_name:
+            SETUP_STATUS[task_name] = {
+                "status": "failed",
+                "message": f"{description} failed: {e}",
+            }
+        raise
 
 
 # ----------------------------------------------------------------
