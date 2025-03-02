@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 Ubuntu Server Setup & Hardening Utility for ARM (Raspberry Pi)
-----------------------------------------------------------------
+---------------------------------------------------------------
 
-This script automates the initialization and hardening of an Ubuntu server
-running on a Raspberry Pi (aarch64). It performs preflight checks, system updates,
-package installations, user environment setup, security hardening, service installations,
-maintenance tasks, system tuning, and final health checks.
+This fully automated utility performs preflight checks, system updates,
+package installations, user environment setup, security hardening, service
+installations, maintenance tasks, system tuning, and final health checks
+on an Ubuntu system running on a Raspberry Pi (aarch64).
 
 Run with root privileges.
 """
@@ -39,21 +39,20 @@ from rich.logging import RichHandler
 # ----------------------------------------------------------------
 # Global Configuration & Constants
 # ----------------------------------------------------------------
+# Custom theme for clear output
 THEME = Theme(
     {
-        "nord0": "#2E3440",
-        "nord1": "#3B4252",
-        "nord8": "#88C0D0",
-        "nord9": "#81A1C1",
-        "nord10": "#5E81AC",
-        "nord11": "#BF616A",
-        "nord13": "#EBCB8B",
-        "nord14": "#A3BE8C",
+        "header": "#88C0D0 bold",
+        "section": "#81A1C1 bold",
+        "step": "#88C0D0",
+        "success": "#A3BE8C bold",
+        "warning": "#EBCB8B bold",
+        "error": "#BF616A bold",
     }
 )
 console: Console = Console(theme=THEME)
 
-# Log and backup settings
+# Logging, backup, and user settings
 LOG_FILE: str = "/var/log/ubuntu_setup.log"
 MAX_LOG_SIZE: int = 10 * 1024 * 1024
 USERNAME: str = "sawyer"
@@ -67,7 +66,7 @@ PLEX_URL: str = f"https://downloads.plex.tv/plex-media-server-new/{PLEX_VERSION}
 FASTFETCH_VERSION: str = "2.37.0"
 FASTFETCH_URL: str = f"https://github.com/fastfetch-cli/fastfetch/releases/download/{FASTFETCH_VERSION}/fastfetch-linux-arm64.deb"
 
-# Files, ports and package lists to manage
+# Files to backup and allowed ports
 CONFIG_FILES: List[str] = [
     "/etc/ssh/sshd_config",
     "/etc/ufw/user.rules",
@@ -80,7 +79,7 @@ CONFIG_FILES: List[str] = [
 ]
 ALLOWED_PORTS: List[str] = ["22", "80", "443", "32400"]
 
-# Adjusted package list for ARM Raspberry Pi (pruned to avoid problematic packages)
+# Adjusted package list for ARM Raspberry Pi
 PACKAGES: List[str] = [
     "bash",
     "vim",
@@ -172,10 +171,9 @@ SETUP_STATUS: Dict[str, Dict[str, str]] = {
 
 
 # ----------------------------------------------------------------
-# Logging, Banner and Console Helpers
+# Logging, Banner, and Console Helpers
 # ----------------------------------------------------------------
 def setup_logging() -> logging.Logger:
-    """Initialize logging with rotating file support and Rich output."""
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > MAX_LOG_SIZE:
         ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -201,54 +199,65 @@ def setup_logging() -> logging.Logger:
 logger: logging.Logger = setup_logging()
 
 
-def print_header(text: str) -> None:
-    """Print a large ASCII art header."""
-    ascii_art: str = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style="bold nord14")
+def print_pyfiglet_header(text: str) -> None:
+    """Display a large ASCII art header using pyfiglet."""
+    ascii_art = pyfiglet.figlet_format(text, font="slant")
+    console.print(ascii_art, style="header")
 
 
 def print_section(text: str) -> None:
-    """Print a section header."""
-    console.print(f"\n[bold nord8]{text}[/bold nord8]")
+    """Print a section header with pyfiglet style and log it."""
+    print_pyfiglet_header(text)
+    console.print(f"[section]{'-' * 40}[/section]")
     logger.info(f"--- {text} ---")
 
 
 def print_step(text: str) -> None:
-    """Print a step message."""
-    console.print(f"[nord8]• {text}[/nord8]")
+    console.print(f"[step]• {text}[/step]")
 
 
 def print_success(text: str) -> None:
-    """Print a success message."""
-    console.print(f"[bold nord14]✓ {text}[/bold nord14]")
+    console.print(f"[success]✓ {text}[/success]")
 
 
 def print_warning(text: str) -> None:
-    """Print a warning message."""
-    console.print(f"[bold nord13]⚠ {text}[/bold nord13]")
+    console.print(f"[warning]⚠ {text}[/warning]")
 
 
 def print_error(text: str) -> None:
-    """Print an error message."""
-    console.print(f"[bold nord11]✗ {text}[/bold nord11]")
+    console.print(f"[error]✗ {text}[/error]")
 
 
-# ----------------------------------------------------------------
-# Command Execution with Progress
-# ----------------------------------------------------------------
+def status_report() -> None:
+    """Display a summary of setup task statuses."""
+    print_section("Setup Status Report")
+    icons = {
+        "success": "✓",
+        "failed": "✗",
+        "pending": "?",
+        "in_progress": "⋯",
+    }
+    for task, data in SETUP_STATUS.items():
+        st = data["status"]
+        msg = data["message"]
+        console.print(
+            f"[{'success' if st == 'success' else 'warning' if st == 'failed' else 'step'}]{icons.get(st, '?')} {task.upper()}: {st.upper()}[/] - {msg}"
+        )
+
+
 def run_with_progress(
     desc: str, func, *args, task_name: Optional[str] = None, **kwargs
 ) -> Any:
     """
     Run a function with a progress indicator.
-    Update SETUP_STATUS accordingly.
+    Updates SETUP_STATUS accordingly.
     """
     if task_name:
         SETUP_STATUS[task_name] = {
             "status": "in_progress",
             "message": f"{desc} in progress...",
         }
-    with console.status(f"[bold nord8]{desc}...[/]"):
+    with console.status(f"[section]{desc}...[/section]"):
         start = time.time()
         try:
             with ThreadPoolExecutor(max_workers=1) as ex:
@@ -261,7 +270,7 @@ def run_with_progress(
             if task_name:
                 SETUP_STATUS[task_name] = {
                     "status": "success",
-                    "message": f"{desc} completed successfully.",
+                    "message": f"{desc} succeeded.",
                 }
             return result
         except Exception as e:
@@ -278,93 +287,37 @@ def run_with_progress(
 # ----------------------------------------------------------------
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
-def signal_handler(signum: int, frame: Optional[Any]) -> None:
-    sig_name = (
-        getattr(signal, "Signals", lambda s: f"signal {s}")(signum).name
-        if hasattr(signal, "Signals")
-        else f"signal {signum}"
-    )
-    logger.error(f"Script interrupted by {sig_name}.")
-    try:
-        cleanup()
-    except Exception as e:
-        logger.error(f"Error during cleanup after signal: {e}")
-    sys.exit(
-        130
-        if signum == signal.SIGINT
-        else 143
-        if signum == signal.SIGTERM
-        else 128 + signum
-    )
-
-
-for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-    signal.signal(s, signal_handler)
-
-
 def cleanup() -> None:
-    """Perform cleanup tasks before exit."""
     logger.info("Performing cleanup tasks before exit.")
-    # Remove temporary files starting with 'ubuntu_setup_'
     for fname in os.listdir(TEMP_DIR):
         if fname.startswith("ubuntu_setup_"):
             try:
                 os.remove(os.path.join(TEMP_DIR, fname))
             except Exception:
                 pass
-    # Display final status if any task is not pending
-    if any(item["status"] != "pending" for item in SETUP_STATUS.values()):
-        status_report()
+    status_report()
 
+
+def signal_handler(signum: int, frame: Optional[Any]) -> None:
+    sig_name = f"signal {signum}"
+    logger.error(f"Interrupted by {sig_name}. Exiting.")
+    try:
+        cleanup()
+    except Exception as e:
+        logger.error(f"Cleanup error after {sig_name}: {e}")
+    sys.exit(128 + signum)
+
+
+for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(s, signal_handler)
 
 atexit.register(cleanup)
-
-
-def status_report() -> None:
-    """Display a summary of setup task statuses."""
-    print_section("Setup Status Report")
-    icons = {
-        "success": "✓",
-        "failed": "✗",
-        "pending": "?",
-        "in_progress": "⋯",
-        "skipped": "⏭",
-        "warning": "⚠",
-    }
-    colors = {
-        "success": "nord14",
-        "failed": "nord11",
-        "pending": "nord13",
-        "in_progress": "nord9",
-        "skipped": "nord0",
-        "warning": "nord13",
-    }
-    descriptions = {
-        "preflight": "Pre-flight Checks",
-        "nala_install": "Nala Installation",
-        "system_update": "System Update",
-        "packages_install": "Package Installation",
-        "user_env": "User Environment Setup",
-        "security": "Security Hardening",
-        "services": "Service Installation",
-        "maintenance": "Maintenance Tasks",
-        "tuning": "System Tuning",
-        "final": "Final Checks & Cleanup",
-    }
-    for task, data in SETUP_STATUS.items():
-        st = data["status"]
-        msg = data["message"]
-        console.print(
-            f"[{colors.get(st, '')}]{icons.get(st, '?')} {descriptions.get(task, task)}: {st.upper()}[/] - {msg}"
-        )
 
 
 # ----------------------------------------------------------------
 # Utility Functions & Classes
 # ----------------------------------------------------------------
 class Utils:
-    """Helper utilities for command execution, backups, and directory management."""
-
     @staticmethod
     def run_command(
         cmd: Union[List[str], str],
@@ -411,30 +364,26 @@ class Utils:
             os.makedirs(path, mode=mode, exist_ok=True)
             if owner:
                 Utils.run_command(["chown", owner, path])
-            logger.debug(f"Directory ensured: {path}")
+            logger.debug(f"Ensured directory: {path}")
             return True
         except Exception as e:
-            logger.warning(f"Ensure directory failed for {path}: {e}")
+            logger.warning(f"Failed to ensure directory {path}: {e}")
             return False
 
     @staticmethod
     def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(2)
-            res = s.connect_ex((host, port))
-        return res == 0
+            return s.connect_ex((host, port)) == 0
 
 
 # ----------------------------------------------------------------
 # Preflight & Environment Checkers
 # ----------------------------------------------------------------
 class PreflightChecker:
-    """Perform preflight checks like root privileges, network, and OS version."""
-
     def check_root(self) -> None:
         if os.geteuid() != 0:
-            print_error("Error: Must run as root.")
-            console.print(f"Run with: sudo {sys.argv[0]}")
+            print_error("Must run as root!")
             sys.exit(1)
         logger.info("Root privileges confirmed.")
 
@@ -450,7 +399,7 @@ class PreflightChecker:
                     ).returncode
                     == 0
                 ):
-                    logger.info(f"Network via {host} OK.")
+                    logger.info(f"Network OK via {host}.")
                     return True
             except Exception as e:
                 logger.debug(f"Ping {host} failed: {e}")
@@ -460,9 +409,9 @@ class PreflightChecker:
     def check_os_version(self) -> Optional[Tuple[str, str]]:
         logger.info("Checking OS version...")
         if not os.path.isfile("/etc/os-release"):
-            logger.warning("/etc/os-release missing")
+            logger.warning("Missing /etc/os-release")
             return None
-        os_info: Dict[str, str] = {}
+        os_info = {}
         with open("/etc/os-release") as f:
             for line in f:
                 if "=" in line:
@@ -472,7 +421,7 @@ class PreflightChecker:
             logger.warning(f"Non-Ubuntu system: {os_info.get('ID', 'unknown')}")
             return None
         ver = os_info.get("VERSION_ID", "")
-        logger.info(f"OS: {os_info.get('PRETTY_NAME', 'Unknown')}")
+        logger.info(f"Detected OS: {os_info.get('PRETTY_NAME', 'Unknown')}")
         if ver not in ["20.04", "22.04", "24.04"]:
             logger.warning(f"Ubuntu {ver} may be unsupported.")
         return ("ubuntu", ver)
@@ -487,9 +436,7 @@ class PreflightChecker:
                 for cfg in CONFIG_FILES:
                     if os.path.isfile(cfg):
                         tar.add(cfg, arcname=os.path.basename(cfg))
-                        logger.info(f"Added {cfg}")
-                    else:
-                        logger.debug(f"Skipped {cfg}")
+                        logger.info(f"Added {cfg} to snapshot.")
             logger.info(f"Snapshot saved to {snapshot}")
             return snapshot
         except Exception as e:
@@ -501,8 +448,6 @@ class PreflightChecker:
 # System Updater and Package Installer
 # ----------------------------------------------------------------
 class SystemUpdater:
-    """Update the system and install required packages."""
-
     def fix_package_issues(self) -> bool:
         logger.info("Fixing package issues...")
         try:
@@ -516,7 +461,7 @@ class SystemUpdater:
                 ["apt-mark", "showhold"], check=False, capture_output=True, text=True
             )
             if held.stdout.strip():
-                for pkg in held.stdout.strip().split("\n"):
+                for pkg in held.stdout.strip().splitlines():
                     if pkg.strip():
                         try:
                             Utils.run_command(
@@ -564,7 +509,7 @@ class SystemUpdater:
             try:
                 Utils.run_command(upgrade_cmd)
             except Exception as e:
-                logger.warning(f"Upgrade failed: {e}. Retrying...")
+                logger.warning(f"Upgrade failed: {e}. Retrying package fix...")
                 self.fix_package_issues()
                 Utils.run_command(upgrade_cmd)
             logger.info("System update completed.")
@@ -652,8 +597,6 @@ class SystemUpdater:
 # User Environment Setup
 # ----------------------------------------------------------------
 class UserEnvironment:
-    """Set up user repositories, shell configuration, and dotfiles."""
-
     def setup_repos(self) -> bool:
         logger.info(f"Setting up repositories for {USERNAME}...")
         gh_dir = os.path.join(USER_HOME, "github")
@@ -666,7 +609,7 @@ class UserEnvironment:
                 try:
                     Utils.run_command(["git", "-C", repo_dir, "pull"], check=False)
                 except Exception:
-                    logger.warning(f"Update failed for repo: {repo}")
+                    logger.warning(f"Repo update failed: {repo}")
                     all_success = False
             else:
                 try:
@@ -680,7 +623,7 @@ class UserEnvironment:
                         check=False,
                     )
                 except Exception:
-                    logger.warning(f"Clone failed for repo: {repo}")
+                    logger.warning(f"Repo clone failed: {repo}")
                     all_success = False
         try:
             Utils.run_command(["chown", "-R", f"{USERNAME}:{USERNAME}", gh_dir])
@@ -690,7 +633,7 @@ class UserEnvironment:
         return all_success
 
     def copy_shell_configs(self) -> bool:
-        logger.info("Updating shell configuration files...")
+        logger.info("Copying shell configuration files...")
         files = [".bashrc", ".profile"]
         src_dir = os.path.join(
             USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles"
@@ -719,7 +662,7 @@ class UserEnvironment:
                         )
                         Utils.run_command(["chown", owner, dest])
                     except Exception as e:
-                        logger.warning(f"Copying {src} to {dest} failed: {e}")
+                        logger.warning(f"Copy {src} to {dest} failed: {e}")
                         all_success = False
         return all_success
 
@@ -745,7 +688,7 @@ class UserEnvironment:
                     )
             return success
         except Exception as e:
-            logger.error(f"Error copying configuration folders: {e}")
+            logger.error(f"Error copying config folders: {e}")
             return False
 
     def set_bash_shell(self) -> bool:
@@ -776,8 +719,6 @@ class UserEnvironment:
 # Security Hardening
 # ----------------------------------------------------------------
 class SecurityHardener:
-    """Harden system security by configuring SSH, sudoers, firewall, fail2ban, and AppArmor."""
-
     def configure_ssh(self, port: int = 22) -> bool:
         logger.info("Configuring SSH service...")
         try:
@@ -857,7 +798,7 @@ class SecurityHardener:
             Utils.run_command(["visudo", "-c"], check=True)
             return True
         except Exception as e:
-            logger.error(f"Error configuring sudoers: {e}")
+            logger.error(f"Sudoers configuration error: {e}")
             return False
 
     def configure_firewall(self) -> bool:
@@ -889,7 +830,7 @@ class SecurityHardener:
             )
             if "inactive" in status.stdout.lower():
                 Utils.run_command([ufw_cmd, "--force", "enable"])
-        except Exception as e:
+        except Exception:
             return False
         try:
             Utils.run_command([ufw_cmd, "logging", "on"])
@@ -899,7 +840,7 @@ class SecurityHardener:
             Utils.run_command(["systemctl", "enable", "ufw"])
             Utils.run_command(["systemctl", "restart", "ufw"])
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     def configure_fail2ban(self) -> bool:
@@ -961,8 +902,6 @@ class SecurityHardener:
 # Service Installation and Configuration
 # ----------------------------------------------------------------
 class ServiceInstaller:
-    """Install and configure various services such as Fastfetch, Docker, Caddy, Nala, Tailscale, and user scripts."""
-
     def install_fastfetch(self) -> bool:
         logger.info("Installing Fastfetch...")
         if Utils.command_exists("fastfetch"):
@@ -987,7 +926,7 @@ class ServiceInstaller:
                     ["curl", "-fsSL", "https://get.docker.com", "-o", script_path]
                 )
                 os.chmod(script_path, 0o755)
-                Utils.run_command([script_path], check=True)
+                Utils.run_command([script_path])
                 os.remove(script_path)
             except Exception as e:
                 if not SystemUpdater().install_packages(["docker.io"]):
@@ -1226,8 +1165,6 @@ class ServiceInstaller:
 # Maintenance Manager
 # ----------------------------------------------------------------
 class MaintenanceManager:
-    """Handle maintenance tasks such as cron job setup, config backups, and SSL certificate updates."""
-
     def configure_periodic(self) -> bool:
         logger.info("Setting up daily maintenance cron job...")
         cron_file = "/etc/cron.daily/ubuntu_maintenance"
@@ -1299,11 +1236,9 @@ echo "Completed $(date)" >> $LOG
 
 
 # ----------------------------------------------------------------
-# System Tuning and Home Permissions
+# System Tuner and Home Permissions
 # ----------------------------------------------------------------
 class SystemTuner:
-    """Apply system tuning settings and secure user home directory permissions."""
-
     def tune_system(self) -> bool:
         logger.info("Applying system tuning settings...")
         sysctl_conf = "/etc/sysctl.conf"
@@ -1376,8 +1311,6 @@ class SystemTuner:
 # Final Health Check and Cleanup
 # ----------------------------------------------------------------
 class FinalChecker:
-    """Perform final system health checks, firewall verification, and cleanup."""
-
     def system_health_check(self) -> Dict[str, Any]:
         logger.info("Performing system health check...")
         health: Dict[str, Any] = {}
@@ -1454,13 +1387,12 @@ class FinalChecker:
 
     def verify_firewall_rules(self) -> bool:
         logger.info("Verifying firewall rules...")
-        all_correct = True
         try:
             ufw_status = subprocess.check_output(["ufw", "status"], text=True).strip()
             if "inactive" in ufw_status.lower():
                 return False
         except Exception:
-            pass
+            return False
         for port in ALLOWED_PORTS:
             try:
                 result = subprocess.run(
@@ -1470,10 +1402,10 @@ class FinalChecker:
                     stderr=subprocess.DEVNULL,
                 )
                 if result.returncode != 0 and not Utils.is_port_open(int(port)):
-                    all_correct = False
+                    return False
             except Exception:
-                all_correct = False
-        return all_correct
+                return False
+        return True
 
     def final_checks(self) -> bool:
         logger.info("Performing final system checks...")
@@ -1606,22 +1538,20 @@ class FinalChecker:
         except Exception:
             return False
 
-    def prompt_reboot(self) -> None:
-        console.print("[bold nord14]Setup completed! A reboot is recommended.[/]")
-        ans = input("Reboot now? [y/N]: ").strip().lower()
-        if ans == "y":
-            try:
-                Utils.run_command(["shutdown", "-r", "now"])
-            except Exception:
-                pass
+    def auto_reboot(self) -> None:
+        logger.info("Setup complete. System will reboot automatically in 60 seconds.")
+        print_success("Setup completed successfully. Rebooting in 60 seconds...")
+        time.sleep(60)
+        try:
+            Utils.run_command(["shutdown", "-r", "now"])
+        except Exception:
+            pass
 
 
 # ----------------------------------------------------------------
-# Ubuntu Server Setup Orchestration
+# Main Orchestration
 # ----------------------------------------------------------------
 class UbuntuServerSetup:
-    """Main orchestration class for Ubuntu Server Setup."""
-
     def __init__(self) -> None:
         self.success = True
         self.start_time = time.time()
@@ -1636,19 +1566,17 @@ class UbuntuServerSetup:
 
     def run(self) -> int:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        console.print(f"[nord8]{'-' * 40}[/]")
-        console.print(f"[nord8]  Starting Ubuntu Server Setup for ARM (v6.0.0)[/]")
-        console.print(f"[nord8]  {now}[/]")
-        console.print(f"[nord8]{'-' * 40}[/]")
-        logger.info(
-            f"Starting Ubuntu Server Setup for ARM (v6.0.0) at {datetime.datetime.now()}"
-        )
+        print_pyfiglet_header("Ubuntu Server Setup for ARM")
+        console.print(f"[step]{'-' * 40}[/step]")
+        console.print(f"[step]  Starting Setup (v6.0.0) at {now}[/step]")
+        console.print(f"[step]{'-' * 40}[/step]")
+        logger.info(f"Starting Ubuntu Server Setup for ARM at {now}")
 
         # Phase 1: Pre-flight Checks
         print_section("Phase 1: Pre-flight Checks")
         try:
             run_with_progress(
-                "Running Pre-flight Checks...",
+                "Checking root privileges",
                 self.preflight.check_root,
                 task_name="preflight",
             )
@@ -1666,7 +1594,7 @@ class UbuntuServerSetup:
             logger.error(f"Preflight error: {e}")
             self.success = False
 
-        # Fix any broken packages
+        # Fix broken packages
         print_section("Fixing Broken Packages")
 
         def fix_broken():
@@ -1687,9 +1615,7 @@ class UbuntuServerSetup:
         print_section("Phase 2: Installing Nala")
         try:
             if not run_with_progress(
-                "Installing Nala...",
-                self.services.install_nala,
-                task_name="nala_install",
+                "Installing Nala", self.services.install_nala, task_name="nala_install"
             ):
                 logger.error("Nala installation failed.")
                 self.success = False
@@ -1701,9 +1627,7 @@ class UbuntuServerSetup:
         print_section("Phase 3: System Update & Basic Configuration")
         try:
             if not run_with_progress(
-                "Updating system...",
-                self.updater.update_system,
-                task_name="system_update",
+                "Updating system", self.updater.update_system, task_name="system_update"
             ):
                 logger.warning("System update failed.")
                 self.success = False
@@ -1712,7 +1636,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Installing packages...",
+                "Installing packages",
                 self.updater.install_packages,
                 task_name="packages_install",
             ):
@@ -1723,7 +1647,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Configuring timezone...", self.updater.configure_timezone
+                "Configuring timezone", self.updater.configure_timezone
             ):
                 logger.warning("Timezone configuration failed.")
                 self.success = False
@@ -1732,7 +1656,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Configuring locale...", self.updater.configure_locale
+                "Configuring locale", self.updater.configure_locale
             ):
                 logger.warning("Locale configuration failed.")
                 self.success = False
@@ -1744,7 +1668,7 @@ class UbuntuServerSetup:
         print_section("Phase 4: User Environment Setup")
         try:
             if not run_with_progress(
-                "Setting up user repositories...",
+                "Setting up user repositories",
                 self.user_env.setup_repos,
                 task_name="user_env",
             ):
@@ -1755,7 +1679,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Copying shell configs...", self.user_env.copy_shell_configs
+                "Copying shell configs", self.user_env.copy_shell_configs
             ):
                 logger.warning("Shell configuration update failed.")
                 self.success = False
@@ -1764,7 +1688,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Copying config folders...", self.user_env.copy_config_folders
+                "Copying config folders", self.user_env.copy_config_folders
             ):
                 logger.warning("Config folder copy failed.")
                 self.success = False
@@ -1773,7 +1697,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Setting default shell...", self.user_env.set_bash_shell
+                "Setting default shell", self.user_env.set_bash_shell
             ):
                 logger.warning("Default shell update failed.")
                 self.success = False
@@ -1785,7 +1709,7 @@ class UbuntuServerSetup:
         print_section("Phase 5: Security & Access Hardening")
         try:
             if not run_with_progress(
-                "Configuring SSH...", self.security.configure_ssh, task_name="security"
+                "Configuring SSH", self.security.configure_ssh, task_name="security"
             ):
                 logger.warning("SSH configuration failed.")
                 self.success = False
@@ -1794,7 +1718,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Configuring sudoers...", self.security.setup_sudoers
+                "Configuring sudoers", self.security.setup_sudoers
             ):
                 logger.warning("Sudoers configuration failed.")
                 self.success = False
@@ -1803,7 +1727,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Configuring firewall...", self.security.configure_firewall
+                "Configuring firewall", self.security.configure_firewall
             ):
                 logger.warning("Firewall configuration failed.")
                 self.success = False
@@ -1812,7 +1736,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Configuring Fail2ban...", self.security.configure_fail2ban
+                "Configuring Fail2ban", self.security.configure_fail2ban
             ):
                 logger.warning("Fail2ban configuration failed.")
                 self.success = False
@@ -1821,7 +1745,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Configuring AppArmor...", self.security.configure_apparmor
+                "Configuring AppArmor", self.security.configure_apparmor
             ):
                 logger.warning("AppArmor configuration failed.")
                 self.success = False
@@ -1833,7 +1757,7 @@ class UbuntuServerSetup:
         print_section("Phase 6: Service Installations")
         try:
             if not run_with_progress(
-                "Installing Fastfetch...",
+                "Installing Fastfetch",
                 self.services.install_fastfetch,
                 task_name="services",
             ):
@@ -1843,9 +1767,7 @@ class UbuntuServerSetup:
             logger.error(f"Fastfetch error: {e}")
             self.success = False
         try:
-            if not run_with_progress(
-                "Configuring Docker...", self.services.docker_config
-            ):
+            if not run_with_progress("Configuring Docker", self.services.docker_config):
                 logger.warning("Docker configuration failed.")
                 self.success = False
         except Exception as e:
@@ -1853,7 +1775,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Installing Tailscale...", self.services.install_enable_tailscale
+                "Installing Tailscale", self.services.install_enable_tailscale
             ):
                 logger.warning("Tailscale installation failed.")
                 self.success = False
@@ -1862,7 +1784,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Configuring unattended upgrades...",
+                "Configuring unattended upgrades",
                 self.services.configure_unattended_upgrades,
             ):
                 logger.warning("Unattended upgrades configuration failed.")
@@ -1872,7 +1794,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Installing Caddy...", self.services.install_configure_caddy
+                "Installing Caddy", self.services.install_configure_caddy
             ):
                 logger.warning("Caddy installation failed.")
                 self.success = False
@@ -1881,7 +1803,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Deploying user scripts...", self.services.deploy_user_scripts
+                "Deploying user scripts", self.services.deploy_user_scripts
             ):
                 logger.warning("User scripts deployment failed.")
                 self.success = False
@@ -1893,7 +1815,7 @@ class UbuntuServerSetup:
         print_section("Phase 7: Maintenance Tasks")
         try:
             if not run_with_progress(
-                "Configuring periodic maintenance...",
+                "Configuring periodic maintenance",
                 self.maintenance.configure_periodic,
                 task_name="maintenance",
             ):
@@ -1904,7 +1826,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Backing up configurations...", self.maintenance.backup_configs
+                "Backing up configurations", self.maintenance.backup_configs
             ):
                 logger.warning("Configuration backup failed.")
                 self.success = False
@@ -1913,7 +1835,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Updating SSL certificates...", self.maintenance.update_ssl_certificates
+                "Updating SSL certificates", self.maintenance.update_ssl_certificates
             ):
                 logger.warning("SSL certificate update failed.")
                 self.success = False
@@ -1925,7 +1847,7 @@ class UbuntuServerSetup:
         print_section("Phase 8: System Tuning & Permissions")
         try:
             if not run_with_progress(
-                "Applying system tuning...", self.tuner.tune_system, task_name="tuning"
+                "Applying system tuning", self.tuner.tune_system, task_name="tuning"
             ):
                 logger.warning("System tuning failed.")
                 self.success = False
@@ -1934,7 +1856,7 @@ class UbuntuServerSetup:
             self.success = False
         try:
             if not run_with_progress(
-                "Securing home directory...", self.tuner.home_permissions
+                "Securing home directory", self.tuner.home_permissions
             ):
                 logger.warning("Home directory security failed.")
                 self.success = False
@@ -1982,17 +1904,18 @@ class UbuntuServerSetup:
             }
         else:
             SETUP_STATUS["final"] = {
-                "status": "warning",
-                "message": f"Completed with warnings in {int(minutes)}m {int(seconds)}s.",
+                "status": "failed",
+                "message": f"Completed with issues in {int(minutes)}m {int(seconds)}s.",
             }
-        try:
-            status_report()
-        except Exception as e:
-            logger.error(f"Status report error: {e}")
-        try:
-            self.final_checker.prompt_reboot()
-        except Exception as e:
-            logger.error(f"Reboot prompt error: {e}")
+        status_report()
+
+        # For unattended mode, automatically reboot if all checks passed.
+        if self.success and final_result:
+            self.final_checker.auto_reboot()
+        else:
+            print_warning(
+                "Setup completed with issues. Please review the log and status report."
+            )
         return 0 if self.success and final_result else 1
 
 

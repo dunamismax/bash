@@ -1,17 +1,42 @@
 #!/usr/bin/env python3
+"""
+Ubuntu Desktop Setup & Hardening Utility (Unattended)
+-------------------------------------------------------
+
+This fully automated utility performs:
+  • Pre-flight checks & backups (including ZFS snapshot)
+  • System update & basic configuration (timezone, packages)
+  • Repository & shell setup (cloning GitHub repos, updating shell configs)
+  • Security hardening (SSH, sudoers, firewall, Fail2ban)
+  • Essential service installations (Docker, Plex, Fastfetch, Brave, VS Code)
+  • User customization & script deployment
+  • Maintenance tasks (cron job, log rotation, configuration backups)
+  • Certificates & performance tuning (SSL renewals, sysctl tweaks)
+  • Permissions & advanced storage configuration (home permissions, ZFS)
+  • Additional applications (Flatpak apps, VS Code configuration)
+  • Automatic updates & further security (unattended upgrades, AppArmor)
+  • Final system checks & reboot prompt
+
+Run this script with root privileges.
+"""
+
 import atexit, datetime, filecmp, gzip, json, logging, os, platform, re, shutil, signal, subprocess, sys, tarfile, tempfile, time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+import pyfiglet
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.theme import Theme
 from rich.logging import RichHandler
 from rich.progress import Progress
-from pyfiglet import figlet_format
 
+# ----------------------------------------------------------------
+# Global Console, Theme & Status Setup
+# ----------------------------------------------------------------
 nord_theme = Theme(
     {
         "banner": "bold #88C0D0",
@@ -25,7 +50,7 @@ nord_theme = Theme(
 )
 console = Console(theme=nord_theme)
 
-SETUP_STATUS = {
+SETUP_STATUS: Dict[str, Dict[str, str]] = {
     "preflight": {"status": "pending", "message": ""},
     "system_update": {"status": "pending", "message": ""},
     "repo_shell": {"status": "pending", "message": ""},
@@ -42,7 +67,10 @@ SETUP_STATUS = {
 }
 
 
-def print_status_report():
+# ----------------------------------------------------------------
+# Helper Functions: Status Report & Progress
+# ----------------------------------------------------------------
+def print_status_report() -> None:
     table = Table(title="Ubuntu Desktop Setup Status Report", style="banner")
     table.add_column("Task", style="header")
     table.add_column("Status", style="info")
@@ -54,7 +82,7 @@ def print_status_report():
 
 def run_with_progress(
     description: str, func, *args, task_name: Optional[str] = None, **kwargs
-):
+) -> Any:
     if task_name:
         SETUP_STATUS[task_name] = {
             "status": "in_progress",
@@ -87,11 +115,15 @@ def run_with_progress(
             raise
 
 
+# ----------------------------------------------------------------
+# Logger Setup
+# ----------------------------------------------------------------
 def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
     log_file = Path(log_file)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("ubuntu_setup")
     logger.setLevel(logging.DEBUG)
+    # Remove pre-existing handlers
     for h in logger.handlers[:]:
         logger.removeHandler(h)
     handler = RichHandler(console=console, rich_tracebacks=True)
@@ -107,6 +139,9 @@ def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
     return logger
 
 
+# ----------------------------------------------------------------
+# Signal Handling & Cleanup of Temp Files
+# ----------------------------------------------------------------
 def signal_handler(signum, frame):
     sig = (
         signal.Signals(signum).name
@@ -135,7 +170,7 @@ for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(s, signal_handler)
 
 
-def cleanup_temp_files():
+def cleanup_temp_files() -> None:
     logging.getLogger("ubuntu_setup").info("Cleaning up temporary files.")
     tmp = Path(tempfile.gettempdir())
     for item in tmp.iterdir():
@@ -149,6 +184,9 @@ def cleanup_temp_files():
 atexit.register(cleanup_temp_files)
 
 
+# ----------------------------------------------------------------
+# Configuration Dataclass
+# ----------------------------------------------------------------
 @dataclass
 class Config:
     PLEX_VERSION: str = "1.41.4.9463-630c9f557"
@@ -342,6 +380,9 @@ class Config:
         self.CONFIG_DEST_DIR = self.USER_HOME / ".config"
 
 
+# ----------------------------------------------------------------
+# Main Setup Class
+# ----------------------------------------------------------------
 class UbuntuDesktopSetup:
     def __init__(self, config: Config = Config()):
         self.config = config
@@ -349,10 +390,11 @@ class UbuntuDesktopSetup:
         self.start_time = time.time()
 
     def print_section(self, title: str) -> None:
-        banner = figlet_format(title, font="slant")
+        banner = pyfiglet.figlet_format(title, font="slant")
         console.print(Panel(banner, style="header"))
         self.logger.info(f"--- {title} ---")
 
+    # Phase 1: Pre-flight Checks & Backups
     def phase_preflight(self) -> bool:
         self.print_section("Phase 1: Pre-flight Checks & Backups")
         try:
@@ -451,6 +493,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Failed to create ZFS snapshot: {e}")
             return None
 
+    # Phase 2: System Update & Basic Configuration
     def phase_system_update(self) -> bool:
         self.print_section("Phase 2: System Update & Basic Configuration")
         status = True
@@ -540,6 +583,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Failed to set timezone: {e}")
             return False
 
+    # Phase 3: Repository & Shell Setup
     def phase_repo_shell_setup(self) -> bool:
         self.print_section("Phase 3: Repository & Shell Setup")
         status = True
@@ -608,6 +652,8 @@ class UbuntuDesktopSetup:
         )
         destination_dirs = [self.config.USER_HOME, Path("/root")]
         overall = True
+        import filecmp
+
         for file_name in [".bashrc", ".profile"]:
             src = source_dir / file_name
             if not src.is_file():
@@ -675,11 +721,11 @@ class UbuntuDesktopSetup:
                 if "/bin/bash" not in content:
                     with open(shells_file, "a") as f:
                         f.write("/bin/bash\n")
-                        self.logger.info("Added /bin/bash to /etc/shells.")
+                    self.logger.info("Added /bin/bash to /etc/shells.")
             else:
                 with open(shells_file, "w") as f:
                     f.write("/bin/bash\n")
-                    self.logger.info("Created /etc/shells with /bin/bash.")
+                self.logger.info("Created /etc/shells with /bin/bash.")
         except Exception as e:
             self.logger.warning(f"Failed to update /etc/shells: {e}")
             return False
@@ -695,6 +741,7 @@ class UbuntuDesktopSetup:
             )
             return False
 
+    # Phase 4: Security Hardening
     def phase_security_hardening(self) -> bool:
         self.print_section("Phase 4: Security Hardening")
         status = True
@@ -806,7 +853,19 @@ class UbuntuDesktopSetup:
     def configure_fail2ban(self) -> bool:
         self.print_section("Fail2ban Configuration")
         jail_local = Path("/etc/fail2ban/jail.local")
-        config_content = "[DEFAULT]\nbantime  = 600\nfindtime = 600\nmaxretry = 3\nbackend  = systemd\nusedns   = warn\n\n[sshd]\nenabled  = true\nport     = ssh\nlogpath  = /var/log/auth.log\nmaxretry = 3\n"
+        config_content = (
+            "[DEFAULT]\n"
+            "bantime  = 600\n"
+            "findtime = 600\n"
+            "maxretry = 3\n"
+            "backend  = systemd\n"
+            "usedns   = warn\n\n"
+            "[sshd]\n"
+            "enabled  = true\n"
+            "port     = ssh\n"
+            "logpath  = /var/log/auth.log\n"
+            "maxretry = 3\n"
+        )
         if jail_local.is_file():
             self.backup_file(jail_local)
         try:
@@ -820,6 +879,7 @@ class UbuntuDesktopSetup:
             self.logger.warning("Failed to manage fail2ban service.")
             return False
 
+    # Phase 5: Service Installation
     def phase_service_installation(self) -> bool:
         self.print_section("Phase 5: Essential Service Installation")
         status = True
@@ -952,7 +1012,7 @@ class UbuntuDesktopSetup:
             except Exception as e:
                 self.logger.warning(f"Failed to update {plex_conf}: {e}")
         else:
-            self.logger.warning(f"{plex_conf} not found; skipping user config.")
+            self.logger.warning(f"{plex_conf} not found; skipping user configuration.")
         try:
             self.run_command(["systemctl", "enable", "plexmediaserver"])
             self.logger.info("Plex service enabled.")
@@ -996,6 +1056,7 @@ class UbuntuDesktopSetup:
         self.logger.info("Fastfetch installed successfully.")
         return True
 
+    # Phase 6: User Customization & Script Deployment
     def phase_user_customization(self) -> bool:
         self.print_section("Phase 6: User Customization & Script Deployment")
         return run_with_progress("Deploying user scripts", self.deploy_user_scripts)
@@ -1029,6 +1090,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Script deployment failed: {e}")
             return False
 
+    # Phase 7: Maintenance & Monitoring
     def phase_maintenance_monitoring(self) -> bool:
         self.print_section("Phase 7: Maintenance & Monitoring Tasks")
         status = True
@@ -1055,7 +1117,7 @@ class UbuntuDesktopSetup:
             return True
         if cron_file.is_file():
             self.backup_file(cron_file)
-        content = "#!/bin/sh\n# Ubuntu maintenance script\nnala update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y\n"
+        content = "#!/bin/sh\n# Ubuntu maintenance script\napt update -qq && apt upgrade -y && apt autoremove -y && apt autoclean -y\n"
         try:
             cron_file.write_text(content)
             cron_file.chmod(0o755)
@@ -1144,7 +1206,7 @@ class UbuntuDesktopSetup:
         self.print_section("Firewall Rules Verification")
         if ports is None:
             ports = self.config.FIREWALL_PORTS
-            results = {}
+        results = {}
         for port in ports:
             try:
                 subprocess.run(
@@ -1160,6 +1222,7 @@ class UbuntuDesktopSetup:
                 results[port] = False
         return results
 
+    # Phase 8: Certificates & Performance Tuning
     def phase_certificates_performance(self) -> bool:
         self.print_section("Phase 8: Certificates & Performance Tuning")
         status = True
@@ -1216,6 +1279,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Failed to apply performance tuning: {e}")
             return False
 
+    # Phase 9: Permissions & Advanced Storage Setup
     def phase_permissions_storage(self) -> bool:
         self.print_section("Phase 9: Permissions & Advanced Storage Setup")
         status = True
@@ -1356,6 +1420,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Error verifying ZFS mount status: {e}")
             return False
 
+    # Phase 10: Additional Applications & Tools
     def phase_additional_apps(self) -> bool:
         self.print_section("Phase 10: Additional Applications & Tools")
         status = True
@@ -1460,8 +1525,7 @@ class UbuntuDesktopSetup:
             "GenericName=Text Editor\nExec=/usr/share/code/code --enable-features=UseOzonePlatform --ozone-platform=wayland %F\n"
             "Icon=vscode\nType=Application\nStartupNotify=false\nStartupWMClass=Code\nCategories=TextEditor;Development;IDE;\n"
             "MimeType=application/x-code-workspace;\nActions=new-empty-window;\n\n"
-            "[Desktop Action new-empty-window]\nName=New Empty Window\n"
-            "Exec=/usr/share/code/code --new-window --enable-features=UseOzonePlatform --ozone-platform=wayland %F\nIcon=vscode\n"
+            "[Desktop Action new-empty-window]\nName=New Empty Window\nExec=/usr/share/code/code --new-window --enable-features=UseOzonePlatform --ozone-platform=wayland %F\nIcon=vscode\n"
         )
         try:
             desktop_file.write_text(desktop_content)
@@ -1483,6 +1547,7 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Failed to update local desktop file: {e}")
             return False
 
+    # Phase 11: Automatic Updates & Additional Security
     def phase_automatic_updates_security(self) -> bool:
         self.print_section("Phase 11: Automatic Updates & Additional Security")
         status = True
@@ -1504,15 +1569,32 @@ class UbuntuDesktopSetup:
             self.run_command(
                 ["apt", "install", "-y", "unattended-upgrades", "apt-listchanges"]
             )
-            auto_upgrades_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
-            auto_upgrades_file.write_text(
-                'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\nAPT::Periodic::AutocleanInterval "7";\nAPT::Periodic::Download-Upgradeable-Packages "1";\n'
+            auto_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
+            auto_file.write_text(
+                'APT::Periodic::Update-Package-Lists "1";\n'
+                'APT::Periodic::Unattended-Upgrade "1";\n'
+                'APT::Periodic::AutocleanInterval "7";\n'
+                'APT::Periodic::Download-Upgradeable-Packages "1";\n'
             )
             unattended_file = Path("/etc/apt/apt.conf.d/50unattended-upgrades")
             if unattended_file.exists():
                 self.backup_file(unattended_file)
             unattended_file.write_text(
-                'Unattended-Upgrade::Allowed-Origins {\n    "${distro_id}:${distro_codename}";\n    "${distro_id}:${distro_codename}-security";\n    "${distro_id}ESMApps:${distro_codename}-apps-security";\n    "${distro_id}ESM:${distro_codename}-infra-security";\n    "${distro_id}:${distro_codename}-updates";\n};\n\nUnattended-Upgrade::Package-Blacklist {\n};\n\nUnattended-Upgrade::DevRelease "false";\nUnattended-Upgrade::Remove-Unused-Kernel-Packages "true";\nUnattended-Upgrade::Remove-Unused-Dependencies "true";\nUnattended-Upgrade::Automatic-Reboot "false";\nUnattended-Upgrade::Automatic-Reboot-Time "02:00";\nUnattended-Upgrade::SyslogEnable "true";\n'
+                "Unattended-Upgrade::Allowed-Origins {\n"
+                '    "${distro_id}:${distro_codename}";\n'
+                '    "${distro_id}:${distro_codename}-security";\n'
+                '    "${distro_id}ESMApps:${distro_codename}-apps-security";\n'
+                '    "${distro_id}ESM:${distro_codename}-infra-security";\n'
+                '    "${distro_id}:${distro_codename}-updates";\n'
+                "};\n\n"
+                "Unattended-Upgrade::Package-Blacklist {\n"
+                "};\n\n"
+                'Unattended-Upgrade::DevRelease "false";\n'
+                'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";\n'
+                'Unattended-Upgrade::Remove-Unused-Dependencies "true";\n'
+                'Unattended-Upgrade::Automatic-Reboot "false";\n'
+                'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
+                'Unattended-Upgrade::SyslogEnable "true";\n'
             )
             self.run_command(["systemctl", "enable", "unattended-upgrades"])
             self.run_command(["systemctl", "restart", "unattended-upgrades"])
@@ -1534,6 +1616,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Failed to configure AppArmor: {e}")
             return False
 
+    # Phase 12: Cleanup & Final Configurations
     def phase_cleanup_final(self) -> bool:
         self.print_section("Phase 12: Cleanup & Final Configurations")
         status = True
@@ -1636,13 +1719,13 @@ class UbuntuDesktopSetup:
             self.logger.info("Nala is already installed.")
             return True
         try:
-            self.logger.info("Updating apt repositories...")
+            self.logger.info("Updating apt repositories via Nala...")
             self.run_command(["nala", "update"])
-            self.logger.info("Upgrading existing packages...")
+            self.logger.info("Upgrading packages via Nala...")
             self.run_command(["nala", "upgrade", "-y"])
-            self.logger.info("Fixing broken installations...")
+            self.logger.info("Fixing broken packages...")
             self.run_command(["apt", "--fix-broken", "install", "-y"])
-            self.logger.info("Installing nala package...")
+            self.logger.info("Installing Nala...")
             self.run_command(["apt", "install", "nala", "-y"])
             if self.command_exists("nala"):
                 self.logger.info("Nala installed successfully.")
@@ -1753,7 +1836,7 @@ class UbuntuDesktopSetup:
                 with open(fpath, "a"):
                     os.utime(fpath, None)
                     fpath.chmod(0o644)
-                    self.logger.info(f"Prepared log file: {fpath}")
+                self.logger.info(f"Prepared log file: {fpath}")
         except Exception as e:
             self.logger.warning(f"Failed to prepare Caddy log files: {e}")
         try:
@@ -1765,6 +1848,7 @@ class UbuntuDesktopSetup:
             self.logger.error(f"Failed to manage Caddy service: {e}")
             return False
 
+    # Phase 13: Final Checks & Reboot
     def phase_final_checks(self) -> bool:
         self.print_section("Phase 13: Final System Checks & Reboot Prompt")
         self.final_checks()
@@ -1815,7 +1899,7 @@ class UbuntuDesktopSetup:
             self.logger.info("Active network interfaces:")
             for line in interfaces.splitlines():
                 self.logger.info(line)
-                info["network_interfaces"] = interfaces
+            info["network_interfaces"] = interfaces
         except Exception as e:
             self.logger.warning(f"Failed to get network interfaces: {e}")
         return info
@@ -1837,6 +1921,7 @@ class UbuntuDesktopSetup:
             )
             return False
 
+    # Helper methods for command execution, file backup, etc.
     def run_command(
         self,
         cmd: Union[List[str], str],
@@ -1906,11 +1991,16 @@ class UbuntuDesktopSetup:
         self.cleanup_system()
 
 
+# ----------------------------------------------------------------
+# Main Entry Point
+# ----------------------------------------------------------------
 def main() -> int:
     global setup_instance
     setup_instance = UbuntuDesktopSetup()
     atexit.register(setup_instance.cleanup)
-    console.print(Panel(figlet_format("Ubuntu Setup", font="standard"), style="banner"))
+    console.print(
+        Panel(pyfiglet.figlet_format("Ubuntu Setup", font="standard"), style="banner")
+    )
     phases = [
         setup_instance.phase_preflight,
         setup_instance.phase_system_update,
