@@ -146,12 +146,13 @@ def print_header(text: str) -> None:
     Args:
         text: The text to convert to ASCII art
     """
-    # Create ASCII art with standardized font for better terminal compatibility
-    ascii_art: str = pyfiglet.figlet_format(text, font="slant")
+    # Create ASCII art with a smaller font for better terminal compatibility
+    # Use "small" or "mini" font to prevent cutoff issues
+    ascii_art: str = pyfiglet.figlet_format(text, font="small")
 
     # Split the art into lines for advanced styling
     lines = ascii_art.split("\n")
-    styled_lines = []
+    styled_text = ""
 
     # Apply a frost gradient effect to the header
     frost_colors = [
@@ -159,23 +160,18 @@ def print_header(text: str) -> None:
         NordColors.FROST_1,  # Light cyan
         NordColors.FROST_3,  # Medium blue
         NordColors.FROST_4,  # Dark blue
-        NordColors.FROST_2,  # Back to light blue
-        NordColors.FROST_1,  # Light cyan again
     ]
 
     for i, line in enumerate(lines):
         if line.strip():  # Skip empty lines
             color = frost_colors[i % len(frost_colors)]
-            styled_lines.append(Text(line, style=f"bold {color}"))
-
-    # Create styled header with proper spacing
-    header_content = Text("\n").join(styled_lines)
+            styled_text += f"[bold {color}]{line}[/]\n"
 
     # Display the header in a panel with Nord styling
     header_panel = Panel(
-        header_content,
+        Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 2),
+        padding=(1, 1),  # Reduced padding to avoid cutoff
         title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
         title_align="right",
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
@@ -466,12 +462,12 @@ def create_ascii_header() -> Panel:
     Returns:
         Panel containing the styled ASCII art header
     """
+    # Using a more compact header to avoid display issues
     header = """
-   ______   ______   __  __      ______   ______   __         ______   ______   ______  ______   ______    
-  /\\  ___\\ /\\  ___\\ /\\ \\_\\ \\    /\\  ___\\ /\\  ___\\ /\\ \\       /\\  ___\\ /\\  ___\\ /\\__  _\\/\\  __ \\ /\\  == \\   
-  \\ \\___  \\\\ \\___  \\\\ \\  __ \\   \\ \\___  \\\\ \\  __\\ \\ \\ \\____  \\ \\  __\\ \\ \\ \\____\\/_/\\ \\/\\ \\ \\/\\ \\\\ \\  __<   
-   \\/\\_____\\\\/\\_____\\\\ \\_\\ \\_\\   \\/\\_____\\\\ \\_____\\\\ \\_____\\  \\ \\_____\\\\ \\_____\\  \\ \\_\\ \\ \\_____\\\\ \\_\\ \\_\\ 
-    \\/_____/ \\/_____/ \\/_/\\/_/    \\/_____/ \\/_____/ \\/_____/   \\/_____/ \\/_____/   \\/_/  \\/_____/ \\/_/ /_/ 
+  ___ ___ _  _   ___ ___ _    ___ ___ _____ ___  ___ 
+ / __/ __| || | / __| __| |  | __/ __|_   _/ _ \| _ \\
+ \__ \__ \ __ | \__ \ _|| |__| _| (__  | || (_) |   /
+ |___/___/_||_| |___/___|____|___\___| |_| \___/|_|_\\
     """
 
     # Apply gradient styling to the custom ASCII art
@@ -512,24 +508,19 @@ def typing_animation(text: str, speed: float = 0.01) -> None:
         text: The text to display (can include Rich markup)
         speed: Delay between characters in seconds
     """
-    # Create a Rich Text object from the markup
-    rich_text = Text.from_markup(text)
+    # Simpler implementation to avoid style issues
+    console = Console(highlight=False)
+    full_text = Text.from_markup(text)
 
-    # Get plain text without styling
-    plain_text = rich_text.plain
-
-    # Create a console with no highlighting to avoid raw color codes
-    temp_console = Console(highlight=False)
-
-    # Display characters one by one
-    for i in range(len(plain_text)):
-        # Extract just this portion of the styled text
-        segment = rich_text.get_style_at_offset(i)
-        char_with_style = Text(plain_text[i], style=segment.style)
-        temp_console.print(char_with_style, end="")
+    # Display characters one by one with proper styling
+    for i in range(len(full_text.plain)):
+        # Print up to the current character
+        partial_text = Text.from_markup(text)
+        partial_text.plain = full_text.plain[: i + 1]
+        console.print(partial_text, end="\r")
         time.sleep(speed)
 
-    temp_console.print()
+    console.print()
 
 
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
@@ -670,17 +661,37 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
     console.print(connection_panel)
 
     try:
-        # Show connection animation
-        connection_animation(name, ip_address)
+        # Simple connection message instead of animation to avoid errors
+        console.print()
+        console.print(
+            f"[bold {NordColors.FROST_2}]> Initializing secure channel to {name}...[/]"
+        )
+        console.print(
+            f"[bold {NordColors.FROST_2}]> Negotiating encryption parameters...[/]"
+        )
+        console.print(
+            f"[bold {NordColors.FROST_2}]> Establishing SSH tunnel to {ip_address}...[/]"
+        )
+        console.print(
+            f"[bold {NordColors.FROST_2}]> Connection established. Launching secure shell...[/]"
+        )
+        console.print()
+
+        time.sleep(1.5)  # Brief pause for visual effect
 
         # Execute SSH command
         ssh_args = [SSH_COMMAND, f"{username}@{ip_address}"]
         os.execvp(SSH_COMMAND, ssh_args)
     except Exception as e:
-        display_message_panel(
-            f"Connection Error: {str(e)}",
-            style=NordColors.RED,
-            title="Connection Failed",
+        console.print(
+            Panel(
+                Text.from_markup(
+                    f"[bold {NordColors.RED}]Connection Error:[/] {str(e)}"
+                ),
+                border_style=Style(color=NordColors.RED),
+                title="Connection Failed",
+                padding=(1, 2),
+            )
         )
         console.print(
             f"[{NordColors.SNOW_STORM_1}]Press Enter to return to selection screen...[/]"
