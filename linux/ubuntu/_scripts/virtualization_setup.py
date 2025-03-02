@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
 Enhanced Virtualization Environment Setup Script
+--------------------------------------------------
 
-This utility sets up a virtualization environment on Ubuntu. It:
+This utility sets up a virtualization environment on Ubuntu. It performs the following tasks:
   • Updates package lists and installs virtualization packages
   • Manages virtualization services
   • Configures and recreates the default NAT network
   • Fixes storage permissions and user group settings
-  • Updates VM network settings, autostart, and starts VMs
-  • Verifies the overall setup
+  • Updates VM network settings, configures autostart, and starts VMs
+  • Verifies the overall setup and installs a systemd service
 
 Note: Run this script with root privileges.
 """
@@ -23,40 +24,24 @@ import socket
 import subprocess
 import sys
 import time
-import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
-from rich.console import Console
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    BarColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
-from rich.spinner import Spinner
 import pyfiglet
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 
-# ------------------------------
+# ----------------------------------------------------------------
 # Configuration
-# ------------------------------
+# ----------------------------------------------------------------
 HOSTNAME = socket.gethostname()
 OPERATION_TIMEOUT = 600  # seconds
 
 VM_STORAGE_PATHS = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
 VIRTUALIZATION_PACKAGES = [
-    "qemu-kvm",
-    "qemu-utils",
-    "libvirt-daemon-system",
-    "libvirt-clients",
-    "virt-manager",
-    "bridge-utils",
-    "cpu-checker",
-    "ovmf",
-    "virtinst",
-    "libguestfs-tools",
-    "virt-top",
+    "qemu-kvm", "qemu-utils", "libvirt-daemon-system", "libvirt-clients",
+    "virt-manager", "bridge-utils", "cpu-checker", "ovmf", "virtinst",
+    "libguestfs-tools", "virt-top"
 ]
 VIRTUALIZATION_SERVICES = ["libvirtd", "virtlogd"]
 
@@ -78,47 +63,58 @@ DEFAULT_NETWORK_XML = """<network>
 </network>
 """
 
-# ------------------------------
-# Nord-Themed Styles & Console Setup
-# ------------------------------
+SERVICE_PATH = Path("/etc/systemd/system/virtualization_setup.service")
+SERVICE_CONTENT = """[Unit]
+Description=Virtualization Setup Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /path/to/this_script.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+# ----------------------------------------------------------------
+# Console and Logging Helpers (Nord-Themed)
+# ----------------------------------------------------------------
 console = Console()
 
-
 def print_header(text: str) -> None:
-    """Print a pretty ASCII art header using pyfiglet."""
+    """Print a large ASCII art header."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
-
 
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
 
-
 def print_step(text: str) -> None:
-    """Print a step description."""
+    """Print a step message."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
-
 
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
 
-
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
-
 
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
 
-
-# ------------------------------
+# ----------------------------------------------------------------
 # Command Execution Helper
-# ------------------------------
-def run_command(cmd, env=None, check=True, capture_output=True, timeout=None):
+# ----------------------------------------------------------------
+def run_command(cmd, env=None, check=True, capture_output=True, timeout=OPERATION_TIMEOUT):
+    """
+    Executes a system command and returns the CompletedProcess.
+    Raises an error with detailed output if the command fails.
+    """
     try:
         result = subprocess.run(
             cmd,
@@ -143,26 +139,28 @@ def run_command(cmd, env=None, check=True, capture_output=True, timeout=None):
         print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+# ----------------------------------------------------------------
+# Signal Handling and Cleanup
+# ----------------------------------------------------------------
+def cleanup() -> None:
+    """Perform any cleanup tasks before exit."""
+    print_step("Performing cleanup tasks...")
 
-# ------------------------------
-# Signal Handling & Cleanup
-# ------------------------------
 def signal_handler(sig, frame):
     sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
     print_warning(f"Process interrupted by {sig_name}. Cleaning up...")
     cleanup()
     sys.exit(128 + sig)
 
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(cleanup)
 
-def cleanup():
-    print_step("Performing cleanup tasks...")
-    # Add any necessary cleanup steps here.
-
-
-# ------------------------------
-# Core Functions
-# ------------------------------
+# ----------------------------------------------------------------
+# Core Setup Functions
+# ----------------------------------------------------------------
 def update_system_packages() -> bool:
+    """Update the package lists using apt-get."""
     print_section("Updating Package Lists")
     try:
         with console.status("[bold #81A1C1]Updating package lists...", spinner="dots"):
@@ -173,8 +171,8 @@ def update_system_packages() -> bool:
         print_error(f"Failed to update package lists: {e}")
         return False
 
-
 def install_virtualization_packages(packages) -> bool:
+    """Install the required virtualization packages."""
     print_section("Installing Virtualization Packages")
     if not packages:
         print_warning("No packages specified")
@@ -219,8 +217,8 @@ def install_virtualization_packages(packages) -> bool:
     print_success("All packages installed")
     return True
 
-
 def manage_virtualization_services(services) -> bool:
+    """Enable and start virtualization-related services."""
     print_section("Managing Virtualization Services")
     if not services:
         print_warning("No services specified")
@@ -254,13 +252,11 @@ def manage_virtualization_services(services) -> bool:
     print_success("Services managed successfully")
     return True
 
-
 def recreate_default_network() -> bool:
+    """Recreate the default NAT network."""
     print_section("Recreating Default Network")
     try:
-        result = run_command(
-            ["virsh", "net-list", "--all"], capture_output=True, check=False
-        )
+        result = run_command(["virsh", "net-list", "--all"], capture_output=True, check=False)
         if "default" in result.stdout:
             print_step("Removing existing default network")
             run_command(["virsh", "net-destroy", "default"], check=False)
@@ -284,8 +280,8 @@ def recreate_default_network() -> bool:
         print_error(f"Error recreating network: {e}")
         return False
 
-
 def configure_default_network() -> bool:
+    """Ensure the default network exists and is active."""
     print_section("Configuring Default Network")
     try:
         net_list = run_command(["virsh", "net-list", "--all"], capture_output=True)
@@ -302,15 +298,12 @@ def configure_default_network() -> bool:
         else:
             print_step("Default network missing, creating it")
             return recreate_default_network()
+        # Check and set autostart if needed.
         try:
-            net_info = run_command(
-                ["virsh", "net-info", "default"], capture_output=True
-            )
+            net_info = run_command(["virsh", "net-info", "default"], capture_output=True)
             if "Autostart:      yes" not in net_info.stdout:
-                print_step("Setting autostart")
-                autostart_path = Path(
-                    "/etc/libvirt/qemu/networks/autostart/default.xml"
-                )
+                print_step("Setting autostart for default network")
+                autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
                 if autostart_path.exists() or autostart_path.is_symlink():
                     autostart_path.unlink()
                 run_command(["virsh", "net-autostart", "default"])
@@ -324,30 +317,26 @@ def configure_default_network() -> bool:
         print_error(f"Network configuration error: {e}")
         return False
 
-
-def get_virtual_machines():
+def get_virtual_machines() -> list:
+    """Retrieve a list of defined virtual machines."""
     vms = []
     try:
         result = run_command(["virsh", "list", "--all"], capture_output=True)
         lines = result.stdout.strip().splitlines()
-        sep = next(
-            (i for i, line in enumerate(lines) if line.strip().startswith("----")), -1
-        )
-        if sep < 0:
+        sep_index = next((i for i, line in enumerate(lines) if line.strip().startswith("----")), -1)
+        if sep_index < 0:
             return []
-        for line in lines[sep + 1 :]:
+        for line in lines[sep_index + 1:]:
             parts = line.split()
             if len(parts) >= 3:
-                vms.append(
-                    {"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])}
-                )
+                vms.append({"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])})
         return vms
     except Exception as e:
         print_error(f"Error retrieving VMs: {e}")
         return []
 
-
-def set_vm_autostart(vms) -> bool:
+def set_vm_autostart(vms: list) -> bool:
+    """Set virtual machines to start automatically."""
     print_section("Configuring VM Autostart")
     if not vms:
         print_warning("No VMs found")
@@ -379,8 +368,23 @@ def set_vm_autostart(vms) -> bool:
         return False
     return True
 
+def ensure_network_active_before_vm_start() -> bool:
+    """Verify that the default network is active before starting VMs."""
+    print_step("Verifying default network before starting VMs")
+    try:
+        net_list = run_command(["virsh", "net-list"], capture_output=True)
+        for line in net_list.stdout.splitlines():
+            if "default" in line and "active" in line:
+                print_success("Default network is active")
+                return True
+        print_warning("Default network inactive; attempting restart")
+        return recreate_default_network()
+    except Exception as e:
+        print_error(f"Network verification error: {e}")
+        return False
 
-def start_virtual_machines(vms) -> bool:
+def start_virtual_machines(vms: list) -> bool:
+    """Start any virtual machines that are not currently running."""
     print_section("Starting Virtual Machines")
     if not vms:
         print_warning("No VMs found")
@@ -402,20 +406,14 @@ def start_virtual_machines(vms) -> bool:
             attempt += 1
             print_step(f"Attempt {attempt} for {name}")
             try:
-                with console.status(
-                    f"[bold #81A1C1]Starting {name}...", spinner="dots"
-                ):
+                with console.status(f"[bold #81A1C1]Starting {name}...", spinner="dots"):
                     result = run_command(["virsh", "start", name], check=False)
                 if result.returncode == 0:
                     print_success(f"{name} started")
                     success = True
                 else:
-                    if "Only one live display may be active at once" in (
-                        result.stderr or ""
-                    ):
-                        print_warning(
-                            f"{name} failed to start due to active live display. Waiting before retrying..."
-                        )
+                    if result.stderr and "Only one live display may be active" in result.stderr:
+                        print_warning(f"{name} failed to start due to live display conflict; retrying in 5 seconds...")
                         time.sleep(5)
                     else:
                         print_error(f"Failed to start {name}: {result.stderr}")
@@ -431,23 +429,8 @@ def start_virtual_machines(vms) -> bool:
         return False
     return True
 
-
-def ensure_network_active_before_vm_start() -> bool:
-    print_step("Verifying default network before starting VMs")
-    try:
-        net_list = run_command(["virsh", "net-list"], capture_output=True)
-        for line in net_list.stdout.splitlines():
-            if "default" in line and "active" in line:
-                print_success("Default network is active")
-                return True
-        print_warning("Default network inactive; attempting restart")
-        return recreate_default_network()
-    except Exception as e:
-        print_error(f"Network verification error: {e}")
-        return False
-
-
-def fix_storage_permissions(paths) -> bool:
+def fix_storage_permissions(paths: list) -> bool:
+    """Fix storage directory and file permissions for VM storage."""
     print_section("Fixing VM Storage Permissions")
     if not paths:
         print_warning("No storage paths specified")
@@ -465,9 +448,7 @@ def fix_storage_permissions(paths) -> bool:
         if not path.exists():
             print_warning(f"{path} does not exist; creating")
             path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
-        total_items = sum(
-            1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path))
-        )
+        total_items = sum(1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path)))
         with Progress(
             SpinnerColumn(style="bold #81A1C1"),
             TextColumn("[progress.description]{task.description}"),
@@ -502,12 +483,12 @@ def fix_storage_permissions(paths) -> bool:
     print_success("Storage permissions updated")
     return True
 
-
 def configure_user_groups() -> bool:
+    """Ensure that the invoking (sudo) user is a member of the required group."""
     print_section("Configuring User Group Membership")
     sudo_user = os.environ.get("SUDO_USER")
     if not sudo_user:
-        print_warning("SUDO_USER not set; skipping group config")
+        print_warning("SUDO_USER not set; skipping group configuration")
         return True
     try:
         pwd.getpwnam(sudo_user)
@@ -520,23 +501,22 @@ def configure_user_groups() -> bool:
     if primary not in user_groups:
         user_groups.append(primary)
     if LIBVIRT_USER_GROUP in user_groups:
-        print_success(f"{sudo_user} already in {LIBVIRT_USER_GROUP}")
+        print_success(f"{sudo_user} is already in {LIBVIRT_USER_GROUP}")
         return True
     try:
         print_step(f"Adding {sudo_user} to {LIBVIRT_USER_GROUP}")
         run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
-        print_success(
-            f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in."
-        )
+        print_success(f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in.")
         return True
     except Exception as e:
         print_error(f"Failed to add user: {e}")
         return False
 
-
 def verify_virtualization_setup() -> bool:
+    """Perform a series of checks to verify the virtualization environment."""
     print_section("Verifying Virtualization Setup")
     passed = True
+
     try:
         svc = run_command(["systemctl", "is-active", "libvirtd"], check=False)
         if svc.stdout.strip() == "active":
@@ -582,86 +562,60 @@ def verify_virtualization_setup() -> bool:
             except Exception as e:
                 print_error(f"Failed to create {path}: {e}")
                 passed = False
+
     if passed:
         print_success("All verification checks passed!")
     else:
         print_warning("Some verification checks failed.")
     return passed
 
-
 def install_and_enable_service() -> bool:
     """
-    Installs the virtualization_setup.service systemd unit file,
-    reloads the systemd daemon, enables the service, and starts it.
+    Install the systemd unit file for virtualization setup,
+    reload systemd, enable and start the service.
     """
-    service_path = Path("/etc/systemd/system/virtualization_setup.service")
-    service_content = """[Unit]
-Description=Virtualization Setup Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/home/sawyer/.pyenv/versions/3.13.2/bin/python /home/sawyer/bin/virtualization_setup.py
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-"""
+    print_section("Installing systemd Service")
     try:
-        print_section("Installing systemd service")
-        # Write the service file
-        service_path.write_text(service_content)
-        print_success(f"Service file installed to {service_path}")
-
-        # Reload systemd to pick up the new service file
+        SERVICE_PATH.write_text(SERVICE_CONTENT)
+        print_success(f"Service file installed to {SERVICE_PATH}")
         run_command(["systemctl", "daemon-reload"])
         print_success("Systemd daemon reloaded")
-
-        # Enable the service to start on boot
         run_command(["systemctl", "enable", "virtualization_setup.service"])
         print_success("Service enabled")
-
-        # Optionally, start the service immediately
         run_command(["systemctl", "start", "virtualization_setup.service"])
         print_success("Service started")
         return True
     except Exception as e:
-        print_error(f"Failed to install and enable systemd service: {e}")
+        print_error(f"Failed to install and enable service: {e}")
         return False
 
-
-# ------------------------------
-# Main Execution Flow (Non-Interactive)
-# ------------------------------
+# ----------------------------------------------------------------
+# Main Execution Flow
+# ----------------------------------------------------------------
 def main() -> None:
-    # Setup signal handlers and cleanup
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    atexit.register(cleanup)
-
+    """Main function to orchestrate the virtualization setup."""
     print_header("Enhanced Virt Setup")
     console.print(f"Hostname: [bold #D8DEE9]{HOSTNAME}[/bold #D8DEE9]")
-    console.print(
-        f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
-    )
+    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
 
     if os.geteuid() != 0:
-        print_error("Run this script as root (e.g., using sudo)")
+        print_error("This script must be run as root (e.g., using sudo)")
         sys.exit(1)
 
-    # Execute tasks sequentially
+    # Sequentially execute each setup task
     if not update_system_packages():
         print_warning("Package list update failed")
 
     if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
-        print_error("Package installation issues encountered")
+        print_error("Package installation encountered issues")
 
     if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
-        print_warning("Service management issues encountered")
+        print_warning("Service management encountered issues")
 
     if not install_and_enable_service():
-        print_warning("Failed to install or enable the virtualization_setup service")
+        print_warning("Failed to install or enable the systemd service")
 
+    # Attempt network configuration up to 3 times
     for attempt in range(1, 4):
         print_step(f"Network configuration attempt {attempt}")
         if configure_default_network():
@@ -676,7 +630,7 @@ def main() -> None:
 
     vms = get_virtual_machines()
     if vms:
-        print_success(f"Found {len(vms)} VMs")
+        print_success(f"Found {len(vms)} VM(s)")
         set_vm_autostart(vms)
         ensure_network_active_before_vm_start()
         start_virtual_machines(vms)
@@ -687,10 +641,7 @@ def main() -> None:
 
     print_header("Setup Complete")
     print_success("Virtualization environment setup complete!")
-    print_step(
-        "Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'."
-    )
-
+    print_step("Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'.")
 
 if __name__ == "__main__":
     try:
@@ -701,6 +652,5 @@ if __name__ == "__main__":
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         import traceback
-
         traceback.print_exc()
         sys.exit(1)
