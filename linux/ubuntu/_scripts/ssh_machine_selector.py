@@ -58,19 +58,41 @@ PING_COUNT = 1
 # Nord‑Themed Colors & Console Setup
 # ----------------------------------------------------------------
 class NordColors:
-    DARK3 = "#4C566A"  # Subtle dark shade
-    LIGHT0 = "#D8DEE9"  # Light text
-    FROST0 = "#8FBCBB"  # Primary cyan
-    FROST1 = "#88C0D0"  # Light blue highlights
-    FROST2 = "#81A1C1"  # Secondary blue
-    FROST3 = "#5E81AC"  # Dark blue for numbers
-    RED = "#BF616A"  # Error messages
-    YELLOW = "#EBCB8B"  # Warnings and special items
-    GREEN = "#A3BE8C"  # Success messages
-    ORANGE = "#D08770"  # Warning or attention
+    # Polar Night (dark) shades
+    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_2 = "#3B4252"  # Darker background shade
+    POLAR_NIGHT_3 = "#434C5E"  # Dark background shade
+    POLAR_NIGHT_4 = "#4C566A"  # Light background shade (DARK3)
+
+    # Snow Storm (light) shades
+    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color (LIGHT0)
+    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
+    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
+
+    # Frost (blues/cyans) shades
+    FROST_1 = "#8FBCBB"  # Light cyan (FROST0)
+    FROST_2 = "#88C0D0"  # Light blue (FROST1)
+    FROST_3 = "#81A1C1"  # Medium blue (FROST2)
+    FROST_4 = "#5E81AC"  # Dark blue (FROST3)
+
+    # Aurora (accent) shades
+    RED = "#BF616A"  # Red
+    ORANGE = "#D08770"  # Orange
+    YELLOW = "#EBCB8B"  # Yellow
+    GREEN = "#A3BE8C"  # Green
+    PURPLE = "#B48EAD"  # Purple
+
+    # For backward compatibility
+    DARK3 = POLAR_NIGHT_4
+    LIGHT0 = SNOW_STORM_1
+    FROST0 = FROST_1
+    FROST1 = FROST_2
+    FROST2 = FROST_3
+    FROST3 = FROST_4
 
 
-console = Console()
+# Create a Rich Console with a dark background for better contrast
+console = Console(theme=None, highlight=False)
 
 
 # ----------------------------------------------------------------
@@ -187,7 +209,7 @@ def check_device_statuses(devices: List[Device], progress_callback=None) -> None
 # UI Components
 # ----------------------------------------------------------------
 def print_header() -> None:
-    """Render and display the SSH header."""
+    """Render and display the SSH header with enhanced Nord styling."""
     # Create ASCII art with pyfiglet
     ascii_art = pyfiglet.figlet_format("SSH Selector", font="slant")
 
@@ -195,12 +217,12 @@ def print_header() -> None:
     lines = ascii_art.split("\n")
     styled_lines = []
 
-    # Create a gradient from one color to another
+    # Create a gradient using Nord Frost colors
     colors = [
-        f"bold {NordColors.FROST1}",
-        f"bold {NordColors.FROST2}",
-        f"bold {NordColors.FROST0}",
-        f"bold {NordColors.FROST3}",
+        f"bold {NordColors.FROST_2}",
+        f"bold {NordColors.FROST_3}",
+        f"bold {NordColors.FROST_1}",
+        f"bold {NordColors.FROST_4}",
     ]
 
     for i, line in enumerate(lines):
@@ -221,14 +243,14 @@ def print_header() -> None:
     # Assemble all text components together
     header_text = Text.assemble(*text_components)
 
-    # Display the header in a panel
+    # Display the header in a panel with enhanced Nord styling
     header_panel = Panel(
         header_text,
-        border_style=Style(color=NordColors.FROST0),
+        border_style=Style(color=NordColors.FROST_1),
         padding=(1, 2),
-        title="v5.0.0",
+        title=f"[bold {NordColors.SNOW_STORM_2}]v5.0.0[/]",
         title_align="right",
-        subtitle="Connect to your machines",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]Secure Connection Manager[/]",
         subtitle_align="center",
     )
 
@@ -237,10 +259,24 @@ def print_header() -> None:
 
 def typing_animation(text, speed=0.01):
     """Display text with a typing animation effect."""
-    for char in text:
-        console.print(char, end="", style=NordColors.FROST0)
+    # Create a Rich Text object from the markup
+    rich_text = Text.from_markup(text)
+
+    # Get plain text without styling
+    plain_text = rich_text.plain
+
+    # Create a console with no highlighting to avoid raw color codes
+    temp_console = Console(highlight=False)
+
+    # Display characters one by one
+    for i in range(len(plain_text)):
+        # Extract just this portion of the styled text
+        segment = rich_text.get_style_at_offset(i)
+        char_with_style = Text(plain_text[i], style=segment.style)
+        temp_console.print(char_with_style, end="")
         time.sleep(speed)
-    console.print()
+
+    temp_console.print()
 
 
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
@@ -260,12 +296,12 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
     table.add_column("#", style=f"bold {NordColors.FROST3}", justify="right", width=4)
     table.add_column("Name", style=f"bold {NordColors.FROST0}")
     table.add_column("IP Address", style=f"{NordColors.LIGHT0}")
-    table.add_column("Status", justify="center", width=8)
+    table.add_column("Status", justify="center", width=10)
 
     for idx, device in enumerate(devices, 1):
-        # Create status indicator with blinking effect for online systems
+        # Create status indicator - keep everything on one line
         if device.status is True:
-            status = Text("● ONLINE", style=f"bold blink {NordColors.GREEN}")
+            status = Text("● ONLINE", style=f"bold {NordColors.GREEN}")
         elif device.status is False:
             status = Text("● OFFLINE", style=f"bold {NordColors.RED}")
         else:
@@ -315,20 +351,21 @@ def connection_animation(device_name, ip_address, duration=2.0):
             progress.update(task, advance=random.uniform(0.5, 2.0))
             time.sleep(0.05)
 
-    # Show connection sequence text
+    # Show connection sequence text using improved typing animation
     console.print()
     typing_animation(
-        f"[bold {NordColors.FROST1}]> Initializing secure channel to {device_name}...",
+        f"[bold {NordColors.FROST1}]> Initializing secure channel to {device_name}...[/]",
         0.01,
     )
     typing_animation(
-        f"[bold {NordColors.FROST1}]> Negotiating encryption parameters...", 0.01
+        f"[bold {NordColors.FROST1}]> Negotiating encryption parameters...[/]", 0.01
     )
     typing_animation(
-        f"[bold {NordColors.FROST1}]> Establishing SSH tunnel to {ip_address}...", 0.01
+        f"[bold {NordColors.FROST1}]> Establishing SSH tunnel to {ip_address}...[/]",
+        0.01,
     )
     typing_animation(
-        f"[bold {NordColors.FROST1}]> Connection established. Launching secure shell...",
+        f"[bold {NordColors.FROST1}]> Connection established. Launching secure shell...[/]",
         0.01,
     )
     console.print()
@@ -339,16 +376,17 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
     Clear the screen and initiate an SSH connection to the selected device.
     """
     console.clear()
+    print_header()
 
-    # Create a fancy connection panel
+    # Create a fancy connection panel with enhanced Nord styling
     connection_panel = Panel(
         Text.from_markup(
-            f"\n[bold {NordColors.FROST0}]Device:[/] [{NordColors.FROST1}]{name}[/]\n"
-            f"[bold {NordColors.FROST0}]Address:[/] [{NordColors.FROST1}]{ip_address}[/]\n"
-            f"[bold {NordColors.FROST0}]User:[/] [{NordColors.FROST1}]{username}[/]\n"
+            f"\n[bold {NordColors.FROST_1}]Device:[/] [{NordColors.SNOW_STORM_2}]{name}[/]\n"
+            f"[bold {NordColors.FROST_1}]Address:[/] [{NordColors.SNOW_STORM_2}]{ip_address}[/]\n"
+            f"[bold {NordColors.FROST_1}]User:[/] [{NordColors.SNOW_STORM_2}]{username}[/]\n"
         ),
-        title="[bold]SSH Connection[/]",
-        border_style=Style(color=NordColors.FROST1),
+        title=f"[bold {NordColors.FROST_2}]SSH Connection[/]",
+        border_style=Style(color=NordColors.FROST_2),
         padding=(1, 2),
     )
     console.print(connection_panel)
@@ -364,14 +402,16 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
         console.print(
             Panel(
                 Text.from_markup(
-                    f"[bold {NordColors.RED}]Connection Error:[/] {str(e)}"
+                    f"[bold {NordColors.RED}]Connection Error:[/] [{NordColors.SNOW_STORM_1}]{str(e)}[/]"
                 ),
                 border_style=Style(color=NordColors.RED),
-                title="Connection Failed",
+                title=f"[bold {NordColors.RED}]Connection Failed[/]",
                 padding=(1, 2),
             )
         )
-        input("Press Enter to return to selection screen...")
+        input(
+            f"[{NordColors.SNOW_STORM_1}]Press Enter to return to selection screen...[/]"
+        )
 
 
 # ----------------------------------------------------------------
@@ -386,25 +426,27 @@ def main() -> None:
     local_devices = load_local_devices()
     all_devices = tailscale_devices + local_devices
 
-    # Initial status check
+    # Initial status check with enhanced styling
     console.clear()
     print_header()
 
     console.print(
         Panel(
-            f"[bold {NordColors.FROST0}]Scanning network for available devices[/]",
-            border_style=Style(color=NordColors.FROST2),
+            f"[bold {NordColors.FROST_2}]Scanning network for available devices[/]",
+            border_style=Style(color=NordColors.FROST_3),
             padding=(1, 1),
+            title=f"[bold {NordColors.SNOW_STORM_1}]Initialization[/]",
+            title_align="center",
         )
     )
 
     with Progress(
-        SpinnerColumn("dots", style=f"bold {NordColors.FROST0}"),
-        TextColumn(f"[bold {NordColors.FROST1}]Scanning devices"),
+        SpinnerColumn("dots12", style=f"bold {NordColors.FROST_2}"),
+        TextColumn(f"[bold {NordColors.FROST_1}]Scanning devices"),
         BarColumn(
-            bar_width=40, style=NordColors.FROST3, complete_style=NordColors.FROST1
+            bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
         ),
-        TextColumn(f"[bold {NordColors.FROST2}]{{task.percentage:>3.0f}}%"),
+        TextColumn(f"[bold {NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
         console=console,
     ) as progress:
         scan_task = progress.add_task("Scanning", total=len(all_devices))
@@ -419,29 +461,44 @@ def main() -> None:
         console.clear()
         print_header()
 
-        # Create tables for Tailscale and Local devices
+        # Create tables for Tailscale and Local devices with enhanced styling
         tailscale_table = create_device_table(
             tailscale_devices, "", "Tailscale Devices"
         )
         local_table = create_device_table(local_devices, "L", "Local Devices")
 
-        # Display the tables side by side or stacked depending on terminal width
-        console.print(Columns([tailscale_table, local_table]))
+        # Display the tables side by side with improved layout
+        console.print(
+            Columns(
+                [
+                    Panel(
+                        tailscale_table,
+                        border_style=Style(color=NordColors.FROST_3),
+                        padding=(0, 1),
+                    ),
+                    Panel(
+                        local_table,
+                        border_style=Style(color=NordColors.FROST_3),
+                        padding=(0, 1),
+                    ),
+                ]
+            )
+        )
         console.print()
 
-        # Simple command bar
+        # Enhanced command bar with Nord styling
         commands = [
-            f"[bold {NordColors.FROST1}]1-{len(tailscale_devices)}[/]: Tailscale",
-            f"[bold {NordColors.FROST1}]L1-L{len(local_devices)}[/]: Local",
-            f"[bold {NordColors.FROST1}]r[/]: Refresh",
-            f"[bold {NordColors.FROST1}]q[/]: Quit",
+            f"[bold {NordColors.FROST_2}]1-{len(tailscale_devices)}[/]: [{NordColors.SNOW_STORM_2}]Tailscale[/]",
+            f"[bold {NordColors.FROST_2}]L1-L{len(local_devices)}[/]: [{NordColors.SNOW_STORM_2}]Local[/]",
+            f"[bold {NordColors.FROST_2}]r[/]: [{NordColors.SNOW_STORM_2}]Refresh[/]",
+            f"[bold {NordColors.FROST_2}]q[/]: [{NordColors.SNOW_STORM_2}]Quit[/]",
         ]
 
         command_text = " | ".join(commands)
         console.print(
             Panel(
                 Align.center(Text.from_markup(command_text)),
-                border_style=Style(color=NordColors.FROST2),
+                border_style=Style(color=NordColors.FROST_1),
                 padding=(1, 1),
             )
         )
