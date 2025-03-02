@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Cool Hello World App
+ Hello World App
 ---------------------
-A simple interactive terminal application that displays a cool 'Hello, World!' message using Rich and Pyfiglet.
+A simple interactive terminal application that displays a  'Hello, World!' message using Rich and Pyfiglet.
 """
 
 import sys
@@ -38,7 +38,7 @@ def create_header(text: str) -> Panel:
     header_panel = Panel(
         Align.center(ascii_art),
         border_style="cyan",
-        title="Cool App",
+        title=" App",
         subtitle="Hello, World!",
     )
     return header_panel
@@ -46,7 +46,7 @@ def create_header(text: str) -> Panel:
 
 def main() -> None:
     """
-    Main function to display the cool hello world message.
+    Main function to display the  hello world message.
     """
     console.clear()
 
@@ -55,7 +55,7 @@ def main() -> None:
     console.print(header)
 
     # Add a welcoming message below the header
-    console.print("\n[bold green]Welcome to the Cool Hello World App![/bold green]\n")
+    console.print("\n[bold green]Welcome to the  Hello World App![/bold green]\n")
 
     # Pause for a moment to let the user enjoy the view
     time.sleep(2)
