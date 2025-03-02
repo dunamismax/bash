@@ -138,7 +138,7 @@ def load_local_devices() -> List[Device]:
     return [
         Device(name="ubuntu-server", ip_address="192.168.0.73"),
         Device(name="raspberrypi-5", ip_address="192.168.0.40"),
-        Device(name="ubuntu-lenovo", ip_address="192.168.0.45"),
+        Device(name="ubuntu-lenovo", ip_address="192.168.0.31"),
         Device(name="raspberrypi-3", ip_address="192.168.0.100"),
     ]
 
