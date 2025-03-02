@@ -1,43 +1,4 @@
-def alternate_header() -> None:
-    """Alternative header rendering approach using custom ASCII art."""
-    header = """
-   ______   ______   __  __      ______   ______   __         ______   ______   ______  ______   ______    
-  /\\  ___\\ /\\  ___\\ /\\ \\_\\ \\    /\\  ___\\ /\\  ___\\ /\\ \\       /\\  ___\\ /\\  ___\\ /\\__  _\\/\\  __ \\ /\\  == \\   
-  \\ \\___  \\\\ \\___  \\\\ \\  __ \\   \\ \\___  \\\\ \\  __\\ \\ \\ \\____  \\ \\  __\\ \\ \\ \\____\\/_/\\ \\/\\ \\ \\/\\ \\\\ \\  __<   
-   \\/\\_____\\\\/\\_____\\\\ \\_\\ \\_\\   \\/\\_____\\\\ \\_____\\\\ \\_____\\  \\ \\_____\\\\ \\_____\\  \\ \\_\\ \\ \\_____\\\\ \\_\\ \\_\\ 
-    \\/_____/ \\/_____/ \\/_/\\/_/    \\/_____/ \\/_____/ \\/_____/   \\/_____/ \\/_____/   \\/_/  \\/_____/ \\/_/ /_/ 
-    """
-
-    # Apply gradient styling to the custom ASCII art
-    styled_header = ""
-    lines = header.strip().split("\n")
-
-    colors = [
-        NordColors.FROST_2,
-        NordColors.FROST_3,
-        NordColors.FROST_1,
-        NordColors.FROST_4,
-        NordColors.FROST_2,
-    ]
-
-    for i, line in enumerate(lines):
-        color = colors[i % len(colors)]
-        styled_header += f"[bold {color}]{line}[/]\n"
-
-    # Create panel with the styled header
-    header_panel = Panel(
-        Text.from_markup(styled_header),
-        border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 2),
-        title=f"[bold {NordColors.SNOW_STORM_2}]v5.0.0[/]",
-        title_align="right",
-        subtitle=f"[bold {NordColors.SNOW_STORM_1}]Secure Connection Manager[/]",
-        subtitle_align="center",
-    )
-
-    console.print(header_panel)  #!/usr/bin/env python3
-
-
+#!/usr/bin/env python3
 """
 SSH Selector
 -----------
@@ -296,6 +257,46 @@ def print_header() -> None:
     console.print(header_panel)
 
 
+def alternate_header() -> None:
+    """Alternative header rendering approach using custom ASCII art."""
+    header = """
+   ______   ______   __  __      ______   ______   __         ______   ______   ______  ______   ______    
+  /\\  ___\\ /\\  ___\\ /\\ \\_\\ \\    /\\  ___\\ /\\  ___\\ /\\ \\       /\\  ___\\ /\\  ___\\ /\\__  _\\/\\  __ \\ /\\  == \\   
+  \\ \\___  \\\\ \\___  \\\\ \\  __ \\   \\ \\___  \\\\ \\  __\\ \\ \\ \\____  \\ \\  __\\ \\ \\ \\____\\/_/\\ \\/\\ \\ \\/\\ \\\\ \\  __<   
+   \\/\\_____\\\\/\\_____\\\\ \\_\\ \\_\\   \\/\\_____\\\\ \\_____\\\\ \\_____\\  \\ \\_____\\\\ \\_____\\  \\ \\_\\ \\ \\_____\\\\ \\_\\ \\_\\ 
+    \\/_____/ \\/_____/ \\/_/\\/_/    \\/_____/ \\/_____/ \\/_____/   \\/_____/ \\/_____/   \\/_/  \\/_____/ \\/_/ /_/ 
+    """
+
+    # Apply gradient styling to the custom ASCII art
+    styled_header = ""
+    lines = header.strip().split("\n")
+
+    colors = [
+        NordColors.FROST_2,
+        NordColors.FROST_3,
+        NordColors.FROST_1,
+        NordColors.FROST_4,
+        NordColors.FROST_2,
+    ]
+
+    for i, line in enumerate(lines):
+        color = colors[i % len(colors)]
+        styled_header += f"[bold {color}]{line}[/]\n"
+
+    # Create panel with the styled header
+    header_panel = Panel(
+        Text.from_markup(styled_header),
+        border_style=Style(color=NordColors.FROST_1),
+        padding=(1, 2),
+        title=f"[bold {NordColors.SNOW_STORM_2}]v5.0.0[/]",
+        title_align="right",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]Secure Connection Manager[/]",
+        subtitle_align="center",
+    )
+
+    console.print(header_panel)
+
+
 def typing_animation(text, speed=0.01):
     """Display text with a typing animation effect."""
     # Create a Rich Text object from the markup
@@ -543,7 +544,7 @@ def main() -> None:
         )
 
         console.print()
-        console.print(f"[bold {NordColors.FROST1}]Enter your choice:[/]", end=" ")
+        console.print(f"[bold {NordColors.FROST_1}]Enter your choice:[/]", end=" ")
         choice = input().strip().lower()
 
         # Handle commands
@@ -555,9 +556,9 @@ def main() -> None:
                 Panel(
                     Text(
                         "Thank you for using SSH Selector!",
-                        style=f"bold {NordColors.FROST1}",
+                        style=f"bold {NordColors.FROST_1}",
                     ),
-                    border_style=Style(color=NordColors.FROST0),
+                    border_style=Style(color=NordColors.FROST_0),
                     padding=(1, 2),
                 )
             )
@@ -568,21 +569,23 @@ def main() -> None:
             console.clear()
             console.print(
                 Panel(
-                    f"[bold {NordColors.FROST0}]Refreshing device status[/]",
-                    border_style=Style(color=NordColors.FROST2),
+                    f"[bold {NordColors.FROST_2}]Refreshing device status[/]",
+                    border_style=Style(color=NordColors.FROST_3),
                     padding=(1, 1),
                 )
             )
 
             with Progress(
-                SpinnerColumn("dots", style=f"bold {NordColors.FROST0}"),
-                TextColumn(f"[bold {NordColors.FROST1}]Refreshing"),
+                SpinnerColumn("dots", style=f"bold {NordColors.FROST_0}"),
+                TextColumn(f"[bold {NordColors.FROST_1}]Refreshing"),
                 BarColumn(
                     bar_width=40,
-                    style=NordColors.FROST3,
-                    complete_style=NordColors.FROST1,
+                    style=NordColors.FROST_4,
+                    complete_style=NordColors.FROST_2,
                 ),
-                TextColumn(f"[bold {NordColors.FROST2}]{{task.percentage:>3.0f}}%"),
+                TextColumn(
+                    f"[bold {NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"
+                ),
                 console=console,
             ) as progress:
                 refresh_task = progress.add_task("Refreshing", total=len(all_devices))
