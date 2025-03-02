@@ -1,4 +1,43 @@
-#!/usr/bin/env python3
+def alternate_header() -> None:
+    """Alternative header rendering approach using custom ASCII art."""
+    header = """
+   ______   ______   __  __      ______   ______   __         ______   ______   ______  ______   ______    
+  /\\  ___\\ /\\  ___\\ /\\ \\_\\ \\    /\\  ___\\ /\\  ___\\ /\\ \\       /\\  ___\\ /\\  ___\\ /\\__  _\\/\\  __ \\ /\\  == \\   
+  \\ \\___  \\\\ \\___  \\\\ \\  __ \\   \\ \\___  \\\\ \\  __\\ \\ \\ \\____  \\ \\  __\\ \\ \\ \\____\\/_/\\ \\/\\ \\ \\/\\ \\\\ \\  __<   
+   \\/\\_____\\\\/\\_____\\\\ \\_\\ \\_\\   \\/\\_____\\\\ \\_____\\\\ \\_____\\  \\ \\_____\\\\ \\_____\\  \\ \\_\\ \\ \\_____\\\\ \\_\\ \\_\\ 
+    \\/_____/ \\/_____/ \\/_/\\/_/    \\/_____/ \\/_____/ \\/_____/   \\/_____/ \\/_____/   \\/_/  \\/_____/ \\/_/ /_/ 
+    """
+
+    # Apply gradient styling to the custom ASCII art
+    styled_header = ""
+    lines = header.strip().split("\n")
+
+    colors = [
+        NordColors.FROST_2,
+        NordColors.FROST_3,
+        NordColors.FROST_1,
+        NordColors.FROST_4,
+        NordColors.FROST_2,
+    ]
+
+    for i, line in enumerate(lines):
+        color = colors[i % len(colors)]
+        styled_header += f"[bold {color}]{line}[/]\n"
+
+    # Create panel with the styled header
+    header_panel = Panel(
+        Text.from_markup(styled_header),
+        border_style=Style(color=NordColors.FROST_1),
+        padding=(1, 2),
+        title=f"[bold {NordColors.SNOW_STORM_2}]v5.0.0[/]",
+        title_align="right",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]Secure Connection Manager[/]",
+        subtitle_align="center",
+    )
+
+    console.print(header_panel)  #!/usr/bin/env python3
+
+
 """
 SSH Selector
 -----------
@@ -138,7 +177,7 @@ def load_local_devices() -> List[Device]:
     return [
         Device(name="ubuntu-server", ip_address="192.168.0.73"),
         Device(name="raspberrypi-5", ip_address="192.168.0.40"),
-        Device(name="ubuntu-lenovo", ip_address="192.168.0.31"),
+        Device(name="ubuntu-lenovo", ip_address="192.168.0.45"),
         Device(name="raspberrypi-3", ip_address="192.168.0.100"),
     ]
 
@@ -210,10 +249,10 @@ def check_device_statuses(devices: List[Device], progress_callback=None) -> None
 # ----------------------------------------------------------------
 def print_header() -> None:
     """Render and display the SSH header with enhanced Nord styling."""
-    # Create ASCII art with pyfiglet
-    ascii_art = pyfiglet.figlet_format("SSH Selector", font="slant")
+    # Use a more compact font that won't get cut off
+    ascii_art = pyfiglet.figlet_format("SSH Selector", font="standard")
 
-    # Create a gradient effect by splitting lines and applying different styles
+    # Create a gradient effect by styling each line differently
     lines = ascii_art.split("\n")
     styled_lines = []
 
@@ -243,11 +282,11 @@ def print_header() -> None:
     # Assemble all text components together
     header_text = Text.assemble(*text_components)
 
-    # Display the header in a panel with enhanced Nord styling
+    # Display the header in a panel with enhanced Nord styling and more padding
     header_panel = Panel(
         header_text,
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 2),
+        padding=(2, 2),  # Increased top padding to prevent cutoff
         title=f"[bold {NordColors.SNOW_STORM_2}]v5.0.0[/]",
         title_align="right",
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]Secure Connection Manager[/]",
@@ -376,7 +415,7 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
     Clear the screen and initiate an SSH connection to the selected device.
     """
     console.clear()
-    print_header()
+    alternate_header()  # Use the alternative header
 
     # Create a fancy connection panel with enhanced Nord styling
     connection_panel = Panel(
@@ -428,7 +467,7 @@ def main() -> None:
 
     # Initial status check with enhanced styling
     console.clear()
-    print_header()
+    alternate_header()  # Use the alternative header that won't get cut off
 
     console.print(
         Panel(
@@ -459,7 +498,7 @@ def main() -> None:
 
     while True:
         console.clear()
-        print_header()
+        alternate_header()  # Use the alternative header
 
         # Create tables for Tailscale and Local devices with enhanced styling
         tailscale_table = create_device_table(
