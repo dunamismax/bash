@@ -3,13 +3,13 @@
 SSH Selector
 -----------
 
-A clean, borderless CLI interface for SSH connections.
-Displays all machines in a simple list with Nord dark theme colors.
+A minimal, side-by-side CLI interface for SSH connections.
+Shows only device names and IP addresses with Nord dark theme.
 
 Usage:
   Run the script and select a machine by number to connect.
 
-Version: 2.0.0
+Version: 3.0.0
 """
 
 import os
@@ -22,6 +22,7 @@ try:
     from rich.text import Text
     from rich.table import Table
     from rich.prompt import Prompt
+    from rich.columns import Columns
     import pyfiglet
 except ImportError:
     print("This script requires the 'rich' and 'pyfiglet' packages.")
@@ -39,29 +40,14 @@ SSH_COMMAND = "ssh"
 # Nord Theme Colors
 # ==============================
 class Nord:
-    # Dark (background)
-    DARK0 = "#2E3440"
-    DARK1 = "#3B4252"
-    DARK2 = "#434C5E"
-    DARK3 = "#4C566A"
-
-    # Light (text)
-    LIGHT0 = "#D8DEE9"
-    LIGHT1 = "#E5E9F0"
-    LIGHT2 = "#ECEFF4"
-
-    # Frost (blue accents)
-    FROST0 = "#8FBCBB"
-    FROST1 = "#88C0D0"
-    FROST2 = "#81A1C1"
-    FROST3 = "#5E81AC"
-
-    # Aurora (accents)
-    RED = "#BF616A"
-    ORANGE = "#D08770"
-    YELLOW = "#EBCB8B"
-    GREEN = "#A3BE8C"
-    PURPLE = "#B48EAD"
+    DARK3 = "#4C566A"  # Dark shade for subtle elements
+    LIGHT0 = "#D8DEE9"  # Light shade for text
+    FROST0 = "#8FBCBB"  # Cyan for primary elements
+    FROST1 = "#88C0D0"  # Light blue for highlights
+    FROST2 = "#81A1C1"  # Blue for secondary elements
+    FROST3 = "#5E81AC"  # Dark blue for numbers
+    RED = "#BF616A"  # Error messages
+    YELLOW = "#EBCB8B"  # Warnings/special items
 
 
 # ==============================
@@ -74,178 +60,46 @@ console = Console()
 # Data Structures
 # ==============================
 @dataclass
-class Machine:
-    """SSH-accessible machine."""
+class Device:
+    """SSH-accessible device."""
 
     name: str
-    owner: str
     ip_address: str
-    version: str
-    os: str
-    status: str = "Connected"
-
-
-@dataclass
-class LocalDevice:
-    """Local network device."""
-
-    name: str
-    mac_address: str
-    ip_address: str
-    os: str
-    status: str = "Active"
 
 
 # ==============================
-# Machine Data
+# Device Data
 # ==============================
-def load_machines() -> List[Machine]:
-    """Load all Tailscale machines in the specified order."""
-    all_machines = [
-        # Core machines first (server and lenovo)
-        Machine(
-            name="ubuntu-server",
-            owner="dunamismax@github",
-            ip_address="100.109.43.88",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        Machine(
-            name="ubuntu-lenovo",
-            owner="dunamismax@github",
-            ip_address="100.66.213.7",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-            status="Expiry disabled",
-        ),
+def load_tailscale_devices() -> List[Device]:
+    """Load Tailscale devices in the specified order (Linux only)."""
+    devices = [
+        # Core machines first
+        Device(name="ubuntu-server", ip_address="100.109.43.88"),
+        Device(name="ubuntu-lenovo", ip_address="100.66.213.7"),
         # Raspberry Pi machines
-        Machine(
-            name="raspberrypi-5",
-            owner="dunamismax@github",
-            ip_address="100.105.117.18",
-            version="1.80.2",
-            os="Linux 6.11.0-1008-raspi",
-        ),
-        Machine(
-            name="raspberrypi-3",
-            owner="dunamismax@github",
-            ip_address="100.69.116.5",
-            version="1.80.2",
-            os="Linux 6.11.0-1008-raspi",
-        ),
+        Device(name="raspberrypi-5", ip_address="100.105.117.18"),
+        Device(name="raspberrypi-3", ip_address="100.69.116.5"),
         # Ubuntu server VMs
-        Machine(
-            name="ubuntu-server-vm-01",
-            owner="dunamismax@github",
-            ip_address="100.84.119.114",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        Machine(
-            name="ubuntu-server-vm-02",
-            owner="dunamismax@github",
-            ip_address="100.122.237.56",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        Machine(
-            name="ubuntu-server-vm-03",
-            owner="dunamismax@github",
-            ip_address="100.97.229.120",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        Machine(
-            name="ubuntu-server-vm-04",
-            owner="dunamismax@github",
-            ip_address="100.73.171.7",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
+        Device(name="ubuntu-server-vm-01", ip_address="100.84.119.114"),
+        Device(name="ubuntu-server-vm-02", ip_address="100.122.237.56"),
+        Device(name="ubuntu-server-vm-03", ip_address="100.97.229.120"),
+        Device(name="ubuntu-server-vm-04", ip_address="100.73.171.7"),
         # Ubuntu lenovo VMs
-        Machine(
-            name="ubuntu-lenovo-vm-01",
-            owner="dunamismax@github",
-            ip_address="100.107.79.81",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        Machine(
-            name="ubuntu-lenovo-vm-02",
-            owner="dunamismax@github",
-            ip_address="100.78.101.2",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        Machine(
-            name="ubuntu-lenovo-vm-03",
-            owner="dunamismax@github",
-            ip_address="100.95.115.62",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        Machine(
-            name="ubuntu-lenovo-vm-04",
-            owner="dunamismax@github",
-            ip_address="100.92.31.94",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-        ),
-        # Windows VMs
-        Machine(
-            name="ubuntu-lenovo-windows-11-ent-ltsc-vm",
-            owner="dunamismax@github",
-            ip_address="100.103.166.85",
-            version="1.80.2",
-            os="Windows 11 24H2",
-        ),
-        Machine(
-            name="ubuntu-server-windows-11-ent-ltsc-vm",
-            owner="dunamismax@github",
-            ip_address="100.66.128.35",
-            version="1.80.2",
-            os="Windows 11 24H2",
-        ),
-        # iOS device
-        Machine(
-            name="iphone-16-pro-max",
-            owner="dunamismax@github",
-            ip_address="100.72.245.118",
-            version="1.80.2",
-            os="iOS 18.3.1",
-            status="Expiry disabled",
-        ),
+        Device(name="ubuntu-lenovo-vm-01", ip_address="100.107.79.81"),
+        Device(name="ubuntu-lenovo-vm-02", ip_address="100.78.101.2"),
+        Device(name="ubuntu-lenovo-vm-03", ip_address="100.95.115.62"),
+        Device(name="ubuntu-lenovo-vm-04", ip_address="100.92.31.94"),
     ]
-    return all_machines
+    return devices
 
 
-def load_local_devices() -> List[LocalDevice]:
+def load_local_devices() -> List[Device]:
     """Load local network devices."""
     devices = [
-        LocalDevice(
-            name="ubuntu-server",
-            mac_address="6C-1F-F7-04-59-50",
-            ip_address="192.168.0.73",
-            os="Linux 6.11.0-18-generic",
-        ),
-        LocalDevice(
-            name="raspberrypi-5",
-            mac_address="2C-CF-67-59-0E-03",
-            ip_address="192.168.0.40",
-            os="Linux 6.11.0-1008-raspi",
-        ),
-        LocalDevice(
-            name="ubuntu-lenovo",
-            mac_address="6C-1F-F7-1A-0B-28",
-            ip_address="192.168.0.45",
-            os="Linux 6.11.0-18-generic",
-        ),
-        LocalDevice(
-            name="raspberrypi-3",
-            mac_address="B8-27-EB-3A-11-89",
-            ip_address="192.168.0.100",
-            os="Linux 6.11.0-1008-raspi",
-        ),
+        Device(name="ubuntu-server", ip_address="192.168.0.73"),
+        Device(name="raspberrypi-5", ip_address="192.168.0.40"),
+        Device(name="ubuntu-lenovo", ip_address="192.168.0.45"),
+        Device(name="raspberrypi-3", ip_address="192.168.0.100"),
     ]
     return devices
 
@@ -259,88 +113,31 @@ def display_ssh_header():
     console.print(Text(ascii_art, style=f"bold {Nord.FROST1}"))
 
 
-def display_machines(machines: List[Machine]):
-    """Display the list of Tailscale machines."""
-    # Create a simple table without borders
+def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
+    """Create a simple table for devices."""
     table = Table(
-        show_header=True, box=None, expand=True, show_edge=False, padding=(0, 1)
+        box=None, show_header=True, expand=True, show_edge=False, padding=(0, 2)
     )
 
-    # Add columns
+    # Add columns - only name and IP
     table.add_column("#", style=f"bold {Nord.FROST3}", justify="right", width=3)
-    table.add_column("Machine", style=f"bold {Nord.FROST0}")
+    table.add_column(title, style=f"bold {Nord.FROST0}")
     table.add_column("IP Address", style=f"{Nord.LIGHT0}")
-    table.add_column("OS", style=f"{Nord.FROST2}")
-    table.add_column("Status", style=f"{Nord.FROST1}")
-
-    # Add machine rows
-    for idx, machine in enumerate(machines, 1):
-        status_style = (
-            f"bold {Nord.GREEN}"
-            if machine.status.lower() == "connected"
-            else Nord.YELLOW
-        )
-        status_display = machine.status if machine.status else "Connected"
-
-        table.add_row(
-            str(idx),
-            machine.name,
-            machine.ip_address,
-            machine.os,
-            Text(status_display, style=status_style),
-        )
-
-    # Display header and table
-    console.print(Text("\nTailscale Machines", style=f"bold {Nord.FROST0}"))
-    console.print(table)
-
-
-def display_local_devices(devices: List[LocalDevice]):
-    """Display the list of local devices."""
-    # Create a simple table without borders
-    table = Table(
-        show_header=True, box=None, expand=True, show_edge=False, padding=(0, 1)
-    )
-
-    # Add columns
-    table.add_column("#", style=f"bold {Nord.FROST3}", justify="right", width=3)
-    table.add_column("Device", style=f"bold {Nord.FROST0}")
-    table.add_column("IP Address", style=f"{Nord.LIGHT0}")
-    table.add_column("MAC Address", style=f"{Nord.FROST2}")
-    table.add_column("OS", style=f"{Nord.FROST1}")
 
     # Add device rows
     for idx, device in enumerate(devices, 1):
-        table.add_row(
-            f"L{idx}", device.name, device.ip_address, device.mac_address, device.os
-        )
+        table.add_row(f"{prefix}{idx}", device.name, device.ip_address)
 
-    # Display header and table
-    console.print(Text("\nLocal Devices", style=f"bold {Nord.FROST0}"))
-    console.print(table)
-
-
-def display_help():
-    """Display help information."""
-    console.print()
-    console.print(Text("Options:", style=f"bold {Nord.YELLOW}"))
-    console.print(
-        f"• [bold {Nord.FROST1}]1-{len(load_machines())}[/] - Connect to Tailscale machine"
-    )
-    console.print(
-        f"• [bold {Nord.FROST1}]L1-L{len(load_local_devices())}[/] - Connect to local device"
-    )
-    console.print(f"• [bold {Nord.FROST1}]q[/] - Quit")
-    console.print()
+    return table
 
 
 # ==============================
 # SSH Connection
 # ==============================
-def connect_to_machine(
+def connect_to_device(
     name: str, ip_address: str, username: str = DEFAULT_USERNAME
 ) -> None:
-    """Connect to a machine via SSH."""
+    """Connect to a device via SSH."""
     console.clear()
     console.print(
         f"Connecting to [bold {Nord.FROST1}]{name}[/] ([{Nord.LIGHT0}]{ip_address}[/])"
@@ -374,22 +171,31 @@ def get_username() -> str:
 # ==============================
 def main():
     """Main application entry point."""
-    machines = load_machines()
+    tailscale_devices = load_tailscale_devices()
     local_devices = load_local_devices()
 
     while True:
-        # Clear screen and display content
+        # Clear screen
         console.clear()
 
         # Display SSH header
         display_ssh_header()
 
-        # Display machine and device lists
-        display_machines(machines)
-        display_local_devices(local_devices)
+        # Create tables
+        tailscale_table = create_device_table(
+            tailscale_devices, "", "Tailscale Devices"
+        )
+        local_table = create_device_table(local_devices, "L", "Local Devices")
 
-        # Display help information
-        display_help()
+        # Display tables side by side
+        console.print(Columns([tailscale_table, local_table]))
+
+        # Display help text
+        console.print()
+        console.print(
+            f"[bold {Nord.YELLOW}]Options:[/] [bold {Nord.FROST1}]1-{len(tailscale_devices)}[/] for Tailscale • [bold {Nord.FROST1}]L1-L{len(local_devices)}[/] for Local • [bold {Nord.FROST1}]q[/] to quit"
+        )
+        console.print()
 
         # Get user choice
         choice = Prompt.ask("Enter your choice")
@@ -407,7 +213,7 @@ def main():
                 if 0 <= idx < len(local_devices):
                     device = local_devices[idx]
                     username = get_username()
-                    connect_to_machine(device.name, device.ip_address, username)
+                    connect_to_device(device.name, device.ip_address, username)
                 else:
                     console.print(f"[bold {Nord.RED}]Invalid local device number[/]")
                     input("Press Enter to continue...")
@@ -415,16 +221,16 @@ def main():
                 console.print(f"[bold {Nord.RED}]Invalid choice[/]")
                 input("Press Enter to continue...")
 
-        # Handle machine selection
+        # Handle tailscale device selection
         else:
             try:
                 idx = int(choice) - 1
-                if 0 <= idx < len(machines):
-                    machine = machines[idx]
+                if 0 <= idx < len(tailscale_devices):
+                    device = tailscale_devices[idx]
                     username = get_username()
-                    connect_to_machine(machine.name, machine.ip_address, username)
+                    connect_to_device(device.name, device.ip_address, username)
                 else:
-                    console.print(f"[bold {Nord.RED}]Invalid machine number[/]")
+                    console.print(f"[bold {Nord.RED}]Invalid device number[/]")
                     input("Press Enter to continue...")
             except ValueError:
                 console.print(f"[bold {Nord.RED}]Invalid choice[/]")
