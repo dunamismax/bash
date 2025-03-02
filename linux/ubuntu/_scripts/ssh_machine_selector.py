@@ -1,44 +1,38 @@
 #!/usr/bin/env python3
 """
-SSH Machine Selector
+Secure Shell Selector
 -------------------
 
-A beautiful, interactive terminal-based utility for connecting to SSH machines.
+A clean, minimal terminal-based utility for connecting to SSH machines.
 This tool provides:
   • A numbered list of available machines
   • Quick selection by number
   • SSH connection handling with proper terminal management
   • Visual indication of connection status
   • Local IP device management
-  • Pagination support for large machine lists
 
-Features a Nord-themed interface for easy readability and selection.
+Features a borderless Nord-themed interface for easy readability.
 
 Usage:
   Simply run the script or alias it to 'ssh' for quick access.
   Select a machine by number to connect via SSH.
 
-Version: 1.2.0
+Version: 1.3.0
 """
 
 import os
 import sys
-import subprocess
 import shutil
 import platform
-import math
 from datetime import datetime
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List
 
 try:
     from rich.console import Console
-    from rich.panel import Panel
+    from rich.text import Text
     from rich.table import Table
     from rich.prompt import Prompt, IntPrompt
-    from rich.text import Text
-    from rich.layout import Layout
-    from rich.live import Live
     from rich import box
     import pyfiglet
 except ImportError:
@@ -49,17 +43,10 @@ except ImportError:
 # ==============================
 # Configuration & Constants
 # ==============================
-APP_NAME = "SSH Selector"  # Adjusted name for better display
-VERSION = "1.2.0"
+APP_NAME = "Secure Shell Selector"
+VERSION = "1.3.0"
 DEFAULT_USERNAME = "sawyer"  # Default SSH username
 SSH_COMMAND = "ssh"  # SSH command to use
-
-# Get terminal dimensions
-TERM_WIDTH = shutil.get_terminal_size().columns
-TERM_HEIGHT = shutil.get_terminal_size().lines
-
-# Items per page for pagination
-ITEMS_PER_PAGE = 10  # Adjust as needed
 
 # ==============================
 # Nord-Themed Console Setup
@@ -166,28 +153,13 @@ class LocalDevice:
 # ==============================
 # UI Helper Functions
 # ==============================
-def print_header(text: str) -> Panel:
-    """Create a striking header using pyfiglet."""
+def print_header(text: str) -> None:
+    """Create a striking header using pyfiglet with no borders."""
     # Use small font to save space
-    ascii_art = pyfiglet.figlet_format(text, font="small")
-    return Panel(
-        Text(ascii_art, style=f"bold {NordColors.NORD8}"),
-        border_style=NordColors.NORD10,
-        box=box.ROUNDED,
-        padding=(0, 1),  # Reduced padding
-        title=f"v{VERSION}",
-        title_align="right",
-    )
-
-
-def create_section(title: str) -> Panel:
-    """Create a formatted section header."""
-    return Panel(
-        Text(title, style=f"bold {NordColors.NORD8}"),
-        border_style=NordColors.NORD9,
-        box=box.HEAVY_EDGE,
-        padding=(0, 1),  # Reduced padding
-    )
+    ascii_art = pyfiglet.figlet_format(text, font="slant")
+    console.print(Text(ascii_art, style=f"bold {NordColors.NORD8}"))
+    console.print(Text(f"v{VERSION}", style=f"{NordColors.NORD9}"), justify="right")
+    console.print()  # Add some spacing
 
 
 def print_info(message: str) -> None:
@@ -218,15 +190,6 @@ def clear_screen() -> None:
 def get_user_input(prompt: str, default: str = "") -> str:
     """Get input from the user with a styled prompt."""
     return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
-
-
-def get_user_number(prompt: str, min_value: int = 1, max_value: int = 100) -> int:
-    """Get a number from the user with a styled prompt."""
-    return IntPrompt.ask(
-        f"[bold {NordColors.NORD15}]{prompt}[/]",
-        min_value=min_value,
-        max_value=max_value,
-    )
 
 
 # ==============================
@@ -360,45 +323,31 @@ def load_local_devices() -> List[LocalDevice]:
     return devices
 
 
-def create_machine_table(machines: List[Machine], page: int = 1) -> Tuple[Table, int]:
-    """Create a formatted table of machines with their details."""
-    # Calculate pagination info
-    total_pages = math.ceil(len(machines) / ITEMS_PER_PAGE)
-    page = min(max(1, page), total_pages)  # Ensure page is in valid range
-    start_idx = (page - 1) * ITEMS_PER_PAGE
-    end_idx = min(start_idx + ITEMS_PER_PAGE, len(machines))
-
-    # Get current page of machines
-    current_page_machines = machines[start_idx:end_idx]
-
-    # Pagination info for title
-    pagination_info = f"Page {page}/{total_pages}" if total_pages > 1 else ""
-
+def create_machine_table(machines: List[Machine]) -> Table:
+    """Create a clean table of machines with their details."""
+    # Create a borderless table
     table = Table(
-        title=f"Tailscale Machines {pagination_info}",
-        box=box.SIMPLE_HEAD,  # Simpler box style to save space
-        title_style=f"bold {NordColors.NORD8}",
-        border_style=NordColors.NORD3,
-        title_justify="center",
+        show_header=True,
+        box=None,  # No borders
+        header_style=f"bold {NordColors.NORD8}",
+        title="Tailscale Machines",
+        title_style=f"bold {NordColors.NORD7}",
+        title_justify="left",
         expand=True,
-        padding=(0, 1),  # Minimal padding
+        padding=(0, 2),  # Vertical padding of 0, horizontal padding of 2
     )
 
-    # Define more compact columns
+    # Define columns
     table.add_column(
-        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True, width=3
+        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
     )
-    table.add_column(
-        "Machine Name", style=f"{NordColors.NORD8}", justify="left", width=24
-    )
-    table.add_column(
-        "IP Address", style=f"{NordColors.NORD4}", justify="left", width=15
-    )
-    table.add_column("OS", style=f"{NordColors.NORD7}", justify="left", width=22)
-    table.add_column("Status", justify="center", width=10)
+    table.add_column("Machine Name", style=f"{NordColors.NORD8}", justify="left")
+    table.add_column("IP Address", style=f"{NordColors.NORD4}", justify="left")
+    table.add_column("OS", style=f"{NordColors.NORD7}", justify="left")
+    table.add_column("Status", justify="left")
 
-    # Add rows for current page
-    for idx, machine in enumerate(current_page_machines, start_idx + 1):
+    # Add rows
+    for idx, machine in enumerate(machines, 1):
         table.add_row(
             str(idx),
             machine.get_display_name(),
@@ -407,36 +356,32 @@ def create_machine_table(machines: List[Machine], page: int = 1) -> Tuple[Table,
             machine.get_display_status(),
         )
 
-    return table, total_pages
+    return table
 
 
 def create_local_devices_table(devices: List[LocalDevice]) -> Table:
-    """Create a formatted table of local network devices."""
+    """Create a clean table of local network devices."""
+    # Create a borderless table
     table = Table(
+        show_header=True,
+        box=None,  # No borders
+        header_style=f"bold {NordColors.NORD8}",
         title="Local IP Devices",
-        box=box.SIMPLE_HEAD,  # Simpler box style
-        title_style=f"bold {NordColors.NORD8}",
-        border_style=NordColors.NORD3,
-        title_justify="center",
+        title_style=f"bold {NordColors.NORD7}",
+        title_justify="left",
         expand=True,
-        padding=(0, 1),  # Minimal padding
+        padding=(0, 2),  # Vertical padding of 0, horizontal padding of 2
     )
 
-    # Define columns with compact widths
+    # Define columns
     table.add_column(
-        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True, width=3
+        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
     )
-    table.add_column(
-        "Device Name", style=f"{NordColors.NORD8}", justify="left", width=18
-    )
-    table.add_column(
-        "MAC Address", style=f"{NordColors.NORD4}", justify="center", width=18
-    )
-    table.add_column(
-        "IP Address", style=f"{NordColors.NORD7}", justify="center", width=15
-    )
-    table.add_column("OS", style=f"{NordColors.NORD4}", justify="left", width=22)
-    table.add_column("Status", justify="center", width=8)
+    table.add_column("Device Name", style=f"{NordColors.NORD8}", justify="left")
+    table.add_column("MAC Address", style=f"{NordColors.NORD4}", justify="left")
+    table.add_column("IP Address", style=f"{NordColors.NORD7}", justify="left")
+    table.add_column("OS", style=f"{NordColors.NORD4}", justify="left")
+    table.add_column("Status", justify="left")
 
     # Add rows
     for idx, device in enumerate(devices, 1):
@@ -459,7 +404,7 @@ def connect_to_machine(
     name: str, ip_address: str, username: str = DEFAULT_USERNAME
 ) -> None:
     """Connect to a machine (either Tailscale or Local) via SSH."""
-    console.print(create_section(f"Connecting to {name}"))
+    console.print(Text(f"Connecting to {name}", style=f"bold {NordColors.NORD8}"))
     print_info(f"Establishing SSH connection to {username}@{ip_address}...")
 
     try:
@@ -480,125 +425,46 @@ def connect_to_machine(
 # ==============================
 # Main Application Functions
 # ==============================
-def create_app_layout() -> Layout:
-    """Create the application layout structure."""
-    layout = Layout(name="root")
-
-    # Create main sections in vertical arrangement to maximize space
-    layout.split(
-        Layout(name="header", size=5),  # Reduced header size
-        Layout(name="machines", ratio=3),  # Give more space to machines
-        Layout(name="devices", ratio=2),  # Local devices
-        Layout(name="footer", size=6),  # Reduced footer size
-    )
-
-    return layout
-
-
-def render_compact_header() -> Panel:
-    """Render a more compact header with system info."""
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    header_text = Text()
-    header_text.append(f"{APP_NAME} ", style=f"bold {NordColors.NORD8}")
-    header_text.append(f"v{VERSION}\n", style=NordColors.NORD9)
-    header_text.append("System: ", style=f"bold {NordColors.NORD7}")
-    header_text.append(
-        f"{platform.system()} {platform.release()}\n", style=NordColors.NORD9
-    )
-    header_text.append("Time: ", style=f"bold {NordColors.NORD7}")
-    header_text.append(f"{current_time}", style=NordColors.NORD9)
-
-    return Panel(
-        header_text,
-        border_style=NordColors.NORD10,
-        box=box.ROUNDED,
-        padding=(0, 1),  # Minimal padding
-    )
-
-
-def render_footer(current_page: int, total_pages: int) -> Panel:
-    """Render the application footer with options."""
-    footer_text = Text()
-
-    # Navigation options
-    if total_pages > 1:
-        footer_text.append(
-            f"Page {current_page}/{total_pages} | ", style=f"bold {NordColors.NORD13}"
-        )
-        footer_text.append(
-            "n = next page, p = previous page, g = go to page\n", style=NordColors.NORD9
-        )
-
-    # Connection options
-    footer_text.append("Options: ", style=f"bold {NordColors.NORD13}")
-    footer_text.append("Enter # to connect to machine, ", style=NordColors.NORD9)
-    footer_text.append("L# for local device, ", style=NordColors.NORD9)
-    footer_text.append("q to quit", style=NordColors.NORD9)
-
-    return Panel(
-        footer_text,
-        border_style=NordColors.NORD3,
-        box=box.ROUNDED,
-        padding=(0, 1),  # Minimal padding
-    )
-
-
 def show_main_menu() -> None:
     """Display the main menu and handle user selection."""
     machines = load_machines()
     local_devices = load_local_devices()
-    current_page = 1
-    total_pages = math.ceil(len(machines) / ITEMS_PER_PAGE)
-
-    # Create and configure the layout
-    layout = create_app_layout()
 
     while True:
         clear_screen()
 
-        # Create tables with pagination for current page
-        machine_table, total_pages = create_machine_table(machines, current_page)
-        local_device_table = create_local_devices_table(local_devices)
+        # Print header
+        print_header(APP_NAME)
 
-        # Update layout components
-        layout["header"].update(render_compact_header())
-        layout["machines"].update(machine_table)
-        layout["devices"].update(local_device_table)
-        layout["footer"].update(render_footer(current_page, total_pages))
+        # Display machine tables
+        console.print(create_machine_table(machines))
+        console.print("")  # Add spacing
+        console.print(create_local_devices_table(local_devices))
+        console.print("")  # Add spacing
 
-        # Render the layout
-        console.print(layout)
+        # Display options
+        console.print(Text("Options:", style=f"bold {NordColors.NORD13}"))
+        console.print(
+            Text(
+                "• Enter 1-11 to connect to a Tailscale machine", style=NordColors.NORD9
+            )
+        )
+        console.print(
+            Text(
+                "• Enter L1-L4 to connect to a local IP device", style=NordColors.NORD9
+            )
+        )
+        console.print(Text("• Type 'q' to quit", style=NordColors.NORD9))
+        console.print("")  # Add spacing
 
         # Get user selection
         try:
-            choice = get_user_input(
-                "\nEnter choice (machine #, L# for local, n/p for pages, q to quit):"
-            )
+            choice = get_user_input("\nEnter your choice:")
 
-            # Handle quit
             if choice.lower() == "q":
                 clear_screen()
-                print_info("Thank you for using the SSH Machine Selector.")
+                print_info("Thank you for using the Secure Shell Selector.")
                 sys.exit(0)
-
-            # Handle pagination
-            if choice.lower() == "n" and current_page < total_pages:
-                current_page += 1
-                continue
-            elif choice.lower() == "p" and current_page > 1:
-                current_page -= 1
-                continue
-            elif choice.lower() == "g":
-                try:
-                    page = get_user_number(
-                        f"Enter page number (1-{total_pages}):", 1, total_pages
-                    )
-                    current_page = page
-                except ValueError:
-                    print_error("Invalid page number.")
-                    input("\nPress Enter to continue...")
-                continue
 
             # Handle local device selection (L1-L4)
             if choice.upper().startswith("L"):
@@ -640,51 +506,37 @@ def show_main_menu() -> None:
             try:
                 choice_num = int(choice)
                 if 1 <= choice_num <= len(machines):
-                    # Check if selection is on current page
-                    page_start = (current_page - 1) * ITEMS_PER_PAGE + 1
-                    page_end = min(page_start + ITEMS_PER_PAGE - 1, len(machines))
+                    selected_machine = machines[choice_num - 1]
 
-                    if page_start <= choice_num <= page_end:
-                        selected_machine = machines[choice_num - 1]
+                    # Option to use a different username
+                    use_diff_username = (
+                        get_user_input(
+                            f"Use default username '{DEFAULT_USERNAME}'? (y/n)", "y"
+                        ).lower()
+                        != "y"
+                    )
 
-                        # Option to use a different username
-                        use_diff_username = (
-                            get_user_input(
-                                f"Use default username '{DEFAULT_USERNAME}'? (y/n)", "y"
-                            ).lower()
-                            != "y"
-                        )
+                    username = DEFAULT_USERNAME
+                    if use_diff_username:
+                        username = get_user_input("Enter username:")
 
-                        username = DEFAULT_USERNAME
-                        if use_diff_username:
-                            username = get_user_input("Enter username:")
-
-                        # Connect to the selected Tailscale machine
-                        connect_to_machine(
-                            selected_machine.name, selected_machine.ip_address, username
-                        )
-                    else:
-                        # If selection is not on current page, navigate to that page
-                        target_page = (choice_num - 1) // ITEMS_PER_PAGE + 1
-                        print_info(
-                            f"Selection {choice_num} is on page {target_page}. Navigating..."
-                        )
-                        current_page = target_page
+                    # Connect to the selected Tailscale machine
+                    connect_to_machine(
+                        selected_machine.name, selected_machine.ip_address, username
+                    )
                 else:
                     print_error(
                         f"Invalid choice. Please enter a number between 1 and {len(machines)}."
                     )
                     input("\nPress Enter to continue...")
             except ValueError:
-                # If not a recognized command, show help
-                if choice.strip() and choice.lower() not in ["n", "p", "g", "q"]:
-                    print_error(
-                        "Invalid input. Enter a machine number, L# for local device, n/p for page navigation, or q to quit."
-                    )
-                    input("\nPress Enter to continue...")
+                print_error(
+                    "Invalid input. Please enter a machine number (1-11), local device (L1-L4), or 'q'."
+                )
+                input("\nPress Enter to continue...")
         except KeyboardInterrupt:
             clear_screen()
-            print_info("Thank you for using the SSH Machine Selector.")
+            print_info("Thank you for using the Secure Shell Selector.")
             sys.exit(0)
 
 
