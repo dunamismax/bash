@@ -42,1297 +42,660 @@ Remember: When initiating a conversation, start with a friendly greeting and a q
 ```python
 #!/usr/bin/env python3
 """
-Enhanced Network Information and Diagnostics Tool
-------------------------------------------------
+Enhanced Virtualization Environment Setup Script
+--------------------------------------------------
 
-A beautiful, interactive terminal-based utility for comprehensive network analysis and diagnostics.
-This tool provides operations including:
-  • Network interfaces - List and analyze network interfaces with detailed statistics
-  • IP addresses      - Display IP address information for all interfaces
-  • Ping              - Test connectivity to a target with visual response time tracking
-  • Traceroute        - Trace network path to a target with hop latency visualization
-  • DNS lookup        - Perform DNS lookups with multiple record types
-  • Port scan         - Scan for open ports on a target host
-  • Latency monitor   - Monitor network latency to a target over time
-  • Bandwidth test    - Perform a simple bandwidth test
+This utility sets up a virtualization environment on Ubuntu. It performs the following tasks:
+  • Updates package lists and installs virtualization packages
+  • Manages virtualization services
+  • Configures and recreates the default NAT network
+  • Fixes storage permissions and user group settings
+  • Updates VM network settings, configures autostart, and starts VMs
+  • Verifies the overall setup and installs a systemd service
 
-All functionality is menu-driven with an attractive Nord-themed interface.
-
-Note: Some operations require root privileges.
-
-Version: 1.1.0
+Note: Run this script with root privileges.
 """
 
 import atexit
-import datetime
-import ipaddress
 import os
-import platform
-import re
-import shutil
+import pwd
+import grp
 import signal
+import shutil
 import socket
 import subprocess
 import sys
-import threading
 import time
-from collections import deque
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.prompt import Prompt, Confirm
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn, TaskID
-from rich.live import Live
-from rich.traceback import install as rich_traceback_install
 import pyfiglet
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 
-# Enable Rich tracebacks
-rich_traceback_install()
-
-# ==============================
-# Configuration & Constants
-# ==============================
-APP_NAME = "Network Toolkit"
-VERSION = "1.1.0"
+# ----------------------------------------------------------------
+# Configuration
+# ----------------------------------------------------------------
 HOSTNAME = socket.gethostname()
-LOG_FILE = os.path.expanduser("~/network_toolkit_logs/network_toolkit.log")
+OPERATION_TIMEOUT = 600  # seconds
 
-# Network operation constants
-PING_COUNT_DEFAULT = 4
-PING_INTERVAL_DEFAULT = 1.0
-TRACEROUTE_MAX_HOPS = 30
-TRACEROUTE_TIMEOUT = 5.0
-MONITOR_DEFAULT_INTERVAL = 1.0
-MONITOR_DEFAULT_COUNT = 100
-PORT_SCAN_TIMEOUT = 1.0
-PORT_SCAN_COMMON_PORTS = [
-    21, 22, 23, 25, 53, 80, 110, 123, 143, 443,
-    465, 587, 993, 995, 3306, 3389, 5432, 8080, 8443,
+VM_STORAGE_PATHS = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
+VIRTUALIZATION_PACKAGES = [
+    "qemu-kvm", "qemu-utils", "libvirt-daemon-system", "libvirt-clients",
+    "virt-manager", "bridge-utils", "cpu-checker", "ovmf", "virtinst",
+    "libguestfs-tools", "virt-top"
 ]
-DNS_TYPES = ["A", "AAAA", "MX", "NS", "SOA", "TXT", "CNAME"]
-BANDWIDTH_TEST_SIZE = 10 * 1024 * 1024  # 10MB
-BANDWIDTH_CHUNK_SIZE = 64 * 1024  # 64KB
+VIRTUALIZATION_SERVICES = ["libvirtd", "virtlogd"]
 
-# Visualization constants
-PROGRESS_WIDTH = 50
-UPDATE_INTERVAL = 0.1
-MAX_LATENCY_HISTORY = 100
-RTT_GRAPH_WIDTH = 60
-RTT_GRAPH_HEIGHT = 10
+VM_OWNER = "root"
+VM_GROUP = "libvirt-qemu"
+VM_DIR_MODE = 0o2770
+VM_FILE_MODE = 0o0660
+LIBVIRT_USER_GROUP = "libvirt"
 
-# Common service mappings for port scan
-PORT_SERVICES = {
-    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
-    80: "HTTP", 110: "POP3", 123: "NTP", 143: "IMAP", 443: "HTTPS",
-    465: "SMTP/SSL", 587: "SMTP/TLS", 993: "IMAP/SSL", 995: "POP3/SSL",
-    3306: "MySQL", 3389: "RDP", 5432: "PostgreSQL", 8080: "HTTP-ALT", 8443: "HTTPS-ALT",
-}
+DEFAULT_NETWORK_XML = """<network>
+  <name>default</name>
+  <forward mode='nat'/>
+  <bridge name='virbr0' stp='on' delay='0'/>
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+    </dhcp>
+  </ip>
+</network>
+"""
 
-# Check for required commands
-COMMANDS = {
-    "ip": shutil.which("ip") is not None,
-    "ping": shutil.which("ping") is not None,
-    "traceroute": shutil.which("traceroute") is not None,
-    "dig": shutil.which("dig") is not None,
-    "nslookup": shutil.which("nslookup") is not None,
-    "nmap": shutil.which("nmap") is not None,
-    "ifconfig": shutil.which("ifconfig") is not None,
-}
+SERVICE_PATH = Path("/etc/systemd/system/virtualization_setup.service")
+SERVICE_CONTENT = """[Unit]
+Description=Virtualization Setup Service
+After=network.target
 
-# Terminal dimensions
-TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
-TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /path/to/this_script.py
+Restart=on-failure
 
-# ==============================
-# Nord-Themed Console Setup
-# ==============================
+[Install]
+WantedBy=multi-user.target
+"""
+
+# ----------------------------------------------------------------
+# Console and Logging Helpers (Nord-Themed)
+# ----------------------------------------------------------------
 console = Console()
 
-
-class NordColors:
-    """Nord theme color palette for consistent UI styling."""
-    # Polar Night (dark/background)
-    NORD0 = "#2E3440"
-    NORD1 = "#3B4252"
-    NORD2 = "#434C5E"
-    NORD3 = "#4C566A"
-    # Snow Storm (light/text)
-    NORD4 = "#D8DEE9"
-    NORD5 = "#E5E9F0"
-    NORD6 = "#ECEFF4"
-    # Frost (blue accents)
-    NORD7 = "#8FBCBB"
-    NORD8 = "#88C0D0"
-    NORD9 = "#81A1C1"
-    NORD10 = "#5E81AC"
-    # Aurora (status indicators)
-    NORD11 = "#BF616A"  # Red (errors)
-    NORD12 = "#D08770"  # Orange (warnings)
-    NORD13 = "#EBCB8B"  # Yellow (caution)
-    NORD14 = "#A3BE8C"  # Green (success)
-    NORD15 = "#B48EAD"  # Purple (special)
-
-
-# ==============================
-# UI Helper Functions
-# ==============================
 def print_header(text: str) -> None:
-    """Print a striking header using pyfiglet inside a Rich Panel."""
+    """Print a large ASCII art header."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
-    panel = Panel(ascii_art, style=f"bold {NordColors.NORD8}", border_style=NordColors.NORD8)
-    console.print(panel)
+    console.print(ascii_art, style="bold #88C0D0")
 
-
-def print_section(title: str) -> None:
-    """Print a section header using a Rich rule."""
-    console.rule(f"[bold {NordColors.NORD8}]{title}[/]", style=NordColors.NORD8)
-
-
-def print_info(message: str) -> None:
-    """Print an informational message."""
-    console.print(f"[{NordColors.NORD9}]{message}[/]")
-
-
-def print_success(message: str) -> None:
-    """Print a success message."""
-    console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
-
-
-def print_warning(message: str) -> None:
-    """Print a warning message."""
-    console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
-
-
-def print_error(message: str) -> None:
-    """Print an error message."""
-    console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
-
+def print_section(text: str) -> None:
+    """Print a section header."""
+    console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
 
 def print_step(text: str) -> None:
-    """Print a step description."""
-    console.print(f"[{NordColors.NORD8}]• {text}[/]")
+    """Print a step message."""
+    console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+def print_success(text: str) -> None:
+    """Print a success message."""
+    console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
 
-def clear_screen() -> None:
-    """Clear the terminal screen."""
-    console.clear()
+def print_warning(text: str) -> None:
+    """Print a warning message."""
+    console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+def print_error(text: str) -> None:
+    """Print an error message."""
+    console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
 
-def pause() -> None:
-    """Pause execution until user presses Enter."""
-    console.input(f"\n[{NordColors.NORD15}]Press Enter to continue...[/]")
-
-
-def get_user_input(prompt: str, default: str = "") -> str:
-    """Get input from the user with a styled prompt."""
-    return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
-
-
-def get_user_choice(prompt: str, choices: List[str]) -> str:
-    """Get a choice from the user with a styled prompt."""
-    return Prompt.ask(
-        f"[bold {NordColors.NORD15}]{prompt}[/]", choices=choices, show_choices=True
-    )
-
-
-def get_user_confirmation(prompt: str) -> bool:
-    """Get confirmation from the user."""
-    return Confirm.ask(f"[bold {NordColors.NORD15}]{prompt}[/]")
-
-
-def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
-    """Create a Rich table for menu options."""
-    table = Table(title=title, box=None, title_style=f"bold {NordColors.NORD8}")
-    table.add_column("Option", style=f"{NordColors.NORD9}", justify="right")
-    table.add_column("Description", style=f"{NordColors.NORD4}")
-    for key, description in options:
-        table.add_row(key, description)
-    return table
-
-
-def format_time(seconds: float) -> str:
-    """Format seconds into a human-readable time string."""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    elif seconds < 3600:
-        m, s = divmod(seconds, 60)
-        return f"{int(m)}m {int(s)}s"
-    else:
-        h, remainder = divmod(seconds, 3600)
-        m, s = divmod(remainder, 60)
-        return f"{int(h)}h {int(m)}m {int(s)}s"
-
-
-def format_rate(bps: float) -> str:
-    """Format bytes per second into a human-readable rate."""
-    if bps < 1024:
-        return f"{bps:.1f} B/s"
-    elif bps < 1024**2:
-        return f"{bps / 1024:.1f} KB/s"
-    elif bps < 1024**3:
-        return f"{bps / 1024**2:.1f} MB/s"
-    else:
-        return f"{bps / 1024**3:.1f} GB/s"
-
-
-# ==============================
-# Logging Setup
-# ==============================
-def setup_logging(log_file: str = LOG_FILE) -> None:
-    """Configure basic logging for the script."""
-    import logging
-    try:
-        log_dir = os.path.dirname(log_file)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        logging.basicConfig(
-            filename=log_file,
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        print_step(f"Logging configured to: {log_file}")
-    except Exception as e:
-        print_warning(f"Could not set up logging to {log_file}: {e}")
-        print_step("Continuing without logging to file...")
-
-
-# ==============================
-# Signal Handling & Cleanup
-# ==============================
-def cleanup() -> None:
-    """Perform cleanup tasks before exit."""
-    print_step("Performing cleanup tasks...")
-    # Add any necessary cleanup steps here
-
-
-atexit.register(cleanup)
-
-
-def signal_handler(signum, frame) -> None:
-    """Handle termination signals gracefully."""
-    sig_name = (
-        signal.Signals(signum).name
-        if hasattr(signal, "Signals")
-        else f"signal {signum}"
-    )
-    print_warning(f"\nScript interrupted by {sig_name}.")
-    cleanup()
-    sys.exit(128 + signum)
-
-
-for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-    signal.signal(sig, signal_handler)
-
-
-# ==============================
-# Progress Tracking Classes
-# ==============================
-class ProgressManager:
-    """Unified progress tracking system with multiple display options."""
-    def __init__(self):
-        self.progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[bold {task.fields[color]}]{task.description}"),
-            BarColumn(bar_width=None),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("[{task.fields[status]}]"),
-            TimeRemainingColumn(),
-            console=console,
-            expand=True,
-        )
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.progress.stop()
-
-    def add_task(self, description: str, total: float, color: str = NordColors.NORD8) -> TaskID:
-        return self.progress.add_task(
-            description, total=total, color=color, status=f"{NordColors.NORD9}starting"
-        )
-
-    def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
-        self.progress.update(task_id, advance=advance, **kwargs)
-
-    def start(self):
-        self.progress.start()
-
-    def stop(self):
-        self.progress.stop()
-
-
-class Spinner:
-    """Thread-safe spinner for indeterminate progress."""
-    def __init__(self, message: str):
-        self.message = message
-        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-        self.current = 0
-        self.spinning = False
-        self.thread: Optional[threading.Thread] = None
-        self.start_time = 0
-        self._lock = threading.Lock()
-
-    def _spin(self) -> None:
-        while self.spinning:
-            elapsed = time.time() - self.start_time
-            time_str = format_time(elapsed)
-            with self._lock:
-                console.print(
-                    f"\r[{NordColors.NORD10}]{self.spinner_chars[self.current]}[/] "
-                    f"[{NordColors.NORD8}]{self.message}[/] "
-                    f"[[dim]elapsed: {time_str}[/dim]]",
-                    end="",
-                )
-                self.current = (self.current + 1) % len(self.spinner_chars)
-            time.sleep(0.1)
-
-    def start(self) -> None:
-        with self._lock:
-            self.spinning = True
-            self.start_time = time.time()
-            self.thread = threading.Thread(target=self._spin, daemon=True)
-            self.thread.start()
-
-    def stop(self, success: bool = True) -> None:
-        with self._lock:
-            self.spinning = False
-            if self.thread:
-                self.thread.join()
-            elapsed = time.time() - self.start_time
-            time_str = format_time(elapsed)
-            console.print("\r" + " " * TERM_WIDTH, end="\r")
-            if success:
-                console.print(
-                    f"[{NordColors.NORD14}]✓[/] [{NordColors.NORD8}]{self.message}[/] "
-                    f"[{NordColors.NORD14}]completed[/] in {time_str}"
-                )
-            else:
-                console.print(
-                    f"[{NordColors.NORD11}]✗[/] [{NordColors.NORD8}]{self.message}[/] "
-                    f"[{NordColors.NORD11}]failed[/] after {time_str}"
-                )
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.stop(success=exc_type is None)
-
-
-# ==============================
-# Latency Tracking
-# ==============================
-class LatencyTracker:
+# ----------------------------------------------------------------
+# Command Execution Helper
+# ----------------------------------------------------------------
+def run_command(cmd, env=None, check=True, capture_output=True, timeout=OPERATION_TIMEOUT):
     """
-    Tracks network latency measurements and provides statistics and an ASCII graph.
+    Executes a system command and returns the CompletedProcess.
+    Raises an error with detailed output if the command fails.
     """
-    def __init__(self, max_history: int = MAX_LATENCY_HISTORY, width: int = RTT_GRAPH_WIDTH):
-        self.history: deque = deque(maxlen=max_history)
-        self.min_rtt = float("inf")
-        self.max_rtt = 0.0
-        self.avg_rtt = 0.0
-        self.loss_count = 0
-        self.total_count = 0
-        self.width = width
-        self._lock = threading.Lock()
-
-    def add_result(self, rtt: Optional[float]) -> None:
-        with self._lock:
-            self.total_count += 1
-            if rtt is None:
-                self.loss_count += 1
-                self.history.append(None)
-            else:
-                self.history.append(rtt)
-                if rtt < self.min_rtt:
-                    self.min_rtt = rtt
-                if rtt > self.max_rtt:
-                    self.max_rtt = rtt
-                valid = [r for r in self.history if r is not None]
-                if valid:
-                    self.avg_rtt = sum(valid) / len(valid)
-
-    def display_statistics(self) -> None:
-        console.print(f"[bold {NordColors.NORD7}]RTT Statistics:[/]")
-        console.print(self.get_statistics_str())
-
-    def get_statistics_str(self) -> str:
-        with self._lock:
-            loss_pct = (self.loss_count / self.total_count * 100) if self.total_count else 0
-            min_rtt = self.min_rtt if self.min_rtt != float("inf") else 0
-            return (
-                f"Min: {min_rtt:.2f} ms\n"
-                f"Avg: {self.avg_rtt:.2f} ms\n"
-                f"Max: {self.max_rtt:.2f} ms\n"
-                f"Packet Loss: {loss_pct:.1f}% ({self.loss_count}/{self.total_count})"
-            )
-
-    def display_graph(self) -> None:
-        console.print("\n[dim]Latency Graph:[/dim]")
-        console.print(self.get_graph_str())
-        valid = [r for r in self.history if r is not None]
-        if valid:
-            min_val, max_val = min(valid), max(valid)
-            console.print(f"[dim]Min: {min_val:.1f} ms | Max: {max_val:.1f} ms[/dim]")
-
-    def get_graph_str(self) -> str:
-        with self._lock:
-            valid = [r for r in self.history if r is not None]
-            if not valid:
-                return f"[bold {NordColors.NORD13}]No latency data to display graph[/]"
-            min_val, max_val = min(valid), max(valid)
-            if max_val - min_val < 5:
-                max_val = min_val + 5
-            graph = []
-            for rtt in list(self.history)[-self.width:]:
-                if rtt is None:
-                    graph.append("×")
-                else:
-                    if rtt < self.avg_rtt * 0.8:
-                        color = NordColors.NORD7
-                    elif rtt < self.avg_rtt * 1.2:
-                        color = NordColors.NORD4
-                    else:
-                        color = NordColors.NORD13
-                    graph.append(f"[{color}]█[/{color}]")
-            return "".join(graph)
-
-
-# ==============================
-# System Helper Functions
-# ==============================
-def run_command(
-    cmd: List[str],
-    shell: bool = False,
-    check: bool = True,
-    capture_output: bool = True,
-    timeout: int = 60,
-    verbose: bool = False,
-) -> subprocess.CompletedProcess:
-    if verbose:
-        print_step(f"Executing: {' '.join(cmd) if not shell else cmd}")
     try:
-        return subprocess.run(
+        result = subprocess.run(
             cmd,
-            shell=shell,
+            env=env or os.environ.copy(),
             check=check,
             text=True,
             capture_output=capture_output,
             timeout=timeout,
         )
+        return result
     except subprocess.CalledProcessError as e:
-        print_error(f"Command failed: {' '.join(cmd) if not shell else cmd}")
-        if hasattr(e, "stdout") and e.stdout:
+        print_error(f"Command failed: {' '.join(cmd)}")
+        if e.stdout:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if hasattr(e, "stderr") and e.stderr:
-            console.print(f"[bold {NordColors.NORD11}]Stderr: {e.stderr.strip()}[/]")
+        if e.stderr:
+            console.print(f"[bold #BF616A]Stderr: {e.stderr.strip()}[/bold #BF616A]")
         raise
     except subprocess.TimeoutExpired:
-        print_error(f"Command timed out after {timeout} seconds")
+        print_error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        raise
+    except Exception as e:
+        print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+# ----------------------------------------------------------------
+# Signal Handling and Cleanup
+# ----------------------------------------------------------------
+def cleanup() -> None:
+    """Perform any cleanup tasks before exit."""
+    print_step("Performing cleanup tasks...")
 
-def check_root() -> bool:
-    return os.geteuid() == 0
+def signal_handler(sig, frame):
+    sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
+    print_warning(f"Process interrupted by {sig_name}. Cleaning up...")
+    cleanup()
+    sys.exit(128 + sig)
 
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(cleanup)
 
-def ensure_root() -> None:
-    if not check_root():
-        print_warning("This operation performs better with root privileges.")
-        print_info("Some functionality may be limited.")
-
-
-def is_valid_ip(ip: str) -> bool:
+# ----------------------------------------------------------------
+# Core Setup Functions
+# ----------------------------------------------------------------
+def update_system_packages() -> bool:
+    """Update the package lists using apt-get."""
+    print_section("Updating Package Lists")
     try:
-        ipaddress.ip_address(ip)
+        with console.status("[bold #81A1C1]Updating package lists...", spinner="dots"):
+            run_command(["apt-get", "update"])
+        print_success("Package lists updated")
         return True
-    except ValueError:
+    except Exception as e:
+        print_error(f"Failed to update package lists: {e}")
         return False
 
-
-def is_valid_hostname(hostname: str) -> bool:
-    pattern = re.compile(
-        r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?"
-        r"(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
-    )
-    return bool(pattern.match(hostname))
-
-
-def validate_target(target: str) -> bool:
-    if is_valid_ip(target) or is_valid_hostname(target):
+def install_virtualization_packages(packages) -> bool:
+    """Install the required virtualization packages."""
+    print_section("Installing Virtualization Packages")
+    if not packages:
+        print_warning("No packages specified")
         return True
-    print_error(f"Invalid target: {target}")
-    return False
+    total = len(packages)
+    print_step(f"Installing {total} packages: {', '.join(packages)}")
+    failed = []
+    with Progress(
+        SpinnerColumn(style="bold #81A1C1"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bold #88C0D0"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Installing packages", total=total)
+        for pkg in packages:
+            print_step(f"Installing: {pkg}")
+            try:
+                proc = subprocess.Popen(
+                    ["apt-get", "install", "-y", pkg],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+                for line in iter(proc.stdout.readline, ""):
+                    if "Unpacking" in line or "Setting up" in line:
+                        console.print("  " + line.strip(), style="#D8DEE9")
+                proc.wait()
+                if proc.returncode != 0:
+                    print_error(f"Failed to install {pkg}")
+                    failed.append(pkg)
+                else:
+                    print_success(f"{pkg} installed")
+            except Exception as e:
+                print_error(f"Error installing {pkg}: {e}")
+                failed.append(pkg)
+            progress.advance(task)
+    if failed:
+        print_warning(f"Failed to install: {', '.join(failed)}")
+        return False
+    print_success("All packages installed")
+    return True
 
+def manage_virtualization_services(services) -> bool:
+    """Enable and start virtualization-related services."""
+    print_section("Managing Virtualization Services")
+    if not services:
+        print_warning("No services specified")
+        return True
+    total = len(services) * 2
+    failed = []
+    with Progress(
+        SpinnerColumn(style="bold #81A1C1"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bold #88C0D0"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Managing services", total=total)
+        for svc in services:
+            for action, cmd in [
+                ("enable", ["systemctl", "enable", svc]),
+                ("start", ["systemctl", "start", svc]),
+            ]:
+                print_step(f"{action.capitalize()} service: {svc}")
+                try:
+                    run_command(cmd)
+                    print_success(f"{svc} {action}d")
+                except Exception as e:
+                    print_error(f"Failed to {action} {svc}: {e}")
+                    failed.append(f"{svc} ({action})")
+                progress.advance(task)
+    if failed:
+        print_warning(f"Issues with: {', '.join(failed)}")
+        return False
+    print_success("Services managed successfully")
+    return True
 
-def check_command_availability(command: str) -> bool:
-    if not COMMANDS.get(command, False):
-        print_error(f"Required command '{command}' is not available.")
+def recreate_default_network() -> bool:
+    """Recreate the default NAT network."""
+    print_section("Recreating Default Network")
+    try:
+        result = run_command(["virsh", "net-list", "--all"], capture_output=True, check=False)
+        if "default" in result.stdout:
+            print_step("Removing existing default network")
+            run_command(["virsh", "net-destroy", "default"], check=False)
+            autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
+            if autostart_path.exists() or autostart_path.is_symlink():
+                autostart_path.unlink()
+            run_command(["virsh", "net-undefine", "default"], check=False)
+        net_xml_path = Path("/tmp/default_network.xml")
+        net_xml_path.write_text(DEFAULT_NETWORK_XML)
+        print_step("Defining new default network")
+        run_command(["virsh", "net-define", str(net_xml_path)])
+        run_command(["virsh", "net-start", "default"])
+        run_command(["virsh", "net-autostart", "default"])
+        net_list = run_command(["virsh", "net-list"], capture_output=True)
+        if "default" in net_list.stdout and "active" in net_list.stdout:
+            print_success("Default network is active")
+            return True
+        print_error("Default network not running")
+        return False
+    except Exception as e:
+        print_error(f"Error recreating network: {e}")
+        return False
+
+def configure_default_network() -> bool:
+    """Ensure the default network exists and is active."""
+    print_section("Configuring Default Network")
+    try:
+        net_list = run_command(["virsh", "net-list", "--all"], capture_output=True)
+        if "default" in net_list.stdout:
+            print_step("Default network exists")
+            if "active" not in net_list.stdout:
+                print_step("Starting default network")
+                try:
+                    run_command(["virsh", "net-start", "default"])
+                    print_success("Default network started")
+                except Exception as e:
+                    print_error(f"Start failed: {e}")
+                    return recreate_default_network()
+        else:
+            print_step("Default network missing, creating it")
+            return recreate_default_network()
+        # Check and set autostart if needed.
+        try:
+            net_info = run_command(["virsh", "net-info", "default"], capture_output=True)
+            if "Autostart:      yes" not in net_info.stdout:
+                print_step("Setting autostart for default network")
+                autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
+                if autostart_path.exists() or autostart_path.is_symlink():
+                    autostart_path.unlink()
+                run_command(["virsh", "net-autostart", "default"])
+                print_success("Autostart enabled")
+            else:
+                print_success("Autostart already enabled")
+        except Exception as e:
+            print_warning(f"Autostart not set: {e}")
+        return True
+    except Exception as e:
+        print_error(f"Network configuration error: {e}")
+        return False
+
+def get_virtual_machines() -> list:
+    """Retrieve a list of defined virtual machines."""
+    vms = []
+    try:
+        result = run_command(["virsh", "list", "--all"], capture_output=True)
+        lines = result.stdout.strip().splitlines()
+        sep_index = next((i for i, line in enumerate(lines) if line.strip().startswith("----")), -1)
+        if sep_index < 0:
+            return []
+        for line in lines[sep_index + 1:]:
+            parts = line.split()
+            if len(parts) >= 3:
+                vms.append({"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])})
+        return vms
+    except Exception as e:
+        print_error(f"Error retrieving VMs: {e}")
+        return []
+
+def set_vm_autostart(vms: list) -> bool:
+    """Set virtual machines to start automatically."""
+    print_section("Configuring VM Autostart")
+    if not vms:
+        print_warning("No VMs found")
+        return True
+    failed = []
+    with Progress(
+        SpinnerColumn(style="bold #81A1C1"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None, style="bold #88C0D0"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Setting VM autostart", total=len(vms))
+        for vm in vms:
+            name = vm["name"]
+            try:
+                print_step(f"Setting autostart for {name}")
+                info = run_command(["virsh", "dominfo", name], capture_output=True)
+                if "Autostart:        yes" in info.stdout:
+                    print_success(f"{name} already set")
+                else:
+                    run_command(["virsh", "autostart", name])
+                    print_success(f"{name} set to autostart")
+            except Exception as e:
+                print_error(f"Autostart failed for {name}: {e}")
+                failed.append(name)
+            progress.advance(task)
+    if failed:
+        print_warning(f"Autostart failed for: {', '.join(failed)}")
         return False
     return True
 
-
-# ==============================
-# Network Operation Functions
-# ==============================
-def get_network_interfaces() -> List[Dict[str, Any]]:
-    print_section("Network Interfaces")
-    interfaces = []
-    spinner = Progress(
-        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(style=f"bold {NordColors.NORD8}"),
-        TimeRemainingColumn(),
-        console=console,
-    )
-    with spinner:
-        task = spinner.add_task("Collecting interface info...", total=None)
-        try:
-            if check_command_availability("ip"):
-                output = subprocess.check_output(
-                    ["ip", "-o", "link", "show"], universal_newlines=True
-                )
-                for line in output.splitlines():
-                    m = re.search(r"^\d+:\s+([^:@]+).*state\s+(\w+)", line)
-                    if m:
-                        name, state = m.groups()
-                        if name.strip() == "lo":
-                            continue
-                        hw = re.search(r"link/\w+\s+([0-9a-fA-F:]+)", line)
-                        mac = hw.group(1) if hw else "Unknown"
-                        interfaces.append({"name": name.strip(), "status": state, "mac_address": mac})
-            elif check_command_availability("ifconfig"):
-                output = subprocess.check_output(["ifconfig"], universal_newlines=True)
-                current = None
-                for line in output.splitlines():
-                    iface = re.match(r"^(\w+):", line)
-                    if iface:
-                        current = iface.group(1)
-                        if current == "lo":
-                            current = None
-                            continue
-                        interfaces.append({"name": current, "status": "unknown", "mac_address": "Unknown"})
-                    elif current and "ether" in line:
-                        m = re.search(r"ether\s+([0-9a-fA-F:]+)", line)
-                        if m:
-                            for iface in interfaces:
-                                if iface["name"] == current:
-                                    iface["mac_address"] = m.group(1)
-            spinner.stop()
-            if interfaces:
-                print_success(f"Found {len(interfaces)} interfaces")
-                table = Table(title="Network Interfaces", border_style=NordColors.NORD8)
-                table.add_column("Interface", style=f"{NordColors.NORD9}", justify="left")
-                table.add_column("Status", style=f"{NordColors.NORD14}", justify="left")
-                table.add_column("MAC Address", style=f"{NordColors.NORD4}", justify="left")
-                for iface in interfaces:
-                    status_color = NordColors.NORD14 if iface["status"].lower() in ["up", "active"] else NordColors.NORD11
-                    table.add_row(iface["name"], f"[{status_color}]{iface['status']}[/]", iface["mac_address"])
-                console.print(table)
-            else:
-                console.print(f"[bold {NordColors.NORD13}]No network interfaces found[/]")
-            return interfaces
-        except Exception as e:
-            spinner.stop()
-            print_error(f"Error: {e}")
-            return []
-
-
-def get_ip_addresses() -> Dict[str, List[Dict[str, str]]]:
-    print_section("IP Address Information")
-    ip_info = {}
-    spinner = Progress(
-        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    )
-    with spinner:
-        task = spinner.add_task("Collecting IP addresses...", total=None)
-        try:
-            if check_command_availability("ip"):
-                output = subprocess.check_output(["ip", "-o", "addr"], universal_newlines=True)
-                for line in output.splitlines():
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        iface = parts[1]
-                        if iface == "lo":
-                            continue
-                        if "inet" in line:
-                            m = re.search(r"inet\s+([^/]+)", line)
-                            if m:
-                                ip_info.setdefault(iface, []).append({"type": "IPv4", "address": m.group(1)})
-                        if "inet6" in line:
-                            m = re.search(r"inet6\s+([^/]+)", line)
-                            if m and not m.group(1).startswith("fe80"):
-                                ip_info.setdefault(iface, []).append({"type": "IPv6", "address": m.group(1)})
-            elif check_command_availability("ifconfig"):
-                output = subprocess.check_output(["ifconfig"], universal_newlines=True)
-                current = None
-                for line in output.splitlines():
-                    iface = re.match(r"^(\w+):", line)
-                    if iface:
-                        current = iface.group(1)
-                        if current == "lo":
-                            current = None
-                            continue
-                    elif current and "inet " in line:
-                        m = re.search(r"inet\s+([0-9.]+)", line)
-                        if m:
-                            ip_info.setdefault(current, []).append({"type": "IPv4", "address": m.group(1)})
-                    elif current and "inet6 " in line:
-                        m = re.search(r"inet6\s+([0-9a-f:]+)", line)
-                        if m and not m.group(1).startswith("fe80"):
-                            ip_info.setdefault(current, []).append({"type": "IPv6", "address": m.group(1)})
-            spinner.stop()
-            if ip_info:
-                print_success("IP information collected")
-                for iface, addrs in ip_info.items():
-                    table = Table(title=f"Interface: {iface}", border_style=NordColors.NORD8)
-                    table.add_column("Type", style=f"{NordColors.NORD8}", justify="left")
-                    table.add_column("Address", style=f"{NordColors.NORD4}", justify="left")
-                    for addr in addrs:
-                        type_color = NordColors.NORD8 if addr["type"] == "IPv4" else NordColors.NORD15
-                        table.add_row(f"[{type_color}]{addr['type']}[/]", addr['address'])
-                    console.print(table)
-            else:
-                console.print(f"[bold {NordColors.NORD13}]No IP addresses found[/]")
-            return ip_info
-        except Exception as e:
-            spinner.stop()
-            print_error(f"Error: {e}")
-            return {}
-
-
-def ping_target(target: str, count: int = PING_COUNT_DEFAULT, interval: float = PING_INTERVAL_DEFAULT) -> Dict[str, Any]:
-    print_section(f"Ping: {target}")
-    if not validate_target(target):
-        return {}
-    if not check_command_availability("ping"):
-        print_error("Ping command not available")
-        return {}
-    progress_task = Progress(
-        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(style=f"bold {NordColors.NORD8}"),
-        TimeRemainingColumn(),
-        console=console,
-    )
-    latency_tracker = LatencyTracker()
-    with progress_task as progress:
-        task = progress.add_task("Pinging...", total=count)
-        ping_cmd = ["ping", "-c", str(count), "-i", str(interval), target]
-        try:
-            process = subprocess.Popen(
-                ping_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                bufsize=1,
-            )
-            while process.poll() is None:
-                line = process.stdout.readline()
-                if not line:
-                    continue
-                if line.startswith(("64 bytes", "56 bytes")):
-                    progress.update(task, advance=1)
-                    m = re.search(r"time=(\d+\.?\d*)", line)
-                    if m:
-                        rtt = float(m.group(1))
-                        latency_tracker.add_result(rtt)
-                        console.print(f"\r[dim]Reply: time={rtt:.2f} ms[/dim]")
-                elif "Request timeout" in line or "100% packet loss" in line:
-                    progress.update(task, advance=1)
-                    latency_tracker.add_result(None)
-                    console.print(f"\r[bold {NordColors.NORD11}]Request timed out[/]")
-            progress.update(task, completed=count)
-            console.print("")
-            latency_tracker.display_statistics()
-            latency_tracker.display_graph()
-            results = {
-                "target": target,
-                "sent": latency_tracker.total_count,
-                "received": latency_tracker.total_count - latency_tracker.loss_count,
-                "packet_loss": f"{(latency_tracker.loss_count / latency_tracker.total_count * 100):.1f}%",
-                "rtt_min": f"{latency_tracker.min_rtt:.2f} ms",
-                "rtt_avg": f"{latency_tracker.avg_rtt:.2f} ms",
-                "rtt_max": f"{latency_tracker.max_rtt:.2f} ms",
-            }
-            return results
-        except Exception as e:
-            print_error(f"Ping error: {e}")
-            return {}
-
-
-def traceroute_target(target: str, max_hops: int = TRACEROUTE_MAX_HOPS) -> List[Dict[str, Any]]:
-    print_section(f"Traceroute: {target}")
-    if not validate_target(target):
-        return []
-    if not check_command_availability("traceroute"):
-        print_error("Traceroute command not available")
-        return []
-    spinner = Progress(
-        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    )
-    with spinner:
-        task = spinner.add_task("Tracing route...", total=None)
-        hops = []
-        trace_cmd = [
-            "traceroute",
-            "-m", str(max_hops),
-            "-w", str(TRACEROUTE_TIMEOUT),
-            target,
-        ]
-        try:
-            process = subprocess.Popen(
-                trace_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                bufsize=1,
-            )
-            header = True
-            while process.poll() is None:
-                line = process.stdout.readline()
-                if not line:
-                    continue
-                if header and "traceroute to" in line:
-                    header = False
-                    continue
-                parts = line.split()
-                if len(parts) >= 2:
-                    try:
-                        hop_num = parts[0]
-                        host = parts[1] if parts[1] != "*" else "Unknown"
-                        times = []
-                        for p in parts[2:]:
-                            m = re.search(r"(\d+\.\d+)\s*ms", p)
-                            if m:
-                                times.append(float(m.group(1)))
-                        avg_time = sum(times) / len(times) if times else None
-                        hops.append({
-                            "hop": hop_num,
-                            "host": host,
-                            "times": times,
-                            "avg_time_ms": avg_time,
-                        })
-                    except Exception:
-                        continue
-            spinner.stop()
-            if hops:
-                print_success(f"Traceroute completed with {len(hops)} hops")
-                table = Table(title="Traceroute Hops", border_style=NordColors.NORD8)
-                table.add_column("Hop", justify="left", style="bold")
-                table.add_column("Host", justify="left")
-                table.add_column("Avg Time", justify="left")
-                for hop in hops:
-                    avg = hop.get("avg_time_ms")
-                    if avg is None:
-                        avg_str = "---"
-                        color = NordColors.NORD11
-                    else:
-                        avg_str = f"{avg:.2f} ms"
-                        color = NordColors.NORD14 if avg < 20 else (NordColors.NORD13 if avg < 100 else NordColors.NORD11)
-                    table.add_row(hop.get("hop", "?"), hop.get("host", "Unknown"), f"[{color}]{avg_str}[/{color}]")
-                console.print(table)
-            else:
-                console.print(f"[bold {NordColors.NORD13}]No hops found[/]")
-            return hops
-        except Exception as e:
-            spinner.stop()
-            print_error(f"Traceroute error: {e}")
-            return []
-
-
-def dns_lookup(hostname: str, record_types: Optional[List[str]] = None) -> Dict[str, Any]:
-    print_section(f"DNS Lookup: {hostname}")
-    if not validate_target(hostname):
-        return {}
-    if record_types is None:
-        record_types = ["A", "AAAA"]
-    results = {"hostname": hostname}
-    spinner = Progress(
-        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    )
-    with spinner:
-        task = spinner.add_task("Looking up DNS records...", total=None)
-        try:
-            try:
-                addrs = socket.getaddrinfo(hostname, None)
-                for addr in addrs:
-                    ip = addr[4][0]
-                    rec_type = "AAAA" if ":" in ip else "A"
-                    results.setdefault(rec_type, []).append(ip)
-            except socket.gaierror:
-                pass
-            if check_command_availability("dig"):
-                for rt in record_types:
-                    spinner.update(task, description=f"Looking up {rt} records...")
-                    try:
-                        dig_out = subprocess.check_output(
-                            ["dig", "+noall", "+answer", hostname, rt],
-                            universal_newlines=True,
-                        )
-                        recs = []
-                        for line in dig_out.splitlines():
-                            parts = line.split()
-                            if len(parts) >= 5:
-                                recs.append({
-                                    "name": parts[0],
-                                    "ttl": parts[1],
-                                    "type": parts[3],
-                                    "value": " ".join(parts[4:]),
-                                })
-                        if recs:
-                            results[rt] = recs
-                    except subprocess.CalledProcessError:
-                        continue
-            elif check_command_availability("nslookup"):
-                for rt in record_types:
-                    spinner.update(task, description=f"Looking up {rt} records...")
-                    try:
-                        ns_out = subprocess.check_output(
-                            ["nslookup", "-type=" + rt, hostname],
-                            universal_newlines=True,
-                        )
-                        recs = []
-                        for line in ns_out.splitlines():
-                            if "Address: " in line and not line.startswith("Server:"):
-                                recs.append({
-                                    "name": hostname,
-                                    "type": rt,
-                                    "value": line.split("Address: ")[1].strip(),
-                                })
-                        if recs:
-                            results[rt] = recs
-                    except subprocess.CalledProcessError:
-                        continue
-            spinner.stop()
-            if len(results) <= 1:
-                console.print(f"[bold {NordColors.NORD13}]No DNS records found for {hostname}[/]")
-            else:
-                print_success("DNS lookup completed")
-                for rt, recs in results.items():
-                    if rt == "hostname":
-                        continue
-                    panel = Panel("\n".join(
-                        rec.get("value") if isinstance(rec, dict) else str(rec)
-                        for rec in recs
-                    ), title=f"{rt} Records", border_style=NordColors.NORD8)
-                    console.print(panel)
-            return results
-        except Exception as e:
-            spinner.stop()
-            print_error(f"DNS lookup error: {e}")
-            return {"hostname": hostname}
-
-
-def port_scan(target: str, ports: Union[List[int], str] = "common", timeout: float = PORT_SCAN_TIMEOUT) -> Dict[int, Dict[str, Any]]:
-    print_section(f"Port Scan: {target}")
-    if not validate_target(target):
-        return {}
-    if ports == "common":
-        port_list = PORT_SCAN_COMMON_PORTS
-    elif isinstance(ports, str):
-        try:
-            if "-" in ports:
-                start, end = map(int, ports.split("-"))
-                port_list = list(range(start, end + 1))
-            else:
-                port_list = list(map(int, ports.split(",")))
-        except ValueError:
-            print_error(f"Invalid port specification: {ports}")
-            return {}
-    else:
-        port_list = ports
-    open_ports = {}
-    progress_task = Progress(
-        SpinnerColumn(style=f"bold {NordColors.NORD9}"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(style=f"bold {NordColors.NORD8}"),
-        console=console,
-    )
-    with progress_task as progress:
-        task = progress.add_task(f"Scanning {len(port_list)} ports...", total=len(port_list))
-        try:
-            ip = socket.gethostbyname(target)
-            for port in port_list:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(timeout)
-                if sock.connect_ex((ip, port)) == 0:
-                    try:
-                        service = socket.getservbyport(port)
-                    except Exception:
-                        service = PORT_SERVICES.get(port, "unknown")
-                    open_ports[port] = {"state": "open", "service": service}
-                    console.print(f"\r[bold {NordColors.NORD14}]Port {port} is open: {service}[/]")
-                sock.close()
-                progress.update(task, advance=1)
-            console.print("")
-            if open_ports:
-                print_success(f"Found {len(open_ports)} open ports on {target} ({ip})")
-                table = Table(title="Port Scan Results", border_style=NordColors.NORD8)
-                table.add_column("Port", justify="left", style=f"{NordColors.NORD8}")
-                table.add_column("State", justify="left", style=f"{NordColors.NORD14}")
-                table.add_column("Service", justify="left", style=f"{NordColors.NORD4}")
-                for port in sorted(open_ports.keys()):
-                    info = open_ports[port]
-                    table.add_row(str(port), info["state"], info["service"])
-                console.print(table)
-            else:
-                console.print(f"[bold {NordColors.NORD13}]No open ports found on {target} ({ip})[/]")
-            return open_ports
-        except Exception as e:
-            print_error(f"Port scan error: {e}")
-            return {}
-
-
-def monitor_latency(target: str, count: int = MONITOR_DEFAULT_COUNT, interval: float = MONITOR_DEFAULT_INTERVAL) -> None:
-    print_section(f"Latency Monitor: {target}")
-    if not validate_target(target):
-        return
-    latency_tracker = LatencyTracker(width=RTT_GRAPH_WIDTH)
-    print_info(f"Monitoring latency to {target}. Press Ctrl+C to stop.")
+def ensure_network_active_before_vm_start() -> bool:
+    """Verify that the default network is active before starting VMs."""
+    print_step("Verifying default network before starting VMs")
     try:
-        if not check_command_availability("ping"):
-            print_error("Ping command not available")
-            return
-        ping_indefinitely = count == 0
-        remaining = count
-        with Live(refresh_per_second=4, screen=True) as live:
-            while ping_indefinitely or remaining > 0:
-                ping_cmd = ["ping", "-c", "1", "-i", str(interval), target]
-                start = time.time()
-                try:
-                    output = subprocess.check_output(ping_cmd, universal_newlines=True, stderr=subprocess.STDOUT)
-                    m = re.search(r"time=(\d+\.?\d*)", output)
-                    if m:
-                        rtt = float(m.group(1))
-                        latency_tracker.add_result(rtt)
-                    else:
-                        latency_tracker.add_result(None)
-                except subprocess.CalledProcessError:
-                    latency_tracker.add_result(None)
-                elapsed = time.time() - start
-                now = datetime.datetime.now().strftime("%H:%M:%S")
-                current_rtt = latency_tracker.history[-1] if latency_tracker.history and latency_tracker.history[-1] is not None else "timeout"
-                panel_content = (
-                    f"[bold]Time:[/bold] {now}\n"
-                    f"[bold]Current RTT:[/bold] {current_rtt} ms\n\n"
-                    f"[bold]Latency Graph:[/bold]\n{latency_tracker.get_graph_str()}\n\n"
-                    f"[bold]Statistics:[/bold]\n{latency_tracker.get_statistics_str()}"
-                )
-                live.update(Panel(panel_content, title=f"Latency Monitor: {target}", border_style=NordColors.NORD8))
-                if not ping_indefinitely:
-                    remaining -= 1
-                if elapsed < interval:
-                    time.sleep(interval - elapsed)
-        print_section("Final Statistics")
-        console.print(latency_tracker.get_statistics_str())
-    except KeyboardInterrupt:
-        print("\n")
-        print_section("Monitoring Stopped")
-        print_info(f"Total pings: {latency_tracker.total_count}")
-        console.print(latency_tracker.get_statistics_str())
-
-
-def bandwidth_test(target: str = "example.com", size: int = BANDWIDTH_TEST_SIZE) -> Dict[str, Any]:
-    print_section("Bandwidth Test")
-    if not validate_target(target):
-        return {}
-    results = {"target": target, "download_speed": 0.0, "response_time": 0.0}
-    print_info(f"Starting bandwidth test to {target}...")
-    print_warning("Note: This is a simple test and may not be fully accurate.")
-    try:
-        ip = socket.gethostbyname(target)
-        print_info(f"Resolved {target} to {ip}")
-        progress_task = Progress(
-            SpinnerColumn(style=f"bold {NordColors.NORD9}"),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(style=f"bold {NordColors.NORD8}"),
-            console=console,
-        )
-        with progress_task as progress:
-            task = progress.add_task("Downloading test file...", total=1)
-            if shutil.which("curl"):
-                start = time.time()
-                curl_cmd = [
-                    "curl", "-o", "/dev/null", "-s",
-                    "--connect-timeout", "5",
-                    "-w", "%{time_total} %{size_download} %{speed_download}",
-                    f"http://{target}",
-                ]
-                output = subprocess.check_output(curl_cmd, universal_newlines=True)
-                parts = output.split()
-                if len(parts) >= 3:
-                    total_time = float(parts[0])
-                    size_download = int(parts[1])
-                    speed_download = float(parts[2])
-                    results["response_time"] = total_time
-                    results["download_speed"] = speed_download
-                    results["download_size"] = size_download
-                    progress.update(task, completed=1)
-                    download_mbps = speed_download * 8 / 1024 / 1024
-                    console.print("")
-                    print_success("Download test completed")
-                    console.print(f"  Response time: {total_time:.2f} s")
-                    console.print(f"  Downloaded: {size_download / (1024 * 1024):.2f} MB")
-                    console.print(f"  Speed: {speed_download / (1024 * 1024):.2f} MB/s ({download_mbps:.2f} Mbps)")
-            else:
-                print_warning("Curl not available, using socket test")
-                start = time.time()
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(5.0)
-                sock.connect((ip, 80))
-                conn_time = time.time() - start
-                request = f"GET / HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n"
-                start = time.time()
-                sock.sendall(request.encode())
-                bytes_received = 0
-                while True:
-                    chunk = sock.recv(BANDWIDTH_CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    bytes_received += len(chunk)
-                    progress.update(task, completed=min(1, bytes_received / size))
-                end = time.time()
-                sock.close()
-                transfer_time = end - start
-                speed = bytes_received / transfer_time if transfer_time > 0 else 0
-                results["response_time"] = conn_time
-                results["download_speed"] = speed
-                results["download_size"] = bytes_received
-                download_mbps = speed * 8 / 1024 / 1024
-                console.print("")
-                print_success("Basic bandwidth test completed")
-                console.print(f"  Connection time: {conn_time:.2f} s")
-                console.print(f"  Downloaded: {bytes_received / 1024:.2f} KB")
-                console.print(f"  Speed: {speed / 1024:.2f} KB/s ({download_mbps:.2f} Mbps)")
-        return results
+        net_list = run_command(["virsh", "net-list"], capture_output=True)
+        for line in net_list.stdout.splitlines():
+            if "default" in line and "active" in line:
+                print_success("Default network is active")
+                return True
+        print_warning("Default network inactive; attempting restart")
+        return recreate_default_network()
     except Exception as e:
-        print_error(f"Bandwidth test error: {e}")
-        return results
+        print_error(f"Network verification error: {e}")
+        return False
 
+def start_virtual_machines(vms: list) -> bool:
+    """Start any virtual machines that are not currently running."""
+    print_section("Starting Virtual Machines")
+    if not vms:
+        print_warning("No VMs found")
+        return True
+    to_start = [vm for vm in vms if vm["state"].lower() != "running"]
+    if not to_start:
+        print_success("All VMs are running")
+        return True
+    if not ensure_network_active_before_vm_start():
+        print_error("Default network not active")
+        return False
+    failed = []
+    for vm in to_start:
+        name = vm["name"]
+        print_step(f"Starting {name}")
+        attempt = 0
+        success = False
+        while attempt < 3 and not success:
+            attempt += 1
+            print_step(f"Attempt {attempt} for {name}")
+            try:
+                with console.status(f"[bold #81A1C1]Starting {name}...", spinner="dots"):
+                    result = run_command(["virsh", "start", name], check=False)
+                if result.returncode == 0:
+                    print_success(f"{name} started")
+                    success = True
+                else:
+                    if result.stderr and "Only one live display may be active" in result.stderr:
+                        print_warning(f"{name} failed to start due to live display conflict; retrying in 5 seconds...")
+                        time.sleep(5)
+                    else:
+                        print_error(f"Failed to start {name}: {result.stderr}")
+                        break
+            except Exception as e:
+                print_error(f"Error starting {name}: {e}")
+                break
+        if not success:
+            failed.append(name)
+        time.sleep(5)
+    if failed:
+        print_warning(f"Failed to start: {', '.join(failed)}")
+        return False
+    return True
 
-# ==============================
-# Menu Systems
-# ==============================
-def ping_menu() -> None:
-    clear_screen()
-    print_header("Ping")
-    target = get_user_input("Enter target hostname or IP", "google.com")
-    if not validate_target(target):
-        pause()
-        return
-    count = get_user_input("Number of pings", str(PING_COUNT_DEFAULT))
+def fix_storage_permissions(paths: list) -> bool:
+    """Fix storage directory and file permissions for VM storage."""
+    print_section("Fixing VM Storage Permissions")
+    if not paths:
+        print_warning("No storage paths specified")
+        return True
     try:
-        count = int(count)
-        if count <= 0:
-            print_error("Count must be a positive integer")
-            pause()
-            return
-    except ValueError:
-        print_error("Invalid count value")
-        pause()
-        return
-    interval = get_user_input("Time between pings (seconds)", str(PING_INTERVAL_DEFAULT))
+        uid = pwd.getpwnam(VM_OWNER).pw_uid
+        gid = grp.getgrnam(VM_GROUP).gr_gid
+    except KeyError as e:
+        print_error(f"User/group not found: {e}")
+        return False
+
+    for path_str in paths:
+        path = Path(path_str)
+        print_step(f"Processing {path}")
+        if not path.exists():
+            print_warning(f"{path} does not exist; creating")
+            path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
+        total_items = sum(1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path)))
+        with Progress(
+            SpinnerColumn(style="bold #81A1C1"),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=None, style="bold #88C0D0"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Updating permissions", total=total_items)
+            try:
+                os.chown(str(path), uid, gid)
+                os.chmod(str(path), VM_DIR_MODE)
+                progress.advance(task)
+                for root, dirs, files in os.walk(str(path)):
+                    for d in dirs:
+                        dpath = Path(root) / d
+                        try:
+                            os.chown(str(dpath), uid, gid)
+                            os.chmod(str(dpath), VM_DIR_MODE)
+                        except Exception as e:
+                            print_warning(f"Error on {dpath}: {e}")
+                        progress.advance(task)
+                    for f in files:
+                        fpath = Path(root) / f
+                        try:
+                            os.chown(str(fpath), uid, gid)
+                            os.chmod(str(fpath), VM_FILE_MODE)
+                        except Exception as e:
+                            print_warning(f"Error on {fpath}: {e}")
+                        progress.advance(task)
+            except Exception as e:
+                print_error(f"Failed on {path}: {e}")
+                return False
+    print_success("Storage permissions updated")
+    return True
+
+def configure_user_groups() -> bool:
+    """Ensure that the invoking (sudo) user is a member of the required group."""
+    print_section("Configuring User Group Membership")
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user:
+        print_warning("SUDO_USER not set; skipping group configuration")
+        return True
     try:
-        interval = float(interval)
-        if interval <= 0:
-            print_error("Interval must be a positive number")
-            pause()
-            return
-    except ValueError:
-        print_error("Invalid interval value")
-        pause()
-        return
-    ping_target(target, count, interval)
-    pause()
-
-
-def traceroute_menu() -> None:
-    clear_screen()
-    print_header("Traceroute")
-    target = get_user_input("Enter target hostname or IP", "google.com")
-    if not validate_target(target):
-        pause()
-        return
-    max_hops = get_user_input("Maximum number of hops", str(TRACEROUTE_MAX_HOPS))
+        pwd.getpwnam(sudo_user)
+        grp.getgrnam(LIBVIRT_USER_GROUP)
+    except KeyError as e:
+        print_error(f"User or group error: {e}")
+        return False
+    user_groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
+    primary = grp.getgrgid(pwd.getpwnam(sudo_user).pw_gid).gr_name
+    if primary not in user_groups:
+        user_groups.append(primary)
+    if LIBVIRT_USER_GROUP in user_groups:
+        print_success(f"{sudo_user} is already in {LIBVIRT_USER_GROUP}")
+        return True
     try:
-        max_hops = int(max_hops)
-        if max_hops <= 0:
-            print_error("Maximum hops must be a positive integer")
-            pause()
-            return
-    except ValueError:
-        print_error("Invalid maximum hops value")
-        pause()
-        return
-    traceroute_target(target, max_hops)
-    pause()
+        print_step(f"Adding {sudo_user} to {LIBVIRT_USER_GROUP}")
+        run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
+        print_success(f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in.")
+        return True
+    except Exception as e:
+        print_error(f"Failed to add user: {e}")
+        return False
 
+def verify_virtualization_setup() -> bool:
+    """Perform a series of checks to verify the virtualization environment."""
+    print_section("Verifying Virtualization Setup")
+    passed = True
 
-def dns_menu() -> None:
-    clear_screen()
-    print_header("DNS Lookup")
-    hostname = get_user_input("Enter hostname to lookup", "example.com")
-    if not validate_target(hostname):
-        pause()
-        return
-    rec_types_str = get_user_input("Record types (comma-separated)", "A,AAAA,MX,TXT")
-    rec_types = [rt.strip().upper() for rt in rec_types_str.split(",")]
-    dns_lookup(hostname, rec_types)
-    pause()
-
-
-def scan_menu() -> None:
-    clear_screen()
-    print_header("Port Scan")
-    target = get_user_input("Enter target hostname or IP", "example.com")
-    if not validate_target(target):
-        pause()
-        return
-    port_spec = get_user_input("Ports to scan (common, comma-separated list, or range like 80-443)", "common")
-    timeout = get_user_input("Timeout per port (seconds)", str(PORT_SCAN_TIMEOUT))
     try:
-        timeout = float(timeout)
-        if timeout <= 0:
-            print_error("Timeout must be a positive number")
-            pause()
-            return
-    except ValueError:
-        print_error("Invalid timeout value")
-        pause()
-        return
-    port_scan(target, port_spec, timeout)
-    pause()
-
-
-def monitor_menu() -> None:
-    clear_screen()
-    print_header("Latency Monitor")
-    target = get_user_input("Enter target hostname or IP", "google.com")
-    if not validate_target(target):
-        pause()
-        return
-    count = get_user_input("Number of pings (0 for unlimited)", str(MONITOR_DEFAULT_COUNT))
-    try:
-        count = int(count)
-        if count < 0:
-            print_error("Count must be a non-negative integer")
-            pause()
-            return
-    except ValueError:
-        print_error("Invalid count value")
-        pause()
-        return
-    interval = get_user_input("Time between pings (seconds)", str(MONITOR_DEFAULT_INTERVAL))
-    try:
-        interval = float(interval)
-        if interval <= 0:
-            print_error("Interval must be a positive number")
-            pause()
-            return
-    except ValueError:
-        print_error("Invalid interval value")
-        pause()
-        return
-    monitor_latency(target, count, interval)
-    pause()
-
-
-def bandwidth_menu() -> None:
-    clear_screen()
-    print_header("Bandwidth Test")
-    target = get_user_input("Enter target hostname or IP", "example.com")
-    if not validate_target(target):
-        pause()
-        return
-    bandwidth_test(target)
-    pause()
-
-
-def main_menu() -> None:
-    while True:
-        clear_screen()
-        print_header(APP_NAME)
-        console.print(f"[bold]{APP_NAME}[/]  [dim]Version: {VERSION}[/]")
-        console.print(f"[bold]System:[/bold] {platform.system()} {platform.release()}")
-        console.print(f"[bold]Host:[/bold] {HOSTNAME}")
-        console.print(f"[bold]Time:[/bold] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        console.print(f"[bold]Running as root:[/bold] {'Yes' if check_root() else 'No'}\n")
-        menu_options = [
-            ("1", "Network Interfaces - List and analyze network interfaces"),
-            ("2", "IP Addresses - Display IP address information"),
-            ("3", "Ping - Test connectivity to a target"),
-            ("4", "Traceroute - Trace network path to a target"),
-            ("5", "DNS Lookup - Perform DNS lookups with multiple record types"),
-            ("6", "Port Scan - Scan for open ports on a target host"),
-            ("7", "Latency Monitor - Monitor network latency over time"),
-            ("8", "Bandwidth Test - Perform a simple bandwidth test"),
-            ("0", "Exit"),
-        ]
-        console.print(create_menu_table("Main Menu", menu_options))
-        choice = get_user_input("Enter your choice (0-8):")
-        if choice == "1":
-            get_network_interfaces()
-            pause()
-        elif choice == "2":
-            get_ip_addresses()
-            pause()
-        elif choice == "3":
-            ping_menu()
-        elif choice == "4":
-            traceroute_menu()
-        elif choice == "5":
-            dns_menu()
-        elif choice == "6":
-            scan_menu()
-        elif choice == "7":
-            monitor_menu()
-        elif choice == "8":
-            bandwidth_menu()
-        elif choice == "0":
-            clear_screen()
-            print_header("Goodbye!")
-            print_info("Thank you for using the Network Toolkit.")
-            time.sleep(1)
-            sys.exit(0)
+        svc = run_command(["systemctl", "is-active", "libvirtd"], check=False)
+        if svc.stdout.strip() == "active":
+            print_success("libvirtd is active")
         else:
-            print_error("Invalid selection. Please try again.")
-            time.sleep(1)
+            print_error("libvirtd is not active")
+            passed = False
+    except Exception as e:
+        print_error(f"Error checking libvirtd: {e}")
+        passed = False
 
-
-# ==============================
-# Main Entry Point
-# ==============================
-def main() -> None:
     try:
-        setup_logging()
-        if not check_root():
-            print_warning("Some operations may have limited functionality without root privileges.")
-        main_menu()
+        net = run_command(["virsh", "net-list"], capture_output=True, check=False)
+        if "default" in net.stdout and "active" in net.stdout:
+            print_success("Default network is active")
+        else:
+            print_error("Default network inactive")
+            passed = False
+    except Exception as e:
+        print_error(f"Network check error: {e}")
+        passed = False
+
+    try:
+        lsmod = run_command(["lsmod"], capture_output=True)
+        if "kvm" in lsmod.stdout:
+            print_success("KVM modules loaded")
+        else:
+            print_error("KVM modules missing")
+            passed = False
+    except Exception as e:
+        print_error(f"KVM check error: {e}")
+        passed = False
+
+    for path_str in VM_STORAGE_PATHS:
+        path = Path(path_str)
+        if path.exists():
+            print_success(f"Storage exists: {path}")
+        else:
+            print_error(f"Storage missing: {path}")
+            try:
+                path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
+                print_success(f"Created storage: {path}")
+            except Exception as e:
+                print_error(f"Failed to create {path}: {e}")
+                passed = False
+
+    if passed:
+        print_success("All verification checks passed!")
+    else:
+        print_warning("Some verification checks failed.")
+    return passed
+
+def install_and_enable_service() -> bool:
+    """
+    Install the systemd unit file for virtualization setup,
+    reload systemd, enable and start the service.
+    """
+    print_section("Installing systemd Service")
+    try:
+        SERVICE_PATH.write_text(SERVICE_CONTENT)
+        print_success(f"Service file installed to {SERVICE_PATH}")
+        run_command(["systemctl", "daemon-reload"])
+        print_success("Systemd daemon reloaded")
+        run_command(["systemctl", "enable", "virtualization_setup.service"])
+        print_success("Service enabled")
+        run_command(["systemctl", "start", "virtualization_setup.service"])
+        print_success("Service started")
+        return True
+    except Exception as e:
+        print_error(f"Failed to install and enable service: {e}")
+        return False
+
+# ----------------------------------------------------------------
+# Main Execution Flow
+# ----------------------------------------------------------------
+def main() -> None:
+    """Main function to orchestrate the virtualization setup."""
+    print_header("Enhanced Virt Setup")
+    console.print(f"Hostname: [bold #D8DEE9]{HOSTNAME}[/bold #D8DEE9]")
+    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+
+    if os.geteuid() != 0:
+        print_error("This script must be run as root (e.g., using sudo)")
+        sys.exit(1)
+
+    # Sequentially execute each setup task
+    if not update_system_packages():
+        print_warning("Package list update failed")
+
+    if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
+        print_error("Package installation encountered issues")
+
+    if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
+        print_warning("Service management encountered issues")
+
+    if not install_and_enable_service():
+        print_warning("Failed to install or enable the systemd service")
+
+    # Attempt network configuration up to 3 times
+    for attempt in range(1, 4):
+        print_step(f"Network configuration attempt {attempt}")
+        if configure_default_network():
+            break
+        time.sleep(2)
+    else:
+        print_error("Failed to configure network after multiple attempts")
+        recreate_default_network()
+
+    fix_storage_permissions(VM_STORAGE_PATHS)
+    configure_user_groups()
+
+    vms = get_virtual_machines()
+    if vms:
+        print_success(f"Found {len(vms)} VM(s)")
+        set_vm_autostart(vms)
+        ensure_network_active_before_vm_start()
+        start_virtual_machines(vms)
+    else:
+        print_step("No VMs found")
+
+    verify_virtualization_setup()
+
+    print_header("Setup Complete")
+    print_success("Virtualization environment setup complete!")
+    print_step("Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'.")
+
+if __name__ == "__main__":
+    try:
+        main()
     except KeyboardInterrupt:
-        print_warning("\nProcess interrupted by user.")
+        print_warning("Setup interrupted by user.")
         sys.exit(130)
     except Exception as e:
-        print_error(f"Unexpected error: {e}")
+        print_error(f"Unhandled error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
 ```
 
 Remember: When a user begins a conversation, start with a simple greeting and ask how you can help. Do not generate code based on the template unless specifically requested to do so.
