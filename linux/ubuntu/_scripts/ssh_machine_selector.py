@@ -3,15 +3,8 @@
 SSH Selector
 --------------------------------------------------
 
-A sophisticated terminal interface for managing SSH connections with elegant Nord theme styling.
+A streamlined terminal interface for managing SSH connections with Nord theme styling.
 Features device categorization, real-time connectivity status monitoring, and seamless connection.
-
-This utility performs the following tasks:
-  • Displays available devices from both Tailscale and local networks
-  • Monitors connection status of each device in real-time
-  • Provides visual indicators of device availability
-  • Offers a streamlined interface for initiating SSH connections
-  • Supports custom username configuration
 
 Usage:
   Run the script and select a device by number to connect via SSH.
@@ -20,7 +13,7 @@ Usage:
   - r: Refresh device status
   - q: Quit the application
 
-Version: 6.0.0
+Version: 6.1.0
 """
 
 import atexit
@@ -34,7 +27,6 @@ import random
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple, Callable
 
 # ----------------------------------------------------------------
@@ -75,27 +67,24 @@ SSH_COMMAND: str = "ssh"
 PING_TIMEOUT: float = 1.5  # seconds
 PING_COUNT: int = 1
 OPERATION_TIMEOUT: int = 30  # seconds
-VERSION: str = "6.0.0"
+VERSION: str = "6.1.0"
 APP_NAME: str = "SSH Selector"
 APP_SUBTITLE: str = "Secure Connection Manager"
 
 
 # ----------------------------------------------------------------
-# Nord-Themed Colors & Console Setup
+# Nord-Themed Colors
 # ----------------------------------------------------------------
 class NordColors:
     """Nord color palette for consistent theming throughout the application."""
 
     # Polar Night (dark) shades
     POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_2 = "#3B4252"  # Darker background shade
-    POLAR_NIGHT_3 = "#434C5E"  # Dark background shade
     POLAR_NIGHT_4 = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
     SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
     SNOW_STORM_2 = "#E5E9F0"  # Medium text color
-    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
     FROST_1 = "#8FBCBB"  # Light cyan
@@ -108,10 +97,9 @@ class NordColors:
     ORANGE = "#D08770"  # Orange
     YELLOW = "#EBCB8B"  # Yellow
     GREEN = "#A3BE8C"  # Green
-    PURPLE = "#B48EAD"  # Purple
 
 
-# Create a Rich Console with a dark background for better contrast
+# Create a Rich Console
 console: Console = Console(theme=None, highlight=False)
 
 
@@ -137,103 +125,56 @@ class Device:
 
 
 # ----------------------------------------------------------------
-# Console and Logging Helpers (Nord-Themed)
+# Console and Logging Helpers
 # ----------------------------------------------------------------
-def print_header(text: str) -> None:
+def create_header() -> Panel:
     """
-    Print a large, stylized ASCII art header using Pyfiglet with advanced Nord styling.
+    Create a reliable ASCII art header with proper sizing.
 
-    Args:
-        text: The text to convert to ASCII art
+    Returns:
+        Panel containing the styled header
     """
-    # Create ASCII art with a smaller font for better terminal compatibility
-    # Use "small" or "mini" font to prevent cutoff issues
-    ascii_art: str = pyfiglet.figlet_format(text, font="small")
+    # Use a smaller font that won't get cut off
+    fig = pyfiglet.Figlet(font="mini")
+    ascii_art = fig.renderText(APP_NAME)
 
-    # Split the art into lines for advanced styling
-    lines = ascii_art.split("\n")
+    # Clean up extra whitespace that might cause display issues
+    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
     styled_text = ""
 
-    # Apply a frost gradient effect to the header
-    frost_colors = [
-        NordColors.FROST_2,  # Light blue
-        NordColors.FROST_1,  # Light cyan
-        NordColors.FROST_3,  # Medium blue
-        NordColors.FROST_4,  # Dark blue
-    ]
+    # Apply a simple color style that won't have rendering issues
+    for line in ascii_lines:
+        styled_text += f"[bold {NordColors.FROST_2}]{line}[/]\n"
 
-    for i, line in enumerate(lines):
-        if line.strip():  # Skip empty lines
-            color = frost_colors[i % len(frost_colors)]
-            styled_text += f"[bold {color}]{line}[/]\n"
-
-    # Display the header in a panel with Nord styling
+    # Create a panel with sufficient padding to avoid cutoff
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 1),  # Reduced padding to avoid cutoff
+        padding=(1, 2),  # Top/bottom, left/right padding
         title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
         title_align="right",
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
 
-    console.print(header_panel)
+    return header_panel
 
 
-def print_section(text: str) -> None:
+def print_message(
+    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+) -> None:
     """
-    Print a styled section header.
+    Print a styled message.
 
     Args:
-        text: The section header text
+        text: The message to display
+        style: The color style to use
+        prefix: The prefix symbol
     """
-    console.print(
-        f"\n[bold {NordColors.FROST_2}]== {text} ==[/bold {NordColors.FROST_2}]"
-    )
+    console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
-def print_step(text: str) -> None:
-    """
-    Print a status step message.
-
-    Args:
-        text: The step message to display
-    """
-    console.print(f"[{NordColors.FROST_3}]• {text}[/{NordColors.FROST_3}]")
-
-
-def print_success(text: str) -> None:
-    """
-    Print a success message.
-
-    Args:
-        text: The success message to display
-    """
-    console.print(f"[bold {NordColors.GREEN}]✓ {text}[/bold {NordColors.GREEN}]")
-
-
-def print_warning(text: str) -> None:
-    """
-    Print a warning message.
-
-    Args:
-        text: The warning message to display
-    """
-    console.print(f"[bold {NordColors.YELLOW}]⚠ {text}[/bold {NordColors.YELLOW}]")
-
-
-def print_error(text: str) -> None:
-    """
-    Print an error message.
-
-    Args:
-        text: The error message to display
-    """
-    console.print(f"[bold {NordColors.RED}]✗ {text}[/bold {NordColors.RED}]")
-
-
-def display_message_panel(
+def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
     """
@@ -265,7 +206,6 @@ def run_command(
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
-    Raises an error with detailed output if the command fails.
 
     Args:
         cmd: Command and arguments as a list
@@ -276,10 +216,6 @@ def run_command(
 
     Returns:
         CompletedProcess instance with command results
-
-    Raises:
-        subprocess.CalledProcessError: If the command fails and check is True
-        subprocess.TimeoutExpired: If the command times out
     """
     try:
         result = subprocess.run(
@@ -292,19 +228,17 @@ def run_command(
         )
         return result
     except subprocess.CalledProcessError as e:
-        print_error(f"Command failed: {' '.join(cmd)}")
+        print_message(f"Command failed: {' '.join(cmd)}", NordColors.RED, "✗")
         if e.stdout:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
         if e.stderr:
-            console.print(
-                f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/bold {NordColors.RED}]"
-            )
+            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
         raise
     except subprocess.TimeoutExpired:
-        print_error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        print_message(f"Command timed out after {timeout} seconds", NordColors.RED, "✗")
         raise
     except Exception as e:
-        print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
+        print_message(f"Error executing command: {e}", NordColors.RED, "✗")
         raise
 
 
@@ -313,8 +247,7 @@ def run_command(
 # ----------------------------------------------------------------
 def cleanup() -> None:
     """Perform any cleanup tasks before exit."""
-    print_step("Performing cleanup tasks...")
-    console.print()
+    print_message("Cleaning up...", NordColors.FROST_3)
 
 
 def signal_handler(sig: int, frame: Any) -> None:
@@ -326,7 +259,7 @@ def signal_handler(sig: int, frame: Any) -> None:
         frame: Current stack frame
     """
     sig_name: str = signal.Signals(sig).name
-    print_warning(f"Process interrupted by {sig_name}. Cleaning up...")
+    print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
@@ -440,7 +373,7 @@ def check_device_statuses(
         if progress_callback:
             progress_callback(index)
 
-    with ThreadPoolExecutor(max_workers=min(32, os.cpu_count() or 4)) as executor:
+    with ThreadPoolExecutor(max_workers=min(16, os.cpu_count() or 4)) as executor:
         # Submit all ping tasks to the executor
         futures = [
             executor.submit(check_single_device, device, i)
@@ -455,74 +388,6 @@ def check_device_statuses(
 # ----------------------------------------------------------------
 # UI Components
 # ----------------------------------------------------------------
-def create_ascii_header() -> Panel:
-    """
-    Create an enhanced ASCII art header with gradient styling.
-
-    Returns:
-        Panel containing the styled ASCII art header
-    """
-    # Using a more compact header to avoid display issues
-    header = """
-  ___ ___ _  _   ___ ___ _    ___ ___ _____ ___  ___ 
- / __/ __| || | / __| __| |  | __/ __|_   _/ _ \| _ \\
- \__ \__ \ __ | \__ \ _|| |__| _| (__  | || (_) |   /
- |___/___/_||_| |___/___|____|___\___| |_| \___/|_|_\\
-    """
-
-    # Apply gradient styling to the custom ASCII art
-    styled_header = ""
-    lines = header.strip().split("\n")
-
-    colors = [
-        NordColors.FROST_2,
-        NordColors.FROST_3,
-        NordColors.FROST_1,
-        NordColors.FROST_4,
-        NordColors.FROST_2,
-    ]
-
-    for i, line in enumerate(lines):
-        color = colors[i % len(colors)]
-        styled_header += f"[bold {color}]{line}[/]\n"
-
-    # Create panel with the styled header
-    header_panel = Panel(
-        Text.from_markup(styled_header),
-        border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 2),
-        title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
-        title_align="right",
-        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
-        subtitle_align="center",
-    )
-
-    return header_panel
-
-
-def typing_animation(text: str, speed: float = 0.01) -> None:
-    """
-    Display text with a typing animation effect.
-
-    Args:
-        text: The text to display (can include Rich markup)
-        speed: Delay between characters in seconds
-    """
-    # Simpler implementation to avoid style issues
-    console = Console(highlight=False)
-    full_text = Text.from_markup(text)
-
-    # Display characters one by one with proper styling
-    for i in range(len(full_text.plain)):
-        # Print up to the current character
-        partial_text = Text.from_markup(text)
-        partial_text.plain = full_text.plain[: i + 1]
-        console.print(partial_text, end="\r")
-        time.sleep(speed)
-
-    console.print()
-
-
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
     """
     Create a table displaying device information and status.
@@ -584,55 +449,7 @@ def get_username() -> str:
         return DEFAULT_USERNAME
     else:
         console.print(f"[bold {NordColors.FROST_2}]Enter username:[/]", end=" ")
-        return input()
-
-
-def connection_animation(
-    device_name: str, ip_address: str, duration: float = 2.0
-) -> None:
-    """
-    Display a connection animation with progress and status messages.
-
-    Args:
-        device_name: Name of the device being connected to
-        ip_address: IP address of the device
-        duration: Approximate duration of the animation
-    """
-    with Progress(
-        TextColumn(f"[bold {NordColors.FROST_2}]Establishing connection"),
-        SpinnerColumn("dots12", style=f"bold {NordColors.FROST_1}"),
-        BarColumn(
-            bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
-        ),
-        TextColumn(f"[bold {NordColors.FROST_3}]{{task.percentage:>3.0f}}%"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task("Connecting", total=100)
-
-        # Simulate connection process with progress updates
-        while not progress.finished:
-            progress.update(task, advance=random.uniform(0.5, 2.0))
-            time.sleep(0.05)
-
-    # Show connection sequence text using improved typing animation
-    console.print()
-    typing_animation(
-        f"[bold {NordColors.FROST_2}]> Initializing secure channel to {device_name}...[/]",
-        0.01,
-    )
-    typing_animation(
-        f"[bold {NordColors.FROST_2}]> Negotiating encryption parameters...[/]", 0.01
-    )
-    typing_animation(
-        f"[bold {NordColors.FROST_2}]> Establishing SSH tunnel to {ip_address}...[/]",
-        0.01,
-    )
-    typing_animation(
-        f"[bold {NordColors.FROST_2}]> Connection established. Launching secure shell...[/]",
-        0.01,
-    )
-    console.print()
+        return input().strip()
 
 
 def connect_to_device(name: str, ip_address: str, username: str) -> None:
@@ -645,9 +462,9 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
         username: Username for SSH connection
     """
     console.clear()
-    console.print(create_ascii_header())
+    console.print(create_header())
 
-    # Create a fancy connection panel
+    # Create a connection panel
     connection_panel = Panel(
         Text.from_markup(
             f"\n[bold {NordColors.FROST_2}]Device:[/] [{NordColors.SNOW_STORM_2}]{name}[/]\n"
@@ -661,23 +478,19 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
     console.print(connection_panel)
 
     try:
-        # Simple connection message instead of animation to avoid errors
+        # Simple connection message
         console.print()
-        console.print(
-            f"[bold {NordColors.FROST_2}]> Initializing secure channel to {name}...[/]"
+        print_message("Initializing secure channel...", NordColors.FROST_2, ">")
+        print_message("Negotiating encryption parameters...", NordColors.FROST_2, ">")
+        print_message(
+            f"Establishing SSH tunnel to {ip_address}...", NordColors.FROST_2, ">"
         )
-        console.print(
-            f"[bold {NordColors.FROST_2}]> Negotiating encryption parameters...[/]"
-        )
-        console.print(
-            f"[bold {NordColors.FROST_2}]> Establishing SSH tunnel to {ip_address}...[/]"
-        )
-        console.print(
-            f"[bold {NordColors.FROST_2}]> Connection established. Launching secure shell...[/]"
+        print_message(
+            "Connection established. Launching secure shell...", NordColors.FROST_2, ">"
         )
         console.print()
 
-        time.sleep(1.5)  # Brief pause for visual effect
+        time.sleep(1)  # Brief pause for visual effect
 
         # Execute SSH command
         ssh_args = [SSH_COMMAND, f"{username}@{ip_address}"]
@@ -710,9 +523,9 @@ def refresh_device_statuses(devices: List[Device]) -> None:
         devices: List of devices to refresh
     """
     console.clear()
-    console.print(create_ascii_header())
+    console.print(create_header())
 
-    display_message_panel(
+    display_panel(
         "Refreshing device status", style=NordColors.FROST_3, title="Network Scan"
     )
 
@@ -748,18 +561,18 @@ def main() -> None:
     local_devices = load_local_devices()
     all_devices = tailscale_devices + local_devices
 
-    # Initial status check with enhanced styling
+    # Initial status check
     console.clear()
-    console.print(create_ascii_header())
+    console.print(create_header())
 
-    display_message_panel(
+    display_panel(
         "Scanning network for available devices",
         style=NordColors.FROST_3,
         title="Initialization",
     )
 
     with Progress(
-        SpinnerColumn("dots12", style=f"bold {NordColors.FROST_3}"),
+        SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
         TextColumn(f"[bold {NordColors.FROST_2}]Scanning devices"),
         BarColumn(
             bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
@@ -778,7 +591,7 @@ def main() -> None:
 
     while True:
         console.clear()
-        console.print(create_ascii_header())
+        console.print(create_header())
 
         # Display the current date and time
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -796,7 +609,7 @@ def main() -> None:
         )
         local_table = create_device_table(local_devices, "L", "Local Devices")
 
-        # Display the tables side by side with improved layout
+        # Display the tables side by side
         console.print(
             Columns(
                 [
@@ -815,7 +628,7 @@ def main() -> None:
         )
         console.print()
 
-        # Enhanced command bar with Nord styling
+        # Command bar with Nord styling
         commands = [
             f"[bold {NordColors.FROST_3}]1-{len(tailscale_devices)}[/]: [{NordColors.SNOW_STORM_2}]Tailscale[/]",
             f"[bold {NordColors.FROST_3}]L1-L{len(local_devices)}[/]: [{NordColors.SNOW_STORM_2}]Local[/]",
@@ -839,8 +652,6 @@ def main() -> None:
         # Handle commands
         if choice == "q":
             console.clear()
-
-            # Farewell message
             console.print(
                 Panel(
                     Text(
@@ -866,14 +677,14 @@ def main() -> None:
                     username = get_username()
                     connect_to_device(device.name, device.ip_address, username)
                 else:
-                    display_message_panel(
+                    display_panel(
                         f"Invalid local device number: {choice}",
                         style=NordColors.RED,
                         title="Error",
                     )
                     input("Press Enter to continue...")
             except ValueError:
-                display_message_panel(
+                display_panel(
                     f"Invalid choice: {choice}", style=NordColors.RED, title="Error"
                 )
                 input("Press Enter to continue...")
@@ -887,14 +698,14 @@ def main() -> None:
                     username = get_username()
                     connect_to_device(device.name, device.ip_address, username)
                 else:
-                    display_message_panel(
+                    display_panel(
                         f"Invalid device number: {choice}",
                         style=NordColors.RED,
                         title="Error",
                     )
                     input("Press Enter to continue...")
             except ValueError:
-                display_message_panel(
+                display_panel(
                     f"Invalid choice: {choice}", style=NordColors.RED, title="Error"
                 )
                 input("Press Enter to continue...")
@@ -907,13 +718,11 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        display_message_panel(
+        display_panel(
             "Operation cancelled by user", style=NordColors.YELLOW, title="Cancelled"
         )
         sys.exit(0)
     except Exception as e:
-        display_message_panel(
-            f"Unhandled error: {str(e)}", style=NordColors.RED, title="Error"
-        )
+        display_panel(f"Unhandled error: {str(e)}", style=NordColors.RED, title="Error")
         console.print_exception()
         sys.exit(1)
