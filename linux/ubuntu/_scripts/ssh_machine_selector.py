@@ -1,38 +1,31 @@
 #!/usr/bin/env python3
 """
-Secure Shell Selector
--------------------
+SSH Selector
+-----------
 
-A clean, minimal terminal-based utility for connecting to SSH machines.
-This tool provides:
-  • A numbered list of available machines
-  • Quick selection by number
-  • SSH connection handling with proper terminal management
-  • Visual indication of connection status
-  • Local IP device management
-
-Features a borderless Nord-themed interface for easy readability.
+A clean, two-panel terminal interface for SSH connections.
+Features Nord dark theme colors with a minimalist design.
 
 Usage:
-  Simply run the script or alias it to 'ssh' for quick access.
-  Select a machine by number to connect via SSH.
+  Run the script to see a list of machines.
+  Select by number to connect via SSH.
 
-Version: 1.3.0
+Version: 2.0.0
 """
 
 import os
 import sys
-import shutil
-import platform
-from datetime import datetime
+import math
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 
 try:
     from rich.console import Console
     from rich.text import Text
+    from rich.panel import Panel
     from rich.table import Table
-    from rich.prompt import Prompt, IntPrompt
+    from rich.layout import Layout
+    from rich.prompt import Prompt
     from rich import box
     import pyfiglet
 except ImportError:
@@ -41,227 +34,117 @@ except ImportError:
     sys.exit(1)
 
 # ==============================
-# Configuration & Constants
+# Configuration
 # ==============================
-APP_NAME = "Secure Shell Selector"
-VERSION = "1.3.0"
-DEFAULT_USERNAME = "sawyer"  # Default SSH username
-SSH_COMMAND = "ssh"  # SSH command to use
+DEFAULT_USERNAME = "sawyer"
+SSH_COMMAND = "ssh"
+ITEMS_PER_PAGE = 8  # Items displayed per page
+
 
 # ==============================
-# Nord-Themed Console Setup
+# Nord Theme Colors
+# ==============================
+class Nord:
+    # Dark (background)
+    DARK0 = "#2E3440"
+    DARK1 = "#3B4252"
+    DARK2 = "#434C5E"
+    DARK3 = "#4C566A"
+
+    # Light (text)
+    LIGHT0 = "#D8DEE9"
+    LIGHT1 = "#E5E9F0"
+    LIGHT2 = "#ECEFF4"
+
+    # Frost (blue accents)
+    FROST0 = "#8FBCBB"
+    FROST1 = "#88C0D0"
+    FROST2 = "#81A1C1"
+    FROST3 = "#5E81AC"
+
+    # Aurora (accents)
+    RED = "#BF616A"
+    ORANGE = "#D08770"
+    YELLOW = "#EBCB8B"
+    GREEN = "#A3BE8C"
+    PURPLE = "#B48EAD"
+
+
+# ==============================
+# Console Setup
 # ==============================
 console = Console()
 
 
-class NordColors:
-    """Nord theme color palette for consistent UI styling."""
-
-    # Polar Night (dark/background)
-    NORD0 = "#2E3440"
-    NORD1 = "#3B4252"
-    NORD2 = "#434C5E"
-    NORD3 = "#4C566A"
-
-    # Snow Storm (light/text)
-    NORD4 = "#D8DEE9"
-    NORD5 = "#E5E9F0"
-    NORD6 = "#ECEFF4"
-
-    # Frost (blue accents)
-    NORD7 = "#8FBCBB"
-    NORD8 = "#88C0D0"
-    NORD9 = "#81A1C1"
-    NORD10 = "#5E81AC"
-
-    # Aurora (status indicators)
-    NORD11 = "#BF616A"  # Red (errors)
-    NORD12 = "#D08770"  # Orange (warnings)
-    NORD13 = "#EBCB8B"  # Yellow (caution)
-    NORD14 = "#A3BE8C"  # Green (success)
-    NORD15 = "#B48EAD"  # Purple (special)
-
-
 # ==============================
-# Machine Data Structure
+# Data Structures
 # ==============================
 @dataclass
 class Machine:
-    """Represents an SSH-accessible machine."""
+    """SSH-accessible machine."""
 
     name: str
     owner: str
     ip_address: str
     version: str
     os: str
-    status: str = "Unknown"
-
-    def get_display_name(self) -> str:
-        """Get formatted display name for the machine."""
-        return f"{self.name}"
-
-    def get_display_ip(self) -> str:
-        """Get formatted IP address."""
-        return f"{self.ip_address}"
-
-    def get_display_os(self) -> str:
-        """Get formatted OS info."""
-        return f"{self.os}"
-
-    def get_display_status(self) -> str:
-        """Get formatted status with appropriate coloring."""
-        if self.status.lower() == "connected":
-            return Text("Connected", style=f"bold {NordColors.NORD14}")
-        elif "disabled" in self.status.lower():
-            return Text(self.status, style=f"bold {NordColors.NORD13}")
-        else:
-            return Text(self.status, style="dim")
+    status: str = "Connected"
 
 
 @dataclass
 class LocalDevice:
-    """Represents a local network device with reserved IP."""
+    """Local network device."""
 
     name: str
     mac_address: str
     ip_address: str
+    os: str
     status: str = "Active"
-    os: str = "Unknown"  # Added OS field for consistency with Machine class
-
-    def get_display_status(self) -> Text:
-        """Get formatted status with appropriate coloring."""
-        if self.status.lower() == "active":
-            return Text("Active", style=f"bold {NordColors.NORD14}")
-        elif self.status.lower() == "inactive":
-            return Text("Inactive", style="dim")
-        else:
-            return Text(self.status, style=f"bold {NordColors.NORD13}")
-
-    def get_display_name(self) -> str:
-        """Get formatted display name for the local device."""
-        return f"{self.name}"
-
-    def get_display_ip(self) -> str:
-        """Get formatted IP address."""
-        return f"{self.ip_address}"
-
-    def get_display_os(self) -> str:
-        """Get formatted OS info."""
-        return f"{self.os}"
 
 
 # ==============================
-# UI Helper Functions
-# ==============================
-def print_header(text: str) -> None:
-    """Create a striking header using pyfiglet with no borders."""
-    # Use small font to save space
-    ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(Text(ascii_art, style=f"bold {NordColors.NORD8}"))
-    console.print(Text(f"v{VERSION}", style=f"{NordColors.NORD9}"), justify="right")
-    console.print()  # Add some spacing
-
-
-def print_info(message: str) -> None:
-    """Print an informational message."""
-    console.print(Text(message, style=NordColors.NORD9))
-
-
-def print_success(message: str) -> None:
-    """Print a success message."""
-    console.print(Text(f"✓ {message}", style=f"bold {NordColors.NORD14}"))
-
-
-def print_warning(message: str) -> None:
-    """Print a warning message."""
-    console.print(Text(f"⚠ {message}", style=f"bold {NordColors.NORD13}"))
-
-
-def print_error(message: str) -> None:
-    """Print an error message."""
-    console.print(Text(f"✗ {message}", style=f"bold {NordColors.NORD11}"))
-
-
-def clear_screen() -> None:
-    """Clear the terminal screen."""
-    console.clear()
-
-
-def get_user_input(prompt: str, default: str = "") -> str:
-    """Get input from the user with a styled prompt."""
-    return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
-
-
-# ==============================
-# Machine List Functions
+# Machine Data
 # ==============================
 def load_machines() -> List[Machine]:
-    """Load the list of machines."""
-    # Updated Tailscale machine list (excluding Windows machines and iPhone)
-    machines = [
-        Machine(
-            name="ubuntu-lenovo",
-            owner="dunamismax@github",
-            ip_address="100.66.213.7",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-            status="Connected",
-        ),
-        Machine(
-            name="raspberrypi-5",
-            owner="dunamismax@github",
-            ip_address="100.105.117.18",
-            version="1.80.2",
-            os="Linux 6.11.0-1008-raspi",
-            status="Connected",
-        ),
-        Machine(
-            name="ubuntu-lenovo-vm-01",
-            owner="dunamismax@github",
-            ip_address="100.107.79.81",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-            status="Connected",
-        ),
-        Machine(
-            name="ubuntu-lenovo-vm-02",
-            owner="dunamismax@github",
-            ip_address="100.78.101.2",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-            status="Connected",
-        ),
-        Machine(
-            name="ubuntu-lenovo-vm-03",
-            owner="dunamismax@github",
-            ip_address="100.95.115.62",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-            status="Connected",
-        ),
-        Machine(
-            name="ubuntu-lenovo-vm-04",
-            owner="dunamismax@github",
-            ip_address="100.92.31.94",
-            version="1.80.2",
-            os="Linux 6.11.0-18-generic",
-            status="Connected",
-        ),
+    """Load Tailscale machines in the specified order."""
+    all_machines = [
+        # Core machines first (server and lenovo)
         Machine(
             name="ubuntu-server",
             owner="dunamismax@github",
             ip_address="100.109.43.88",
             version="1.80.2",
             os="Linux 6.11.0-18-generic",
-            status="Connected",
         ),
+        Machine(
+            name="ubuntu-lenovo",
+            owner="dunamismax@github",
+            ip_address="100.66.213.7",
+            version="1.80.2",
+            os="Linux 6.11.0-18-generic",
+        ),
+        # Raspberry Pi machines
+        Machine(
+            name="raspberrypi-5",
+            owner="dunamismax@github",
+            ip_address="100.105.117.18",
+            version="1.80.2",
+            os="Linux 6.11.0-1008-raspi",
+        ),
+        Machine(
+            name="raspberrypi-3",
+            owner="dunamismax@github",
+            ip_address="100.69.116.5",
+            version="1.80.2",
+            os="Linux 6.11.0-1008-raspi",
+        ),
+        # Ubuntu server VMs
         Machine(
             name="ubuntu-server-vm-01",
             owner="dunamismax@github",
             ip_address="100.84.119.114",
             version="1.80.2",
             os="Linux 6.11.0-18-generic",
-            status="Connected",
         ),
         Machine(
             name="ubuntu-server-vm-02",
@@ -269,7 +152,6 @@ def load_machines() -> List[Machine]:
             ip_address="100.122.237.56",
             version="1.80.2",
             os="Linux 6.11.0-18-generic",
-            status="Connected",
         ),
         Machine(
             name="ubuntu-server-vm-03",
@@ -277,7 +159,6 @@ def load_machines() -> List[Machine]:
             ip_address="100.97.229.120",
             version="1.80.2",
             os="Linux 6.11.0-18-generic",
-            status="Connected",
         ),
         Machine(
             name="ubuntu-server-vm-04",
@@ -285,15 +166,42 @@ def load_machines() -> List[Machine]:
             ip_address="100.73.171.7",
             version="1.80.2",
             os="Linux 6.11.0-18-generic",
-            status="Connected",
+        ),
+        # Ubuntu lenovo VMs
+        Machine(
+            name="ubuntu-lenovo-vm-01",
+            owner="dunamismax@github",
+            ip_address="100.107.79.81",
+            version="1.80.2",
+            os="Linux 6.11.0-18-generic",
+        ),
+        Machine(
+            name="ubuntu-lenovo-vm-02",
+            owner="dunamismax@github",
+            ip_address="100.78.101.2",
+            version="1.80.2",
+            os="Linux 6.11.0-18-generic",
+        ),
+        Machine(
+            name="ubuntu-lenovo-vm-03",
+            owner="dunamismax@github",
+            ip_address="100.95.115.62",
+            version="1.80.2",
+            os="Linux 6.11.0-18-generic",
+        ),
+        Machine(
+            name="ubuntu-lenovo-vm-04",
+            owner="dunamismax@github",
+            ip_address="100.92.31.94",
+            version="1.80.2",
+            os="Linux 6.11.0-18-generic",
         ),
     ]
-    return machines
+    return all_machines
 
 
 def load_local_devices() -> List[LocalDevice]:
-    """Load the list of local network devices."""
-    # Updated local device list with exact data provided
+    """Load local network devices."""
     devices = [
         LocalDevice(
             name="ubuntu-server",
@@ -323,234 +231,248 @@ def load_local_devices() -> List[LocalDevice]:
     return devices
 
 
-def create_machine_table(machines: List[Machine]) -> Table:
-    """Create a clean table of machines with their details."""
-    # Create a borderless table
-    table = Table(
-        show_header=True,
-        box=None,  # No borders
-        header_style=f"bold {NordColors.NORD8}",
+# ==============================
+# UI Components
+# ==============================
+def create_ssh_banner() -> Text:
+    """Create the SSH banner for the right panel."""
+    ascii_art = pyfiglet.figlet_format("ssh", font="slant")
+    return Text(ascii_art, style=f"bold {Nord.FROST1}")
+
+
+def create_machine_list(machines: List[Machine], page: int = 1) -> Tuple[Panel, int]:
+    """Create the machine list table with pagination."""
+    # Calculate pagination
+    total_items = len(machines)
+    total_pages = math.ceil(total_items / ITEMS_PER_PAGE)
+    page = min(max(1, page), total_pages)
+    start_idx = (page - 1) * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, total_items)
+
+    # Create table
+    table = Table(box=None, show_header=True, expand=True)
+    table.add_column("#", style=f"bold {Nord.FROST3}", justify="right", width=3)
+    table.add_column("Machine", style=f"{Nord.FROST0}")
+    table.add_column("IP", style=f"{Nord.LIGHT0}")
+    table.add_column("OS", style=f"{Nord.FROST2}")
+
+    # Add machine rows
+    current_machines = machines[start_idx:end_idx]
+    for idx, machine in enumerate(current_machines, start_idx + 1):
+        table.add_row(str(idx), machine.name, machine.ip_address, machine.os)
+
+    # Create pagination info
+    footer = f"Page {page}/{total_pages}" if total_pages > 1 else ""
+
+    # Wrap in panel
+    panel = Panel(
+        table,
         title="Tailscale Machines",
-        title_style=f"bold {NordColors.NORD7}",
-        title_justify="left",
-        expand=True,
-        padding=(0, 2),  # Vertical padding of 0, horizontal padding of 2
+        title_align="left",
+        border_style=Nord.DARK3,
+        box=box.ROUNDED,
+        padding=(0, 1),
+        subtitle=footer,
+        subtitle_align="right",
     )
 
-    # Define columns
-    table.add_column(
-        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
-    )
-    table.add_column("Machine Name", style=f"{NordColors.NORD8}", justify="left")
-    table.add_column("IP Address", style=f"{NordColors.NORD4}", justify="left")
-    table.add_column("OS", style=f"{NordColors.NORD7}", justify="left")
-    table.add_column("Status", justify="left")
-
-    # Add rows
-    for idx, machine in enumerate(machines, 1):
-        table.add_row(
-            str(idx),
-            machine.get_display_name(),
-            machine.get_display_ip(),
-            machine.get_display_os(),
-            machine.get_display_status(),
-        )
-
-    return table
+    return panel, total_pages
 
 
-def create_local_devices_table(devices: List[LocalDevice]) -> Table:
-    """Create a clean table of local network devices."""
-    # Create a borderless table
-    table = Table(
-        show_header=True,
-        box=None,  # No borders
-        header_style=f"bold {NordColors.NORD8}",
-        title="Local IP Devices",
-        title_style=f"bold {NordColors.NORD7}",
-        title_justify="left",
-        expand=True,
-        padding=(0, 2),  # Vertical padding of 0, horizontal padding of 2
-    )
+def create_local_device_list(devices: List[LocalDevice]) -> Panel:
+    """Create the local device list table."""
+    table = Table(box=None, show_header=True, expand=True)
+    table.add_column("#", style=f"bold {Nord.FROST3}", justify="right", width=3)
+    table.add_column("Device", style=f"{Nord.FROST0}")
+    table.add_column("IP", style=f"{Nord.LIGHT0}")
+    table.add_column("MAC", style=f"{Nord.FROST2}")
 
-    # Define columns
-    table.add_column(
-        "#", style=f"bold {NordColors.NORD9}", justify="right", no_wrap=True
-    )
-    table.add_column("Device Name", style=f"{NordColors.NORD8}", justify="left")
-    table.add_column("MAC Address", style=f"{NordColors.NORD4}", justify="left")
-    table.add_column("IP Address", style=f"{NordColors.NORD7}", justify="left")
-    table.add_column("OS", style=f"{NordColors.NORD4}", justify="left")
-    table.add_column("Status", justify="left")
-
-    # Add rows
+    # Add device rows
     for idx, device in enumerate(devices, 1):
-        table.add_row(
-            f"L{idx}",  # "L" prefix to differentiate from machine list
-            device.name,
-            device.mac_address,
-            device.ip_address,
-            device.get_display_os(),
-            device.get_display_status(),
-        )
+        table.add_row(f"L{idx}", device.name, device.ip_address, device.mac_address)
 
-    return table
+    # Wrap in panel
+    panel = Panel(
+        table,
+        title="Local Devices",
+        title_align="left",
+        border_style=Nord.DARK3,
+        box=box.ROUNDED,
+        padding=(0, 1),
+    )
+
+    return panel
+
+
+def create_help_text() -> Text:
+    """Create the help text for command options."""
+    text = Text()
+    text.append("• ", style=Nord.YELLOW)
+    text.append("1-N", style=Nord.FROST1)
+    text.append(" - Connect to Tailscale machine\n")
+
+    text.append("• ", style=Nord.YELLOW)
+    text.append("L1-L4", style=Nord.FROST1)
+    text.append(" - Connect to local device\n")
+
+    text.append("• ", style=Nord.YELLOW)
+    text.append("n/p", style=Nord.FROST1)
+    text.append(" - Next/previous page\n")
+
+    text.append("• ", style=Nord.YELLOW)
+    text.append("q", style=Nord.FROST1)
+    text.append(" - Quit")
+
+    return text
 
 
 # ==============================
-# SSH Connection Functions
+# Layout Construction
+# ==============================
+def create_layout() -> Layout:
+    """Create the two-panel layout."""
+    layout = Layout()
+
+    # Split into main and input areas
+    layout.split(Layout(name="main", ratio=9), Layout(name="input", ratio=1))
+
+    # Split main into left and right panels
+    layout["main"].split_row(
+        Layout(name="list", ratio=3), Layout(name="banner", ratio=1)
+    )
+
+    # Split list into Tailscale and local devices
+    layout["list"].split(
+        Layout(name="tailscale", ratio=3), Layout(name="local", ratio=2)
+    )
+
+    return layout
+
+
+# ==============================
+# SSH Connection
 # ==============================
 def connect_to_machine(
     name: str, ip_address: str, username: str = DEFAULT_USERNAME
 ) -> None:
-    """Connect to a machine (either Tailscale or Local) via SSH."""
-    console.print(Text(f"Connecting to {name}", style=f"bold {NordColors.NORD8}"))
-    print_info(f"Establishing SSH connection to {username}@{ip_address}...")
+    """Connect to a machine via SSH."""
+    console.clear()
+    console.print(
+        f"Connecting to [bold {Nord.FROST1}]{name}[/] ([{Nord.LIGHT0}]{ip_address}[/])"
+    )
+    console.print(f"User: [bold {Nord.FROST0}]{username}[/]")
 
     try:
-        # Build the SSH command
         ssh_args = [SSH_COMMAND, f"{username}@{ip_address}"]
-
-        # Use os.execvp to replace the current process with SSH
-        # This ensures proper terminal handling and STDIN/STDOUT passthrough
         os.execvp(SSH_COMMAND, ssh_args)
-
-        # Note: code below this point will not execute since execvp replaces the process
     except Exception as e:
-        print_error(f"Failed to establish SSH connection: {str(e)}")
-        print_info("Press Enter to return to the menu...")
-        input()
+        console.print(f"[bold {Nord.RED}]Error:[/] {str(e)}")
+        input("Press Enter to return...")
 
 
 # ==============================
-# Main Application Functions
+# Main Application
 # ==============================
-def show_main_menu() -> None:
-    """Display the main menu and handle user selection."""
+def main():
+    """Main application entry point."""
     machines = load_machines()
     local_devices = load_local_devices()
 
+    # Create layout
+    layout = create_layout()
+
+    # Setup initial state
+    current_page = 1
+    total_pages = math.ceil(len(machines) / ITEMS_PER_PAGE)
+
     while True:
-        clear_screen()
+        console.clear()
 
-        # Print header
-        print_header(APP_NAME)
-
-        # Display machine tables
-        console.print(create_machine_table(machines))
-        console.print("")  # Add spacing
-        console.print(create_local_devices_table(local_devices))
-        console.print("")  # Add spacing
-
-        # Display options
-        console.print(Text("Options:", style=f"bold {NordColors.NORD13}"))
-        console.print(
-            Text(
-                "• Enter 1-11 to connect to a Tailscale machine", style=NordColors.NORD9
-            )
+        # Create components
+        machine_panel, total_pages = create_machine_list(machines, current_page)
+        local_panel = create_local_device_list(local_devices)
+        help_panel = Panel(
+            create_help_text(),
+            border_style=Nord.DARK3,
+            box=box.ROUNDED,
+            title="Commands",
+            padding=(1, 2),
         )
-        console.print(
-            Text(
-                "• Enter L1-L4 to connect to a local IP device", style=NordColors.NORD9
-            )
-        )
-        console.print(Text("• Type 'q' to quit", style=NordColors.NORD9))
-        console.print("")  # Add spacing
 
-        # Get user selection
-        try:
-            choice = get_user_input("\nEnter your choice:")
+        # Update layout
+        layout["list"]["tailscale"].update(machine_panel)
+        layout["list"]["local"].update(local_panel)
+        layout["banner"].update(create_ssh_banner())
+        layout["input"].update(help_panel)
 
-            if choice.lower() == "q":
-                clear_screen()
-                print_info("Thank you for using the Secure Shell Selector.")
-                sys.exit(0)
+        # Render layout
+        console.print(layout)
 
-            # Handle local device selection (L1-L4)
-            if choice.upper().startswith("L"):
-                try:
-                    # Extract the number after "L"
-                    local_idx = int(choice[1:])
-                    if 1 <= local_idx <= len(local_devices):
-                        selected_device = local_devices[local_idx - 1]
+        # Get user input
+        choice = Prompt.ask("\nEnter your choice", console=console)
 
-                        # Option to use a different username
-                        use_diff_username = (
-                            get_user_input(
-                                f"Use default username '{DEFAULT_USERNAME}'? (y/n)", "y"
-                            ).lower()
-                            != "y"
-                        )
+        # Handle commands
+        if choice.lower() == "q":
+            console.clear()
+            console.print("[bold {Nord.FROST1}]Goodbye![/]")
+            break
 
-                        username = DEFAULT_USERNAME
-                        if use_diff_username:
-                            username = get_user_input("Enter username:")
+        # Handle pagination
+        elif choice.lower() == "n" and current_page < total_pages:
+            current_page += 1
+            continue
+        elif choice.lower() == "p" and current_page > 1:
+            current_page -= 1
+            continue
 
-                        # Connect to the selected local device
-                        connect_to_machine(
-                            selected_device.name, selected_device.ip_address, username
-                        )
-                    else:
-                        print_error(
-                            f"Invalid local device choice. Please enter L1-L{len(local_devices)}."
-                        )
-                        input("\nPress Enter to continue...")
-                except ValueError:
-                    print_error(
-                        "Invalid local device selection format. Use L1, L2, etc."
-                    )
-                    input("\nPress Enter to continue...")
-                continue
-
-            # Handle Tailscale machine selection
+        # Handle local device selection
+        elif choice.upper().startswith("L"):
             try:
-                choice_num = int(choice)
-                if 1 <= choice_num <= len(machines):
-                    selected_machine = machines[choice_num - 1]
-
-                    # Option to use a different username
-                    use_diff_username = (
-                        get_user_input(
-                            f"Use default username '{DEFAULT_USERNAME}'? (y/n)", "y"
-                        ).lower()
-                        != "y"
-                    )
-
-                    username = DEFAULT_USERNAME
-                    if use_diff_username:
-                        username = get_user_input("Enter username:")
-
-                    # Connect to the selected Tailscale machine
-                    connect_to_machine(
-                        selected_machine.name, selected_machine.ip_address, username
-                    )
+                idx = int(choice[1:]) - 1
+                if 0 <= idx < len(local_devices):
+                    device = local_devices[idx]
+                    username = get_username()
+                    connect_to_machine(device.name, device.ip_address, username)
                 else:
-                    print_error(
-                        f"Invalid choice. Please enter a number between 1 and {len(machines)}."
-                    )
-                    input("\nPress Enter to continue...")
+                    console.print(f"[bold {Nord.RED}]Invalid local device number[/]")
+                    input("Press Enter to continue...")
             except ValueError:
-                print_error(
-                    "Invalid input. Please enter a machine number (1-11), local device (L1-L4), or 'q'."
-                )
-                input("\nPress Enter to continue...")
-        except KeyboardInterrupt:
-            clear_screen()
-            print_info("Thank you for using the Secure Shell Selector.")
-            sys.exit(0)
+                console.print(f"[bold {Nord.RED}]Invalid choice[/]")
+                input("Press Enter to continue...")
+
+        # Handle machine selection
+        else:
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(machines):
+                    machine = machines[idx]
+                    username = get_username()
+                    connect_to_machine(machine.name, machine.ip_address, username)
+                else:
+                    console.print(f"[bold {Nord.RED}]Invalid machine number[/]")
+                    input("Press Enter to continue...")
+            except ValueError:
+                console.print(f"[bold {Nord.RED}]Invalid choice[/]")
+                input("Press Enter to continue...")
 
 
-def main() -> None:
-    """Main entry point for the script."""
-    try:
-        show_main_menu()
-    except KeyboardInterrupt:
-        print_info("\nExiting...")
-        sys.exit(0)
-    except Exception as e:
-        print_error(f"An unexpected error occurred: {str(e)}")
-        sys.exit(1)
+def get_username() -> str:
+    """Get the username for SSH connection."""
+    use_default = Prompt.ask(
+        f"Use default username '[bold]{DEFAULT_USERNAME}[/]'?",
+        choices=["y", "n"],
+        default="y",
+    )
+
+    if use_default.lower() == "y":
+        return DEFAULT_USERNAME
+    else:
+        return Prompt.ask("Enter username")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        console.print("\nExiting...")
+        sys.exit(0)
