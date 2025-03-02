@@ -44,124 +44,254 @@ Remember: When a conversation begins, greet the user warmly and ask, "How can I 
 ```python
 #!/usr/bin/env python3
 """
-Enhanced Virtualization Environment Setup Script
+SSH Selector
 --------------------------------------------------
 
-This utility sets up a virtualization environment on Ubuntu. It performs the following tasks:
-  • Updates package lists and installs virtualization packages
-  • Manages virtualization services
-  • Configures and recreates the default NAT network
-  • Fixes storage permissions and user group settings
-  • Updates VM network settings, configures autostart, and starts VMs
-  • Verifies the overall setup and installs a systemd service
+A streamlined terminal interface for managing SSH connections with Nord theme styling.
+Features device categorization, real-time connectivity status monitoring, and seamless connection.
 
-Note: Run this script with root privileges.
+Usage:
+  Run the script and select a device by number to connect via SSH.
+  - Numbers 1-N: Connect to Tailscale devices
+  - L1-LN: Connect to local network devices
+  - r: Refresh device status
+  - q: Quit the application
+
+Version: 6.1.0
 """
 
 import atexit
 import os
-import pwd
-import grp
 import signal
 import socket
 import subprocess
 import sys
 import time
+import random
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional, Any, Tuple, Callable
 
-import pyfiglet
-from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+# ----------------------------------------------------------------
+# Dependency Check and Imports
+# ----------------------------------------------------------------
+try:
+    import pyfiglet
+    from rich.console import Console
+    from rich.text import Text
+    from rich.table import Table
+    from rich.live import Live
+    from rich.columns import Columns
+    from rich.panel import Panel
+    from rich.progress import (
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        BarColumn,
+        TimeRemainingColumn,
+    )
+    from rich.align import Align
+    from rich.style import Style
+    from rich.traceback import install as install_rich_traceback
+except ImportError:
+    print("This script requires the 'rich' and 'pyfiglet' libraries.")
+    print("Please install them using: pip install rich pyfiglet")
+    sys.exit(1)
+
+# Install rich traceback handler for better error reporting
+install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
 # Configuration
 # ----------------------------------------------------------------
 HOSTNAME: str = socket.gethostname()
-OPERATION_TIMEOUT: int = 600  # seconds
+DEFAULT_USERNAME: str = "sawyer"
+SSH_COMMAND: str = "ssh"
+PING_TIMEOUT: float = 1.5  # seconds
+PING_COUNT: int = 1
+OPERATION_TIMEOUT: int = 30  # seconds
+VERSION: str = "6.1.0"
+APP_NAME: str = "SSH Selector"
+APP_SUBTITLE: str = "Secure Connection Manager"
 
-VM_STORAGE_PATHS: List[str] = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
-VIRTUALIZATION_PACKAGES: List[str] = [
-    "qemu-kvm", "qemu-utils", "libvirt-daemon-system", "libvirt-clients",
-    "virt-manager", "bridge-utils", "cpu-checker", "ovmf", "virtinst",
-    "libguestfs-tools", "virt-top"
-]
-VIRTUALIZATION_SERVICES: List[str] = ["libvirtd", "virtlogd"]
-
-VM_OWNER: str = "root"
-VM_GROUP: str = "libvirt-qemu"
-VM_DIR_MODE: int = 0o2770
-VM_FILE_MODE: int = 0o0660
-LIBVIRT_USER_GROUP: str = "libvirt"
-
-DEFAULT_NETWORK_XML: str = """<network>
-  <name>default</name>
-  <forward mode='nat'/>
-  <bridge name='virbr0' stp='on' delay='0'/>
-  <ip address='192.168.122.1' netmask='255.255.255.0'>
-    <dhcp>
-      <range start='192.168.122.2' end='192.168.122.254'/>
-    </dhcp>
-  </ip>
-</network>
-"""
-
-SERVICE_PATH: Path = Path("/etc/systemd/system/virtualization_setup.service")
-SERVICE_CONTENT: str = """[Unit]
-Description=Virtualization Setup Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 /path/to/this_script.py
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-"""
 
 # ----------------------------------------------------------------
-# Console and Logging Helpers (Nord-Themed)
+# Nord-Themed Colors
 # ----------------------------------------------------------------
-console: Console = Console()
+class NordColors:
+    """Nord color palette for consistent theming throughout the application."""
 
-def print_header(text: str) -> None:
-    """Print a large ASCII art header using Pyfiglet."""
-    ascii_art: str = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style="bold #88C0D0")
+    # Polar Night (dark) shades
+    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_4 = "#4C566A"  # Light background shade
 
-def print_section(text: str) -> None:
-    """Print a section header."""
-    console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+    # Snow Storm (light) shades
+    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
+    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
 
-def print_step(text: str) -> None:
-    """Print a step message."""
-    console.print(f"[#88C0D0]• {text}[/#88C0D0]")
+    # Frost (blues/cyans) shades
+    FROST_1 = "#8FBCBB"  # Light cyan
+    FROST_2 = "#88C0D0"  # Light blue
+    FROST_3 = "#81A1C1"  # Medium blue
+    FROST_4 = "#5E81AC"  # Dark blue
 
-def print_success(text: str) -> None:
-    """Print a success message."""
-    console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+    # Aurora (accent) shades
+    RED = "#BF616A"  # Red
+    ORANGE = "#D08770"  # Orange
+    YELLOW = "#EBCB8B"  # Yellow
+    GREEN = "#A3BE8C"  # Green
 
-def print_warning(text: str) -> None:
-    """Print a warning message."""
-    console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
-def print_error(text: str) -> None:
-    """Print an error message."""
-    console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+# Create a Rich Console
+console: Console = Console(theme=None, highlight=False)
+
+
+# ----------------------------------------------------------------
+# Data Structures
+# ----------------------------------------------------------------
+@dataclass
+class Device:
+    """
+    Represents an SSH-accessible device with its connection details and status.
+
+    Attributes:
+        name: The hostname or device identifier
+        ip_address: IP address for SSH connection
+        status: Connection status (True=online, False=offline, None=unknown)
+    """
+
+    name: str
+    ip_address: str
+    status: Optional[bool] = (
+        None  # True for online, False for offline, None for unknown
+    )
+
+
+# ----------------------------------------------------------------
+# Console and Logging Helpers
+# ----------------------------------------------------------------
+def create_header() -> Panel:
+    """
+    Create a high-tech ASCII art header with impressive styling.
+
+    Returns:
+        Panel containing the styled header
+    """
+    # Use smaller, more compact but still tech-looking fonts
+    compact_fonts = ["small", "smslant", "mini", "digital", "times"]
+
+    # Try each font until we find one that works well
+    for font_name in compact_fonts:
+        try:
+            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
+            ascii_art = fig.renderText(APP_NAME)
+
+            # If we got a reasonable result, use it
+            if ascii_art and len(ascii_art.strip()) > 0:
+                break
+        except Exception:
+            continue
+
+    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
+    if not ascii_art or len(ascii_art.strip()) == 0:
+        ascii_art = """
+  ___ ___ _  _   ___ ___ _    ___ ___ _____ ___  ___ 
+ / __/ __| || | / __| __| |  | __/ __|_   _/ _ \| _ \\
+ \__ \__ \ __ | \__ \ _|| |__| _| (__  | || (_) |   /
+ |___/___/_||_| |___/___|____|___\___| |_| \___/|_|_\\
+        """
+
+    # Clean up extra whitespace that might cause display issues
+    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
+
+    # Create a high-tech gradient effect with Nord colors
+    colors = [
+        NordColors.FROST_1,
+        NordColors.FROST_2,
+        NordColors.FROST_3,
+        NordColors.FROST_2,
+    ]
+
+    styled_text = ""
+    for i, line in enumerate(ascii_lines):
+        color = colors[i % len(colors)]
+        styled_text += f"[bold {color}]{line}[/]\n"
+
+    # Add decorative tech elements (shorter than before)
+    tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
+    styled_text = tech_border + "\n" + styled_text + tech_border
+
+    # Create a panel with sufficient padding to avoid cutoff
+    header_panel = Panel(
+        Text.from_markup(styled_text),
+        border_style=Style(color=NordColors.FROST_1),
+        padding=(1, 1),  # Reduced padding
+        title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
+        title_align="right",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
+        subtitle_align="center",
+    )
+
+    return header_panel
+
+
+def print_message(
+    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+) -> None:
+    """
+    Print a styled message.
+
+    Args:
+        text: The message to display
+        style: The color style to use
+        prefix: The prefix symbol
+    """
+    console.print(f"[{style}]{prefix} {text}[/{style}]")
+
+
+def display_panel(
+    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
+) -> None:
+    """
+    Display a message in a styled panel.
+
+    Args:
+        message: The message to display
+        style: The color style to use
+        title: Optional panel title
+    """
+    panel = Panel(
+        Text.from_markup(f"[bold {style}]{message}[/]"),
+        border_style=Style(color=style),
+        padding=(1, 2),
+        title=f"[bold {style}]{title}[/]" if title else None,
+    )
+    console.print(panel)
+
 
 # ----------------------------------------------------------------
 # Command Execution Helper
 # ----------------------------------------------------------------
-def run_command(cmd: List[str],
-                env: Optional[Dict[str, str]] = None,
-                check: bool = True,
-                capture_output: bool = True,
-                timeout: int = OPERATION_TIMEOUT) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: List[str],
+    env: Optional[Dict[str, str]] = None,
+    check: bool = True,
+    capture_output: bool = True,
+    timeout: int = OPERATION_TIMEOUT,
+) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
-    Raises an error with detailed output if the command fails.
+
+    Args:
+        cmd: Command and arguments as a list
+        env: Environment variables for the command
+        check: Whether to check the return code
+        capture_output: Whether to capture stdout/stderr
+        timeout: Command timeout in seconds
+
+    Returns:
+        CompletedProcess instance with command results
     """
     try:
         result = subprocess.run(
@@ -174,552 +304,485 @@ def run_command(cmd: List[str],
         )
         return result
     except subprocess.CalledProcessError as e:
-        print_error(f"Command failed: {' '.join(cmd)}")
+        print_message(f"Command failed: {' '.join(cmd)}", NordColors.RED, "✗")
         if e.stdout:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
         if e.stderr:
-            console.print(f"[bold #BF616A]Stderr: {e.stderr.strip()}[/bold #BF616A]")
+            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
         raise
     except subprocess.TimeoutExpired:
-        print_error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        print_message(f"Command timed out after {timeout} seconds", NordColors.RED, "✗")
         raise
     except Exception as e:
-        print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
+        print_message(f"Error executing command: {e}", NordColors.RED, "✗")
         raise
+
 
 # ----------------------------------------------------------------
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
     """Perform any cleanup tasks before exit."""
-    print_step("Performing cleanup tasks...")
+    print_message("Cleaning up...", NordColors.FROST_3)
+
 
 def signal_handler(sig: int, frame: Any) -> None:
-    sig_name: str = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
-    print_warning(f"Process interrupted by {sig_name}. Cleaning up...")
+    """
+    Handle process termination signals gracefully.
+
+    Args:
+        sig: Signal number
+        frame: Current stack frame
+    """
+    sig_name: str = signal.Signals(sig).name
+    print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
+
+# Register signal handlers
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 atexit.register(cleanup)
 
+
 # ----------------------------------------------------------------
-# Core Setup Functions
+# Device Data Functions
 # ----------------------------------------------------------------
-def update_system_packages() -> bool:
-    """Update the package lists using apt-get."""
-    print_section("Updating Package Lists")
+def load_tailscale_devices() -> List[Device]:
+    """
+    Load a list of Tailscale devices.
+
+    Returns:
+        List of Device objects representing Tailscale network devices
+    """
+    return [
+        Device(name="ubuntu-server", ip_address="100.109.43.88"),
+        Device(name="ubuntu-lenovo", ip_address="100.66.213.7"),
+        Device(name="raspberrypi-5", ip_address="100.105.117.18"),
+        Device(name="raspberrypi-3", ip_address="100.69.116.5"),
+        Device(name="ubuntu-server-vm-01", ip_address="100.84.119.114"),
+        Device(name="ubuntu-server-vm-02", ip_address="100.122.237.56"),
+        Device(name="ubuntu-server-vm-03", ip_address="100.97.229.120"),
+        Device(name="ubuntu-server-vm-04", ip_address="100.73.171.7"),
+        Device(name="ubuntu-lenovo-vm-01", ip_address="100.107.79.81"),
+        Device(name="ubuntu-lenovo-vm-02", ip_address="100.78.101.2"),
+        Device(name="ubuntu-lenovo-vm-03", ip_address="100.95.115.62"),
+        Device(name="ubuntu-lenovo-vm-04", ip_address="100.92.31.94"),
+    ]
+
+
+def load_local_devices() -> List[Device]:
+    """
+    Load a list of devices on the local network.
+
+    Returns:
+        List of Device objects representing local network devices
+    """
+    return [
+        Device(name="ubuntu-server", ip_address="192.168.0.73"),
+        Device(name="raspberrypi-5", ip_address="192.168.0.40"),
+        Device(name="ubuntu-lenovo", ip_address="192.168.0.31"),
+        Device(name="raspberrypi-3", ip_address="192.168.0.100"),
+    ]
+
+
+# ----------------------------------------------------------------
+# Network Status Functions
+# ----------------------------------------------------------------
+def ping_device(ip_address: str) -> bool:
+    """
+    Check if a device is reachable by pinging it.
+
+    Args:
+        ip_address: The IP address to ping
+
+    Returns:
+        True if the device responds, False otherwise
+    """
     try:
-        with console.status("[bold #81A1C1]Updating package lists...", spinner="dots"):
-            run_command(["apt-get", "update"])
-        print_success("Package lists updated")
-        return True
-    except Exception as e:
-        print_error(f"Failed to update package lists: {e}")
+        # Different ping commands for different platforms
+        if sys.platform == "win32":
+            cmd = [
+                "ping",
+                "-n",
+                str(PING_COUNT),
+                "-w",
+                str(int(PING_TIMEOUT * 1000)),
+                ip_address,
+            ]
+        else:  # Linux, macOS, etc.
+            cmd = [
+                "ping",
+                "-c",
+                str(PING_COUNT),
+                "-W",
+                str(int(PING_TIMEOUT)),
+                ip_address,
+            ]
+
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=PING_TIMEOUT + 1,
+        )
+        return result.returncode == 0
+    except (subprocess.SubprocessError, subprocess.TimeoutExpired):
         return False
 
-def install_virtualization_packages(packages: List[str]) -> bool:
-    """Install the required virtualization packages."""
-    print_section("Installing Virtualization Packages")
-    if not packages:
-        print_warning("No packages specified")
-        return True
 
-    total: int = len(packages)
-    print_step(f"Installing {total} package(s): {', '.join(packages)}")
-    failed: List[str] = []
+def check_device_statuses(
+    devices: List[Device], progress_callback: Optional[Callable[[int], None]] = None
+) -> None:
+    """
+    Check the status of all devices in parallel and update their status attribute.
 
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Installing packages", total=total)
-        for pkg in packages:
-            print_step(f"Installing: {pkg}")
-            try:
-                proc = subprocess.Popen(
-                    ["apt-get", "install", "-y", pkg],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                )
-                for line in iter(proc.stdout.readline, ""):
-                    if "Unpacking" in line or "Setting up" in line:
-                        console.print("  " + line.strip(), style="#D8DEE9")
-                proc.wait()
-                if proc.returncode != 0:
-                    print_error(f"Failed to install {pkg}")
-                    failed.append(pkg)
-                else:
-                    print_success(f"{pkg} installed")
-            except Exception as e:
-                print_error(f"Error installing {pkg}: {e}")
-                failed.append(pkg)
-            progress.advance(task)
+    Args:
+        devices: List of devices to check
+        progress_callback: Optional callback function to update progress
+    """
 
-    if failed:
-        print_warning(f"Failed to install: {', '.join(failed)}")
-        return False
+    def check_single_device(device: Device, index: int) -> None:
+        """Check a single device's connectivity status."""
+        device.status = ping_device(device.ip_address)
+        if progress_callback:
+            progress_callback(index)
 
-    print_success("All packages installed")
-    return True
+    with ThreadPoolExecutor(max_workers=min(16, os.cpu_count() or 4)) as executor:
+        # Submit all ping tasks to the executor
+        futures = [
+            executor.submit(check_single_device, device, i)
+            for i, device in enumerate(devices)
+        ]
 
-def manage_virtualization_services(services: List[str]) -> bool:
-    """Enable and start virtualization-related services."""
-    print_section("Managing Virtualization Services")
-    if not services:
-        print_warning("No services specified")
-        return True
+        # Wait for all futures to complete
+        for future in futures:
+            future.result()  # This will re-raise any exceptions that occurred
 
-    total: int = len(services) * 2
-    failed: List[str] = []
 
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Managing services", total=total)
-        for svc in services:
-            for action, cmd in [
-                ("enable", ["systemctl", "enable", svc]),
-                ("start", ["systemctl", "start", svc]),
-            ]:
-                print_step(f"{action.capitalize()} service: {svc}")
-                try:
-                    run_command(cmd)
-                    print_success(f"{svc} {action}d")
-                except Exception as e:
-                    print_error(f"Failed to {action} {svc}: {e}")
-                    failed.append(f"{svc} ({action})")
-                progress.advance(task)
+# ----------------------------------------------------------------
+# UI Components
+# ----------------------------------------------------------------
+def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
+    """
+    Create a table displaying device information and status.
 
-    if failed:
-        print_warning(f"Issues with: {', '.join(failed)}")
-        return False
+    Args:
+        devices: List of Device objects to display
+        prefix: Prefix for device numbers (e.g., "L" for local devices)
+        title: Title for the device table
 
-    print_success("Services managed successfully")
-    return True
+    Returns:
+        A Rich Table object containing the device information
+    """
+    table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        expand=True,
+        title=f"[bold {NordColors.FROST_2}]{title}[/]",
+        border_style=NordColors.FROST_3,
+        title_justify="center",
+        box=None,
+    )
 
-def recreate_default_network() -> bool:
-    """Recreate the default NAT network."""
-    print_section("Recreating Default Network")
-    try:
-        result = run_command(["virsh", "net-list", "--all"], capture_output=True, check=False)
-        if "default" in result.stdout:
-            print_step("Removing existing default network")
-            run_command(["virsh", "net-destroy", "default"], check=False)
-            autostart_path: Path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
-            if autostart_path.exists() or autostart_path.is_symlink():
-                autostart_path.unlink()
-            run_command(["virsh", "net-undefine", "default"], check=False)
-        net_xml_path: Path = Path("/tmp/default_network.xml")
-        net_xml_path.write_text(DEFAULT_NETWORK_XML)
-        print_step("Defining new default network")
-        run_command(["virsh", "net-define", str(net_xml_path)])
-        run_command(["virsh", "net-start", "default"])
-        run_command(["virsh", "net-autostart", "default"])
-        net_list = run_command(["virsh", "net-list"], capture_output=True)
-        if "default" in net_list.stdout and "active" in net_list.stdout:
-            print_success("Default network is active")
-            return True
-        print_error("Default network not running")
-        return False
-    except Exception as e:
-        print_error(f"Error recreating network: {e}")
-        return False
+    table.add_column("#", style=f"bold {NordColors.FROST_4}", justify="right", width=4)
+    table.add_column("Name", style=f"bold {NordColors.FROST_1}")
+    table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}")
+    table.add_column("Status", justify="center", width=10)
 
-def configure_default_network() -> bool:
-    """Ensure the default network exists and is active."""
-    print_section("Configuring Default Network")
-    try:
-        net_list = run_command(["virsh", "net-list", "--all"], capture_output=True)
-        if "default" in net_list.stdout:
-            print_step("Default network exists")
-            if "active" not in net_list.stdout:
-                print_step("Starting default network")
-                try:
-                    run_command(["virsh", "net-start", "default"])
-                    print_success("Default network started")
-                except Exception as e:
-                    print_error(f"Start failed: {e}")
-                    return recreate_default_network()
+    for idx, device in enumerate(devices, 1):
+        # Create status indicator
+        if device.status is True:
+            status = Text("● ONLINE", style=f"bold {NordColors.GREEN}")
+        elif device.status is False:
+            status = Text("● OFFLINE", style=f"bold {NordColors.RED}")
         else:
-            print_step("Default network missing, creating it")
-            return recreate_default_network()
+            status = Text("○ UNKNOWN", style=f"dim {NordColors.POLAR_NIGHT_4}")
 
-        # Ensure autostart is set
-        try:
-            net_info = run_command(["virsh", "net-info", "default"], capture_output=True)
-            if "Autostart:      yes" not in net_info.stdout:
-                print_step("Setting autostart for default network")
-                autostart_path = Path("/etc/libvirt/qemu/networks/autostart/default.xml")
-                if autostart_path.exists() or autostart_path.is_symlink():
-                    autostart_path.unlink()
-                run_command(["virsh", "net-autostart", "default"])
-                print_success("Autostart enabled")
-            else:
-                print_success("Autostart already enabled")
-        except Exception as e:
-            print_warning(f"Autostart configuration issue: {e}")
+        table.add_row(f"{prefix}{idx}", device.name, device.ip_address, status)
 
-        return True
-    except Exception as e:
-        print_error(f"Network configuration error: {e}")
-        return False
+    return table
 
-def get_virtual_machines() -> List[Dict[str, str]]:
-    """Retrieve a list of defined virtual machines."""
-    vms: List[Dict[str, str]] = []
-    try:
-        result = run_command(["virsh", "list", "--all"], capture_output=True)
-        lines: List[str] = result.stdout.strip().splitlines()
-        sep_index: int = next((i for i, line in enumerate(lines) if line.strip().startswith("----")), -1)
-        if sep_index < 0:
-            return vms
-        for line in lines[sep_index + 1:]:
-            parts = line.split()
-            if len(parts) >= 3:
-                vms.append({"id": parts[0], "name": parts[1], "state": " ".join(parts[2:])})
-        return vms
-    except Exception as e:
-        print_error(f"Error retrieving VMs: {e}")
-        return vms
 
-def set_vm_autostart(vms: List[Dict[str, str]]) -> bool:
-    """Set virtual machines to start automatically."""
-    print_section("Configuring VM Autostart")
-    if not vms:
-        print_warning("No VMs found")
-        return True
+# ----------------------------------------------------------------
+# SSH Connection Functions
+# ----------------------------------------------------------------
+def get_username() -> str:
+    """
+    Ask the user whether to use the default username or enter a new one.
 
-    failed: List[str] = []
-    with Progress(
-        SpinnerColumn(style="bold #81A1C1"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=None, style="bold #88C0D0"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Setting VM autostart", total=len(vms))
-        for vm in vms:
-            name: str = vm["name"]
-            try:
-                print_step(f"Setting autostart for {name}")
-                info = run_command(["virsh", "dominfo", name], capture_output=True)
-                if "Autostart:" in info.stdout and "yes" in info.stdout:
-                    print_success(f"{name} already set")
-                else:
-                    run_command(["virsh", "autostart", name])
-                    print_success(f"{name} set to autostart")
-            except Exception as e:
-                print_error(f"Autostart failed for {name}: {e}")
-                failed.append(name)
-            progress.advance(task)
+    Returns:
+        The username to use for SSH connections
+    """
+    console.print(
+        f"[bold {NordColors.FROST_2}]Use default username '[/][{NordColors.SNOW_STORM_1}]{DEFAULT_USERNAME}[/][bold {NordColors.FROST_2}]'? (y/n)[/]",
+        end=" ",
+    )
+    choice = input().strip().lower()
 
-    if failed:
-        print_warning(f"Autostart configuration failed for: {', '.join(failed)}")
-        return False
-    return True
-
-def ensure_network_active_before_vm_start() -> bool:
-    """Verify that the default network is active before starting VMs."""
-    print_step("Verifying default network before starting VMs")
-    try:
-        net_list = run_command(["virsh", "net-list"], capture_output=True)
-        for line in net_list.stdout.splitlines():
-            if "default" in line and "active" in line:
-                print_success("Default network is active")
-                return True
-        print_warning("Default network inactive; attempting restart")
-        return recreate_default_network()
-    except Exception as e:
-        print_error(f"Network verification error: {e}")
-        return False
-
-def start_virtual_machines(vms: List[Dict[str, str]]) -> bool:
-    """Start any virtual machines that are not currently running."""
-    print_section("Starting Virtual Machines")
-    if not vms:
-        print_warning("No VMs found")
-        return True
-
-    to_start: List[Dict[str, str]] = [vm for vm in vms if vm["state"].lower() != "running"]
-    if not to_start:
-        print_success("All VMs are already running")
-        return True
-
-    if not ensure_network_active_before_vm_start():
-        print_error("Default network not active")
-        return False
-
-    failed: List[str] = []
-    for vm in to_start:
-        name: str = vm["name"]
-        print_step(f"Starting {name}")
-        success: bool = False
-        for attempt in range(1, 4):
-            print_step(f"Attempt {attempt} for {name}")
-            try:
-                with console.status(f"[bold #81A1C1]Starting {name}...", spinner="dots"):
-                    result = run_command(["virsh", "start", name], check=False)
-                if result.returncode == 0:
-                    print_success(f"{name} started successfully")
-                    success = True
-                    break
-                else:
-                    if result.stderr and "Only one live display may be active" in result.stderr:
-                        print_warning(f"{name} failed to start due to live display conflict; retrying in 5 seconds...")
-                        time.sleep(5)
-                    else:
-                        print_error(f"Failed to start {name}: {result.stderr}")
-                        break
-            except Exception as e:
-                print_error(f"Error starting {name}: {e}")
-                break
-        if not success:
-            failed.append(name)
-        time.sleep(5)  # Brief pause between VM starts
-
-    if failed:
-        print_warning(f"Failed to start: {', '.join(failed)}")
-        return False
-    return True
-
-def fix_storage_permissions(paths: List[str]) -> bool:
-    """Fix storage directory and file permissions for VM storage."""
-    print_section("Fixing VM Storage Permissions")
-    if not paths:
-        print_warning("No storage paths specified")
-        return True
-
-    try:
-        uid: int = pwd.getpwnam(VM_OWNER).pw_uid
-        gid: int = grp.getgrnam(VM_GROUP).gr_gid
-    except KeyError as e:
-        print_error(f"User/group not found: {e}")
-        return False
-
-    for path_str in paths:
-        path: Path = Path(path_str)
-        print_step(f"Processing {path}")
-        if not path.exists():
-            print_warning(f"{path} does not exist; creating directory.")
-            path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
-        total_items = sum(1 + len(dirs) + len(files) for _, dirs, files in os.walk(str(path)))
-        with Progress(
-            SpinnerColumn(style="bold #81A1C1"),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(bar_width=None, style="bold #88C0D0"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Updating permissions", total=total_items)
-            try:
-                os.chown(str(path), uid, gid)
-                os.chmod(str(path), VM_DIR_MODE)
-                progress.advance(task)
-                for root, dirs, files in os.walk(str(path)):
-                    for d in dirs:
-                        dpath = Path(root) / d
-                        try:
-                            os.chown(str(dpath), uid, gid)
-                            os.chmod(str(dpath), VM_DIR_MODE)
-                        except Exception as e:
-                            print_warning(f"Error on {dpath}: {e}")
-                        progress.advance(task)
-                    for f in files:
-                        fpath = Path(root) / f
-                        try:
-                            os.chown(str(fpath), uid, gid)
-                            os.chmod(str(fpath), VM_FILE_MODE)
-                        except Exception as e:
-                            print_warning(f"Error on {fpath}: {e}")
-                        progress.advance(task)
-            except Exception as e:
-                print_error(f"Failed to update permissions on {path}: {e}")
-                return False
-    print_success("Storage permissions updated")
-    return True
-
-def configure_user_groups() -> bool:
-    """Ensure that the invoking (sudo) user is a member of the required group."""
-    print_section("Configuring User Group Membership")
-    sudo_user: Optional[str] = os.environ.get("SUDO_USER")
-    if not sudo_user:
-        print_warning("SUDO_USER not set; skipping group configuration")
-        return True
-
-    try:
-        pwd.getpwnam(sudo_user)
-        grp.getgrnam(LIBVIRT_USER_GROUP)
-    except KeyError as e:
-        print_error(f"User or group error: {e}")
-        return False
-
-    user_groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
-    primary = grp.getgrgid(pwd.getpwnam(sudo_user).pw_gid).gr_name
-    if primary not in user_groups:
-        user_groups.append(primary)
-    if LIBVIRT_USER_GROUP in user_groups:
-        print_success(f"{sudo_user} is already in {LIBVIRT_USER_GROUP}")
-        return True
-
-    try:
-        print_step(f"Adding {sudo_user} to {LIBVIRT_USER_GROUP}")
-        run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
-        print_success(f"User {sudo_user} added to {LIBVIRT_USER_GROUP}. Please log out/in for changes to take effect.")
-        return True
-    except Exception as e:
-        print_error(f"Failed to add user: {e}")
-        return False
-
-def verify_virtualization_setup() -> bool:
-    """Perform a series of checks to verify the virtualization environment."""
-    print_section("Verifying Virtualization Setup")
-    passed: bool = True
-
-    try:
-        svc = run_command(["systemctl", "is-active", "libvirtd"], check=False)
-        if svc.stdout.strip() == "active":
-            print_success("libvirtd is active")
-        else:
-            print_error("libvirtd is not active")
-            passed = False
-    except Exception as e:
-        print_error(f"Error checking libvirtd: {e}")
-        passed = False
-
-    try:
-        net = run_command(["virsh", "net-list"], capture_output=True, check=False)
-        if "default" in net.stdout and "active" in net.stdout:
-            print_success("Default network is active")
-        else:
-            print_error("Default network is inactive")
-            passed = False
-    except Exception as e:
-        print_error(f"Network check error: {e}")
-        passed = False
-
-    try:
-        lsmod = run_command(["lsmod"], capture_output=True)
-        if "kvm" in lsmod.stdout:
-            print_success("KVM modules loaded")
-        else:
-            print_error("KVM modules missing")
-            passed = False
-    except Exception as e:
-        print_error(f"KVM check error: {e}")
-        passed = False
-
-    for path_str in VM_STORAGE_PATHS:
-        path = Path(path_str)
-        if path.exists():
-            print_success(f"Storage exists: {path}")
-        else:
-            print_error(f"Storage missing: {path}")
-            try:
-                path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
-                print_success(f"Created storage: {path}")
-            except Exception as e:
-                print_error(f"Failed to create {path}: {e}")
-                passed = False
-
-    if passed:
-        print_success("All verification checks passed!")
+    if choice != "n":
+        return DEFAULT_USERNAME
     else:
-        print_warning("Some verification checks failed.")
-    return passed
+        console.print(f"[bold {NordColors.FROST_2}]Enter username:[/]", end=" ")
+        return input().strip()
 
-def install_and_enable_service() -> bool:
+
+def connect_to_device(name: str, ip_address: str, username: str) -> None:
     """
-    Install the systemd unit file for virtualization setup,
-    reload systemd, enable and start the service.
+    Clear the screen and initiate an SSH connection to the selected device.
+
+    Args:
+        name: Device name to connect to
+        ip_address: Device IP address
+        username: Username for SSH connection
     """
-    print_section("Installing systemd Service")
+    console.clear()
+    console.print(create_header())
+
+    # Create a connection panel
+    connection_panel = Panel(
+        Text.from_markup(
+            f"\n[bold {NordColors.FROST_2}]Device:[/] [{NordColors.SNOW_STORM_2}]{name}[/]\n"
+            f"[bold {NordColors.FROST_2}]Address:[/] [{NordColors.SNOW_STORM_2}]{ip_address}[/]\n"
+            f"[bold {NordColors.FROST_2}]User:[/] [{NordColors.SNOW_STORM_2}]{username}[/]\n"
+        ),
+        title=f"[bold {NordColors.FROST_3}]SSH Connection[/]",
+        border_style=Style(color=NordColors.FROST_3),
+        padding=(1, 2),
+    )
+    console.print(connection_panel)
+
     try:
-        SERVICE_PATH.write_text(SERVICE_CONTENT)
-        print_success(f"Service file installed to {SERVICE_PATH}")
-        run_command(["systemctl", "daemon-reload"])
-        print_success("Systemd daemon reloaded")
-        run_command(["systemctl", "enable", "virtualization_setup.service"])
-        print_success("Service enabled")
-        run_command(["systemctl", "start", "virtualization_setup.service"])
-        print_success("Service started")
-        return True
+        # Simple connection message
+        console.print()
+        print_message("Initializing secure channel...", NordColors.FROST_2, ">")
+        print_message("Negotiating encryption parameters...", NordColors.FROST_2, ">")
+        print_message(
+            f"Establishing SSH tunnel to {ip_address}...", NordColors.FROST_2, ">"
+        )
+        print_message(
+            "Connection established. Launching secure shell...", NordColors.FROST_2, ">"
+        )
+        console.print()
+
+        time.sleep(1)  # Brief pause for visual effect
+
+        # Execute SSH command
+        ssh_args = [SSH_COMMAND, f"{username}@{ip_address}"]
+        os.execvp(SSH_COMMAND, ssh_args)
     except Exception as e:
-        print_error(f"Failed to install and enable service: {e}")
-        return False
+        console.print(
+            Panel(
+                Text.from_markup(
+                    f"[bold {NordColors.RED}]Connection Error:[/] {str(e)}"
+                ),
+                border_style=Style(color=NordColors.RED),
+                title="Connection Failed",
+                padding=(1, 2),
+            )
+        )
+        console.print(
+            f"[{NordColors.SNOW_STORM_1}]Press Enter to return to selection screen...[/]"
+        )
+        input()
+
 
 # ----------------------------------------------------------------
-# Main Execution Flow
+# Device Status Refresh
+# ----------------------------------------------------------------
+def refresh_device_statuses(devices: List[Device]) -> None:
+    """
+    Refresh the status of all devices with a progress animation.
+
+    Args:
+        devices: List of devices to refresh
+    """
+    console.clear()
+    console.print(create_header())
+
+    display_panel(
+        "Refreshing device status", style=NordColors.FROST_3, title="Network Scan"
+    )
+
+    with Progress(
+        SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+        TextColumn(f"[bold {NordColors.FROST_2}]Refreshing"),
+        BarColumn(
+            bar_width=40,
+            style=NordColors.FROST_4,
+            complete_style=NordColors.FROST_2,
+        ),
+        TextColumn(f"[bold {NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        refresh_task = progress.add_task("Refreshing", total=len(devices))
+
+        def update_refresh_progress(index):
+            progress.advance(refresh_task)
+
+        check_device_statuses(devices, update_refresh_progress)
+
+
+# ----------------------------------------------------------------
+# Main Application Loop
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main function to orchestrate the virtualization setup."""
-    print_header("Enhanced Virt Setup")
-    console.print(f"Hostname: [bold #D8DEE9]{HOSTNAME}[/bold #D8DEE9]")
-    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+    """
+    Main application function that handles the UI flow and user interaction.
+    """
+    # Create device lists
+    tailscale_devices = load_tailscale_devices()
+    local_devices = load_local_devices()
+    all_devices = tailscale_devices + local_devices
 
-    if os.geteuid() != 0:
-        print_error("This script must be run as root (e.g., using sudo)")
-        sys.exit(1)
+    # Initial status check
+    console.clear()
+    console.print(create_header())
 
-    # Sequentially execute each setup task
-    if not update_system_packages():
-        print_warning("Package list update failed")
+    display_panel(
+        "Scanning network for available devices",
+        style=NordColors.FROST_3,
+        title="Initialization",
+    )
 
-    if not install_virtualization_packages(VIRTUALIZATION_PACKAGES):
-        print_error("Package installation encountered issues")
+    with Progress(
+        SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+        TextColumn(f"[bold {NordColors.FROST_2}]Scanning devices"),
+        BarColumn(
+            bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
+        ),
+        TextColumn(f"[bold {NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        scan_task = progress.add_task("Scanning", total=len(all_devices))
 
-    if not manage_virtualization_services(VIRTUALIZATION_SERVICES):
-        print_warning("Service management encountered issues")
+        def update_progress(index):
+            progress.advance(scan_task)
 
-    if not install_and_enable_service():
-        print_warning("Failed to install or enable the systemd service")
+        # Check all devices in parallel
+        check_device_statuses(all_devices, update_progress)
 
-    # Attempt network configuration up to 3 times
-    for attempt in range(1, 4):
-        print_step(f"Network configuration attempt {attempt}")
-        if configure_default_network():
+    while True:
+        console.clear()
+        console.print(create_header())
+
+        # Display the current date and time
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        console.print(
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
+                f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/]"
+            )
+        )
+        console.print()
+
+        # Create tables for Tailscale and Local devices
+        tailscale_table = create_device_table(
+            tailscale_devices, "", "Tailscale Devices"
+        )
+        local_table = create_device_table(local_devices, "L", "Local Devices")
+
+        # Display the tables side by side
+        console.print(
+            Columns(
+                [
+                    Panel(
+                        tailscale_table,
+                        border_style=Style(color=NordColors.FROST_4),
+                        padding=(0, 1),
+                    ),
+                    Panel(
+                        local_table,
+                        border_style=Style(color=NordColors.FROST_4),
+                        padding=(0, 1),
+                    ),
+                ]
+            )
+        )
+        console.print()
+        console.print()
+        console.print(f"[bold {NordColors.FROST_2}]Enter your choice:[/]", end=" ")
+        choice = input().strip().lower()
+
+        # Handle commands
+        if choice == "q":
+            console.clear()
+            console.print(
+                Panel(
+                    Text(
+                        "Thank you for using SSH Selector!",
+                        style=f"bold {NordColors.FROST_2}",
+                    ),
+                    border_style=Style(color=NordColors.FROST_1),
+                    padding=(1, 2),
+                )
+            )
             break
-        time.sleep(2)
-    else:
-        print_error("Failed to configure network after multiple attempts")
-        recreate_default_network()
 
-    fix_storage_permissions(VM_STORAGE_PATHS)
-    configure_user_groups()
+        elif choice == "r":
+            # Refresh device status
+            refresh_device_statuses(all_devices)
 
-    vms = get_virtual_machines()
-    if vms:
-        print_success(f"Found {len(vms)} VM(s)")
-        set_vm_autostart(vms)
-        ensure_network_active_before_vm_start()
-        start_virtual_machines(vms)
-    else:
-        print_step("No VMs found")
+        # Handle local device selection (choices starting with "l")
+        elif choice.startswith("l"):
+            try:
+                idx = int(choice[1:]) - 1
+                if 0 <= idx < len(local_devices):
+                    device = local_devices[idx]
+                    username = get_username()
+                    connect_to_device(device.name, device.ip_address, username)
+                else:
+                    display_panel(
+                        f"Invalid local device number: {choice}",
+                        style=NordColors.RED,
+                        title="Error",
+                    )
+                    input("Press Enter to continue...")
+            except ValueError:
+                display_panel(
+                    f"Invalid choice: {choice}", style=NordColors.RED, title="Error"
+                )
+                input("Press Enter to continue...")
 
-    verify_virtualization_setup()
+        # Handle Tailscale device selection
+        else:
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(tailscale_devices):
+                    device = tailscale_devices[idx]
+                    username = get_username()
+                    connect_to_device(device.name, device.ip_address, username)
+                else:
+                    display_panel(
+                        f"Invalid device number: {choice}",
+                        style=NordColors.RED,
+                        title="Error",
+                    )
+                    input("Press Enter to continue...")
+            except ValueError:
+                display_panel(
+                    f"Invalid choice: {choice}", style=NordColors.RED, title="Error"
+                )
+                input("Press Enter to continue...")
 
-    print_header("Setup Complete")
-    print_success("Virtualization environment setup complete!")
-    print_step("Next steps: log out/in for group changes, run 'virt-manager', and check logs with 'journalctl -u libvirtd'.")
 
+# ----------------------------------------------------------------
+# Program Entry Point
+# ----------------------------------------------------------------
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print_warning("Setup interrupted by user.")
-        sys.exit(130)
+        display_panel(
+            "Operation cancelled by user", style=NordColors.YELLOW, title="Cancelled"
+        )
+        sys.exit(0)
     except Exception as e:
-        print_error(f"Unhandled error: {e}")
-        import traceback
-        traceback.print_exc()
+        display_panel(f"Unhandled error: {str(e)}", style=NordColors.RED, title="Error")
+        console.print_exception()
         sys.exit(1)
 ```
 

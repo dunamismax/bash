@@ -659,24 +659,6 @@ def main() -> None:
             )
         )
         console.print()
-
-        # Command bar with Nord styling
-        commands = [
-            f"[bold {NordColors.FROST_3}]1-{len(tailscale_devices)}[/]: [{NordColors.SNOW_STORM_2}]Tailscale[/]",
-            f"[bold {NordColors.FROST_3}]L1-L{len(local_devices)}[/]: [{NordColors.SNOW_STORM_2}]Local[/]",
-            f"[bold {NordColors.FROST_3}]r[/]: [{NordColors.SNOW_STORM_2}]Refresh[/]",
-            f"[bold {NordColors.FROST_3}]q[/]: [{NordColors.SNOW_STORM_2}]Quit[/]",
-        ]
-
-        command_text = " | ".join(commands)
-        console.print(
-            Panel(
-                Align.center(Text.from_markup(command_text)),
-                border_style=Style(color=NordColors.FROST_2),
-                padding=(1, 1),
-            )
-        )
-
         console.print()
         console.print(f"[bold {NordColors.FROST_2}]Enter your choice:[/]", end=" ")
         choice = input().strip().lower()
