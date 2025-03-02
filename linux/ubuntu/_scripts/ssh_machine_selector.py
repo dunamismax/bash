@@ -4,7 +4,8 @@ SSH Selector
 ------------
 
 A minimal, side-by-side CLI interface for SSH connections.
-Shows only device names and IP addresses using a Nord dark theme.
+Displays device names and IP addresses using a Nord‑themed interface.
+Select a machine by number to connect via SSH.
 
 Usage:
   Run the script and select a machine by number to connect.
@@ -12,9 +13,9 @@ Usage:
 Version: 3.0.0
 """
 
-# ==============================
+# ----------------------------------------------------------------
 # Imports & Dependency Check
-# ==============================
+# ----------------------------------------------------------------
 import os
 import sys
 from dataclasses import dataclass
@@ -33,46 +34,43 @@ except ImportError:
     print("Please install them using: pip install rich pyfiglet")
     sys.exit(1)
 
-# ==============================
+# ----------------------------------------------------------------
 # Configuration & Constants
-# ==============================
+# ----------------------------------------------------------------
 DEFAULT_USERNAME = "sawyer"
 SSH_COMMAND = "ssh"
 
-# ==============================
-# Nord Theme Colors
-# ==============================
+# ----------------------------------------------------------------
+# Nord‑Themed Colors & Console Setup
+# ----------------------------------------------------------------
 class NordColors:
-    DARK3   = "#4C566A"  # Dark shade for subtle elements
-    LIGHT0  = "#D8DEE9"  # Light shade for text
-    FROST0  = "#8FBCBB"  # Cyan for primary elements
-    FROST1  = "#88C0D0"  # Light blue for highlights
-    FROST2  = "#81A1C1"  # Blue for secondary elements
-    FROST3  = "#5E81AC"  # Dark blue for numbers
-    RED     = "#BF616A"  # Error messages
-    YELLOW  = "#EBCB8B"  # Warnings/special items
+    DARK3  = "#4C566A"  # Subtle dark shade
+    LIGHT0 = "#D8DEE9"  # Light text
+    FROST0 = "#8FBCBB"  # Primary cyan
+    FROST1 = "#88C0D0"  # Light blue highlights
+    FROST2 = "#81A1C1"  # Secondary blue
+    FROST3 = "#5E81AC"  # Dark blue for numbers
+    RED    = "#BF616A"  # Error messages
+    YELLOW = "#EBCB8B"  # Warnings and special items
 
-# ==============================
-# Console Setup
-# ==============================
 console = Console()
 
-# ==============================
+# ----------------------------------------------------------------
 # Data Structures
-# ==============================
+# ----------------------------------------------------------------
 @dataclass
 class Device:
-    """SSH-accessible device."""
+    """Represents an SSH-accessible device."""
     name: str
     ip_address: str
 
-# ==============================
-# Device Data
-# ==============================
+# ----------------------------------------------------------------
+# Device Data Loaders
+# ----------------------------------------------------------------
 def load_tailscale_devices() -> List[Device]:
     """
-    Load Tailscale devices in a specific order.
-    (Core machines first, then Raspberry Pis, followed by VMs.)
+    Return a list of Tailscale devices.
+    Core machines come first, then Raspberry Pis, then VMs.
     """
     return [
         Device(name="ubuntu-server", ip_address="100.109.43.88"),
@@ -90,7 +88,7 @@ def load_tailscale_devices() -> List[Device]:
     ]
 
 def load_local_devices() -> List[Device]:
-    """Load devices on the local network."""
+    """Return a list of devices on the local network."""
     return [
         Device(name="ubuntu-server", ip_address="192.168.0.73"),
         Device(name="raspberrypi-5", ip_address="192.168.0.40"),
@@ -98,14 +96,12 @@ def load_local_devices() -> List[Device]:
         Device(name="raspberrypi-3", ip_address="192.168.0.100"),
     ]
 
-# ==============================
+# ----------------------------------------------------------------
 # UI Components
-# ==============================
+# ----------------------------------------------------------------
 def print_header() -> None:
-    """
-    Render and display the SSH header using pyfiglet inside a Rich Panel.
-    """
-    ascii_art = pyfiglet.figlet_format("ssh", font="slant")
+    """Render and display the SSH header using pyfiglet in a Rich Panel."""
+    ascii_art = pyfiglet.figlet_format("SSH", font="slant")
     header_panel = Panel(Text(ascii_art, justify="center", style=f"bold {NordColors.FROST1}"),
                          style=f"{NordColors.FROST1}")
     console.print(header_panel)
@@ -113,23 +109,22 @@ def print_header() -> None:
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
     """
     Create a table displaying device numbers, names, and IP addresses.
+    'prefix' is prepended to the device number (e.g. "L" for local devices).
     """
     table = Table(show_header=True, header_style=f"bold {NordColors.FROST0}", box=None, expand=True)
     table.add_column("#", style=f"bold {NordColors.FROST3}", justify="right", width=3)
     table.add_column(title, style=f"bold {NordColors.FROST0}")
     table.add_column("IP Address", style=f"{NordColors.LIGHT0}")
-    
     for idx, device in enumerate(devices, 1):
         table.add_row(f"{prefix}{idx}", device.name, device.ip_address)
-    
     return table
 
-# ==============================
+# ----------------------------------------------------------------
 # SSH Connection Functions
-# ==============================
+# ----------------------------------------------------------------
 def get_username() -> str:
     """
-    Prompt the user to choose between the default username or enter a new one.
+    Ask the user whether to use the default username or enter a new one.
     """
     use_default = Prompt.ask(
         f"Use default username '[bold]{DEFAULT_USERNAME}[/]'?",
@@ -141,14 +136,13 @@ def get_username() -> str:
     else:
         return Prompt.ask("Enter username")
 
-def connect_to_device(name: str, ip_address: str, username: str = DEFAULT_USERNAME) -> None:
+def connect_to_device(name: str, ip_address: str, username: str) -> None:
     """
     Clear the screen and initiate an SSH connection to the selected device.
     """
     console.clear()
     console.print(f"Connecting to [bold {NordColors.FROST1}]{name}[/] ([{NordColors.LIGHT0}]{ip_address}[/])")
     console.print(f"User: [bold {NordColors.FROST0}]{username}[/]")
-    
     try:
         ssh_args = [SSH_COMMAND, f"{username}@{ip_address}"]
         os.execvp(SSH_COMMAND, ssh_args)
@@ -156,12 +150,12 @@ def connect_to_device(name: str, ip_address: str, username: str = DEFAULT_USERNA
         console.print(f"[bold {NordColors.RED}]Error:[/] {str(e)}")
         input("Press Enter to return...")
 
-# ==============================
-# Main Application
-# ==============================
+# ----------------------------------------------------------------
+# Main Application Loop
+# ----------------------------------------------------------------
 def main() -> None:
     """
-    Main loop that displays device tables and handles user input to connect via SSH.
+    Main loop that displays the device tables and handles user input to initiate SSH connections.
     """
     tailscale_devices = load_tailscale_devices()
     local_devices = load_local_devices()
@@ -170,19 +164,20 @@ def main() -> None:
         console.clear()
         print_header()
 
-        # Create device tables for Tailscale and Local devices
+        # Create tables for Tailscale and Local devices
         tailscale_table = create_device_table(tailscale_devices, "", "Tailscale Devices")
         local_table = create_device_table(local_devices, "L", "Local Devices")
-        
-        # Display tables side by side
+
+        # Display the tables side by side
         console.print(Columns([tailscale_table, local_table]))
         console.print()
-        console.print(f"[bold {NordColors.YELLOW}]Options:[/] "
-                      f"[bold {NordColors.FROST1}]1-{len(tailscale_devices)}[/] for Tailscale • "
-                      f"[bold {NordColors.FROST1}]L1-L{len(local_devices)}[/] for Local • "
-                      f"[bold {NordColors.FROST1}]q[/] to quit")
+        console.print(
+            f"[bold {NordColors.YELLOW}]Options:[/] "
+            f"[bold {NordColors.FROST1}]1-{len(tailscale_devices)}[/] for Tailscale • "
+            f"[bold {NordColors.FROST1}]L1-L{len(local_devices)}[/] for Local • "
+            f"[bold {NordColors.FROST1}]q[/] to quit"
+        )
         console.print()
-        
         choice = Prompt.ask("Enter your choice")
 
         # Quit option
@@ -221,9 +216,9 @@ def main() -> None:
                 console.print(f"[bold {NordColors.RED}]Invalid choice[/]")
                 input("Press Enter to continue...")
 
-# ==============================
+# ----------------------------------------------------------------
 # Program Entry Point
-# ==============================
+# ----------------------------------------------------------------
 if __name__ == "__main__":
     try:
         main()
