@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
 SSH Selector
-------------
+-----------
 
-A minimal, side-by-side CLI interface for SSH connections.
-Displays device names, IP addresses, and connectivity status using a Nord‑themed interface.
+A stylish terminal interface for SSH connections with Nord theme.
+Displays device names, IP addresses, and connectivity status.
 Select a machine by number to connect via SSH.
 
 Usage:
   Run the script and select a machine by number to connect.
 
-Version: 4.0.0
+Version: 5.0.0
 """
 
 # ----------------------------------------------------------------
@@ -19,7 +19,8 @@ Version: 4.0.0
 import os
 import sys
 import subprocess
-import threading
+import time
+import random
 from dataclasses import dataclass
 from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -28,10 +29,11 @@ try:
     from rich.console import Console
     from rich.text import Text
     from rich.table import Table
-    from rich.prompt import Prompt
+    from rich.live import Live
     from rich.columns import Columns
     from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+    from rich.align import Align
     from rich.traceback import install as install_rich_traceback
     from rich.style import Style
     import pyfiglet
@@ -162,10 +164,6 @@ def ping_device(ip_address: str) -> bool:
 def check_device_statuses(devices: List[Device], progress_callback=None) -> None:
     """
     Check the status of all devices in parallel and update their status attribute.
-
-    Args:
-        devices: List of Device objects to check
-        progress_callback: Optional function to call when a device status is updated
     """
 
     def check_single_device(device, index):
@@ -189,7 +187,7 @@ def check_device_statuses(devices: List[Device], progress_callback=None) -> None
 # UI Components
 # ----------------------------------------------------------------
 def print_header() -> None:
-    """Render and display the SSH header using pyfiglet in a Rich Panel with gradient colors."""
+    """Render and display the SSH header."""
     # Create ASCII art with pyfiglet
     ascii_art = pyfiglet.figlet_format("SSH Selector", font="slant")
 
@@ -210,7 +208,7 @@ def print_header() -> None:
         color_index = i % len(colors)
         styled_lines.append(Text(line, style=colors[color_index]))
 
-    # Join all styled lines - create a properly flattened list for Text.assemble
+    # Join all styled lines
     text_components = []
     for line in styled_lines:
         text_components.append(line)
@@ -223,12 +221,12 @@ def print_header() -> None:
     # Assemble all text components together
     header_text = Text.assemble(*text_components)
 
-    # Create a panel with the styled header
+    # Display the header in a panel
     header_panel = Panel(
         header_text,
         border_style=Style(color=NordColors.FROST0),
         padding=(1, 2),
-        title="v4.0.0",
+        title="v5.0.0",
         title_align="right",
         subtitle="Connect to your machines",
         subtitle_align="center",
@@ -237,67 +235,45 @@ def print_header() -> None:
     console.print(header_panel)
 
 
+def typing_animation(text, speed=0.01):
+    """Display text with a typing animation effect."""
+    for char in text:
+        console.print(char, end="", style=NordColors.FROST0)
+        time.sleep(speed)
+    console.print()
+
+
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
     """
     Create a table displaying device numbers, names, IP addresses, and status.
-    'prefix' is prepended to the device number (e.g. "L" for local devices).
     """
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST0}",
         expand=True,
-        title=title,
-        title_style=f"bold {NordColors.FROST1}",
+        title=f"[bold {NordColors.FROST1}]{title}[/]",
+        border_style=NordColors.FROST2,
         title_justify="center",
-        caption="Select a device by its number",
-        caption_style=f"{NordColors.DARK3}",
-        caption_justify="right",
+        box=None,
     )
 
-    table.add_column("#", style=f"bold {NordColors.FROST3}", justify="right", width=3)
+    table.add_column("#", style=f"bold {NordColors.FROST3}", justify="right", width=4)
     table.add_column("Name", style=f"bold {NordColors.FROST0}")
     table.add_column("IP Address", style=f"{NordColors.LIGHT0}")
-    table.add_column("Status", justify="center", width=6)
+    table.add_column("Status", justify="center", width=8)
 
     for idx, device in enumerate(devices, 1):
-        # Create status indicator
+        # Create status indicator with blinking effect for online systems
         if device.status is True:
-            status = Text("●", style=f"bold {NordColors.GREEN}")
+            status = Text("● ONLINE", style=f"bold blink {NordColors.GREEN}")
         elif device.status is False:
-            status = Text("●", style=f"bold {NordColors.RED}")
+            status = Text("● OFFLINE", style=f"bold {NordColors.RED}")
         else:
-            status = Text("○", style=f"dim {NordColors.DARK3}")
+            status = Text("○ UNKNOWN", style=f"dim {NordColors.DARK3}")
 
         table.add_row(f"{prefix}{idx}", device.name, device.ip_address, status)
 
     return table
-
-
-def display_help_panel() -> None:
-    """Display a help panel with instructions and shortcuts."""
-    help_panel = Panel(
-        Text.from_markup(
-            "\n".join(
-                [
-                    f"[bold {NordColors.FROST1}]Navigation:[/]",
-                    f"• Enter device number ([bold {NordColors.FROST3}]1-n[/]) to connect to a Tailscale device",
-                    f"• Enter [bold {NordColors.FROST3}]L1-Ln[/] to connect to a Local device",
-                    f"• Press [bold {NordColors.FROST3}]r[/] to refresh device status",
-                    f"• Press [bold {NordColors.FROST3}]h[/] to show/hide this help",
-                    f"• Press [bold {NordColors.FROST3}]q[/] to quit",
-                    "",
-                    f"[bold {NordColors.FROST1}]Status Indicators:[/]",
-                    f"• [bold {NordColors.GREEN}]●[/] Device is online and responding to ping",
-                    f"• [bold {NordColors.RED}]●[/] Device is offline or not responding",
-                    f"• [dim {NordColors.DARK3}]○[/] Status unknown or not checked",
-                ]
-            )
-        ),
-        title="Help & Commands",
-        border_style=Style(color=NordColors.FROST2),
-        padding=(1, 2),
-    )
-    console.print(help_panel)
 
 
 # ----------------------------------------------------------------
@@ -307,17 +283,55 @@ def get_username() -> str:
     """
     Ask the user whether to use the default username or enter a new one.
     """
-    use_default = Prompt.ask(
-        Text.from_markup(
-            f"Use default username '[bold {NordColors.FROST1}]{DEFAULT_USERNAME}[/]'?"
-        ),
-        choices=["y", "n"],
-        default="y",
+    console.print(
+        f"[bold {NordColors.FROST1}]Use default username '[/][{NordColors.LIGHT0}]{DEFAULT_USERNAME}[/][bold {NordColors.FROST1}]'? (y/n)[/]",
+        end=" ",
     )
-    if use_default.lower() == "y":
+    choice = input().strip().lower()
+
+    if choice != "n":
         return DEFAULT_USERNAME
     else:
-        return Prompt.ask("Enter username", style=f"bold {NordColors.FROST0}")
+        console.print(f"[bold {NordColors.FROST1}]Enter username:[/]", end=" ")
+        return input()
+
+
+def connection_animation(device_name, ip_address, duration=2.0):
+    """Display a connection animation."""
+    with Progress(
+        TextColumn(f"[bold {NordColors.FROST1}]Establishing connection"),
+        SpinnerColumn("dots12", style=f"bold {NordColors.FROST0}"),
+        BarColumn(
+            bar_width=40, style=NordColors.FROST3, complete_style=NordColors.FROST1
+        ),
+        TextColumn(f"[bold {NordColors.FROST2}]{{task.percentage:>3.0f}}%"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Connecting", total=100)
+
+        # Simulate connection process with progress updates
+        while not progress.finished:
+            progress.update(task, advance=random.uniform(0.5, 2.0))
+            time.sleep(0.05)
+
+    # Show connection sequence text
+    console.print()
+    typing_animation(
+        f"[bold {NordColors.FROST1}]> Initializing secure channel to {device_name}...",
+        0.01,
+    )
+    typing_animation(
+        f"[bold {NordColors.FROST1}]> Negotiating encryption parameters...", 0.01
+    )
+    typing_animation(
+        f"[bold {NordColors.FROST1}]> Establishing SSH tunnel to {ip_address}...", 0.01
+    )
+    typing_animation(
+        f"[bold {NordColors.FROST1}]> Connection established. Launching secure shell...",
+        0.01,
+    )
+    console.print()
 
 
 def connect_to_device(name: str, ip_address: str, username: str) -> None:
@@ -325,30 +339,23 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
     Clear the screen and initiate an SSH connection to the selected device.
     """
     console.clear()
-    # Create a visually appealing connection info panel
-    connection_info = Panel(
+
+    # Create a fancy connection panel
+    connection_panel = Panel(
         Text.from_markup(
-            f"\nConnecting to [bold {NordColors.FROST1}]{name}[/] ([{NordColors.LIGHT0}]{ip_address}[/])\n"
-            f"User: [bold {NordColors.FROST0}]{username}[/]\n"
+            f"\n[bold {NordColors.FROST0}]Device:[/] [{NordColors.FROST1}]{name}[/]\n"
+            f"[bold {NordColors.FROST0}]Address:[/] [{NordColors.FROST1}]{ip_address}[/]\n"
+            f"[bold {NordColors.FROST0}]User:[/] [{NordColors.FROST1}]{username}[/]\n"
         ),
-        title="SSH Connection",
+        title="[bold]SSH Connection[/]",
         border_style=Style(color=NordColors.FROST1),
         padding=(1, 2),
     )
-    console.print(connection_info)
+    console.print(connection_panel)
 
     try:
-        # Create a short delay for visual effect
-        with Progress(
-            SpinnerColumn(style=f"bold {NordColors.FROST1}"),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("Establishing connection...", total=None)
-            # Small sleep for visual effect
-            import time
-
-            time.sleep(0.5)
+        # Show connection animation
+        connection_animation(name, ip_address)
 
         # Execute SSH command
         ssh_args = [SSH_COMMAND, f"{username}@{ip_address}"]
@@ -356,13 +363,15 @@ def connect_to_device(name: str, ip_address: str, username: str) -> None:
     except Exception as e:
         console.print(
             Panel(
-                Text.from_markup(f"[bold {NordColors.RED}]Error:[/] {str(e)}"),
+                Text.from_markup(
+                    f"[bold {NordColors.RED}]Connection Error:[/] {str(e)}"
+                ),
                 border_style=Style(color=NordColors.RED),
                 title="Connection Failed",
                 padding=(1, 2),
             )
         )
-        input("Press Enter to return...")
+        input("Press Enter to return to selection screen...")
 
 
 # ----------------------------------------------------------------
@@ -372,35 +381,38 @@ def main() -> None:
     """
     Main loop that displays the device tables and handles user input to initiate SSH connections.
     """
+    # Create device lists
     tailscale_devices = load_tailscale_devices()
     local_devices = load_local_devices()
-    show_help = True
+    all_devices = tailscale_devices + local_devices
 
-    # Initial status check with progress display
+    # Initial status check
     console.clear()
+    print_header()
+
     console.print(
         Panel(
-            "Checking device status...",
-            title="Initializing",
+            f"[bold {NordColors.FROST0}]Scanning network for available devices[/]",
             border_style=Style(color=NordColors.FROST2),
             padding=(1, 1),
         )
     )
 
     with Progress(
-        SpinnerColumn(style=f"bold {NordColors.FROST1}"),
-        TextColumn("[progress.description]{task.description}"),
+        SpinnerColumn("dots", style=f"bold {NordColors.FROST0}"),
+        TextColumn(f"[bold {NordColors.FROST1}]Scanning devices"),
+        BarColumn(
+            bar_width=40, style=NordColors.FROST3, complete_style=NordColors.FROST1
+        ),
+        TextColumn(f"[bold {NordColors.FROST2}]{{task.percentage:>3.0f}}%"),
         console=console,
     ) as progress:
-        status_task = progress.add_task(
-            "Pinging devices...", total=len(tailscale_devices) + len(local_devices)
-        )
+        scan_task = progress.add_task("Scanning", total=len(all_devices))
 
         def update_progress(index):
-            progress.advance(status_task)
+            progress.advance(scan_task)
 
         # Check all devices in parallel
-        all_devices = tailscale_devices + local_devices
         check_device_statuses(all_devices, update_progress)
 
     while True:
@@ -413,39 +425,40 @@ def main() -> None:
         )
         local_table = create_device_table(local_devices, "L", "Local Devices")
 
-        # Display the tables side by side
+        # Display the tables side by side or stacked depending on terminal width
         console.print(Columns([tailscale_table, local_table]))
         console.print()
 
-        # Show help panel if enabled
-        if show_help:
-            display_help_panel()
-        else:
-            console.print(
-                Panel(
-                    Text.from_markup(
-                        f"[bold {NordColors.FROST1}]1-{len(tailscale_devices)}[/] for Tailscale • "
-                        f"[bold {NordColors.FROST1}]L1-L{len(local_devices)}[/] for Local • "
-                        f"[bold {NordColors.FROST1}]r[/] to refresh • "
-                        f"[bold {NordColors.FROST1}]h[/] for help • "
-                        f"[bold {NordColors.FROST1}]q[/] to quit"
-                    ),
-                    border_style=None,
-                    padding=(1, 0),
-                )
+        # Simple command bar
+        commands = [
+            f"[bold {NordColors.FROST1}]1-{len(tailscale_devices)}[/]: Tailscale",
+            f"[bold {NordColors.FROST1}]L1-L{len(local_devices)}[/]: Local",
+            f"[bold {NordColors.FROST1}]r[/]: Refresh",
+            f"[bold {NordColors.FROST1}]q[/]: Quit",
+        ]
+
+        command_text = " | ".join(commands)
+        console.print(
+            Panel(
+                Align.center(Text.from_markup(command_text)),
+                border_style=Style(color=NordColors.FROST2),
+                padding=(1, 1),
             )
+        )
 
         console.print()
-        choice = Prompt.ask("Enter your choice", style=f"bold {NordColors.FROST0}")
-        choice = choice.strip().lower()
+        console.print(f"[bold {NordColors.FROST1}]Enter your choice:[/]", end=" ")
+        choice = input().strip().lower()
 
-        # Handle various commands
+        # Handle commands
         if choice == "q":
             console.clear()
+
+            # Farewell message
             console.print(
                 Panel(
                     Text(
-                        "Thanks for using SSH Selector!",
+                        "Thank you for using SSH Selector!",
                         style=f"bold {NordColors.FROST1}",
                     ),
                     border_style=Style(color=NordColors.FROST0),
@@ -456,23 +469,32 @@ def main() -> None:
 
         elif choice == "r":
             # Refresh device status
+            console.clear()
+            console.print(
+                Panel(
+                    f"[bold {NordColors.FROST0}]Refreshing device status[/]",
+                    border_style=Style(color=NordColors.FROST2),
+                    padding=(1, 1),
+                )
+            )
+
             with Progress(
-                SpinnerColumn(style=f"bold {NordColors.FROST1}"),
-                TextColumn("[progress.description]{task.description}"),
+                SpinnerColumn("dots", style=f"bold {NordColors.FROST0}"),
+                TextColumn(f"[bold {NordColors.FROST1}]Refreshing"),
+                BarColumn(
+                    bar_width=40,
+                    style=NordColors.FROST3,
+                    complete_style=NordColors.FROST1,
+                ),
+                TextColumn(f"[bold {NordColors.FROST2}]{{task.percentage:>3.0f}}%"),
                 console=console,
             ) as progress:
-                refresh_task = progress.add_task(
-                    "Refreshing device status...", total=len(all_devices)
-                )
+                refresh_task = progress.add_task("Refreshing", total=len(all_devices))
 
                 def update_refresh_progress(index):
                     progress.advance(refresh_task)
 
                 check_device_statuses(all_devices, update_refresh_progress)
-
-        elif choice == "h":
-            # Toggle help panel
-            show_help = not show_help
 
         # Handle local device selection (choices starting with "l")
         elif choice.startswith("l"):
