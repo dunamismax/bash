@@ -134,13 +134,13 @@ def create_header() -> Panel:
     Returns:
         Panel containing the styled header
     """
-    # Try to use a big, impressive font but fallback to reliable ones if needed
-    fancy_fonts = ["banner3-D", "cyberlarge", "doom", "slant", "standard"]
+    # Use smaller, more compact but still tech-looking fonts
+    compact_fonts = ["small", "smslant", "mini", "digital", "times"]
 
     # Try each font until we find one that works well
-    for font_name in fancy_fonts:
+    for font_name in compact_fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=80)
+            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
             ascii_art = fig.renderText(APP_NAME)
 
             # If we got a reasonable result, use it
@@ -148,6 +148,15 @@ def create_header() -> Panel:
                 break
         except Exception:
             continue
+
+    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
+    if not ascii_art or len(ascii_art.strip()) == 0:
+        ascii_art = """
+  ___ ___ _  _   ___ ___ _    ___ ___ _____ ___  ___ 
+ / __/ __| || | / __| __| |  | __/ __|_   _/ _ \| _ \\
+ \__ \__ \ __ | \__ \ _|| |__| _| (__  | || (_) |   /
+ |___/___/_||_| |___/___|____|___\___| |_| \___/|_|_\\
+        """
 
     # Clean up extra whitespace that might cause display issues
     ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
@@ -157,8 +166,6 @@ def create_header() -> Panel:
         NordColors.FROST_1,
         NordColors.FROST_2,
         NordColors.FROST_3,
-        NordColors.FROST_4,
-        NordColors.FROST_3,
         NordColors.FROST_2,
     ]
 
@@ -167,15 +174,15 @@ def create_header() -> Panel:
         color = colors[i % len(colors)]
         styled_text += f"[bold {color}]{line}[/]\n"
 
-    # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
+    # Add decorative tech elements (shorter than before)
+    tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
     styled_text = tech_border + "\n" + styled_text + tech_border
 
     # Create a panel with sufficient padding to avoid cutoff
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 2),  # Top/bottom, left/right padding
+        padding=(1, 1),  # Reduced padding
         title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
         title_align="right",
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
