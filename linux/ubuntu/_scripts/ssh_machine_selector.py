@@ -129,22 +129,47 @@ class Device:
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a reliable ASCII art header with proper sizing.
+    Create a high-tech ASCII art header with impressive styling.
 
     Returns:
         Panel containing the styled header
     """
-    # Use a smaller font that won't get cut off
-    fig = pyfiglet.Figlet(font="mini")
-    ascii_art = fig.renderText(APP_NAME)
+    # Try to use a big, impressive font but fallback to reliable ones if needed
+    fancy_fonts = ["banner3-D", "cyberlarge", "doom", "slant", "standard"]
+
+    # Try each font until we find one that works well
+    for font_name in fancy_fonts:
+        try:
+            fig = pyfiglet.Figlet(font=font_name, width=80)
+            ascii_art = fig.renderText(APP_NAME)
+
+            # If we got a reasonable result, use it
+            if ascii_art and len(ascii_art.strip()) > 0:
+                break
+        except Exception:
+            continue
 
     # Clean up extra whitespace that might cause display issues
     ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
-    styled_text = ""
 
-    # Apply a simple color style that won't have rendering issues
-    for line in ascii_lines:
-        styled_text += f"[bold {NordColors.FROST_2}]{line}[/]\n"
+    # Create a high-tech gradient effect with Nord colors
+    colors = [
+        NordColors.FROST_1,
+        NordColors.FROST_2,
+        NordColors.FROST_3,
+        NordColors.FROST_4,
+        NordColors.FROST_3,
+        NordColors.FROST_2,
+    ]
+
+    styled_text = ""
+    for i, line in enumerate(ascii_lines):
+        color = colors[i % len(colors)]
+        styled_text += f"[bold {color}]{line}[/]\n"
+
+    # Add decorative tech elements
+    tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
+    styled_text = tech_border + "\n" + styled_text + tech_border
 
     # Create a panel with sufficient padding to avoid cutoff
     header_panel = Panel(
