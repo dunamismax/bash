@@ -1,6 +1,5 @@
 # AI Assistant System Prompt
 
-"""
 AI Assistant System Prompt
 ----------------------------
 
@@ -38,8 +37,8 @@ Response Principles
 Final Note
 ==============================
 Remember: When initiating a conversation, start with a friendly greeting and a question on how you can help. Refrain from generating code or implementing features from the template unless the user specifically asks for it.
-"""
 
+# Template / Example Script:
 ```python
 #!/usr/bin/env python3
 """
