@@ -4,7 +4,7 @@ Raspberry Pi 5 Overclocking Utility
 --------------------------------------------------
 
 A comprehensive terminal interface for overclocking and managing the Raspberry Pi 5.
-Features CPU frequency control, fan management, temperature monitoring, and system 
+Features CPU frequency control, fan management, temperature monitoring, and system
 configuration with elegant Nord-themed styling.
 
 Usage:
@@ -43,11 +43,11 @@ try:
     from rich.live import Live
     from rich.panel import Panel
     from rich.progress import (
-        Progress, 
-        SpinnerColumn, 
-        TextColumn, 
-        BarColumn, 
-        TimeRemainingColumn
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        BarColumn,
+        TimeRemainingColumn,
     )
     from rich.prompt import Prompt, Confirm
     from rich.align import Align
@@ -92,6 +92,7 @@ OPERATION_TIMEOUT: int = 30  # seconds
 TERM_WIDTH: int = min(shutil.get_terminal_size().columns, 100)
 TERM_HEIGHT: int = min(shutil.get_terminal_size().lines, 30)
 
+
 # ----------------------------------------------------------------
 # Nord-Themed Colors
 # ----------------------------------------------------------------
@@ -116,14 +117,16 @@ class NordColors:
     FROST_4 = "#5E81AC"  # Dark blue
 
     # Aurora (accent) shades
-    RED = "#BF616A"     # Red - errors
+    RED = "#BF616A"  # Red - errors
     ORANGE = "#D08770"  # Orange - warnings
     YELLOW = "#EBCB8B"  # Yellow - caution
-    GREEN = "#A3BE8C"   # Green - success
+    GREEN = "#A3BE8C"  # Green - success
     PURPLE = "#B48EAD"  # Purple - special/input
+
 
 # Create a Rich Console
 console: Console = Console(theme=None, highlight=False)
+
 
 # ----------------------------------------------------------------
 # Console and Logging Helpers
@@ -143,7 +146,7 @@ def create_header() -> Panel:
         try:
             fig = pyfiglet.Figlet(font=font_name, width=60)
             ascii_art = fig.renderText(APP_NAME)
-            
+
             # If we got a reasonable result, use it
             if ascii_art and len(ascii_art.strip()) > 0:
                 break
@@ -194,7 +197,10 @@ def create_header() -> Panel:
 
     return header_panel
 
-def print_message(text: str, style: str = NordColors.FROST_2, prefix: str = "•") -> None:
+
+def print_message(
+    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+) -> None:
     """
     Print a styled message.
 
@@ -205,25 +211,31 @@ def print_message(text: str, style: str = NordColors.FROST_2, prefix: str = "•
     """
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
+
 def print_info(message: str) -> None:
     """Display an informational message."""
     print_message(message, NordColors.FROST_3, "ℹ")
+
 
 def print_success(message: str) -> None:
     """Display a success message."""
     print_message(message, NordColors.GREEN, "✓")
 
+
 def print_warning(message: str) -> None:
     """Display a warning message."""
     print_message(message, NordColors.YELLOW, "⚠")
+
 
 def print_error(message: str) -> None:
     """Display an error message."""
     print_message(message, NordColors.RED, "✗")
 
+
 def print_step(message: str) -> None:
     """Print a step description."""
     print_message(message, NordColors.FROST_2, "→")
+
 
 def print_section(title: str) -> None:
     """Print a formatted section header."""
@@ -232,7 +244,10 @@ def print_section(title: str) -> None:
     console.print(f"[bold {NordColors.FROST_2}]{title.center(TERM_WIDTH)}[/]")
     console.print(f"[bold {NordColors.FROST_2}]{border}[/]\n")
 
-def display_panel(message: str, style: str = NordColors.FROST_2, title: Optional[str] = None) -> None:
+
+def display_panel(
+    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
+) -> None:
     """
     Display a message in a styled panel.
 
@@ -249,21 +264,26 @@ def display_panel(message: str, style: str = NordColors.FROST_2, title: Optional
     )
     console.print(panel)
 
+
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
+
 
 def pause() -> None:
     """Pause execution until the user presses Enter."""
     console.input(f"\n[{NordColors.PURPLE}]Press Enter to continue...[/]")
 
+
 def get_user_input(prompt: str, default: str = "") -> str:
     """Get input from the user with a styled prompt."""
     return Prompt.ask(f"[bold {NordColors.PURPLE}]{prompt}[/]", default=default)
 
+
 def get_user_confirmation(prompt: str, default: bool = False) -> bool:
     """Get a Yes/No confirmation from the user."""
     return Confirm.ask(f"[bold {NordColors.PURPLE}]{prompt}[/]", default=default)
+
 
 def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
     """Create a table to display menu options."""
@@ -272,15 +292,18 @@ def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
         box=None,
         title_style=f"bold {NordColors.FROST_2}",
         title_justify="center",
-        expand=True
+        expand=True,
     )
-    table.add_column("Option", style=f"bold {NordColors.FROST_4}", justify="right", width=8)
+    table.add_column(
+        "Option", style=f"bold {NordColors.FROST_4}", justify="right", width=8
+    )
     table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-    
+
     for key, desc in options:
         table.add_row(key, desc)
-    
+
     return table
+
 
 # ----------------------------------------------------------------
 # Logging Setup
@@ -293,7 +316,7 @@ def setup_logging(log_file: str = LOG_FILE) -> None:
         log_dir = os.path.dirname(log_file)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
-        
+
         logging.basicConfig(
             filename=log_file,
             level=logging.INFO,
@@ -304,6 +327,7 @@ def setup_logging(log_file: str = LOG_FILE) -> None:
     except Exception as e:
         print_warning(f"Could not set up logging: {e}")
         print_step("Continuing without file logging...")
+
 
 # ----------------------------------------------------------------
 # Command Execution Helper
@@ -352,12 +376,14 @@ def run_command(
         print_error(f"Error executing command: {e}")
         raise
 
+
 # ----------------------------------------------------------------
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
     """Perform any cleanup tasks before exit."""
     print_step("Cleaning up resources...")
+
 
 def signal_handler(signum: int, frame: Any) -> None:
     """
@@ -367,15 +393,21 @@ def signal_handler(signum: int, frame: Any) -> None:
         signum: Signal number
         frame: Current stack frame
     """
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     print_warning(f"\nProcess interrupted by {sig_name}.")
     cleanup()
     sys.exit(128 + signum)
+
 
 # Register signal handlers
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 atexit.register(cleanup)
+
 
 # ----------------------------------------------------------------
 # System Validation Functions
@@ -384,32 +416,39 @@ def check_root() -> bool:
     """Return True if the script is running with root privileges."""
     return os.geteuid() == 0
 
+
 def validate_system() -> bool:
     """
     Validate that the system is a Raspberry Pi 5 running Ubuntu 24.10.
-    
+
     Returns:
         True if system validation passes, otherwise False
     """
     # Check for ARM architecture
     machine = platform.machine()
     if not machine.startswith(("aarch64", "arm")):
-        print_error(f"Unsupported architecture: {machine}. This utility requires ARM architecture.")
+        print_error(
+            f"Unsupported architecture: {machine}. This utility requires ARM architecture."
+        )
         return False
-    
+
     # Validate Raspberry Pi 5 model
     try:
         with open("/proc/device-tree/model", "r") as f:
             model = f.read()
             if "Raspberry Pi 5" not in model:
-                print_warning(f"Model does not appear to be Raspberry Pi 5: {model.strip()}")
+                print_warning(
+                    f"Model does not appear to be Raspberry Pi 5: {model.strip()}"
+                )
                 if not get_user_confirmation("Continue anyway?"):
                     return False
     except FileNotFoundError:
-        print_warning("Cannot determine Raspberry Pi model. This utility is designed for Pi 5.")
+        print_warning(
+            "Cannot determine Raspberry Pi model. This utility is designed for Pi 5."
+        )
         if not get_user_confirmation("Continue anyway?"):
             return False
-    
+
     # Validate OS version (Ubuntu 24.10)
     if os.path.exists("/etc/os-release"):
         with open("/etc/os-release", "r") as f:
@@ -420,11 +459,14 @@ def validate_system() -> bool:
                 if not get_user_confirmation("Continue anyway?"):
                     return False
     else:
-        print_warning("Cannot determine OS version. This utility is designed for Ubuntu 24.10.")
+        print_warning(
+            "Cannot determine OS version. This utility is designed for Ubuntu 24.10."
+        )
         if not get_user_confirmation("Continue anyway?"):
             return False
-    
+
     return True
+
 
 # ----------------------------------------------------------------
 # CPU and Cooling Management Functions
@@ -432,7 +474,7 @@ def validate_system() -> bool:
 def read_current_cpu_freq() -> int:
     """
     Read the current CPU frequency in Hz.
-    
+
     Returns:
         Current frequency in Hz, or 0 if reading fails
     """
@@ -443,10 +485,11 @@ def read_current_cpu_freq() -> int:
         print_error(f"Failed to read CPU frequency: {e}")
         return 0
 
+
 def read_cpu_temp() -> float:
     """
     Read the current CPU temperature in Celsius.
-    
+
     Returns:
         Current temperature in °C, or 0.0 if reading fails
     """
@@ -457,25 +500,30 @@ def read_cpu_temp() -> float:
         print_error(f"Failed to read CPU temperature: {e}")
         return 0.0
 
+
 def set_cpu_governor(governor: str = "performance") -> bool:
     """
     Set the CPU governor for all cores.
-    
+
     Args:
         governor: The CPU governor to set ("performance", "powersave", etc.)
-        
+
     Returns:
         True if successful, False otherwise
     """
     valid_governors = [
-        "performance", "powersave", "userspace", 
-        "ondemand", "conservative", "schedutil"
+        "performance",
+        "powersave",
+        "userspace",
+        "ondemand",
+        "conservative",
+        "schedutil",
     ]
-    
+
     if governor not in valid_governors:
         print_error(f"Invalid governor: {governor}")
         return False
-    
+
     success = True
     with Progress(
         SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
@@ -483,7 +531,7 @@ def set_cpu_governor(governor: str = "performance") -> bool:
         console=console,
     ) as progress:
         task = progress.add_task("Working", total=4)  # 4 cores on Pi 5
-        
+
         for cpu in range(4):  # Pi 5 has 4 cores
             cpu_path = f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_governor"
             try:
@@ -493,19 +541,20 @@ def set_cpu_governor(governor: str = "performance") -> bool:
             except Exception as e:
                 print_error(f"Failed to set governor for CPU{cpu}: {e}")
                 success = False
-    
+
     if success:
         print_success(f"CPU governor set to {governor} for all cores")
-    
+
     return success
+
 
 def set_fan_speed(speed: int = FAN_MAX_SPEED) -> bool:
     """
     Set the fan speed (0-255).
-    
+
     Args:
         speed: Fan speed value between 0-255
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -517,7 +566,7 @@ def set_fan_speed(speed: int = FAN_MAX_SPEED) -> bool:
             console=console,
         ) as progress:
             task = progress.add_task("Working", total=3)
-            
+
             # Step 1: Find the fan control paths
             progress.update(task, description="Locating fan control paths")
             fan_control_actual = subprocess.getoutput(
@@ -527,38 +576,41 @@ def set_fan_speed(speed: int = FAN_MAX_SPEED) -> bool:
                 "ls -1 /sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1_enable"
             )
             progress.advance(task)
-            
+
             # Step 2: Enable manual control
             progress.update(task, description="Enabling manual fan control")
             if not os.path.exists(fan_manual_actual):
                 print_error(f"Fan control path not found: {fan_manual_actual}")
                 return False
-            
+
             with open(fan_manual_actual, "w") as f:
                 f.write("1")  # Enable manual control
             progress.advance(task)
-            
+
             # Step 3: Set the speed
-            progress.update(task, description=f"Setting fan speed to {speed}/{FAN_MAX_SPEED}")
+            progress.update(
+                task, description=f"Setting fan speed to {speed}/{FAN_MAX_SPEED}"
+            )
             if not os.path.exists(fan_control_actual):
                 print_error(f"Fan control path not found: {fan_control_actual}")
                 return False
-            
+
             validated_speed = max(0, min(speed, FAN_MAX_SPEED))
             with open(fan_control_actual, "w") as f:
                 f.write(str(validated_speed))
             progress.advance(task)
-        
+
         print_success(f"Fan speed set to {validated_speed}/{FAN_MAX_SPEED}")
         return True
     except Exception as e:
         print_error(f"Failed to set fan speed: {e}")
         return False
 
+
 def backup_config_file() -> bool:
     """
     Backup the boot configuration file.
-    
+
     Returns:
         True if backup was successful, False otherwise
     """
@@ -566,13 +618,15 @@ def backup_config_file() -> bool:
         try:
             with Progress(
                 SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
-                TextColumn(f"[bold {NordColors.FROST_2}]Creating backup of boot config"),
+                TextColumn(
+                    f"[bold {NordColors.FROST_2}]Creating backup of boot config"
+                ),
                 console=console,
             ) as progress:
                 task = progress.add_task("Backing up", total=1)
                 shutil.copy2(CONFIG_BOOT, BACKUP_CONFIG)
                 progress.advance(task)
-            
+
             print_success(f"Backup created: {CONFIG_BOOT} -> {BACKUP_CONFIG}")
             return True
         except Exception as e:
@@ -582,21 +636,22 @@ def backup_config_file() -> bool:
         print_error(f"Config file not found: {CONFIG_BOOT}")
         return False
 
+
 def update_config_for_overclock() -> bool:
     """
     Update config.txt to enable overclocking to target frequency.
-    
+
     Returns:
         True if config was updated successfully, False otherwise
     """
     if not os.path.exists(CONFIG_BOOT):
         print_error(f"Config file not found: {CONFIG_BOOT}")
         return False
-    
+
     if not backup_config_file():
         if not get_user_confirmation("Continue without backup?"):
             return False
-    
+
     try:
         with Progress(
             SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
@@ -604,19 +659,19 @@ def update_config_for_overclock() -> bool:
             console=console,
         ) as progress:
             task = progress.add_task("Working", total=3)
-            
+
             # Step 1: Read existing config
             progress.update(task, description="Reading current configuration")
             with open(CONFIG_BOOT, "r") as f:
                 config_lines = f.readlines()
             progress.advance(task)
-            
+
             # Step 2: Update or add overclock settings
             progress.update(task, description="Updating overclock parameters")
             arm_freq_found = False
             over_voltage_found = False
             force_turbo_found = False
-            
+
             for i, line in enumerate(config_lines):
                 if line.strip().startswith("arm_freq="):
                     config_lines[i] = f"arm_freq={int(TARGET_FREQ_GHZ * 1000)}\n"
@@ -627,7 +682,7 @@ def update_config_for_overclock() -> bool:
                 elif line.strip().startswith("force_turbo="):
                     config_lines[i] = "force_turbo=1\n"
                     force_turbo_found = True
-            
+
             if not arm_freq_found:
                 config_lines.append(f"arm_freq={int(TARGET_FREQ_GHZ * 1000)}\n")
             if not over_voltage_found:
@@ -635,13 +690,13 @@ def update_config_for_overclock() -> bool:
             if not force_turbo_found:
                 config_lines.append("force_turbo=1\n")
             progress.advance(task)
-            
+
             # Step 3: Write updated config
             progress.update(task, description="Writing updated configuration")
             with open(CONFIG_BOOT, "w") as f:
                 f.writelines(config_lines)
             progress.advance(task)
-        
+
         print_success(f"Updated {CONFIG_BOOT} with overclock settings")
         print_info("Changes will take effect after reboot")
         return True
@@ -649,10 +704,11 @@ def update_config_for_overclock() -> bool:
         print_error(f"Failed to update config: {e}")
         return False
 
+
 def setup_systemd_service() -> bool:
     """
     Create and enable a systemd service to apply settings at boot.
-    
+
     Returns:
         True if service was set up successfully, False otherwise
     """
@@ -662,9 +718,9 @@ def setup_systemd_service() -> bool:
         except Exception as e:
             print_error(f"Failed to create config directory: {e}")
             return False
-    
+
     script_path = os.path.join(CONFIG_DIR, "pi5_overclock.py")
-    
+
     try:
         with Progress(
             SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
@@ -672,13 +728,13 @@ def setup_systemd_service() -> bool:
             console=console,
         ) as progress:
             task = progress.add_task("Working", total=4)
-            
+
             # Step 1: Create the startup script
             progress.update(task, description="Creating startup script")
             with open(script_path, "w") as f:
                 f.write(f"""#!/usr/bin/env python3
 # Automatically generated by {APP_NAME} Utility v{VERSION}
-# Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+# Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 import os
 import time
 import glob
@@ -692,7 +748,6 @@ logging.basicConfig(
 )
 
 def set_cpu_governor():
-    """Set CPU governor to performance mode"""
     for cpu in range(4):
         gov_path = f"/sys/devices/system/cpu/cpufreq/cpu{{cpu}}/scaling_governor"
         try:
@@ -703,7 +758,6 @@ def set_cpu_governor():
             logging.error(f"Failed to set CPU{{cpu}} governor: {{e}}")
 
 def set_fan_speed():
-    """Set fan to maximum speed"""
     try:
         fan_control_paths = glob.glob("/sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1")
         fan_manual_paths = glob.glob("/sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1_enable")
@@ -733,7 +787,7 @@ if __name__ == "__main__":
 """)
             os.chmod(script_path, 0o755)
             progress.advance(task)
-            
+
             # Step 2: Create the systemd service file
             progress.update(task, description="Creating systemd service file")
             service_content = f"""[Unit]
@@ -751,35 +805,38 @@ WantedBy=multi-user.target
             with open(SYSTEMD_SERVICE_PATH, "w") as f:
                 f.write(service_content)
             progress.advance(task)
-            
+
             # Step 3: Reload systemd and enable the service
             progress.update(task, description="Reloading systemd and enabling service")
             run_command(["systemctl", "daemon-reload"])
             run_command(["systemctl", "enable", "pi5_overclock.service"])
             progress.advance(task)
-            
+
             # Step 4: Start the service
             progress.update(task, description="Starting the service")
             run_command(["systemctl", "start", "pi5_overclock.service"])
             progress.advance(task)
-        
+
         print_success("Created and enabled systemd service for startup")
         return True
     except Exception as e:
         print_error(f"Failed to setup systemd service: {e}")
         return False
 
+
 def monitor_temperature_and_frequency(duration: int = 60) -> None:
     """
     Monitor CPU temperature and frequency for a specified duration.
-    
+
     Args:
         duration: Monitoring duration in seconds
     """
     print_section("Temperature and Frequency Monitor")
     print_info(f"Monitoring for {duration} seconds. Press Ctrl+C to stop.")
-    print_info(f"Target frequency: {TARGET_FREQ_GHZ} GHz | Critical temperature: {CRITICAL_TEMP}°C")
-    
+    print_info(
+        f"Target frequency: {TARGET_FREQ_GHZ} GHz | Critical temperature: {CRITICAL_TEMP}°C"
+    )
+
     # Create a styled table header
     header = Text()
     header.append("Time", style=f"bold {NordColors.FROST_2}")
@@ -789,26 +846,26 @@ def monitor_temperature_and_frequency(duration: int = 60) -> None:
     header.append("Frequency", style=f"bold {NordColors.FROST_2}")
     header.append(" | ", style="dim")
     header.append("Status", style=f"bold {NordColors.FROST_2}")
-    
+
     console.print(header)
     console.print("─" * 60)
-    
+
     # Record min, max, and average values
-    min_temp = float('inf')
-    max_temp = float('-inf')
-    min_freq = float('inf')
-    max_freq = float('-inf')
+    min_temp = float("inf")
+    max_temp = float("-inf")
+    min_freq = float("inf")
+    max_freq = float("-inf")
     temp_sum = 0
     freq_sum = 0
     samples = 0
-    
+
     try:
         start_time = time.time()
         while time.time() - start_time < duration:
             current_temp = read_cpu_temp()
             current_freq = read_current_cpu_freq()
             current_freq_ghz = current_freq / 1000000
-            
+
             # Update statistics
             min_temp = min(min_temp, current_temp)
             max_temp = max(max_temp, current_temp)
@@ -817,7 +874,7 @@ def monitor_temperature_and_frequency(duration: int = 60) -> None:
             temp_sum += current_temp
             freq_sum += current_freq_ghz
             samples += 1
-            
+
             # Determine status and colors
             if current_temp >= CRITICAL_TEMP:
                 status = Text("CRITICAL", style=f"bold {NordColors.RED}")
@@ -831,9 +888,9 @@ def monitor_temperature_and_frequency(duration: int = 60) -> None:
             else:
                 status = Text("OK", style=f"{NordColors.SNOW_STORM_1}")
                 temp_color = NordColors.FROST_1
-            
+
             timestamp = datetime.now().strftime("%H:%M:%S")
-            
+
             # Create a styled line
             line = Text()
             line.append(timestamp, style=f"{NordColors.SNOW_STORM_1}")
@@ -843,7 +900,7 @@ def monitor_temperature_and_frequency(duration: int = 60) -> None:
             line.append(f"{current_freq_ghz:.2f} GHz", style=f"{NordColors.FROST_1}")
             line.append(" | ", style="dim")
             line.append(status)
-            
+
             console.print(line)
             time.sleep(1)
     except KeyboardInterrupt:
@@ -853,7 +910,7 @@ def monitor_temperature_and_frequency(duration: int = 60) -> None:
         if samples > 0:
             avg_temp = temp_sum / samples
             avg_freq = freq_sum / samples
-            
+
             # Print statistics summary
             print_section("Monitoring Statistics")
             stats_table = Table(box=None, expand=True)
@@ -861,44 +918,48 @@ def monitor_temperature_and_frequency(duration: int = 60) -> None:
             stats_table.add_column("Minimum", style=f"{NordColors.SNOW_STORM_1}")
             stats_table.add_column("Average", style=f"{NordColors.SNOW_STORM_1}")
             stats_table.add_column("Maximum", style=f"{NordColors.SNOW_STORM_1}")
-            
+
             stats_table.add_row(
-                "Temperature", 
-                f"{min_temp:.1f}°C", 
-                f"{avg_temp:.1f}°C", 
-                f"{max_temp:.1f}°C"
+                "Temperature",
+                f"{min_temp:.1f}°C",
+                f"{avg_temp:.1f}°C",
+                f"{max_temp:.1f}°C",
             )
             stats_table.add_row(
-                "Frequency", 
-                f"{min_freq:.2f} GHz", 
-                f"{avg_freq:.2f} GHz", 
-                f"{max_freq:.2f} GHz"
+                "Frequency",
+                f"{min_freq:.2f} GHz",
+                f"{avg_freq:.2f} GHz",
+                f"{max_freq:.2f} GHz",
             )
-            
+
             console.print(stats_table)
+
 
 def apply_all_settings() -> bool:
     """
     Apply overclocking, CPU governor, and fan settings.
-    
+
     Returns:
         True if all settings were applied successfully, False otherwise
     """
     print_section("Applying All Settings")
-    
+
     success = True
     steps = [
-        ("Setting CPU governor to performance mode", lambda: set_cpu_governor("performance")),
+        (
+            "Setting CPU governor to performance mode",
+            lambda: set_cpu_governor("performance"),
+        ),
         ("Setting fan to maximum speed", lambda: set_fan_speed(FAN_MAX_SPEED)),
         ("Updating boot configuration for overclocking", update_config_for_overclock),
-        ("Setting up startup service", setup_systemd_service)
+        ("Setting up startup service", setup_systemd_service),
     ]
-    
+
     for description, func in steps:
         print_step(description)
         if not func():
             success = False
-    
+
     if success:
         print_success("All settings applied successfully!")
         panel = Panel(
@@ -912,17 +973,18 @@ def apply_all_settings() -> bool:
             ),
             title=f"[bold {NordColors.FROST_2}]Configuration Complete[/]",
             border_style=Style(color=NordColors.FROST_1),
-            padding=(1, 2)
+            padding=(1, 2),
         )
         console.print(panel)
-        
+
         if get_user_confirmation("Reboot now?"):
             print_info("Rebooting system...")
             subprocess.run(["reboot"])
     else:
         print_warning("Some settings failed to apply. See errors above.")
-    
+
     return success
+
 
 # ----------------------------------------------------------------
 # Menu Systems
@@ -930,13 +992,13 @@ def apply_all_settings() -> bool:
 def show_system_info() -> Panel:
     """
     Create a panel with system information.
-    
+
     Returns:
         Panel containing system info
     """
     current_temp = read_cpu_temp()
     current_freq = read_current_cpu_freq() / 1000000
-    
+
     # Determine temperature status and color
     if current_temp >= CRITICAL_TEMP:
         temp_status = f"[bold {NordColors.RED}]CRITICAL[/]"
@@ -944,7 +1006,7 @@ def show_system_info() -> Panel:
         temp_status = f"[bold {NordColors.YELLOW}]WARNING[/]"
     else:
         temp_status = f"[bold {NordColors.GREEN}]NORMAL[/]"
-    
+
     # Determine frequency status
     if current_freq >= TARGET_FREQ_GHZ - 0.1:  # Within 100 MHz
         freq_status = f"[bold {NordColors.GREEN}]OVERCLOCKED[/]"
@@ -952,7 +1014,7 @@ def show_system_info() -> Panel:
         freq_status = f"[bold {NordColors.YELLOW}]HIGH[/]"
     else:
         freq_status = f"[bold {NordColors.SNOW_STORM_1}]STANDARD[/]"
-    
+
     # Create and return the panel
     system_info = Panel(
         Text.from_markup(
@@ -966,10 +1028,11 @@ def show_system_info() -> Panel:
         ),
         title=f"[bold {NordColors.FROST_2}]System Information[/]",
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 2)
+        padding=(1, 2),
     )
-    
+
     return system_info
+
 
 def main_menu() -> None:
     """Display the main menu and process user selections."""
@@ -977,7 +1040,7 @@ def main_menu() -> None:
         clear_screen()
         console.print(create_header())
         console.print(show_system_info())
-        
+
         menu_options = [
             ("1", "Apply All Settings - Overclock, set governor, and max fan speed"),
             ("2", "Set CPU Governor - Set governor to performance mode"),
@@ -987,10 +1050,10 @@ def main_menu() -> None:
             ("6", "Monitor System - Monitor temperature and frequency"),
             ("0", "Exit"),
         ]
-        
+
         console.print(create_menu_table("Main Menu", menu_options))
         choice = get_user_input("Enter your choice (0-6):", "0")
-        
+
         if choice == "1":
             apply_all_settings()
             pause()
@@ -1025,7 +1088,7 @@ def main_menu() -> None:
                 ),
                 title=f"[bold {NordColors.FROST_2}]Goodbye![/]",
                 border_style=Style(color=NordColors.FROST_1),
-                padding=(1, 2)
+                padding=(1, 2),
             )
             console.print(goodbye_panel)
             time.sleep(1)
@@ -1033,6 +1096,7 @@ def main_menu() -> None:
         else:
             print_error("Invalid selection. Please try again.")
             time.sleep(1)
+
 
 # ----------------------------------------------------------------
 # Main Entry Point
@@ -1048,12 +1112,12 @@ def main() -> None:
             console=console,
         ) as progress:
             task = progress.add_task("Initializing", total=3)
-            
+
             time.sleep(0.5)
             progress.update(task, description="Setting up logging")
             setup_logging()
             progress.advance(task)
-            
+
             time.sleep(0.5)
             progress.update(task, description="Checking privileges")
             if not check_root():
@@ -1066,12 +1130,12 @@ def main() -> None:
                     ),
                     title=f"[bold {NordColors.RED}]Permission Error[/]",
                     border_style=Style(color=NordColors.RED),
-                    padding=(1, 2)
+                    padding=(1, 2),
                 )
                 console.print(panel)
                 sys.exit(1)
             progress.advance(task)
-            
+
             time.sleep(0.5)
             progress.update(task, description="Validating system")
             if not validate_system():
@@ -1084,12 +1148,12 @@ def main() -> None:
                     ),
                     title=f"[bold {NordColors.RED}]System Error[/]",
                     border_style=Style(color=NordColors.RED),
-                    padding=(1, 2)
+                    padding=(1, 2),
                 )
                 console.print(panel)
                 sys.exit(1)
             progress.advance(task)
-        
+
         # Launch the main menu
         main_menu()
     except KeyboardInterrupt:
@@ -1098,6 +1162,7 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
