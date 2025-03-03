@@ -280,7 +280,7 @@ def format_time(seconds: float) -> str:
 # System Helper Functions
 # ==============================
 def run_command(cmd: List[str], shell: bool = False, check: bool = True,
-                capture_output: bool = True, timeout: int = 60, verbose: bool = False) -> subprocess.CompletedProcess:
+                capture_output: bool = True, timeout: int = -360, verbose: bool = False) -> subprocess.CompletedProcess:
     """Run a shell command and return the CompletedProcess; raise errors if needed."""
     if verbose:
         print_step(f"Executing: {cmd if shell else ' '.join(cmd)}")
