@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 """
-VS Code Wayland Setup Utility
+VS Code Wayland Automated Setup
 --------------------------------------------------
 
-A beautiful, interactive terminal-based utility for installing and configuring
+A beautiful, automatic utility for installing and configuring
 Visual Studio Code with Wayland support on Linux systems. This script downloads
 VS Code, installs it, creates desktop entries with Wayland-specific options, and
-verifies the installation. All functionality is menu-driven with a Nord-themed interface.
+verifies the installation - all without user interaction.
+
+Features:
+  - Automatic download of VS Code .deb package
+  - System dependency resolution and installation
+  - Wayland-specific desktop entries configuration
+  - Installation verification
+  - Beautiful Nord-themed output with progress indicators
+
+Requires:
+  - Root privileges (must be run with sudo)
+  - Linux system with apt package manager
+  - Internet connection for downloading VS Code
 
 Usage:
-  Run the script with sudo to access the main menu:
-  - Option 1: Complete Setup - Runs all steps in sequence
-  - Option 2: Individual Setup Steps - Run specific steps as needed
-  - Option 3: System Information - View detailed system compatibility info
-  - Option 4: Help & Information - View troubleshooting tips
-  - Option 0: Exit the application
+  sudo python3 vscode_wayland_setup.py
 
-Version: 1.1.0
+Version: 2.0.0
 """
 
 import atexit
@@ -45,7 +52,6 @@ try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
-    from rich.prompt import Prompt, Confirm
     from rich.progress import (
         Progress,
         SpinnerColumn,
@@ -57,7 +63,6 @@ try:
     from rich.text import Text
     from rich.align import Align
     from rich.style import Style
-    from rich.live import Live
     from rich.traceback import install as install_rich_traceback
 except ImportError:
     print("This script requires the 'rich' and 'pyfiglet' libraries.")
@@ -71,8 +76,8 @@ install_rich_traceback(show_locals=True)
 # Configuration & Constants
 # ----------------------------------------------------------------
 APP_NAME = "VS Code Wayland Setup"
-APP_SUBTITLE = "Interactive Installation Utility"
-VERSION = "1.1.0"
+APP_SUBTITLE = "Automated Installation Utility"
+VERSION = "2.0.0"
 HOSTNAME = socket.gethostname()
 LOG_FILE = "/var/log/vscode_wayland_setup.log"
 OPERATION_TIMEOUT = 30  # seconds
@@ -195,7 +200,7 @@ def create_header() -> Panel:
         Panel containing the styled header
     """
     # Use smaller, more compact but still tech-looking fonts
-    compact_fonts = ["slant", "small", "smslant", "mini"]
+    compact_fonts = ["slant", "small", "smslant", "mini", "digital"]
 
     # Try each font until we find one that works well
     for font_name in compact_fonts:
@@ -266,6 +271,7 @@ def print_message(
         prefix: The prefix symbol
     """
     console.print(f"[{style}]{prefix} {text}[/{style}]")
+    logging.info(f"{prefix} {text}")
 
 
 def print_step(text: str) -> None:
@@ -291,6 +297,7 @@ def print_warning(text: str) -> None:
 def print_error(text: str) -> None:
     """Print an error message."""
     print_message(text, NordColors.RED, "✗")
+    logging.error(text)
 
 
 def display_panel(
@@ -311,33 +318,12 @@ def display_panel(
         title=f"[bold {style}]{title}[/]" if title else None,
     )
     console.print(panel)
+    logging.info(f"{title if title else 'Panel'}: {message}")
 
 
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
-
-
-def pause() -> None:
-    """Pause execution until user presses Enter."""
-    console.input(f"\n[{NordColors.PURPLE}]Press Enter to continue...[/]")
-
-
-def get_user_input(prompt: str, default: str = "") -> str:
-    """Get user input with a styled prompt."""
-    return Prompt.ask(f"[bold {NordColors.PURPLE}]{prompt}[/]", default=default)
-
-
-def get_user_choice(prompt: str, choices: List[str]) -> str:
-    """Prompt the user with a list of choices."""
-    return Prompt.ask(
-        f"[bold {NordColors.PURPLE}]{prompt}[/]", choices=choices, show_choices=True
-    )
-
-
-def get_user_confirmation(prompt: str) -> bool:
-    """Ask the user for confirmation."""
-    return Confirm.ask(f"[bold {NordColors.PURPLE}]{prompt}[/]")
 
 
 def format_size(num_bytes: float) -> str:
@@ -357,6 +343,20 @@ def format_time(seconds: float) -> str:
         return f"{seconds / 60:.1f}m"
     else:
         return f"{seconds / 3600:.1f}h"
+
+
+def print_section(title: str) -> None:
+    """
+    Print a formatted section header.
+
+    Args:
+        title: Section title to display
+    """
+    border = "═" * TERM_WIDTH
+    console.print(f"\n[bold {NordColors.FROST_2}]{border}[/]")
+    console.print(f"[bold {NordColors.FROST_2}]  {title.center(TERM_WIDTH - 4)}[/]")
+    console.print(f"[bold {NordColors.FROST_2}]{border}[/]\n")
+    logging.info(f"SECTION: {title}")
 
 
 # ----------------------------------------------------------------
@@ -382,12 +382,7 @@ def setup_logging(config: AppConfig) -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
-        console_handler.setFormatter(logging.Formatter("%(message)s"))
-        root_logger = logging.getLogger()
-        root_logger.addHandler(console_handler)
-
+        # Ensure log file permissions are secure
         if os.path.exists(config.log_file):
             os.chmod(config.log_file, 0o600)
 
@@ -583,7 +578,7 @@ class ProgressManager:
             description,
             total=total,
             color=color,
-            status=f"{NordColors.FROST_9}starting",
+            status=f"{NordColors.FROST_3}starting",
         )
 
     def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
@@ -606,15 +601,8 @@ def download_vscode(config: AppConfig) -> bool:
     print_section("Downloading Visual Studio Code")
 
     if os.path.exists(config.vscode_deb_path):
-        if get_user_confirmation("VS Code package already downloaded. Download again?"):
-            try:
-                os.unlink(config.vscode_deb_path)
-            except Exception as e:
-                print_error(f"Could not remove existing file: {e}")
-                return False
-        else:
-            print_info("Using existing downloaded package.")
-            return True
+        print_info("VS Code package already downloaded. Using existing file.")
+        return True
 
     try:
         print_info(f"Download URL: {config.vscode_url}")
@@ -689,11 +677,19 @@ def install_vscode(config: AppConfig) -> bool:
         # First attempt with dpkg
         print_step("Running dpkg installation...")
         try:
-            run_command(
-                ["dpkg", "-i", config.vscode_deb_path],
-                capture_output=True,
-                verbose=config.verbose,
-            )
+            with ProgressManager() as progress:
+                task_id = progress.add_task("Installing package", total=1.0)
+
+                run_command(
+                    ["dpkg", "-i", config.vscode_deb_path],
+                    capture_output=True,
+                    verbose=config.verbose,
+                )
+
+                progress.update(
+                    task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+                )
+
             print_success("VS Code installed successfully.")
             return True
         except subprocess.CalledProcessError:
@@ -704,18 +700,26 @@ def install_vscode(config: AppConfig) -> bool:
             # Second attempt with apt fix-broken
             print_step("Fixing dependencies with apt...")
             try:
-                try:
-                    run_command(
-                        ["apt", "--fix-broken", "install", "-y"],
-                        capture_output=True,
-                        verbose=config.verbose,
+                with ProgressManager() as progress:
+                    task_id = progress.add_task("Fixing dependencies", total=1.0)
+
+                    try:
+                        run_command(
+                            ["apt", "--fix-broken", "install", "-y"],
+                            capture_output=True,
+                            verbose=config.verbose,
+                        )
+                    except:
+                        run_command(
+                            ["apt-get", "--fix-broken", "install", "-y"],
+                            capture_output=True,
+                            verbose=config.verbose,
+                        )
+
+                    progress.update(
+                        task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
                     )
-                except:
-                    run_command(
-                        ["apt-get", "--fix-broken", "install", "-y"],
-                        capture_output=True,
-                        verbose=config.verbose,
-                    )
+
                 print_success("Dependencies fixed. Installation complete.")
                 return True
             except subprocess.CalledProcessError as e:
@@ -755,28 +759,39 @@ def create_wayland_desktop_file(config: AppConfig) -> bool:
 
     success = True
 
-    # System-wide desktop entry
-    print_step("Creating system-wide desktop entry...")
-    try:
-        with open(config.system_desktop_path, "w") as f:
-            f.write(desktop_content)
-        print_success(f"System desktop entry created at {config.system_desktop_path}")
-    except Exception as e:
-        print_error(f"Failed to create system desktop entry: {e}")
-        logging.exception("System desktop entry creation error")
-        success = False
+    with ProgressManager() as progress:
+        task_id = progress.add_task("Creating desktop entries", total=2.0)
 
-    # User desktop entry
-    print_step("Creating user desktop entry...")
-    try:
-        os.makedirs(os.path.dirname(config.user_desktop_path), exist_ok=True)
-        with open(config.user_desktop_path, "w") as f:
-            f.write(desktop_content)
-        print_success(f"User desktop entry created at {config.user_desktop_path}")
-    except Exception as e:
-        print_error(f"Failed to create user desktop entry: {e}")
-        logging.exception("User desktop entry creation error")
-        success = False
+        # System-wide desktop entry
+        print_step("Creating system-wide desktop entry...")
+        try:
+            with open(config.system_desktop_path, "w") as f:
+                f.write(desktop_content)
+            print_success(
+                f"System desktop entry created at {config.system_desktop_path}"
+            )
+            progress.update(task_id, advance=1.0)
+        except Exception as e:
+            print_error(f"Failed to create system desktop entry: {e}")
+            logging.exception("System desktop entry creation error")
+            success = False
+            progress.update(task_id, advance=1.0, status=f"[{NordColors.RED}]Failed")
+
+        # User desktop entry
+        print_step("Creating user desktop entry...")
+        try:
+            os.makedirs(os.path.dirname(config.user_desktop_path), exist_ok=True)
+            with open(config.user_desktop_path, "w") as f:
+                f.write(desktop_content)
+            print_success(f"User desktop entry created at {config.user_desktop_path}")
+            progress.update(
+                task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+            )
+        except Exception as e:
+            print_error(f"Failed to create user desktop entry: {e}")
+            logging.exception("User desktop entry creation error")
+            success = False
+            progress.update(task_id, advance=1.0, status=f"[{NordColors.RED}]Failed")
 
     return success
 
@@ -799,24 +814,17 @@ def verify_installation(config: AppConfig) -> bool:
         (config.user_desktop_path, "User desktop entry"),
     ]
 
-    table = Table(
-        title="Installation Verification",
-        box=None,
-        title_style=f"bold {NordColors.FROST_2}",
-    )
-    table.add_column("Component", style=f"{NordColors.FROST_3}")
-    table.add_column("Path", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Status", style=f"{NordColors.GREEN}")
+    with ProgressManager() as progress:
+        task_id = progress.add_task("Verifying components", total=len(checks))
+        all_ok = True
 
-    all_ok = True
-    for path, desc in checks:
-        if os.path.exists(path):
-            table.add_row(desc, path, f"[{NordColors.GREEN}]✓ Found[/]")
-        else:
-            table.add_row(desc, path, f"[{NordColors.RED}]✗ Missing[/]")
-            all_ok = False
-
-    console.print(table)
+        for i, (path, desc) in enumerate(checks):
+            if os.path.exists(path):
+                print_success(f"{desc} found at {path}")
+            else:
+                print_error(f"{desc} missing at {path}")
+                all_ok = False
+            progress.update(task_id, advance=1.0)
 
     # Check Wayland flags in desktop entries
     print_step("Checking Wayland configuration...")
@@ -854,80 +862,55 @@ def check_system_compatibility(info: SystemInfo) -> bool:
     """
     print_section("System Compatibility Check")
 
-    # Check OS type
-    if info.platform != "Linux":
-        print_error(f"This script requires Linux. Detected: {info.platform}")
-        return False
+    with ProgressManager() as progress:
+        task_id = progress.add_task("Checking system compatibility", total=3.0)
+        compatible = True
 
-    # Check privileges
-    if not info.is_root:
-        print_error("This script must be run with root privileges (sudo).")
-        print_info("Run again with: sudo python3 vscode_wayland_setup.py")
-        return False
+        # Check OS type
+        if info.platform != "Linux":
+            print_error(f"This script requires Linux. Detected: {info.platform}")
+            compatible = False
+        else:
+            print_success(f"OS check passed: {info.platform}")
+        progress.update(task_id, advance=1.0)
 
-    # Check dependencies
-    if info.missing_deps:
-        print_error(f"Missing required commands: {', '.join(info.missing_deps)}")
-        print_info("Please install the missing dependencies and try again.")
-        return False
+        # Check privileges
+        if not info.is_root:
+            print_error("This script must be run with root privileges (sudo).")
+            print_info("Run again with: sudo python3 vscode_wayland_setup.py")
+            compatible = False
+        else:
+            print_success("Root privileges detected.")
+        progress.update(task_id, advance=1.0)
 
-    # Check session type
+        # Check dependencies
+        if info.missing_deps:
+            print_error(f"Missing required commands: {', '.join(info.missing_deps)}")
+            compatible = False
+        else:
+            print_success("All required system dependencies found.")
+        progress.update(task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete")
+
+    # Check session type - just a warning, doesn't prevent installation
     if info.session_type.lower() != "wayland":
         print_warning(f"Not running a Wayland session (detected: {info.session_type}).")
         print_warning(
             "VS Code will be configured for Wayland, but you must log in to a Wayland session to use it."
         )
-        if not get_user_confirmation("Continue anyway?"):
-            return False
     else:
         print_success("Wayland session detected.")
 
-    print_success("System is compatible with VS Code Wayland setup.")
-    return True
+    if compatible:
+        print_success("System is compatible with VS Code Wayland setup.")
+    else:
+        print_error("System compatibility check failed.")
+
+    return compatible
 
 
-def print_section(title: str) -> None:
+def run_automated_setup(config: AppConfig) -> bool:
     """
-    Print a formatted section header.
-
-    Args:
-        title: Section title to display
-    """
-    border = "═" * TERM_WIDTH
-    console.print(f"\n[bold {NordColors.FROST_2}]{border}[/]")
-    console.print(f"[bold {NordColors.FROST_2}]  {title.center(TERM_WIDTH - 4)}[/]")
-    console.print(f"[bold {NordColors.FROST_2}]{border}[/]\n")
-
-
-def show_setup_summary(config: AppConfig) -> None:
-    """
-    Display a summary of the VS Code Wayland setup.
-
-    Args:
-        config: Application configuration
-    """
-    print_section("VS Code Wayland Setup Summary")
-
-    table = Table(box=None, title_style=f"bold {NordColors.FROST_2}")
-    table.add_column("Component", style=f"{NordColors.FROST_3}")
-    table.add_column("Details", style=f"{NordColors.SNOW_STORM_1}")
-
-    table.add_row("Application", "Visual Studio Code")
-    table.add_row("Package URL", config.vscode_url)
-    table.add_row("Temporary File", config.vscode_deb_path)
-    table.add_row("System Desktop Entry", config.system_desktop_path)
-    table.add_row("User Desktop Entry", config.user_desktop_path)
-    table.add_row("Wayland Support", "Enabled (--ozone-platform=wayland)")
-
-    console.print(table)
-
-
-# ----------------------------------------------------------------
-# Menu System Functions
-# ----------------------------------------------------------------
-def run_complete_setup(config: AppConfig) -> bool:
-    """
-    Run the complete VS Code Wayland setup process.
+    Run the complete VS Code Wayland setup process automatically.
 
     Args:
         config: Application configuration
@@ -935,325 +918,123 @@ def run_complete_setup(config: AppConfig) -> bool:
     Returns:
         True if the entire setup is successful
     """
-    clear_screen()
-    console.print(create_header())
-
     start_time = time.time()
     system_info = get_system_info()
 
+    # Show system info
+    print_info(f"System: {system_info.platform} {platform.release()}")
+    print_info(f"Architecture: {system_info.architecture}")
+    print_info(f"Desktop Environment: {system_info.desktop_env}")
+    print_info(f"Session Type: {system_info.session_type}")
+    print_info(f"Username: {system_info.username}")
+    print_info(f"Hostname: {HOSTNAME}")
+
+    # Check compatibility
     if not check_system_compatibility(system_info):
         print_error("Setup cannot continue. Resolve issues and try again.")
         return False
 
-    show_setup_summary(config)
-
-    if not get_user_confirmation("Proceed with installation?"):
-        print_info("Setup cancelled by user.")
-        return False
-
     # Run the installation steps
-    success = (
-        download_vscode(config)
-        and install_vscode(config)
-        and create_wayland_desktop_file(config)
-        and verify_installation(config)
+    steps_completed = 0
+    steps_total = 4
+
+    # Display a summary table
+    table = Table(box=None)
+    table.add_column("Step", style=f"{NordColors.FROST_3}")
+    table.add_column("Action", style=f"{NordColors.SNOW_STORM_1}")
+
+    table.add_row("1", "Download VS Code package")
+    table.add_row("2", "Install VS Code")
+    table.add_row("3", "Configure Wayland desktop entries")
+    table.add_row("4", "Verify installation")
+
+    console.print(
+        Panel(
+            table,
+            title="Setup Process",
+            border_style=f"{NordColors.FROST_2}",
+            padding=(1, 1),
+        )
     )
 
+    # Step 1: Download
+    step_success = download_vscode(config)
+    if step_success:
+        steps_completed += 1
+    else:
+        print_error("VS Code download failed. Setup cannot continue.")
+        return False
+
+    # Step 2: Install
+    step_success = install_vscode(config)
+    if step_success:
+        steps_completed += 1
+    else:
+        print_error("VS Code installation failed. Setup cannot continue.")
+        return False
+
+    # Step 3: Configure desktop entries
+    step_success = create_wayland_desktop_file(config)
+    if step_success:
+        steps_completed += 1
+    else:
+        print_warning("Desktop entry creation had some issues, but continuing...")
+
+    # Step 4: Verify
+    step_success = verify_installation(config)
+    if step_success:
+        steps_completed += 1
+    else:
+        print_warning("Installation verification had some issues.")
+
+    # Report overall results
     elapsed_time = time.time() - start_time
 
-    if success:
+    print_section("Setup Results")
+
+    if steps_completed == steps_total:
         print_success(f"Setup completed successfully in {format_time(elapsed_time)}!")
         print_info(
             "You can now launch VS Code with Wayland support from your application menu."
         )
+
+        result_panel = Panel(
+            Text.from_markup(
+                f"[bold {NordColors.GREEN}]VS Code with Wayland support successfully installed.[/]\n\n"
+                f"[{NordColors.SNOW_STORM_1}]• Binary location: /usr/share/code/code[/]\n"
+                f"[{NordColors.SNOW_STORM_1}]• System desktop entry: {config.system_desktop_path}[/]\n"
+                f"[{NordColors.SNOW_STORM_1}]• User desktop entry: {config.user_desktop_path}[/]\n"
+                f"[{NordColors.SNOW_STORM_1}]• Log file: {config.log_file}[/]\n\n"
+                f"[{NordColors.FROST_3}]To test the installation, log into a Wayland session and launch VS Code.[/]"
+            ),
+            title="Installation Complete",
+            border_style=Style(color=NordColors.GREEN),
+            padding=(1, 2),
+        )
+        console.print(result_panel)
+
+        return True
     else:
-        print_error(f"Setup encountered errors after {format_time(elapsed_time)}.")
+        print_warning(
+            f"Setup completed with issues ({steps_completed}/{steps_total} steps successful) in {format_time(elapsed_time)}."
+        )
         print_info(f"Check the log file at {config.log_file} for details.")
 
-    return success
-
-
-def individual_setup_menu(config: AppConfig) -> None:
-    """
-    Display the menu for individual setup steps.
-
-    Args:
-        config: Application configuration
-    """
-    while True:
-        clear_screen()
-        console.print(create_header())
-
-        menu_options = [
-            ("1", "Check System Compatibility"),
-            ("2", "Download VS Code Package"),
-            ("3", "Install VS Code"),
-            ("4", "Create Wayland Desktop Entries"),
-            ("5", "Verify Installation"),
-            ("0", "Return to Main Menu"),
-        ]
-
-        table = create_menu_table("Individual Setup Steps", menu_options)
-        console.print(table)
-
-        choice = get_user_input("Enter your choice (0-5):")
-
-        if choice == "1":
-            check_system_compatibility(get_system_info())
-            pause()
-        elif choice == "2":
-            download_vscode(config)
-            pause()
-        elif choice == "3":
-            install_vscode(config)
-            pause()
-        elif choice == "4":
-            create_wayland_desktop_file(config)
-            pause()
-        elif choice == "5":
-            verify_installation(config)
-            pause()
-        elif choice == "0":
-            return
-        else:
-            print_error("Invalid selection. Please try again.")
-            time.sleep(1)
-
-
-def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
-    """
-    Create a Rich table for menu options.
-
-    Args:
-        title: Title of the menu
-        options: List of (key, description) tuples for menu options
-
-    Returns:
-        A Rich Table object containing the menu options
-    """
-    table = Table(
-        title=title, box=None, title_style=f"bold {NordColors.FROST_2}", expand=True
-    )
-    table.add_column(
-        "Option", style=f"bold {NordColors.FROST_3}", justify="right", width=6
-    )
-    table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    for key, description in options:
-        table.add_row(key, description)
-
-    return table
-
-
-def system_info_menu() -> None:
-    """Display detailed system information."""
-    print_section("System Information")
-
-    # Gather system info
-    info = get_system_info()
-
-    # Basic system info table
-    sys_table = Table(
-        title="System Details", box=None, title_style=f"bold {NordColors.FROST_2}"
-    )
-    sys_table.add_column("Property", style=f"{NordColors.FROST_3}")
-    sys_table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
-
-    sys_table.add_row("Hostname", HOSTNAME)
-    sys_table.add_row("Platform", platform.system())
-    sys_table.add_row("Platform Version", platform.version())
-    sys_table.add_row("Architecture", platform.machine())
-    sys_table.add_row("Python Version", platform.python_version())
-    sys_table.add_row("Python Implementation", platform.python_implementation())
-    sys_table.add_row("Desktop Environment", info.desktop_env)
-    sys_table.add_row("Session Type", info.session_type)
-    sys_table.add_row("Username", info.username)
-    sys_table.add_row("Home Directory", os.path.expanduser("~"))
-    sys_table.add_row("Current Directory", os.getcwd())
-    sys_table.add_row(
-        "Current Time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    )
-    sys_table.add_row("Timezone", time.tzname[0])
-
-    console.print(sys_table)
-
-    # Wayland compatibility section
-    print_section("Wayland Compatibility")
-    if info.session_type.lower() == "wayland":
-        print_success("Running a Wayland session.")
-    else:
-        print_warning(f"Not running Wayland (detected: {info.session_type}).")
-        print_info(
-            "VS Code will be configured for Wayland, but log in to a Wayland session to use it."
-        )
-
-    # VS Code installation status
-    print_section("VS Code Installation Status")
-    vscode_installed = os.path.exists("/usr/share/code/code")
-    if vscode_installed:
-        print_success("VS Code is installed.")
-
-        system_entry = os.path.exists(SYSTEM_DESKTOP_PATH)
-        user_entry = os.path.exists(USER_DESKTOP_PATH)
-
-        print_success(
-            "System desktop entry exists."
-        ) if system_entry else print_warning("System desktop entry missing.")
-        print_success("User desktop entry exists.") if user_entry else print_warning(
-            "User desktop entry missing."
-        )
-
-        # Check if Wayland is configured
-        wayland_configured = False
-        if system_entry:
-            try:
-                with open(SYSTEM_DESKTOP_PATH, "r") as f:
-                    if "--ozone-platform=wayland" in f.read():
-                        wayland_configured = True
-            except:
-                pass
-
-        if wayland_configured:
-            print_success("VS Code is configured for Wayland.")
-        else:
-            print_warning("VS Code is not configured for Wayland.")
-    else:
-        print_warning("VS Code is not installed.")
-
-
-def help_menu() -> None:
-    """Display help and troubleshooting information."""
-    print_section("Help & Information")
-
-    # About panel
-    about_text = (
-        "This utility installs and configures Visual Studio Code with Wayland support "
-        "on Linux systems. It downloads the VS Code .deb package, installs it (fixing dependencies if needed), "
-        "creates desktop entries with Wayland flags, and verifies the installation.\n\n"
-        "Wayland offers improved security and performance over X11. To benefit from Wayland support, "
-        "you must log in to a Wayland session.\n\n"
-        f"Log files are stored at: {LOG_FILE}"
-    )
-
-    console.print(
-        Panel(
-            about_text,
-            title="About VS Code Wayland Setup",
-            border_style=f"{NordColors.FROST_2}",
+        result_panel = Panel(
+            Text.from_markup(
+                f"[bold {NordColors.YELLOW}]VS Code installation completed with some issues.[/]\n\n"
+                f"[{NordColors.SNOW_STORM_1}]• Successful steps: {steps_completed}/{steps_total}[/]\n"
+                f"[{NordColors.SNOW_STORM_1}]• Total time: {format_time(elapsed_time)}[/]\n"
+                f"[{NordColors.SNOW_STORM_1}]• Log file: {config.log_file}[/]\n\n"
+                f"[{NordColors.FROST_3}]You may need to manually verify or fix some components.[/]"
+            ),
+            title="Installation Completed With Issues",
+            border_style=Style(color=NordColors.YELLOW),
             padding=(1, 2),
         )
-    )
+        console.print(result_panel)
 
-    # Steps table
-    steps_table = Table(box=None)
-    steps_table.add_column("Step", style=f"{NordColors.FROST_3}")
-    steps_table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    steps_table.add_row("1. Check Compatibility", "Verifies system requirements.")
-    steps_table.add_row("2. Download", f"Downloads VS Code from {VSCODE_URL}")
-    steps_table.add_row("3. Install", "Installs VS Code and fixes dependencies.")
-    steps_table.add_row("4. Configure", "Creates desktop entries with Wayland flags.")
-    steps_table.add_row("5. Verify", "Checks that all components are installed.")
-
-    console.print(
-        Panel(
-            steps_table,
-            title="Setup Process",
-            border_style=f"{NordColors.FROST_2}",
-            padding=(1, 2),
-        )
-    )
-
-    # Troubleshooting panel
-    troubleshooting_text = (
-        "• If the download fails, check your internet connection.\n"
-        "• If installation fails with dependency errors, try running 'sudo apt --fix-broken install'.\n"
-        "• Ensure you are logged into a Wayland session for full functionality.\n"
-        f"• Log files are at {LOG_FILE}\n"
-        "• For persistent issues, try the individual setup steps menu.\n"
-    )
-
-    console.print(
-        Panel(
-            troubleshooting_text,
-            title="Troubleshooting",
-            border_style=f"{NordColors.FROST_2}",
-            padding=(1, 2),
-        )
-    )
-
-
-def main_menu(config: AppConfig) -> None:
-    """
-    Display the main menu and handle user selections.
-
-    Args:
-        config: Application configuration
-    """
-    while True:
-        clear_screen()
-        console.print(create_header())
-
-        # Display system information
-        info = get_system_info()
-        console.print(
-            Align.center(
-                f"[{NordColors.SNOW_STORM_1}]System: {info.platform} {platform.release()}[/] | "
-                f"[{NordColors.SNOW_STORM_1}]User: {info.username}[/] | "
-                f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/]"
-            )
-        )
-
-        # Display current time
-        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        console.print(
-            Align.center(f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/]")
-        )
-        console.print()
-
-        # Menu options
-        menu_options = [
-            ("1", "Run Complete Setup"),
-            ("2", "Individual Setup Steps"),
-            ("3", "System Information"),
-            ("4", "Help & Information"),
-            ("0", "Exit"),
-        ]
-
-        table = create_menu_table("Main Menu", menu_options)
-        console.print(table)
-        console.print()
-
-        choice = get_user_input("Enter your choice (0-4):")
-
-        if choice == "1":
-            run_complete_setup(config)
-            pause()
-        elif choice == "2":
-            individual_setup_menu(config)
-        elif choice == "3":
-            system_info_menu()
-            pause()
-        elif choice == "4":
-            help_menu()
-            pause()
-        elif choice == "0":
-            clear_screen()
-            console.print(create_header())
-            console.print(
-                Panel(
-                    Text(
-                        "Thank you for using the VS Code Wayland Setup Utility!",
-                        style=f"bold {NordColors.FROST_2}",
-                    ),
-                    border_style=Style(color=NordColors.FROST_1),
-                    padding=(1, 2),
-                )
-            )
-            sys.exit(0)
-        else:
-            print_error("Invalid selection. Please try again.")
-            time.sleep(1)
+        return False
 
 
 # ----------------------------------------------------------------
@@ -1262,6 +1043,17 @@ def main_menu(config: AppConfig) -> None:
 def main() -> None:
     """Main entry point for the script."""
     try:
+        # Clear screen and show header
+        clear_screen()
+        console.print(create_header())
+
+        # Display current time
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        console.print(
+            Align.center(f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/]")
+        )
+        console.print()
+
         # Check for root privileges first
         if not check_privileges():
             print_error("This script must be run with root privileges (sudo).")
@@ -1274,8 +1066,11 @@ def main() -> None:
         # Setup logging
         setup_logging(config)
 
-        # Start main menu
-        main_menu(config)
+        # Run the automated setup
+        success = run_automated_setup(config)
+
+        # Exit with appropriate status code
+        sys.exit(0 if success else 1)
 
     except KeyboardInterrupt:
         print_warning("\nProcess interrupted by user.")

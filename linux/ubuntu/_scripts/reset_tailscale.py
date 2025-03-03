@@ -1,29 +1,23 @@
 #!/usr/bin/env python3
 """
-Enhanced Tailscale Reset Utility
+Automated Tailscale Reset Utility
 --------------------------------------------------
 
-A beautiful, interactive terminal-based utility for managing Tailscale on Ubuntu systems.
-Features comprehensive management options for Tailscale including:
-  • Complete reset workflow (uninstall, reinstall, restart)
-  • Service management (stop, disable, enable, start)
-  • Package handling (uninstall, clean configuration, install)
-  • Status monitoring and reporting
-  • Interactive menu with Nord theme styling
+A beautiful, non-interactive terminal utility for automatically resetting Tailscale on Ubuntu systems.
+This script automatically performs a complete Tailscale reset workflow:
+  • Stop and disable tailscaled service
+  • Uninstall tailscale package
+  • Clean configuration
+  • Install tailscale
+  • Start service
+  • Run 'tailscale up'
+  • Display status
 
-Note: Most operations require root privileges and will prompt accordingly.
+No user interaction is required - the script executes all steps sequentially.
 
-Usage:
-  Run the script and select options from the interactive menu.
-  - Option 1: Complete Tailscale Reset
-  - Option 2: Uninstall Tailscale
-  - Option 3: Install Tailscale
-  - Option 4: Start Tailscale Service
-  - Option 5: Run 'tailscale up'
-  - Option 6: Check Tailscale Status
-  - Option 0: Exit
+Note: This script requires root privileges to function properly.
 
-Version: 2.0.0
+Version: 3.0.0
 """
 
 import atexit
@@ -36,6 +30,7 @@ import sys
 import threading
 import time
 import shutil
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Tuple, Callable
@@ -50,7 +45,6 @@ try:
     from rich.table import Table
     from rich.text import Text
     from rich.align import Align
-    from rich.prompt import Prompt, Confirm
     from rich.live import Live
     from rich.progress import (
         Progress,
@@ -74,8 +68,8 @@ install_rich_traceback(show_locals=True)
 # Configuration
 # ----------------------------------------------------------------
 APP_NAME: str = "Tailscale Reset Utility"
-APP_SUBTITLE: str = "System Management Tool"
-VERSION: str = "2.0.0"
+APP_SUBTITLE: str = "Automated System Management"
+VERSION: str = "3.0.0"
 HOSTNAME: str = socket.gethostname()
 USERNAME: str = os.environ.get("USER", os.environ.get("USERNAME", "Unknown"))
 OPERATION_TIMEOUT: int = 120  # seconds
@@ -135,8 +129,6 @@ console: Console = Console(theme=None, highlight=False)
 # ----------------------------------------------------------------
 def setup_logging() -> None:
     """Configure basic logging for the utility."""
-    import logging
-
     try:
         log_dir = os.path.dirname(LOG_FILE)
         if log_dir and not os.path.exists(log_dir):
@@ -237,6 +229,7 @@ def print_message(
         prefix: The prefix symbol
     """
     console.print(f"[{style}]{prefix} {text}[/{style}]")
+    logging.info(f"{prefix} {text}")
 
 
 def print_section(title: str) -> None:
@@ -252,6 +245,7 @@ def print_section(title: str) -> None:
     console.print(f"[bold {NordColors.FROST_2}]  {title}[/]")
     console.print(f"[bold {NordColors.FROST_3}]{border}[/]")
     console.print()
+    logging.info(f"SECTION: {title}")
 
 
 def display_panel(
@@ -272,89 +266,12 @@ def display_panel(
         title=f"[bold {style}]{title}[/]" if title else None,
     )
     console.print(panel)
+    logging.info(f"PANEL ({title if title else 'Untitled'}): {message}")
 
 
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
-
-
-def pause() -> None:
-    """Pause execution until the user presses Enter."""
-    console.print()
-    console.input(f"[{NordColors.PURPLE}]Press Enter to continue...[/]")
-
-
-def get_user_input(prompt: str, default: str = "") -> str:
-    """
-    Get input from the user with a styled prompt.
-
-    Args:
-        prompt: The prompt text to display
-        default: Default value if user enters nothing
-
-    Returns:
-        User input string
-    """
-    return Prompt.ask(f"[bold {NordColors.FROST_2}]{prompt}[/]", default=default)
-
-
-def get_user_choice(prompt: str, choices: List[str]) -> str:
-    """
-    Prompt the user to choose from a list of options.
-
-    Args:
-        prompt: The prompt text to display
-        choices: List of valid choices
-
-    Returns:
-        User's selected choice
-    """
-    return Prompt.ask(
-        f"[bold {NordColors.FROST_2}]{prompt}[/]", choices=choices, show_choices=True
-    )
-
-
-def get_user_confirmation(prompt: str) -> bool:
-    """
-    Get a yes/no confirmation from the user.
-
-    Args:
-        prompt: The prompt text to display
-
-    Returns:
-        True if user confirms, False otherwise
-    """
-    return Confirm.ask(f"[bold {NordColors.FROST_2}]{prompt}[/]")
-
-
-def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
-    """
-    Create a table to display menu options.
-
-    Args:
-        title: The menu title
-        options: List of (key, description) tuples for menu options
-
-    Returns:
-        A Rich Table object with formatted menu options
-    """
-    table = Table(
-        title=title,
-        title_style=f"bold {NordColors.FROST_2}",
-        border_style=NordColors.FROST_3,
-        box=None,
-        expand=True,
-        title_justify="center",
-    )
-
-    table.add_column("#", style=f"bold {NordColors.FROST_4}", justify="right", width=3)
-    table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    for key, desc in options:
-        table.add_row(key, desc)
-
-    return table
 
 
 def format_time(seconds: float) -> str:
@@ -442,7 +359,7 @@ def run_command(
 # ----------------------------------------------------------------
 def cleanup() -> None:
     """Perform any cleanup tasks before exit."""
-    print_message("Cleaning up...", NordColors.FROST_3)
+    print_message("Cleaning up resources...", NordColors.FROST_3)
 
 
 def signal_handler(sig: int, frame: Any) -> None:
@@ -599,11 +516,13 @@ class Spinner:
                     f"[{NordColors.GREEN}]✓[/] [{NordColors.FROST_2}]{self.message}[/] "
                     f"[{NordColors.GREEN}]completed[/] in {time_str}"
                 )
+                logging.info(f"COMPLETED: {self.message} in {time_str}")
             else:
                 console.print(
                     f"[{NordColors.RED}]✗[/] [{NordColors.FROST_2}]{self.message}[/] "
                     f"[{NordColors.RED}]failed[/] after {time_str}"
                 )
+                logging.error(f"FAILED: {self.message} after {time_str}")
 
     def __enter__(self):
         self.start()
@@ -626,12 +545,18 @@ def check_root() -> bool:
     return os.geteuid() == 0 if hasattr(os, "geteuid") else False
 
 
-def ensure_root() -> None:
-    """Exit if not running with root privileges."""
+def ensure_root() -> bool:
+    """
+    Ensure script is running with root privileges.
+
+    Returns:
+        True if running as root, False otherwise
+    """
     if not check_root():
         print_message("This operation requires root privileges.", NordColors.RED, "✗")
-        print_message("Please run the script with sudo.", NordColors.FROST_3)
-        sys.exit(1)
+        print_message("Please run the script with sudo.", NordColors.YELLOW, "⚠")
+        return False
+    return True
 
 
 def check_system_compatibility() -> bool:
@@ -680,7 +605,9 @@ def uninstall_tailscale() -> bool:
     Returns:
         True if successful, False if errors occurred
     """
-    ensure_root()
+    if not ensure_root():
+        return False
+
     print_section("Uninstalling Tailscale")
 
     steps = [
@@ -709,11 +636,9 @@ def uninstall_tailscale() -> bool:
                 )
             except Exception as e:
                 print_message(f"Error during {desc}: {e}", NordColors.RED, "✗")
-                if not get_user_confirmation("Continue with remaining steps?"):
-                    print_message("Uninstallation aborted.", NordColors.YELLOW, "⚠")
-                    return False
                 progress.update(task, advance=1, status=f"[{NordColors.RED}]Failed")
                 success = False
+                # Continue with remaining steps despite error
 
         print_message("Removing configuration directories...", NordColors.FROST_3)
         for path in TAILSCALE_PATHS:
@@ -759,7 +684,9 @@ def install_tailscale() -> bool:
     Returns:
         True if successful, False if errors occurred
     """
-    ensure_root()
+    if not ensure_root():
+        return False
+
     print_section("Installing Tailscale")
 
     print_message("Running Tailscale install script", NordColors.FROST_3)
@@ -793,7 +720,9 @@ def start_tailscale_service() -> bool:
     Returns:
         True if successful, False if errors occurred
     """
-    ensure_root()
+    if not ensure_root():
+        return False
+
     print_section("Enabling and Starting Tailscale Service")
 
     steps = [
@@ -817,11 +746,7 @@ def start_tailscale_service() -> bool:
                 print_message(f"Error during {desc}: {e}", NordColors.RED, "✗")
                 progress.update(task, advance=1, status=f"[{NordColors.RED}]Failed")
                 success = False
-                if not get_user_confirmation("Continue with remaining steps?"):
-                    print_message(
-                        "Service configuration aborted.", NordColors.YELLOW, "⚠"
-                    )
-                    return False
+                # Continue despite error
 
     if success:
         print_message(
@@ -844,7 +769,9 @@ def tailscale_up() -> bool:
     Returns:
         True if successful, False if errors occurred
     """
-    ensure_root()
+    if not ensure_root():
+        return False
+
     print_section("Running 'tailscale up'")
 
     with Spinner("Executing tailscale up") as spinner:
@@ -866,16 +793,21 @@ def tailscale_up() -> bool:
             return False
 
 
-def check_tailscale_status() -> None:
-    """Check and display the current Tailscale status."""
+def check_tailscale_status() -> bool:
+    """
+    Check and display the current Tailscale status.
+
+    Returns:
+        True if Tailscale is running properly, False otherwise
+    """
     print_section("Tailscale Status")
 
     with Spinner("Checking Tailscale status") as spinner:
         try:
             result = run_command(["tailscale", "status"], check=False)
-            spinner.stop(success=result.returncode == 0)
 
             if result.returncode == 0 and result.stdout.strip():
+                spinner.stop(success=True)
                 console.print(
                     Panel(
                         result.stdout.strip(),
@@ -883,7 +815,9 @@ def check_tailscale_status() -> None:
                         border_style=f"bold {NordColors.FROST_2}",
                     )
                 )
+                return True
             else:
+                spinner.stop(success=False)
                 print_message(
                     "No status information available. Tailscale may not be running.",
                     NordColors.YELLOW,
@@ -909,118 +843,18 @@ def check_tailscale_status() -> None:
                         NordColors.YELLOW,
                         "⚠",
                     )
+                return False
         except Exception as e:
             spinner.stop(success=False)
             print_message(f"Failed to check Tailscale status: {e}", NordColors.RED, "✗")
             print_message(
                 "Tailscale may not be installed or running.", NordColors.FROST_3
             )
-
-
-def reset_tailscale() -> bool:
-    """
-    Perform a complete reset of Tailscale: uninstall, install, start, and run 'tailscale up'.
-
-    Returns:
-        True if successful, False if errors occurred
-    """
-    ensure_root()
-    print_section("Complete Tailscale Reset")
-
-    if not get_user_confirmation("This will completely reset Tailscale. Continue?"):
-        print_message("Reset cancelled.", NordColors.FROST_3)
-        return False
-
-    steps = [
-        "Uninstalling Tailscale",
-        "Installing Tailscale",
-        "Starting Tailscale Service",
-        "Running 'tailscale up'",
-    ]
-
-    success = True
-
-    with ProgressManager() as progress:
-        task = progress.add_task("Complete Tailscale Reset", total=len(steps))
-
-        # Step 1: Uninstall
-        print_message("Step 1: Uninstalling Tailscale", NordColors.FROST_2)
-        if uninstall_tailscale():
-            progress.update(task, advance=1, status=f"[{NordColors.GREEN}]Uninstalled")
-        else:
-            progress.update(
-                task, advance=1, status=f"[{NordColors.YELLOW}]Partial uninstall"
-            )
-            success = False
-            if not get_user_confirmation("Continue with installation?"):
-                print_message("Reset process aborted.", NordColors.YELLOW, "⚠")
-                return False
-
-        time.sleep(TRANSITION_DELAY)
-
-        # Step 2: Install
-        print_message("Step 2: Installing Tailscale", NordColors.FROST_2)
-        if install_tailscale():
-            progress.update(task, advance=1, status=f"[{NordColors.GREEN}]Installed")
-        else:
-            progress.update(task, advance=1, status=f"[{NordColors.RED}]Install failed")
-            print_message(
-                "Reset process failed at installation step.", NordColors.RED, "✗"
-            )
             return False
 
-        time.sleep(TRANSITION_DELAY)
 
-        # Step 3: Start service
-        print_message("Step 3: Starting Tailscale Service", NordColors.FROST_2)
-        if start_tailscale_service():
-            progress.update(
-                task, advance=1, status=f"[{NordColors.GREEN}]Service started"
-            )
-        else:
-            progress.update(
-                task, advance=1, status=f"[{NordColors.YELLOW}]Service issues"
-            )
-            success = False
-            if not get_user_confirmation("Continue with 'tailscale up'?"):
-                print_message("Reset process aborted.", NordColors.YELLOW, "⚠")
-                return False
-
-        time.sleep(TRANSITION_DELAY)
-
-        # Step 4: Run 'tailscale up'
-        print_message("Step 4: Running 'tailscale up'", NordColors.FROST_2)
-        if tailscale_up():
-            progress.update(
-                task, advance=1, status=f"[{NordColors.GREEN}]Up and running"
-            )
-        else:
-            progress.update(task, advance=1, status=f"[{NordColors.RED}]Up failed")
-            success = False
-
-    if success:
-        print_message(
-            "Tailscale has been completely reset and is now running!",
-            NordColors.GREEN,
-            "✓",
-        )
-    else:
-        print_message(
-            "Tailscale reset completed with some issues.", NordColors.YELLOW, "⚠"
-        )
-        print_message(
-            "Check the status to verify everything is working correctly.",
-            NordColors.FROST_3,
-        )
-
-    return success
-
-
-# ----------------------------------------------------------------
-# Menu System
-# ----------------------------------------------------------------
 def display_system_info() -> None:
-    """Display system information in the main menu."""
+    """Display system information."""
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system_info = (
         f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
@@ -1033,97 +867,215 @@ def display_system_info() -> None:
     console.print()
 
 
-def main_menu() -> None:
-    """Display the main menu and handle user selections."""
-    while True:
-        clear_screen()
-        console.print(create_header())
-        display_system_info()
+def reset_tailscale() -> bool:
+    """
+    Perform a complete reset of Tailscale without user interaction.
 
-        menu_options = [
-            ("1", "Complete Tailscale Reset (uninstall, reinstall, restart)"),
-            ("2", "Uninstall Tailscale"),
-            ("3", "Install Tailscale"),
-            ("4", "Start Tailscale Service"),
-            ("5", "Run 'tailscale up'"),
-            ("6", "Check Tailscale Status"),
-            ("0", "Exit"),
-        ]
+    Returns:
+        True if the entire process completed successfully, False otherwise
+    """
+    if not ensure_root():
+        return False
 
-        menu_table = create_menu_table("Main Menu", menu_options)
-        console.print(
-            Panel(
-                menu_table,
-                border_style=Style(color=NordColors.FROST_3),
-                padding=(1, 2),
-                title=f"[bold {NordColors.FROST_1}]Tailscale Management Options[/]",
-                title_align="center",
+    print_section("Complete Tailscale Reset")
+
+    steps = [
+        "Uninstalling Tailscale",
+        "Installing Tailscale",
+        "Starting Tailscale Service",
+        "Running 'tailscale up'",
+        "Checking Final Status",
+    ]
+
+    success = True
+    results = []
+
+    with ProgressManager() as progress:
+        task = progress.add_task("Complete Tailscale Reset", total=len(steps))
+
+        # Step 1: Uninstall
+        print_message("Step 1: Uninstalling Tailscale", NordColors.FROST_2)
+        uninstall_success = uninstall_tailscale()
+        results.append(("Uninstall", uninstall_success))
+        if uninstall_success:
+            progress.update(task, advance=1, status=f"[{NordColors.GREEN}]Uninstalled")
+        else:
+            progress.update(
+                task, advance=1, status=f"[{NordColors.YELLOW}]Partial uninstall"
             )
+            success = False
+
+        time.sleep(TRANSITION_DELAY)
+
+        # Step 2: Install
+        print_message("Step 2: Installing Tailscale", NordColors.FROST_2)
+        install_success = install_tailscale()
+        results.append(("Install", install_success))
+        if install_success:
+            progress.update(task, advance=1, status=f"[{NordColors.GREEN}]Installed")
+        else:
+            progress.update(task, advance=1, status=f"[{NordColors.RED}]Install failed")
+            print_message(
+                "Reset process failed at installation step.", NordColors.RED, "✗"
+            )
+            success = False
+
+        time.sleep(TRANSITION_DELAY)
+
+        # Step 3: Start service (only if install succeeded)
+        if install_success:
+            print_message("Step 3: Starting Tailscale Service", NordColors.FROST_2)
+            service_success = start_tailscale_service()
+            results.append(("Service Start", service_success))
+            if service_success:
+                progress.update(
+                    task, advance=1, status=f"[{NordColors.GREEN}]Service started"
+                )
+            else:
+                progress.update(
+                    task, advance=1, status=f"[{NordColors.YELLOW}]Service issues"
+                )
+                success = False
+        else:
+            progress.update(task, advance=1, status=f"[{NordColors.RED}]Skipped")
+            results.append(("Service Start", False))
+
+        time.sleep(TRANSITION_DELAY)
+
+        # Step 4: Run 'tailscale up' (only if service started)
+        if install_success:
+            print_message("Step 4: Running 'tailscale up'", NordColors.FROST_2)
+            up_success = tailscale_up()
+            results.append(("Tailscale Up", up_success))
+            if up_success:
+                progress.update(
+                    task, advance=1, status=f"[{NordColors.GREEN}]Up and running"
+                )
+            else:
+                progress.update(task, advance=1, status=f"[{NordColors.RED}]Up failed")
+                success = False
+        else:
+            progress.update(task, advance=1, status=f"[{NordColors.RED}]Skipped")
+            results.append(("Tailscale Up", False))
+
+        # Step 5: Check final status
+        print_message("Step 5: Checking Final Status", NordColors.FROST_2)
+        status_success = check_tailscale_status()
+        results.append(("Status Check", status_success))
+        if status_success:
+            progress.update(
+                task, advance=1, status=f"[{NordColors.GREEN}]Running correctly"
+            )
+        else:
+            progress.update(
+                task, advance=1, status=f"[{NordColors.YELLOW}]Issues detected"
+            )
+            success = False
+
+    # Display final summary
+    print_section("Reset Process Summary")
+
+    table = Table(
+        title="Tailscale Reset Operation Results",
+        title_style=f"bold {NordColors.FROST_2}",
+        border_style=NordColors.FROST_3,
+        expand=True,
+    )
+
+    table.add_column("Operation", style=f"bold {NordColors.FROST_1}")
+    table.add_column("Result", style=f"bold {NordColors.FROST_2}")
+
+    for operation, result in results:
+        status = (
+            f"[{NordColors.GREEN}]Success[/]"
+            if result
+            else f"[{NordColors.RED}]Failed[/]"
+        )
+        table.add_row(operation, status)
+
+    console.print(table)
+
+    if success:
+        print_message(
+            "Tailscale has been completely reset and is now running!",
+            NordColors.GREEN,
+            "✓",
+        )
+    else:
+        print_message(
+            "Tailscale reset completed with some issues.",
+            NordColors.YELLOW,
+            "⚠",
         )
 
-        console.print()
-        choice = get_user_input("Enter your choice (0-6):")
-
-        # Handle commands
-        if choice == "1":
-            reset_tailscale()
-            pause()
-        elif choice == "2":
-            uninstall_tailscale()
-            pause()
-        elif choice == "3":
-            install_tailscale()
-            pause()
-        elif choice == "4":
-            start_tailscale_service()
-            pause()
-        elif choice == "5":
-            tailscale_up()
-            pause()
-        elif choice == "6":
-            check_tailscale_status()
-            pause()
-        elif choice == "0":
-            clear_screen()
-            console.print(create_header())
-            display_panel(
-                message="Thank you for using the Tailscale Reset Utility!",
-                style=NordColors.FROST_2,
-                title="Goodbye",
-            )
-            time.sleep(1)
-            sys.exit(0)
-        else:
-            print_message(
-                f"Invalid selection: {choice}. Please try again.", NordColors.RED, "✗"
-            )
-            time.sleep(1)
+    return success
 
 
 # ----------------------------------------------------------------
-# Main Entry Point
+# Main Function
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main entry point for the Tailscale Reset Utility."""
+    """Main function that automatically performs all Tailscale reset operations."""
     try:
+        # Clear screen and show header
+        clear_screen()
+        console.print(create_header())
+
+        # Display system info
+        display_system_info()
+
         # Setup logging
         setup_logging()
 
         # Check system compatibility
+        print_section("System Compatibility Check")
         if not check_system_compatibility():
-            if not get_user_confirmation("Continue anyway?"):
-                print_message(
-                    "Exiting due to system compatibility concerns.",
-                    NordColors.YELLOW,
-                    "⚠",
-                )
-                sys.exit(1)
             print_message(
-                "Continuing despite compatibility concerns.", NordColors.YELLOW, "⚠"
+                "System compatibility issues detected. Proceeding anyway.",
+                NordColors.YELLOW,
+                "⚠",
+            )
+        else:
+            print_message(
+                "System compatibility check passed.",
+                NordColors.GREEN,
+                "✓",
             )
 
-        # Display main menu
-        main_menu()
+        # Check root access
+        if not check_root():
+            print_message(
+                "This utility requires root privileges to function properly.",
+                NordColors.RED,
+                "✗",
+            )
+            print_message(
+                "Please re-run this script with sudo.",
+                NordColors.YELLOW,
+                "⚠",
+            )
+            return
+
+        # Perform the complete reset process
+        print_message(
+            "Beginning automated Tailscale reset process...", NordColors.FROST_2, "▶"
+        )
+        reset_success = reset_tailscale()
+
+        # Final status message
+        if reset_success:
+            display_panel(
+                "Tailscale has been successfully reset and configured!",
+                style=NordColors.GREEN,
+                title="Operation Complete",
+            )
+        else:
+            display_panel(
+                "Tailscale reset completed with issues. Check the logs for details.",
+                style=NordColors.YELLOW,
+                title="Operation Partially Complete",
+            )
+
     except KeyboardInterrupt:
         print_message("\nProcess interrupted by user.", NordColors.YELLOW, "⚠")
         sys.exit(130)
@@ -1133,5 +1085,8 @@ def main() -> None:
         sys.exit(1)
 
 
+# ----------------------------------------------------------------
+# Program Entry Point
+# ----------------------------------------------------------------
 if __name__ == "__main__":
     main()

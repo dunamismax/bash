@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Enhanced Ubuntu VoIP Setup Utility
+Automated Ubuntu VoIP Setup Utility
 --------------------------------------------------
 
-A beautiful, interactive terminal-based utility for setting up and configuring VoIP services
-on Ubuntu systems. This utility performs the following operations:
+A beautiful terminal-based utility that automatically sets up and configures VoIP services
+on Ubuntu systems without user interaction. This utility performs the following operations:
   • Verifies system compatibility and prerequisites
   • Updates system packages
   • Installs required VoIP packages (Asterisk, MariaDB, ufw)
@@ -18,14 +18,12 @@ Note: This script requires root privileges.
 Usage:
   sudo python3 voip_setup.py
 
-Version: 2.0.0
+Version: 3.0.0
 """
 
-# ----------------------------------------------------------------
-# Imports & Dependency Check
-# ----------------------------------------------------------------
 import atexit
 import datetime
+import logging
 import os
 import platform
 import shutil
@@ -33,23 +31,22 @@ import signal
 import socket
 import subprocess
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, Any, Callable
+from typing import Dict, List, Optional, Tuple, Any, Callable
 
-# Check for required dependencies
+# ----------------------------------------------------------------
+# Dependency Check and Imports
+# ----------------------------------------------------------------
 try:
     import pyfiglet
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
-    from rich.prompt import Prompt, Confirm
     from rich.live import Live
-    from rich.columns import Columns
     from rich.progress import (
         Progress,
         SpinnerColumn,
@@ -70,13 +67,13 @@ except ImportError:
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
-# Configuration & Constants
+# Configuration
 # ----------------------------------------------------------------
-APP_NAME = "VoIP Setup Utility"
-APP_SUBTITLE = "Ubuntu VoIP Service Configuration"
-VERSION = "2.0.0"
+APP_NAME = "VoIP Setup"
+APP_SUBTITLE = "Automated VoIP Service Configuration"
+VERSION = "3.0.0"
 HOSTNAME = socket.gethostname()
-LOG_FILE = os.path.expanduser("~/voip_setup_logs/voip_setup.log")
+LOG_FILE = "/var/log/voip_setup.log"
 OPERATION_TIMEOUT = 300  # seconds
 
 # System detection
@@ -92,7 +89,6 @@ if IS_LINUX:
 
 # Terminal dimensions
 TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
-TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 
 # VoIP Configuration
 VOIP_PACKAGES = [
@@ -162,14 +158,11 @@ class NordColors:
 
     # Polar Night (dark) shades
     POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_2 = "#3B4252"
-    POLAR_NIGHT_3 = "#434C5E"
     POLAR_NIGHT_4 = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
     SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
     SNOW_STORM_2 = "#E5E9F0"  # Medium text color
-    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
     FROST_1 = "#8FBCBB"  # Light cyan
@@ -253,7 +246,7 @@ def create_header() -> Panel:
         except Exception:
             continue
 
-    # Custom ASCII art fallback if all else fails
+    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
     if not ascii_art or len(ascii_art.strip()) == 0:
         ascii_art = """
             _                  _               
@@ -310,6 +303,7 @@ def print_message(
         prefix: The prefix symbol
     """
     console.print(f"[{style}]{prefix} {text}[/{style}]")
+    logging.info(f"{prefix} {text}")
 
 
 def print_info(message: str) -> None:
@@ -325,11 +319,13 @@ def print_success(message: str) -> None:
 def print_warning(message: str) -> None:
     """Display a warning message."""
     print_message(message, NordColors.YELLOW, "⚠")
+    logging.warning(message)
 
 
 def print_error(message: str) -> None:
     """Display an error message."""
     print_message(message, NordColors.RED, "✗")
+    logging.error(message)
 
 
 def print_step(text: str) -> None:
@@ -337,81 +333,13 @@ def print_step(text: str) -> None:
     print_message(text, NordColors.FROST_2, "→")
 
 
-def display_panel(
-    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
-) -> None:
-    """
-    Display a message in a styled panel.
-
-    Args:
-        message: The message to display
-        style: The color style to use
-        title: Optional panel title
-    """
-    panel = Panel(
-        Text.from_markup(f"[{style}]{message}[/]"),
-        border_style=Style(color=style),
-        padding=(1, 2),
-        title=f"[bold {style}]{title}[/]" if title else None,
-    )
-    console.print(panel)
-
-
-def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
-    """
-    Create a menu table using Rich.
-
-    Args:
-        title: Table title
-        options: List of (key, description) tuples
-
-    Returns:
-        A Rich Table object
-    """
-    table = Table(
-        title=title,
-        box=None,
-        title_style=f"bold {NordColors.FROST_2}",
-        show_header=True,
-        expand=True,
-    )
-
-    table.add_column(
-        "Option", style=f"bold {NordColors.FROST_4}", justify="right", width=6
-    )
-    table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    for key, description in options:
-        table.add_row(key, description)
-
-    return table
-
-
-def clear_screen() -> None:
-    """Clear the terminal screen."""
-    console.clear()
-
-
-def pause() -> None:
-    """Pause execution until the user presses Enter."""
-    console.input(f"\n[{NordColors.PURPLE}]Press Enter to continue...[/]")
-
-
-def get_user_input(prompt: str, default: str = "") -> str:
-    """Get user input with a styled prompt."""
-    return Prompt.ask(f"[bold {NordColors.FROST_3}]{prompt}[/]", default=default)
-
-
-def get_user_choice(prompt: str, choices: List[str]) -> str:
-    """Get a user choice from a list of options."""
-    return Prompt.ask(
-        f"[bold {NordColors.FROST_3}]{prompt}[/]", choices=choices, show_choices=True
-    )
-
-
-def get_user_confirmation(prompt: str) -> bool:
-    """Prompt the user for a yes/no confirmation."""
-    return Confirm.ask(f"[bold {NordColors.FROST_3}]{prompt}[/]")
+def print_section(title: str) -> None:
+    """Display a formatted section header."""
+    border = "━" * TERM_WIDTH
+    console.print(f"\n[bold {NordColors.FROST_3}]{border}[/]")
+    console.print(f"[bold {NordColors.FROST_2}]  {title}  [/]")
+    console.print(f"[bold {NordColors.FROST_3}]{border}[/]\n")
+    logging.info(f"SECTION: {title}")
 
 
 # ----------------------------------------------------------------
@@ -419,31 +347,41 @@ def get_user_confirmation(prompt: str) -> bool:
 # ----------------------------------------------------------------
 def setup_logging(log_file: str = LOG_FILE) -> None:
     """Configure basic logging for the script."""
-    import logging
-
     try:
         log_dir = os.path.dirname(log_file)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
+
         logging.basicConfig(
             filename=log_file,
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
+        # Add a StreamHandler for console output
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        logging.getLogger().addHandler(console_handler)
+
         print_step(f"Logging configured to: {log_file}")
     except Exception as e:
         print_warning(f"Could not set up logging to {log_file}: {e}")
-        print_step("Continuing without logging to file...")
+        # Set up a basic console logger instead
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        print_step("Continuing with console logging only...")
 
 
 # ----------------------------------------------------------------
-# Signal Handling & Cleanup
+# Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
     """Perform cleanup tasks before exit."""
     print_step("Performing cleanup tasks...")
-    # Add any additional cleanup tasks here if needed
+    logging.info("Script execution completed, performing cleanup")
 
 
 def signal_handler(sig: int, frame: Any) -> None:
@@ -458,6 +396,7 @@ def signal_handler(sig: int, frame: Any) -> None:
         signal.Signals(sig).name if hasattr(signal, "Signals") else f"signal {sig}"
     )
     print_warning(f"\nScript interrupted by {sig_name}.")
+    logging.warning(f"Script interrupted by {sig_name}")
     cleanup()
     sys.exit(128 + sig)
 
@@ -477,6 +416,7 @@ def run_command(
     check: bool = True,
     capture_output: bool = True,
     timeout: Optional[int] = None,
+    silent: bool = False,
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
@@ -487,39 +427,70 @@ def run_command(
         check: Whether to check the return code
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
+        silent: Whether to suppress output to console
 
     Returns:
         CompletedProcess instance with command results
     """
+    cmd_str = " ".join(cmd)
+    if not silent:
+        print_step(f"Running: {cmd_str}")
+    logging.info(f"Executing command: {cmd_str}")
+
     try:
         result = subprocess.run(
             cmd,
             env=env or os.environ.copy(),
-            check=check,
+            check=False,  # We'll handle errors manually
             text=True,
             capture_output=capture_output,
             timeout=timeout or OPERATION_TIMEOUT,
         )
+
+        if result.returncode != 0 and check:
+            if not silent:
+                print_error(
+                    f"Command failed with exit code {result.returncode}: {cmd_str}"
+                )
+                if result.stdout and not result.stdout.isspace():
+                    console.print(f"[dim]{result.stdout.strip()}[/dim]")
+                if result.stderr and not result.stderr.isspace():
+                    console.print(f"[bold {NordColors.RED}]{result.stderr.strip()}[/]")
+            logging.error(
+                f"Command failed with exit code {result.returncode}: {cmd_str}"
+            )
+            logging.error(f"STDOUT: {result.stdout.strip()}")
+            logging.error(f"STDERR: {result.stderr.strip()}")
+            if check:
+                raise subprocess.CalledProcessError(
+                    result.returncode, cmd, result.stdout, result.stderr
+                )
+        else:
+            if not silent:
+                if (
+                    result.stdout
+                    and not result.stdout.isspace()
+                    and len(result.stdout) < 1000
+                ):
+                    console.print(f"[dim]{result.stdout.strip()}[/dim]")
+            logging.debug(f"Command succeeded: {cmd_str}")
+            logging.debug(f"STDOUT: {result.stdout.strip() if result.stdout else ''}")
+
         return result
-    except subprocess.CalledProcessError as e:
-        print_error(f"Command failed: {' '.join(cmd)}")
-        if hasattr(e, "stdout") and e.stdout:
-            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if hasattr(e, "stderr") and e.stderr:
-            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
-        raise
     except subprocess.TimeoutExpired:
         print_error(
-            f"Command timed out after {timeout or OPERATION_TIMEOUT} seconds: {' '.join(cmd)}"
+            f"Command timed out after {timeout or OPERATION_TIMEOUT} seconds: {cmd_str}"
         )
+        logging.error(f"Command timed out: {cmd_str}")
         raise
     except Exception as e:
-        print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
+        print_error(f"Error executing command: {cmd_str}\nDetails: {e}")
+        logging.error(f"Error executing command: {cmd_str}\nDetails: {e}")
         raise
 
 
 # ----------------------------------------------------------------
-# Progress Tracking Classes
+# Progress Tracking Class
 # ----------------------------------------------------------------
 class ProgressManager:
     """Unified progress tracking using Rich."""
@@ -527,14 +498,14 @@ class ProgressManager:
     def __init__(self):
         self.progress = Progress(
             SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
-            TextColumn("[bold {task.fields[color]}]{task.description}"),
+            TextColumn(f"[bold {{task.fields[color]}}]{{task.description}}"),
             BarColumn(
                 bar_width=40,
                 style=NordColors.FROST_4,
                 complete_style=NordColors.FROST_2,
             ),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TextColumn("[{task.fields[status]}]"),
+            TextColumn(f"[{NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+            TextColumn("{{task.fields[status]}}"),
             TimeRemainingColumn(),
             console=console,
             expand=True,
@@ -561,77 +532,6 @@ class ProgressManager:
         self.progress.update(task_id, advance=advance, **kwargs)
 
 
-class Spinner:
-    """Thread-safe spinner for indeterminate progress."""
-
-    def __init__(self, message: str):
-        self.message = message
-        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-        self.current = 0
-        self.spinning = False
-        self.thread: Optional[threading.Thread] = None
-        self.start_time = 0
-        self._lock = threading.Lock()
-
-    def _spin(self) -> None:
-        while self.spinning:
-            elapsed = time.time() - self.start_time
-            time_str = format_time(elapsed)
-            with self._lock:
-                console.print(
-                    f"\r[{NordColors.FROST_2}]{self.spinner_chars[self.current]}[/] "
-                    f"[{NordColors.FROST_3}]{self.message}[/] [[dim]elapsed: {time_str}[/dim]]",
-                    end="",
-                )
-                self.current = (self.current + 1) % len(self.spinner_chars)
-            time.sleep(0.1)
-
-    def start(self) -> None:
-        with self._lock:
-            if self.spinning:
-                return
-            self.spinning = True
-            self.start_time = time.time()
-            self.thread = threading.Thread(target=self._spin, daemon=True)
-            self.thread.start()
-
-    def stop(self, success: bool = True) -> None:
-        with self._lock:
-            if not self.spinning:
-                return
-            self.spinning = False
-            if self.thread:
-                self.thread.join()
-            elapsed = time.time() - self.start_time
-            time_str = format_time(elapsed)
-            console.print("\r" + " " * TERM_WIDTH, end="\r")
-            if success:
-                console.print(
-                    f"[{NordColors.GREEN}]✓[/] [{NordColors.FROST_3}]{self.message}[/] [{NordColors.GREEN}]completed[/] in {time_str}"
-                )
-            else:
-                console.print(
-                    f"[{NordColors.RED}]✗[/] [{NordColors.FROST_3}]{self.message}[/] [{NordColors.RED}]failed[/] after {time_str}"
-                )
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.stop(success=exc_type is None)
-
-
-def format_time(seconds: float) -> str:
-    """Format seconds into a human-readable string."""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    elif seconds < 3600:
-        return f"{seconds / 60:.1f}m"
-    else:
-        return f"{seconds / 3600:.1f}h"
-
-
 # ----------------------------------------------------------------
 # System Check Functions
 # ----------------------------------------------------------------
@@ -649,7 +549,10 @@ def check_privileges() -> bool:
 
 
 def check_system_compatibility() -> bool:
-    """Check if the system is compatible with the VoIP setup."""
+    """
+    Check if the system is compatible with the VoIP setup.
+    Returns True if compatible, False otherwise.
+    """
     print_section("System Compatibility Check")
     compatible = True
 
@@ -700,9 +603,19 @@ def check_system_compatibility() -> bool:
         print_warning("Could not check system memory")
 
     # Check internet connectivity
+    print_step("Checking internet connectivity...")
     try:
-        with Spinner("Checking internet connectivity") as spinner:
-            result = run_command(["ping", "-c", "1", "-W", "2", "8.8.8.8"], check=False)
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Checking internet connectivity"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Testing connection", total=1)
+            result = run_command(
+                ["ping", "-c", "1", "-W", "2", "8.8.8.8"], check=False, silent=True
+            )
+            progress.update(task, completed=1)
+
         if result.returncode == 0:
             print_success("Internet connectivity confirmed")
         else:
@@ -720,40 +633,40 @@ def check_system_compatibility() -> bool:
     return compatible
 
 
-def print_header(text: str) -> None:
-    """Display a stylized section header using pyfiglet."""
-    try:
-        ascii_art = pyfiglet.figlet_format(text, font="slant")
-        console.print(ascii_art, style=f"bold {NordColors.FROST_2}")
-    except Exception:
-        # Fallback if pyfiglet fails
-        border = "=" * TERM_WIDTH
-        console.print(f"\n[bold {NordColors.FROST_2}]{border}[/]")
-        console.print(f"[bold {NordColors.FROST_2}]  {text.center(TERM_WIDTH - 4)}[/]")
-        console.print(f"[bold {NordColors.FROST_2}]{border}[/]\n")
-
-
-def print_section(title: str) -> None:
-    """Display a formatted section header."""
-    border = "━" * TERM_WIDTH
-    console.print(f"\n[bold {NordColors.FROST_3}]{border}[/]")
-    console.print(f"[bold {NordColors.FROST_2}]  {title}  [/]")
-    console.print(f"[bold {NordColors.FROST_3}]{border}[/]\n")
-
-
 # ----------------------------------------------------------------
 # VoIP Setup Task Functions
 # ----------------------------------------------------------------
 def update_system() -> bool:
-    """Update system packages."""
+    """
+    Update system packages.
+    Returns True if successful, False otherwise.
+    """
     print_section("Updating System Packages")
     try:
-        with Spinner("Updating package lists") as spinner:
-            run_command(["apt-get", "update"])
+        # Update package lists
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Updating package lists"),
+            BarColumn(
+                bar_width=40,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Updating", total=1)
+            run_command(["apt-get", "update"], silent=True)
+            progress.update(task, completed=1)
+
         print_success("Package lists updated successfully")
 
+        # Try to get upgradable package count for better progress reporting
         try:
-            result = run_command(["apt", "list", "--upgradable"], capture_output=True)
+            result = run_command(
+                ["apt", "list", "--upgradable"], capture_output=True, silent=True
+            )
             lines = result.stdout.splitlines()
             package_count = max(1, len(lines) - 1)  # First line is header
             print_info(f"Found {package_count} upgradable packages")
@@ -761,6 +674,7 @@ def update_system() -> bool:
             package_count = 10  # Default if we can't determine
             print_warning("Could not determine number of upgradable packages")
 
+        # Perform system upgrade with progress tracking
         with ProgressManager() as progress:
             task = progress.add_task("Upgrading packages", total=package_count)
 
@@ -791,7 +705,10 @@ def update_system() -> bool:
 
 
 def install_packages(packages: List[str]) -> bool:
-    """Install the specified VoIP packages."""
+    """
+    Install the specified VoIP packages.
+    Returns True if all packages installed successfully, False otherwise.
+    """
     if not packages:
         print_warning("No packages specified for installation")
         return True
@@ -806,12 +723,17 @@ def install_packages(packages: List[str]) -> bool:
         for idx, pkg in enumerate(packages):
             print_step(f"Installing {pkg} ({idx + 1}/{len(packages)})")
             try:
+                # Use DEBIAN_FRONTEND=noninteractive to prevent prompts
+                env = os.environ.copy()
+                env["DEBIAN_FRONTEND"] = "noninteractive"
+
                 proc = subprocess.Popen(
                     ["apt-get", "install", "-y", pkg],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
+                    env=env,
                 )
 
                 for line in iter(proc.stdout.readline, ""):
@@ -841,7 +763,10 @@ def install_packages(packages: List[str]) -> bool:
 
 
 def configure_firewall(rules: List[Dict[str, str]]) -> bool:
-    """Configure firewall rules for VoIP services."""
+    """
+    Configure firewall rules for VoIP services.
+    Returns True if successful, False otherwise.
+    """
     print_section("Configuring Firewall")
     try:
         if not shutil.which("ufw"):
@@ -853,7 +778,7 @@ def configure_firewall(rules: List[Dict[str, str]]) -> bool:
             task = progress.add_task("Configuring firewall", total=len(rules) + 2)
 
             # Check UFW status
-            status_result = run_command(["ufw", "status"], check=False)
+            status_result = run_command(["ufw", "status"], check=False, silent=True)
             if "Status: inactive" in status_result.stdout:
                 print_step("Enabling UFW firewall...")
                 run_command(["ufw", "--force", "enable"])
@@ -879,7 +804,10 @@ def configure_firewall(rules: List[Dict[str, str]]) -> bool:
 
 
 def create_asterisk_config(configs: Dict[str, str]) -> bool:
-    """Create or update Asterisk configuration files (backing up existing ones)."""
+    """
+    Create or update Asterisk configuration files (backing up existing ones).
+    Returns True if successful, False otherwise.
+    """
     print_section("Creating Asterisk Configuration Files")
     try:
         config_dir = Path("/etc/asterisk")
@@ -913,7 +841,10 @@ def create_asterisk_config(configs: Dict[str, str]) -> bool:
 
 
 def manage_services(services: List[str], action: str) -> bool:
-    """Enable, disable, start, restart, or stop services."""
+    """
+    Enable, disable, start, restart, or stop services.
+    Returns True if successful for all services, False otherwise.
+    """
     valid_actions = ["enable", "disable", "start", "restart", "stop"]
     if action not in valid_actions:
         print_error(
@@ -951,7 +882,10 @@ def manage_services(services: List[str], action: str) -> bool:
 
 
 def verify_installation() -> bool:
-    """Verify the VoIP setup installation."""
+    """
+    Verify the VoIP setup installation.
+    Returns True if all checks pass, False otherwise.
+    """
     print_section("Verifying VoIP Setup")
     verification_items = []
     passed_items = []
@@ -971,7 +905,7 @@ def verify_installation() -> bool:
             (
                 f"{service.capitalize()} Service",
                 lambda s=service: run_command(
-                    ["systemctl", "is-active", s], check=False
+                    ["systemctl", "is-active", s], check=False, silent=True
                 ).stdout.strip()
                 == "active",
             )
@@ -991,7 +925,9 @@ def verify_installation() -> bool:
             (
                 f"Firewall Rule: {rule_str}",
                 lambda r=rule_str: r
-                in run_command(["ufw", "status"], capture_output=True).stdout,
+                in run_command(
+                    ["ufw", "status"], capture_output=True, silent=True
+                ).stdout,
             )
         )
 
@@ -1040,93 +976,103 @@ def verify_installation() -> bool:
         return False
 
 
-def perform_full_setup() -> bool:
-    """Perform a full VoIP setup."""
-    clear_screen()
-    console.print(create_header())
-
-    # Display system info
-    console.print(f"Hostname: [bold {NordColors.SNOW_STORM_1}]{HOSTNAME}[/]")
-    console.print(
-        f"System: [bold {NordColors.SNOW_STORM_1}]{platform.system()} {platform.release()}[/]"
-    )
-    console.print(
-        f"Timestamp: [bold {NordColors.SNOW_STORM_1}]{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]"
-    )
-
+# ----------------------------------------------------------------
+# Main Function
+# ----------------------------------------------------------------
+def main() -> None:
+    """
+    Main function to perform the VoIP setup automatically.
+    """
     start_time = time.time()
 
-    # Check privileges
+    # Clear screen and display header
+    console.clear()
+    console.print(create_header())
+
+    # Configure logging
+    setup_logging()
+
+    # Display system info
+    console.print(
+        f"[{NordColors.FROST_3}]Hostname:[/] [{NordColors.SNOW_STORM_1}]{HOSTNAME}[/]"
+    )
+    console.print(
+        f"[{NordColors.FROST_3}]System:[/] [{NordColors.SNOW_STORM_1}]{platform.system()} {platform.release()}[/]"
+    )
+    console.print(
+        f"[{NordColors.FROST_3}]Timestamp:[/] [{NordColors.SNOW_STORM_1}]{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]"
+    )
+    console.print()
+
+    # Check privileges and abort if not root
     if not check_privileges():
         print_error("This script requires root privileges. Please run with sudo.")
-        return False
+        sys.exit(1)
 
     # Check system compatibility
-    if not check_system_compatibility():
-        if not get_user_confirmation(
-            "System compatibility issues detected. Continue anyway?"
-        ):
-            return False
+    system_compatible = check_system_compatibility()
+    if not system_compatible:
+        print_warning(
+            "System compatibility check failed. Continuing anyway, but errors may occur."
+        )
 
-    # Update system
-    if get_user_confirmation("Update system packages?"):
-        if not update_system():
-            if not get_user_confirmation(
-                "System update encountered issues. Continue anyway?"
-            ):
-                return False
+    # Create a task list for overall progress tracking
+    tasks = [
+        ("Update system packages", update_system),
+        ("Install VoIP packages", lambda: install_packages(VOIP_PACKAGES)),
+        ("Configure firewall", lambda: configure_firewall(FIREWALL_RULES)),
+        (
+            "Create Asterisk configuration",
+            lambda: create_asterisk_config(ASTERISK_CONFIGS),
+        ),
+        ("Enable services", lambda: manage_services(SERVICES, "enable")),
+        ("Restart services", lambda: manage_services(SERVICES, "restart")),
+        ("Verify installation", verify_installation),
+    ]
 
-    # Install VoIP packages
-    if get_user_confirmation("Install VoIP packages?"):
-        if not install_packages(VOIP_PACKAGES):
-            if not get_user_confirmation(
-                "Package installation failed. Continue anyway?"
-            ):
-                return False
+    # Track overall success
+    overall_success = True
+    failed_tasks = []
 
-    # Configure firewall
-    if get_user_confirmation("Configure firewall rules?"):
-        if not configure_firewall(FIREWALL_RULES):
-            if not get_user_confirmation(
-                "Firewall configuration failed. Continue anyway?"
-            ):
-                return False
+    # Execute all tasks
+    with ProgressManager() as progress:
+        overall_task = progress.add_task("Overall Setup Progress", total=len(tasks))
 
-    # Create Asterisk configuration
-    if get_user_confirmation("Create Asterisk configuration files?"):
-        if not create_asterisk_config(ASTERISK_CONFIGS):
-            if not get_user_confirmation(
-                "Asterisk configuration failed. Continue anyway?"
-            ):
-                return False
+        for task_name, task_func in tasks:
+            print_section(f"Task: {task_name}")
+            try:
+                task_success = task_func()
+                if not task_success:
+                    print_warning(f"Task '{task_name}' completed with issues")
+                    failed_tasks.append(task_name)
+                    overall_success = False
+                else:
+                    print_success(f"Task '{task_name}' completed successfully")
+            except Exception as e:
+                print_error(f"Task '{task_name}' failed with error: {e}")
+                logging.exception(f"Task '{task_name}' failed with error")
+                failed_tasks.append(task_name)
+                overall_success = False
 
-    # Enable and restart services
-    if get_user_confirmation("Enable and restart services?"):
-        if not manage_services(SERVICES, "enable") or not manage_services(
-            SERVICES, "restart"
-        ):
-            if not get_user_confirmation("Service management failed. Continue anyway?"):
-                return False
-
-    # Verify installation
-    verification_result = False
-    if get_user_confirmation("Verify the installation?"):
-        verification_result = verify_installation()
+            progress.update(overall_task, advance=1)
 
     # Display summary
     end_time = time.time()
     elapsed = end_time - start_time
     minutes, seconds = divmod(elapsed, 60)
 
-    print_header("Setup Summary")
+    print_section("Setup Summary")
     print_success(f"Elapsed time: {int(minutes)}m {int(seconds)}s")
 
-    if verification_result:
-        print_success("VoIP setup completed successfully")
+    if overall_success:
+        print_success("VoIP setup completed successfully!")
     else:
         print_warning("VoIP setup completed with warnings or errors")
+        print_warning("The following tasks had issues:")
+        for task in failed_tasks:
+            console.print(f"[{NordColors.RED}]• {task}[/]")
 
-    # Next steps
+    # Next steps info
     print_section("Next Steps")
     console.print(
         f"[{NordColors.SNOW_STORM_1}]1. Review the Asterisk configuration files in /etc/asterisk/[/]"
@@ -1143,297 +1089,21 @@ def perform_full_setup() -> bool:
     console.print(
         f"[{NordColors.SNOW_STORM_1}]5. Set up voicemail and additional call routing as needed[/]"
     )
+    console.print()
 
-    return verification_result
-
-
-# ----------------------------------------------------------------
-# Menu System
-# ----------------------------------------------------------------
-def service_menu() -> None:
-    """Display and handle the service management menu."""
-    while True:
-        clear_screen()
-        console.print(create_header())
-        print_section("Service Management")
-
-        menu_options = [
-            ("1", "Enable Services"),
-            ("2", "Disable Services"),
-            ("3", "Start Services"),
-            ("4", "Restart Services"),
-            ("5", "Stop Services"),
-            ("6", "View Service Status"),
-            ("0", "Back to Main Menu"),
-        ]
-
-        console.print(create_menu_table("Service Menu", menu_options))
-        choice = get_user_input("Enter your choice (0-6):")
-
-        if choice == "1":
-            manage_services(SERVICES, "enable")
-            pause()
-        elif choice == "2":
-            manage_services(SERVICES, "disable")
-            pause()
-        elif choice == "3":
-            manage_services(SERVICES, "start")
-            pause()
-        elif choice == "4":
-            manage_services(SERVICES, "restart")
-            pause()
-        elif choice == "5":
-            manage_services(SERVICES, "stop")
-            pause()
-        elif choice == "6":
-            # Display service status
-            print_section("Service Status")
-            table = Table(show_header=True)
-            table.add_column("Service", style=f"bold {NordColors.FROST_3}")
-            table.add_column("Status", style=f"{NordColors.SNOW_STORM_1}")
-            table.add_column("Enabled", style=f"{NordColors.SNOW_STORM_1}")
-
-            for service in SERVICES:
-                try:
-                    active = run_command(
-                        ["systemctl", "is-active", service], check=False
-                    ).stdout.strip()
-                    enabled = run_command(
-                        ["systemctl", "is-enabled", service], check=False
-                    ).stdout.strip()
-
-                    active_status = "Active" if active == "active" else "Inactive"
-                    active_style = (
-                        NordColors.GREEN if active == "active" else NordColors.RED
-                    )
-
-                    enabled_status = "Yes" if enabled == "enabled" else "No"
-                    enabled_style = (
-                        NordColors.GREEN if enabled == "enabled" else NordColors.RED
-                    )
-
-                    table.add_row(
-                        service,
-                        f"[{active_style}]{active_status}[/]",
-                        f"[{enabled_style}]{enabled_status}[/]",
-                    )
-                except Exception as e:
-                    table.add_row(
-                        service,
-                        f"[{NordColors.RED}]Error[/]",
-                        f"[{NordColors.RED}]Error[/]",
-                    )
-
-            console.print(table)
-            pause()
-        elif choice == "0":
-            return
-        else:
-            print_error("Invalid selection. Please try again.")
-            time.sleep(1)
-
-
-def configuration_menu() -> None:
-    """Display and handle the configuration menu."""
-    while True:
-        clear_screen()
-        console.print(create_header())
-        print_section("Configuration Options")
-
-        menu_options = [
-            ("1", "Show Asterisk Configuration"),
-            ("2", "Show Firewall Rules"),
-            ("3", "Edit sip_custom.conf"),
-            ("4", "Edit extensions_custom.conf"),
-            ("5", "Restart Asterisk to Apply Changes"),
-            ("0", "Back to Main Menu"),
-        ]
-
-        console.print(create_menu_table("Configuration Menu", menu_options))
-        choice = get_user_input("Enter your choice (0-5):")
-
-        if choice == "1":
-            # Show Asterisk Configuration
-            print_section("Asterisk Configuration")
-
-            config_dir = Path("/etc/asterisk")
-            for filename in ASTERISK_CONFIGS.keys():
-                file_path = config_dir / filename
-                if file_path.exists():
-                    content = file_path.read_text()
-                    console.print(
-                        Panel(
-                            Text(content, style=f"{NordColors.SNOW_STORM_1}"),
-                            title=f"[bold {NordColors.FROST_2}]{filename}[/]",
-                            border_style=Style(color=NordColors.FROST_3),
-                            expand=False,
-                        )
-                    )
-                else:
-                    print_warning(f"Configuration file {filename} not found")
-
-            pause()
-        elif choice == "2":
-            # Show Firewall Rules
-            print_section("Firewall Rules")
-            try:
-                result = run_command(["ufw", "status", "verbose"], check=False)
-                if result.returncode == 0:
-                    console.print(
-                        Panel(
-                            Text(result.stdout, style=f"{NordColors.SNOW_STORM_1}"),
-                            title=f"[bold {NordColors.FROST_2}]UFW Status[/]",
-                            border_style=Style(color=NordColors.FROST_3),
-                            expand=False,
-                        )
-                    )
-                else:
-                    print_error("Failed to get firewall status")
-            except Exception as e:
-                print_error(f"Error checking firewall status: {e}")
-
-            pause()
-        elif choice == "3" or choice == "4":
-            # Edit configuration files
-            filename = "sip_custom.conf" if choice == "3" else "extensions_custom.conf"
-            editor = os.environ.get("EDITOR", "nano")
-
-            print_info(f"Opening {filename} with {editor}...")
-            print_warning(
-                "Be careful with your edits. Invalid configuration can break your VoIP setup."
-            )
-
-            file_path = Path(f"/etc/asterisk/{filename}")
-            if not file_path.exists():
-                print_error(f"File {filename} not found. Creating it first.")
-                create_asterisk_config({filename: ASTERISK_CONFIGS[filename]})
-
-            try:
-                subprocess.run([editor, file_path])
-                print_success(f"Finished editing {filename}")
-            except Exception as e:
-                print_error(f"Error editing file: {e}")
-
-            pause()
-        elif choice == "5":
-            # Restart Asterisk
-            if get_user_confirmation(
-                "Restart Asterisk to apply configuration changes?"
-            ):
-                manage_services(["asterisk"], "restart")
-            pause()
-        elif choice == "0":
-            return
-        else:
-            print_error("Invalid selection. Please try again.")
-            time.sleep(1)
-
-
-def main_menu() -> None:
-    """Display the main menu and handle user selection."""
-    while True:
-        clear_screen()
-        console.print(create_header())
-
-        # Display system info
-        print_info(f"Version: {VERSION}")
-        print_info(f"System: {platform.system()} {platform.release()}")
-        print_info(
-            f"User: {os.environ.get('USER', os.environ.get('USERNAME', 'Unknown'))}"
-        )
-        print_info(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-        # Warning for non-root users
-        if not check_privileges():
-            console.print(
-                Panel(
-                    "[bold "
-                    + NordColors.RED
-                    + "]This script requires root privileges.[/]\nPlease restart using sudo or as root.",
-                    title="Warning",
-                    border_style=f"bold {NordColors.RED}",
-                )
-            )
-
-        # Menu options
-        menu_options = [
-            ("1", "Check System Compatibility"),
-            ("2", "Update System Packages"),
-            ("3", "Install VoIP Packages"),
-            ("4", "Configure Firewall Rules"),
-            ("5", "Create Asterisk Configuration"),
-            ("6", "Service Management"),
-            ("7", "Configuration Options"),
-            ("8", "Verify Installation"),
-            ("9", "Perform Full Setup"),
-            ("0", "Exit"),
-        ]
-
-        console.print(create_menu_table("Main Menu", menu_options))
-        choice = get_user_input("Enter your choice (0-9):")
-
-        if choice == "1":
-            check_system_compatibility()
-            pause()
-        elif choice == "2":
-            update_system()
-            pause()
-        elif choice == "3":
-            install_packages(VOIP_PACKAGES)
-            pause()
-        elif choice == "4":
-            configure_firewall(FIREWALL_RULES)
-            pause()
-        elif choice == "5":
-            create_asterisk_config(ASTERISK_CONFIGS)
-            pause()
-        elif choice == "6":
-            service_menu()
-        elif choice == "7":
-            configuration_menu()
-        elif choice == "8":
-            verify_installation()
-            pause()
-        elif choice == "9":
-            perform_full_setup()
-            pause()
-        elif choice == "0":
-            clear_screen()
-            console.print(create_header())
-            print_success("Thank you for using the VoIP Setup Utility!")
-            console.print(
-                Panel(
-                    "Developed with ♥ using Rich and Pyfiglet",
-                    border_style=Style(color=NordColors.FROST_1),
-                    title=f"[bold {NordColors.FROST_2}]Goodbye![/]",
-                    padding=(1, 2),
-                )
-            )
-            time.sleep(1.5)
-            sys.exit(0)
-        else:
-            print_error("Invalid selection. Please try again.")
-            time.sleep(1)
+    logging.info("Script execution completed")
 
 
 # ----------------------------------------------------------------
-# Main Entry Point
+# Entry Point
 # ----------------------------------------------------------------
-def main() -> None:
-    """Main entry point for the script."""
+if __name__ == "__main__":
     try:
-        setup_logging()
-        main_menu()
+        main()
     except KeyboardInterrupt:
         print_warning("\nProcess interrupted by user.")
         sys.exit(130)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logging.exception("Unexpected error occurred")
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

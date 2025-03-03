@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 """
-Unified ZFS Management
+Automated ZFS Management
 --------------------------------------------------
 
-A comprehensive terminal interface for ZFS pool management with Nord theme styling.
-Provides streamlined workflows for:
+A streamlined terminal interface for ZFS pool management with Nord theme styling.
+Automatically performs:
   • ZFS Setup - Installs packages, enables services, imports pools and configures mounts
   • ZFS Expansion - Expands ZFS pools to utilize full device capacity with validation
 
-Features elegant progress tracking, interactive prompts, and detailed logging.
+Features elegant progress tracking and detailed logging with no user interaction required.
 Must be run with root privileges on Linux systems with ZFS support.
 
 Usage:
-  sudo python3 zfs_management.py setup [options]     # Configure and import ZFS pools
-  sudo python3 zfs_management.py expand [options]    # Expand ZFS pools to use full device size
+  sudo python3 automated_zfs.py
 
-Version: 1.1.0
+Version: 2.0.0
 """
 
-import argparse
 import atexit
 import datetime
 import logging
@@ -68,7 +66,7 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-VERSION = "1.1.0"
+VERSION = "2.0.0"
 
 # ZFS Setup Defaults
 DEFAULT_POOL_NAME = "tank"
@@ -114,8 +112,8 @@ EXPECTED_SIZE_TIB_UPPER = 2.0  # in TiB (upper bound)
 TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
 
 # Application name and subtitle for header
-APP_NAME = "ZFS Manager"
-APP_SUBTITLE = "Unified Pool Management"
+APP_NAME = "Auto ZFS"
+APP_SUBTITLE = "Automated Pool Management"
 
 
 # ----------------------------------------------------------------
@@ -222,12 +220,12 @@ def create_header() -> Panel:
     # Custom ASCII art fallback if all else fails
     if not ascii_art or len(ascii_art.strip()) == 0:
         ascii_art = """
-      __                                                   
- ____/ _|___   _ __ ___   __ _ _ __   __ _  __ _  ___ _ __ 
-|_  / |_/ __| | '_ ` _ \ / _` | '_ \ / _` |/ _` |/ _ \ '__|
- / /|  _\__ \ | | | | | | (_| | | | | (_| | (_| |  __/ |   
-/___|_| |___/ |_| |_| |_|\__,_|_| |_|\__,_|\__, |\___|_|   
-                                           |___/                  
+      __                _               
+ ____/ _|___   ___  ___| |_ _   _ _ __  
+|_  / |_/ __| / __|/ _ \ __| | | | '_ \ 
+ / /|  _\__ \ \__ \  __/ |_| |_| | |_) |
+/___|_| |___/ |___/\___|\__|\__,_| .__/ 
+                                 |_|    
         """
 
     # Clean up extra whitespace that might cause display issues
@@ -331,11 +329,6 @@ def display_panel(
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
-
-
-def pause() -> None:
-    """Pause execution until the user presses Enter."""
-    console.input(f"\n[{NordColors.PURPLE}]Press Enter to continue...[/]")
 
 
 # ----------------------------------------------------------------
@@ -932,9 +925,11 @@ def import_zfs_pool(pool_name: str, force: bool = False, verbose: bool = False) 
         available = list_available_pools(verbose)
         if available:
             print_info(f"Available pools: {', '.join(available)}")
-            print_info("You can specify one of these pools with the --pool-name option")
-        else:
-            print_info("No available pools found for import")
+            if pool_name not in available:
+                # Try to import the first available pool instead
+                first_pool = available[0]
+                print_info(f"Attempting to import '{first_pool}' instead")
+                return import_zfs_pool(first_pool, force, verbose)
 
         return False
 
@@ -1481,100 +1476,23 @@ def validate_expansion(verbose: bool = False) -> bool:
 
 
 # ----------------------------------------------------------------
-# Interactive ZFS Setup Function
+# ZFS Setup Function
 # ----------------------------------------------------------------
-def interactive_setup() -> Tuple[str, str, str, bool]:
-    """Run interactive setup to gather ZFS configuration parameters."""
-    print_step("Starting interactive ZFS setup")
-
-    # Check for available pools first
-    available_pools = list_available_pools()
-
-    if available_pools:
-        print_info(f"Available ZFS pools: {', '.join(available_pools)}")
-        pool_name = (
-            console.input(
-                f"[bold {NordColors.FROST_2}]Enter pool name [{DEFAULT_POOL_NAME}]: [/]"
-            ).strip()
-            or DEFAULT_POOL_NAME
-        )
-    else:
-        print_info("No available pools detected. Specify the pool name manually.")
-        pool_name = (
-            console.input(
-                f"[bold {NordColors.FROST_2}]Enter pool name [{DEFAULT_POOL_NAME}]: [/]"
-            ).strip()
-            or DEFAULT_POOL_NAME
-        )
-
-    # Get mount point
-    default_mount = DEFAULT_MOUNT_POINT.format(pool_name=pool_name)
-    mount_point = (
-        console.input(
-            f"[bold {NordColors.FROST_2}]Enter mount point [{default_mount}]: [/]"
-        ).strip()
-        or default_mount
-    )
-
-    # Get cache file
-    cache_file = (
-        console.input(
-            f"[bold {NordColors.FROST_2}]Enter cache file path [{DEFAULT_CACHE_FILE}]: [/]"
-        ).strip()
-        or DEFAULT_CACHE_FILE
-    )
-
-    # Force option
-    force_input = console.input(
-        f"[bold {NordColors.FROST_2}]Force import if needed? (y/N): [/]"
-    )
-    force = force_input.lower() in ("y", "yes")
-
-    # Show summary panel
-    summary_panel = Panel(
-        Text.from_markup(
-            f"Pool name:    [{NordColors.FROST_2}]{pool_name}[/]\n"
-            f"Mount point:  [{NordColors.FROST_2}]{mount_point}[/]\n"
-            f"Cache file:   [{NordColors.FROST_2}]{cache_file}[/]\n"
-            f"Force import: [{NordColors.FROST_2}]{'Yes' if force else 'No'}[/]"
-        ),
-        title=f"[bold {NordColors.FROST_2}]Configuration Summary[/]",
-        border_style=Style(color=NordColors.FROST_3),
-        padding=(1, 2),
-    )
-    console.print(summary_panel)
-
-    # Confirm
-    confirm = console.input(
-        f"[bold {NordColors.FROST_2}]Proceed with this configuration? (Y/n): [/]"
-    )
-
-    if confirm.lower() in ("n", "no"):
-        print_info("Setup cancelled by user.")
-        sys.exit(0)
-
-    return pool_name, mount_point, cache_file, force
-
-
-# ----------------------------------------------------------------
-# Main ZFS Setup Function
-# ----------------------------------------------------------------
-def execute_zfs_setup(args) -> bool:
+def execute_zfs_setup(verbose: bool = False) -> bool:
     """
     Execute the complete ZFS setup process.
     Returns True if setup is successful, False otherwise.
     """
-    pool_name = args.pool_name
-    mount_point = args.mount_point or DEFAULT_MOUNT_POINT.format(pool_name=pool_name)
-    cache_file = args.cache_file
-    force = args.force
-    verbose = args.verbose
+    pool_name = DEFAULT_POOL_NAME
+    mount_point = DEFAULT_MOUNT_POINT.format(pool_name=pool_name)
+    cache_file = DEFAULT_CACHE_FILE
+    force = True  # Always use force for unattended operation
 
     total_steps = 6
     current_step = 0
 
     log_level = logging.DEBUG if verbose else logging.INFO
-    setup_logging(args.log_file, log_level)
+    setup_logging(DEFAULT_LOG_FILE, log_level)
 
     start_time = datetime.datetime.now()
     logging.info("=" * 60)
@@ -1588,18 +1506,11 @@ def execute_zfs_setup(args) -> bool:
         if not check_dependencies(verbose):
             return False
 
-        # Step 2: Install packages (if not skipped)
+        # Step 2: Install packages
         current_step += 1
-        if not args.skip_install:
-            print_step("Installing ZFS packages", current_step, total_steps)
-            if not install_zfs_packages(verbose):
-                print_warning("ZFS package installation had issues, but continuing...")
-        else:
-            print_step(
-                "Skipping ZFS package installation (--skip-install)",
-                current_step,
-                total_steps,
-            )
+        print_step("Installing ZFS packages", current_step, total_steps)
+        if not install_zfs_packages(verbose):
+            print_warning("ZFS package installation had issues, but continuing...")
 
         # Step 3: Enable services
         current_step += 1
@@ -1611,6 +1522,15 @@ def execute_zfs_setup(args) -> bool:
         print_step(f"Creating mount point: {mount_point}", current_step, total_steps)
         if not create_mount_point(mount_point, verbose):
             return False
+
+        # Check for available pools and use the first one if available
+        available_pools = list_available_pools(verbose)
+        if available_pools:
+            pool_name = available_pools[0]
+            mount_point = DEFAULT_MOUNT_POINT.format(pool_name=pool_name)
+            print_info(f"Found available pool: {pool_name}")
+            print_info(f"Using mount point: {mount_point}")
+            create_mount_point(mount_point, verbose)
 
         # Step 5: Import pool
         current_step += 1
@@ -1644,275 +1564,178 @@ def execute_zfs_setup(args) -> bool:
 
 
 # ----------------------------------------------------------------
-# Command Line Parsing
+# ZFS Expansion Function
 # ----------------------------------------------------------------
-def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Unified ZFS Management Tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Run setup with default options
-  sudo python3 zfs_management.py setup
+def execute_zfs_expansion(verbose: bool = False) -> bool:
+    """Execute ZFS pool expansion for all available pools."""
+    pool_status = get_zpool_status(verbose)
+    if not pool_status or not pool_status["pools"]:
+        print_error(
+            "Could not retrieve ZFS pool status or no pools found. Ensure ZFS is configured."
+        )
+        return False
 
-  # Run interactive setup
-  sudo python3 zfs_management.py setup --interactive
+    pools = pool_status["pools"]
+    if not pools:
+        print_error("No ZFS pools found to expand")
+        return False
 
-  # Setup with custom pool name and mount point
-  sudo python3 zfs_management.py setup --pool-name mypool --mount-point /data/mypool
+    # Find devices for each pool
+    pool_device_paths = {}
+    for pool in pools:
+        pool_name = pool["name"]
+        vdevs = pool.get("vdevs", [])
 
-  # Expand pools
-  sudo python3 zfs_management.py expand
-""",
+        if not vdevs:
+            print_warning(f"No vdevs found for pool '{pool_name}'. Skipping.")
+            continue
+
+        device_path = vdevs[0].get("path")
+        if not device_path:
+            print_warning(
+                f"Could not determine device for pool '{pool_name}'. Skipping."
+            )
+            continue
+
+        pool_device_paths[pool_name] = device_path
+
+    # Display detected pools and devices
+    if pool_device_paths:
+        table = Table(
+            show_header=True,
+            header_style=f"bold {NordColors.FROST_1}",
+            border_style=NordColors.FROST_3,
+            title=f"[bold {NordColors.FROST_2}]Detected ZFS Pools and Devices[/]",
+            title_justify="center",
+        )
+
+        table.add_column("Pool", style=f"bold {NordColors.FROST_2}")
+        table.add_column("Device", style=NordColors.SNOW_STORM_1)
+
+        for name, dev in pool_device_paths.items():
+            table.add_row(name, dev)
+
+        console.print(table)
+    else:
+        print_error("No valid pool-device pairs found. Aborting expansion.")
+        return False
+
+    # Expand each pool
+    print_step("Starting ZFS Pool Expansion Process")
+    expansion_results = {}
+
+    for pool_name, device_path in pool_device_paths.items():
+        panel = Panel(
+            f"Pool: {pool_name}\nDevice: {device_path}",
+            title=f"[bold {NordColors.FROST_2}]Expanding Pool[/]",
+            border_style=Style(color=NordColors.FROST_3),
+            padding=(1, 2),
+        )
+        console.print(panel)
+
+        result = expand_zpool(pool_name, device_path, verbose)
+        expansion_results[pool_name] = result
+        console.print()
+
+    # Validate expansion
+    print_step("Validating Expansion Results")
+    validation = validate_expansion(verbose)
+
+    # Show results summary
+    results_table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        border_style=NordColors.FROST_3,
+        title=f"[bold {NordColors.FROST_2}]Expansion Results Summary[/]",
+        title_justify="center",
     )
 
-    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    results_table.add_column("Pool", style=f"bold {NordColors.FROST_2}")
+    results_table.add_column("Result", style=NordColors.SNOW_STORM_1)
 
-    # Setup command
-    setup_parser = subparsers.add_parser("setup", help="Configure and import ZFS pools")
-    setup_parser.add_argument(
-        "--pool-name", default=DEFAULT_POOL_NAME, help="Name of the ZFS pool to import"
-    )
-    setup_parser.add_argument(
-        "--mount-point",
-        default=None,
-        help="Mount point for the ZFS pool (default: /media/{pool_name})",
-    )
-    setup_parser.add_argument(
-        "--cache-file", default=DEFAULT_CACHE_FILE, help="Path to the ZFS cache file"
-    )
-    setup_parser.add_argument(
-        "--log-file", default=DEFAULT_LOG_FILE, help="Path to the log file"
-    )
-    setup_parser.add_argument(
-        "--force", action="store_true", help="Force import of the ZFS pool"
-    )
-    setup_parser.add_argument(
-        "--skip-install", action="store_true", help="Skip package installation"
-    )
-    setup_parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose output"
-    )
-    setup_parser.add_argument(
-        "--interactive", action="store_true", help="Run interactive setup"
-    )
+    for pool_name, result in expansion_results.items():
+        status_text = (
+            f"[bold {NordColors.GREEN}]Successful[/]"
+            if result
+            else f"[bold {NordColors.RED}]Failed[/]"
+        )
+        results_table.add_row(pool_name, status_text)
 
-    # Expand command
-    expand_parser = subparsers.add_parser(
-        "expand", help="Expand ZFS pools to use full device size"
+    # Add validation result
+    overall = (
+        "Successful" if all(expansion_results.values()) and validation else "Failed"
     )
-    expand_parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose output"
-    )
+    overall_color = NordColors.GREEN if overall == "Successful" else NordColors.RED
+    results_table.add_row("Overall Validation", f"[bold {overall_color}]{overall}[/]")
 
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"Unified ZFS Management Script v{VERSION}",
-    )
-    return parser.parse_args()
+    console.print(results_table)
+
+    return all(expansion_results.values()) and validation
 
 
 # ----------------------------------------------------------------
-# Main Entry Point
+# Main Function
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main entry point for the Unified ZFS Management Script."""
+    """Main entry point for the automated ZFS management script."""
     try:
-        args = parse_arguments()
-        if not args.command:
-            clear_screen()
-            console.print(create_header())
-            print_error("No command specified.")
-            print_info(
-                "Use 'setup' or 'expand' command. See --help for more information."
-            )
+        # Check for root privileges
+        if not check_root_privileges():
             sys.exit(1)
 
+        # Clear screen and show header
         clear_screen()
         console.print(create_header())
 
-        if args.command == "setup":
-            if not check_root_privileges():
-                sys.exit(1)
+        # Display startup information
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print_info(f"Auto ZFS Script started at: {current_time}")
+        print_info("Running in fully automated mode")
 
-            if not run_command_simple("modprobe zfs"):
-                print_warning(
-                    "ZFS kernel module could not be loaded. You may need to install ZFS packages first."
-                )
+        verbose = True  # Set to True for detailed output
 
-            if args.interactive:
-                try:
-                    args.pool_name, args.mount_point, args.cache_file, args.force = (
-                        interactive_setup()
-                    )
-                except KeyboardInterrupt:
-                    print_warning("Setup cancelled by user.")
-                    sys.exit(130)
+        # Run ZFS setup
+        print_step("PHASE 1: ZFS SETUP")
+        setup_success = execute_zfs_setup(verbose)
+        if not setup_success:
+            print_warning("ZFS setup completed with warnings or errors")
+        else:
+            print_success("ZFS setup completed successfully")
 
-            # Execute setup process
-            start_time = time.time()
-            success = execute_zfs_setup(args)
-            elapsed = time.time() - start_time
+        # Run ZFS expansion
+        print_step("\nPHASE 2: ZFS EXPANSION")
+        expansion_success = execute_zfs_expansion(verbose)
+        if not expansion_success:
+            print_warning("ZFS expansion completed with warnings or errors")
+        else:
+            print_success("ZFS expansion completed successfully")
 
-            # Show summary
-            summary_panel = Panel(
-                Text.from_markup(
-                    f"Status: [{NordColors.GREEN if success else NordColors.RED}]{'Successful' if success else 'Failed'}[/]\n"
-                    f"Pool name: [{NordColors.FROST_2}]{args.pool_name}[/]\n"
-                    f"Mount point: [{NordColors.FROST_2}]{args.mount_point or DEFAULT_MOUNT_POINT.format(pool_name=args.pool_name)}[/]\n"
-                    f"Elapsed time: [{NordColors.FROST_2}]{format_time(elapsed)}[/]\n"
-                    f"Log file: [{NordColors.FROST_2}]{args.log_file}[/]"
-                ),
-                title=f"[bold {NordColors.FROST_2}]ZFS Setup Summary[/]",
-                border_style=Style(color=NordColors.FROST_3),
-                padding=(1, 2),
-            )
-            console.print(summary_panel)
+        # Show final summary
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        success_status = (
+            "Successful"
+            if setup_success and expansion_success
+            else "Completed with issues"
+        )
+        status_color = (
+            NordColors.GREEN
+            if setup_success and expansion_success
+            else NordColors.YELLOW
+        )
 
-            if success:
-                # Show next steps
-                next_steps_panel = Panel(
-                    Text.from_markup(
-                        f"Your ZFS pool is now configured and imported.\n\n"
-                        f"Access your data at: [{NordColors.FROST_2}]{args.mount_point or DEFAULT_MOUNT_POINT.format(pool_name=args.pool_name)}[/]\n\n"
-                        f"Helpful ZFS commands:\n"
-                        f"  [bold {NordColors.FROST_2}]zfs list[/]              - List ZFS filesystems\n"
-                        f"  [bold {NordColors.FROST_2}]zpool status {args.pool_name}[/]  - Show pool status\n"
-                        f"  [bold {NordColors.FROST_2}]zfs get all {args.pool_name}[/]   - Show all properties"
-                    ),
-                    title=f"[bold {NordColors.FROST_2}]Next Steps[/]",
-                    border_style=Style(color=NordColors.FROST_3),
-                    padding=(1, 2),
-                )
-                console.print(next_steps_panel)
+        summary_panel = Panel(
+            Text.from_markup(
+                f"Status: [{status_color}]{success_status}[/]\n"
+                f"Completed at: [{NordColors.FROST_2}]{current_time}[/]\n"
+                f"Log file: [{NordColors.FROST_2}]{DEFAULT_LOG_FILE}[/]"
+            ),
+            title=f"[bold {NordColors.FROST_2}]ZFS Management Summary[/]",
+            border_style=Style(color=NordColors.FROST_3),
+            padding=(1, 2),
+        )
+        console.print(summary_panel)
 
-            sys.exit(0 if success else 1)
-
-        elif args.command == "expand":
-            if not check_root_privileges():
-                sys.exit(1)
-
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print_info(f"Started at: {current_time}")
-
-            pool_status = get_zpool_status(args.verbose)
-            if not pool_status or not pool_status["pools"]:
-                print_error(
-                    "Could not retrieve ZFS pool status or no pools found. Ensure ZFS is configured."
-                )
-                sys.exit(1)
-
-            pools = pool_status["pools"]
-            expected_pools = ["bpool", "rpool"]
-            found_pools = [p["name"] for p in pools]
-
-            if set(found_pools) != set(expected_pools):
-                print_warning(
-                    f"Expected pools {expected_pools} but found {found_pools}. Proceed with caution."
-                )
-
-            # Find devices for each pool
-            pool_device_paths = {}
-            for pool in pools:
-                pool_name = pool["name"]
-                vdevs = pool.get("vdevs", [])
-
-                if not vdevs:
-                    print_warning(f"No vdevs found for pool '{pool_name}'. Skipping.")
-                    continue
-
-                device_path = vdevs[0].get("path")
-                if not device_path:
-                    print_warning(
-                        f"Could not determine device for pool '{pool_name}'. Skipping."
-                    )
-                    continue
-
-                pool_device_paths[pool_name] = device_path
-
-            # Display detected pools and devices
-            if pool_device_paths:
-                table = Table(
-                    show_header=True,
-                    header_style=f"bold {NordColors.FROST_1}",
-                    border_style=NordColors.FROST_3,
-                    title=f"[bold {NordColors.FROST_2}]Detected ZFS Pools and Devices[/]",
-                    title_justify="center",
-                )
-
-                table.add_column("Pool", style=f"bold {NordColors.FROST_2}")
-                table.add_column("Device", style=NordColors.SNOW_STORM_1)
-
-                for name, dev in pool_device_paths.items():
-                    table.add_row(name, dev)
-
-                console.print(table)
-            else:
-                print_error("No valid pool-device pairs found. Aborting expansion.")
-                sys.exit(1)
-
-            # Expand each pool
-            print_step("Starting ZFS Pool Expansion Process")
-            expansion_results = {}
-
-            for pool_name, device_path in pool_device_paths.items():
-                panel = Panel(
-                    f"Pool: {pool_name}\nDevice: {device_path}",
-                    title=f"[bold {NordColors.FROST_2}]Expanding Pool[/]",
-                    border_style=Style(color=NordColors.FROST_3),
-                    padding=(1, 2),
-                )
-                console.print(panel)
-
-                result = expand_zpool(pool_name, device_path, args.verbose)
-                expansion_results[pool_name] = result
-                console.print()
-
-            # Validate expansion
-            print_step("Validating Expansion Results")
-            validation = validate_expansion(args.verbose)
-
-            # Show results summary
-            results_table = Table(
-                show_header=True,
-                header_style=f"bold {NordColors.FROST_1}",
-                border_style=NordColors.FROST_3,
-                title=f"[bold {NordColors.FROST_2}]Expansion Results Summary[/]",
-                title_justify="center",
-            )
-
-            results_table.add_column("Pool", style=f"bold {NordColors.FROST_2}")
-            results_table.add_column("Result", style=NordColors.SNOW_STORM_1)
-
-            for pool_name, result in expansion_results.items():
-                status_text = (
-                    f"[bold {NordColors.GREEN}]Successful[/]"
-                    if result
-                    else f"[bold {NordColors.RED}]Failed[/]"
-                )
-                results_table.add_row(pool_name, status_text)
-
-            # Add validation result
-            overall = (
-                "Successful"
-                if all(expansion_results.values()) and validation
-                else "Failed"
-            )
-            overall_color = (
-                NordColors.GREEN if overall == "Successful" else NordColors.RED
-            )
-            results_table.add_row(
-                "Overall Validation", f"[bold {overall_color}]{overall}[/]"
-            )
-
-            console.print(results_table)
-
-            current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print_info(f"Completed at: {current_time}")
-
-            sys.exit(0 if all(expansion_results.values()) and validation else 1)
+        sys.exit(0 if setup_success and expansion_success else 1)
 
     except KeyboardInterrupt:
         print_warning("\nOperation cancelled by user.")
@@ -1920,9 +1743,7 @@ def main() -> None:
 
     except Exception as e:
         print_error(f"\nUnexpected error: {e}")
-        import traceback
-
-        traceback.print_exc()
+        console.print_exception()
         sys.exit(1)
 
 
@@ -1930,14 +1751,4 @@ def main() -> None:
 # Program Entry Point
 # ----------------------------------------------------------------
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        display_panel(
-            "Operation cancelled by user", style=NordColors.YELLOW, title="Cancelled"
-        )
-        sys.exit(0)
-    except Exception as e:
-        display_panel(f"Unhandled error: {str(e)}", style=NordColors.RED, title="Error")
-        console.print_exception()
-        sys.exit(1)
+    main()
