@@ -1,270 +1,354 @@
 #!/usr/bin/env python3
 """
-Nala-based Security Tools Configurator
---------------------------------------------------
+Enhanced Security Tools Installer
+-------------------------------
+A streamlined system configuration tool that installs and configures security,
+analysis, development, and intrusion detection tools on Ubuntu systems.
 
-A streamlined system configuration tool that batch installs security tools
-using nala package manager for better performance and error handling.
-
-Version: 3.1.0
+Version: 5.0.0
+Author: Your Name
+License: MIT
 """
 
 import os
 import sys
 import subprocess
 import time
-import signal
-import atexit
-import psutil
-from datetime import datetime
+import logging
+from pathlib import Path
+from typing import List, Dict
 import argparse
 
 try:
-    import pyfiglet
     from rich.console import Console
-    from rich.text import Text
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
     from rich.panel import Panel
-    from rich.progress import (
-        Progress,
-        SpinnerColumn,
-        TextColumn,
-        BarColumn,
-        TimeRemainingColumn,
-        TaskProgressColumn,
-    )
-    from rich.style import Style
     from rich.table import Table
-    from rich.live import Live
 except ImportError:
-    print("Required packages missing. Installing dependencies...")
-    subprocess.run(["pip3", "install", "rich", "pyfiglet", "psutil"])
-    print("Please run the script again.")
+    subprocess.run(["pip3", "install", "rich"])
+    print("Dependencies installed. Please run the script again.")
     sys.exit(1)
 
 # Console setup
 console = Console()
+logger = logging.getLogger("security_setup")
 
-
-# Check if nala is installed
-def ensure_nala_installed():
-    """Ensure nala is installed on the system."""
-    try:
-        subprocess.run(["which", "nala"], check=True, capture_output=True)
-    except subprocess.CalledProcessError:
-        console.print("[yellow]Installing nala package manager...[/]")
-        try:
-            subprocess.run(["apt-get", "update"], check=True)
-            subprocess.run(["apt-get", "install", "nala", "-y"], check=True)
-        except subprocess.CalledProcessError as e:
-            console.print("[red]Failed to install nala. Please install it manually:[/]")
-            console.print("sudo apt update && sudo apt install nala -y")
-            sys.exit(1)
-
-
-def check_and_kill_package_locks():
-    """Check for and handle package manager locks."""
-    lock_files = [
-        "/var/lib/dpkg/lock",
-        "/var/lib/apt/lists/lock",
-        "/var/cache/apt/archives/lock",
-        "/var/lib/dpkg/lock-frontend",
-    ]
-
-    for lock_file in lock_files:
-        if os.path.exists(lock_file):
-            try:
-                # Find processes holding the lock
-                for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-                    try:
-                        if any(
-                            cmd in str(proc.info["cmdline"])
-                            for cmd in ["apt", "dpkg", "nala"]
-                        ):
-                            console.print(
-                                f"[yellow]Found blocking process: {proc.info['name']} (PID: {proc.info['pid']})[/]"
-                            )
-                            prompt = input(f"Kill process {proc.info['pid']}? (y/n): ")
-                            if prompt.lower() == "y":
-                                proc.kill()
-                                time.sleep(1)  # Wait for process to terminate
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-
-                # Remove lock files
-                if os.path.exists(lock_file):
-                    os.remove(lock_file)
-                    console.print(f"[green]Removed lock file: {lock_file}[/]")
-            except Exception as e:
-                console.print(f"[red]Error handling lock file {lock_file}: {str(e)}[/]")
-                return False
-    return True
-
-
-def update_system(simulate: bool = False) -> bool:
-    """Update system packages using nala."""
-    try:
-        if not check_and_kill_package_locks():
-            return False
-
-        env = os.environ.copy()
-        env["DEBIAN_FRONTEND"] = "noninteractive"
-
-        if not simulate:
-            # Update package lists
-            result = subprocess.run(
-                ["nala", "update"], env=env, check=True, capture_output=True, text=True
-            )
-            console.print(result.stdout)
-
-            # Upgrade packages
-            result = subprocess.run(
-                ["nala", "upgrade", "-y"],
-                env=env,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            console.print(result.stdout)
-        else:
-            time.sleep(2)
-
-        return True
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error updating system: {e.stderr}[/]")
-        return False
-
-
-def install_packages(packages: list, simulate: bool = False) -> bool:
-    """Install packages using nala."""
-    try:
-        if not check_and_kill_package_locks():
-            return False
-
-        env = os.environ.copy()
-        env["DEBIAN_FRONTEND"] = "noninteractive"
-
-        cmd = ["nala", "install", "-y"] + packages
-
-        if simulate:
-            console.print("[yellow]Simulating package installation...[/]")
-            time.sleep(2)
-            return True
-
-        result = subprocess.run(
-            cmd, env=env, check=True, capture_output=True, text=True
-        )
-        console.print(result.stdout)
-        return True
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error installing packages: {e.stderr}[/]")
-        return False
-
-
-# Security tools configuration
 SECURITY_TOOLS = {
     "Network Analysis": [
         "wireshark",
-        "wireshark-qt",
-        "tshark",
         "nmap",
         "tcpdump",
         "netcat-openbsd",
         "nethogs",
         "iftop",
+        "ettercap-graphical",
+        "dsniff",
+        "netsniff-ng",
+        "termshark",
+        "ntopng",
+        "zabbix-server-mysql",
+        "prometheus",
+        "grafana",
+        "bettercap",
+        "p0f",
+        "masscan",
+        "arpwatch",
+        "darkstat",
+        "packetfence",
     ],
-    "Vulnerability Assessment": ["nikto", "sqlmap", "wapiti", "dirb", "gobuster"],
-    "Forensics": ["autopsy", "sleuthkit", "testdisk", "foremost", "dc3dd", "exiftool"],
-    "System Security": ["lynis", "rkhunter", "chkrootkit", "fail2ban", "ufw", "aide"],
-    "Password Tools": ["john", "hashcat", "hydra", "crackmapexec", "medusa"],
-    "Wireless Security": ["aircrack-ng", "kismet", "wifite", "hostapd", "wavemon"],
-    "Development": [
+    "Vulnerability Assessment": [
+        "nikto",
+        "wapiti",
+        "sqlmap",
+        "dirb",
+        "gobuster",
+        "zaproxy",
+        "nuclei",
+        "wpscan",
+        "whatweb",
+        "maltego",
+        "metasploit-framework",
+        "arachni",
+        "vuls",
+        "openvas",
+        "clair",
+        "trivy",
+        "grype",
+        "snyk",
+        "vulnwhisperer",
+    ],
+    "Forensics": [
+        "autopsy",
+        "sleuthkit",
+        "volatility3",
+        "dc3dd",
+        "testdisk",
+        "foremost",
+        "scalpel",
+        "recoverjpeg",
+        "extundelete",
+        "ddrescue",
+        "xmount",
+        "guymager",
+        "arsenal-image-mounter",
+        "bulk-extractor",
+        "plaso",
+        "dff",
+        "rekall",
+    ],
+    "System Hardening": [
+        "lynis",
+        "rkhunter",
+        "chkrootkit",
+        "aide",
+        "ufw",
+        "fail2ban",
+        "auditd",
+        "apparmor",
+        "selinux",
+        "firejail",
+        "clamav",
+        "ossec-hids-server",
+        "wazuh-manager",
+        "crowdsec",
+        "samhain",
+        "yubikey-manager",
+        "fapolicyd",
+        "policycoreutils",
+    ],
+    "Password & Crypto": [
+        "john",
+        "hashcat",
+        "hydra",
+        "medusa",
+        "ophcrack",
+        "fcrackzip",
+        "gnupg",
+        "cryptsetup",
+        "yubikey-personalization",
+        "keepassxc",
+        "veracrypt",
+        "pass",
+        "password-store",
+        "keychain",
+        "gpg-crypter",
+        "ccrypt",
+    ],
+    "Wireless Security": [
+        "aircrack-ng",
+        "kismet",
+        "wifite",
+        "hostapd",
+        "reaver",
+        "bully",
+        "pixiewps",
+        "mdk4",
+        "bluez-tools",
+        "btscanner",
+        "bluelog",
+        "horst",
+        "wavemon",
+        "wifi-honey",
+        "cowpatty",
+        "fern-wifi-cracker",
+    ],
+    "Development Tools": [
         "build-essential",
-        "python3-pip",
-        "python3-venv",
         "git",
         "gdb",
-        "strace",
+        "lldb",
+        "cmake",
+        "meson",
+        "python3-pip",
+        "python3-venv",
+        "radare2",
+        "ghidra",
+        "apktool",
+        "dex2jar",
+        "jd-gui",
+        "android-sdk",
+        "frida",
+        "binwalk",
+        "patchelf",
+        "elfutils",
     ],
-    "Containers": ["docker.io", "docker-compose", "podman", "buildah"],
-    "Monitoring": ["nagios4", "prometheus", "grafana", "zabbix-server", "munin"],
+    "Container Security": [
+        "docker.io",
+        "docker-compose",
+        "podman",
+        "kubernetes-client",
+        "trivy",
+        "clair-scanner",
+        "docker-bench-security",
+        "kube-hunter",
+        "kubesec",
+        "anchore-engine",
+        "falco",
+        "syft",
+        "grype",
+        "kube-score",
+    ],
+    "Malware Analysis": [
+        "clamav",
+        "yara",
+        "volatility3",
+        "pescanner",
+        "pev",
+        "ssdeep",
+        "inetsim",
+        "remnux",
+        "viper",
+        "cuckoo",
+        "radare2",
+        "ghidra",
+        "fastir",
+        "maldetect",
+        "capa",
+        "thug",
+        "drakvuf",
+    ],
+    "Privacy & Anonymity": [
+        "tor",
+        "torbrowser-launcher",
+        "privoxy",
+        "proxychains4",
+        "macchanger",
+        "bleachbit",
+        "mat2",
+        "keepassxc",
+        "veracrypt",
+        "openvpn",
+        "wireguard",
+        "i2p",
+        "onionshare",
+        "tails-installer",
+        "whonix-gateway",
+    ],
 }
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Security Tools Installer using nala")
-    parser.add_argument("--simulate", action="store_true", help="Simulate installation")
-    parser.add_argument("--skip-confirm", action="store_true", help="Skip confirmation")
-    args = parser.parse_args()
+class SystemSetup:
+    """Handles system setup and package management operations."""
 
-    if os.geteuid() != 0:
-        console.print("[red]Error: This script requires root privileges.[/]")
-        sys.exit(1)
+    @staticmethod
+    def check_root() -> bool:
+        """Check if script is running with root privileges."""
+        return os.geteuid() == 0
 
-    # Ensure nala is installed
-    ensure_nala_installed()
+    @staticmethod
+    def setup_package_manager() -> bool:
+        """Configure and update package manager."""
+        try:
+            # Update package lists
+            subprocess.run(["apt-get", "update"], check=True)
 
-    console.clear()
-    header = pyfiglet.figlet_format("Security Tools", font="slant")
-    console.print(f"[cyan]{header}[/]")
-    console.print("[cyan]Using nala package manager for better performance[/]\n")
+            # Install nala if not present
+            if not Path("/usr/bin/nala").exists():
+                subprocess.run(["apt-get", "install", "nala", "-y"], check=True)
 
-    # Flatten package list
-    all_packages = [pkg for category in SECURITY_TOOLS.values() for pkg in category]
-    console.print(f"Preparing to install [cyan]{len(all_packages)}[/] packages")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Package manager setup failed: {e}")
+            return False
 
-    if not args.skip_confirm:
-        console.print("\nPress Enter to continue or Ctrl+C to abort...")
-        input()
+    @staticmethod
+    def install_packages(packages: List[str], simulate: bool = False) -> bool:
+        """Install packages using nala."""
+        try:
+            if simulate:
+                console.print(
+                    f"[yellow]Simulating installation of {len(packages)} packages[/]"
+                )
+                time.sleep(2)
+                return True
 
-    with Progress(
-        SpinnerColumn("dots", style="cyan"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=50),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        console=console,
-        expand=True,
-    ) as progress:
-        # System update
-        update_task = progress.add_task("[cyan]Updating system...", total=100)
-        if update_system(args.simulate):
-            progress.update(update_task, completed=100)
-        else:
-            console.print("[red]System update failed. Aborting.[/]")
-            sys.exit(1)
+            # Install in chunks to avoid command line length limits
+            chunk_size = 50
+            for i in range(0, len(packages), chunk_size):
+                chunk = packages[i : i + chunk_size]
+                subprocess.run(["nala", "install", "-y"] + chunk, check=True)
 
-        # Install packages
-        install_task = progress.add_task(
-            "[cyan]Installing security tools...", total=100
-        )
-        if install_packages(all_packages, args.simulate):
-            progress.update(install_task, completed=100)
-        else:
-            console.print("[red]Installation failed.[/]")
-            sys.exit(1)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Package installation failed: {e}")
+            return False
 
-    # Display completion message
+
+def display_header():
+    """Display script header."""
     console.print(
-        Panel(
-            Text.from_markup(
-                "[green]Installation Complete![/]\n\n"
-                f"[cyan]Successfully installed {len(all_packages)} security tools[/]\n"
-                "\n[yellow]Note: Some tools may require additional configuration.[/]"
-            ),
-            title="Setup Complete",
-            border_style="green",
+        Panel.fit(
+            "[bold cyan]Enhanced Security Tools Installer v5.0.0[/]\n"
+            "[dim]A comprehensive security toolkit installer for Ubuntu systems[/]",
+            border_style="cyan",
         )
     )
 
 
+def show_installation_plan():
+    """Display installation plan with category table."""
+    table = Table(show_header=True, header_style="bold cyan", expand=True)
+    table.add_column("Category", style="cyan")
+    table.add_column("Tools", justify="right", style="green")
+
+    total = 0
+    for category, tools in SECURITY_TOOLS.items():
+        table.add_row(category, str(len(tools)))
+        total += len(tools)
+
+    console.print(Panel(table, title="Installation Plan", border_style="cyan"))
+    console.print(f"\nTotal packages: [bold cyan]{total}[/]")
+
+
+def main():
+    """Main execution function."""
+    parser = argparse.ArgumentParser(description="Security Tools Installer")
+    parser.add_argument("--simulate", action="store_true", help="Simulate installation")
+    parser.add_argument("--skip-confirm", action="store_true", help="Skip confirmation")
+    args = parser.parse_args()
+
+    if not SystemSetup.check_root():
+        console.print("[red]Error: This script requires root privileges[/]")
+        sys.exit(1)
+
+    console.clear()
+    display_header()
+    show_installation_plan()
+
+    if not args.skip_confirm:
+        console.print("\nPress Enter to continue or Ctrl+C to abort...")
+        try:
+            input()
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Operation cancelled[/]")
+            sys.exit(0)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        console=console,
+    ) as progress:
+        # Setup system
+        task = progress.add_task("[cyan]Setting up system...", total=100)
+
+        if not SystemSetup.setup_package_manager():
+            console.print("[red]Failed to setup package manager[/]")
+            sys.exit(1)
+        progress.update(task, completed=30)
+
+        # Install packages
+        progress.update(task, description="[cyan]Installing security tools...")
+        all_packages = [pkg for tools in SECURITY_TOOLS.values() for pkg in tools]
+        unique_packages = list(set(all_packages))
+
+        if not SystemSetup.install_packages(unique_packages, args.simulate):
+            console.print("[red]Failed to install packages[/]")
+            sys.exit(1)
+        progress.update(task, completed=100)
+
+    console.print("\n[bold green]🎉 Installation completed successfully![/]")
+
+
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Operation cancelled by user.[/]")
-        sys.exit(1)
-    except Exception as e:
-        console.print(f"\n[red]An error occurred: {str(e)}[/]")
-        console.print_exception()
-        sys.exit(1)
+    main()
