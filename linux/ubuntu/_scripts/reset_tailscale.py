@@ -33,7 +33,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn, TaskID
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TaskID,
+)
 import pyfiglet
 
 # ==============================
@@ -55,8 +62,10 @@ TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 # ==============================
 console = Console()
 
+
 class NordColors:
     """Nord theme color palette for consistent UI styling."""
+
     # Polar Night (background)
     NORD0 = "#2E3440"
     NORD1 = "#3B4252"
@@ -78,6 +87,7 @@ class NordColors:
     NORD14 = "#A3BE8C"  # Green – success
     NORD15 = "#B48EAD"  # Purple – special
 
+
 # ==============================
 # UI Helper Functions
 # ==============================
@@ -86,6 +96,7 @@ def print_header(text: str) -> None:
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style=f"bold {NordColors.NORD8}")
 
+
 def print_section(title: str) -> None:
     """Print a formatted section header."""
     border = "═" * TERM_WIDTH
@@ -93,45 +104,58 @@ def print_section(title: str) -> None:
     console.print(f"[bold {NordColors.NORD8}]  {title.center(TERM_WIDTH - 4)}[/]")
     console.print(f"[bold {NordColors.NORD8}]{border}[/]\n")
 
+
 def print_info(message: str) -> None:
     """Display an informational message."""
     console.print(f"[{NordColors.NORD9}]{message}[/]")
+
 
 def print_success(message: str) -> None:
     """Display a success message."""
     console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
 
+
 def print_warning(message: str) -> None:
     """Display a warning message."""
     console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
+
 
 def print_error(message: str) -> None:
     """Display an error message."""
     console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
 
+
 def print_step(message: str) -> None:
     """Print a step description."""
     console.print(f"[{NordColors.NORD8}]• {message}[/]")
+
 
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
 
+
 def pause() -> None:
     """Pause execution until the user presses Enter."""
     console.input(f"\n[{NordColors.NORD15}]Press Enter to continue...[/]")
+
 
 def get_user_input(prompt: str, default: str = "") -> str:
     """Get input from the user with a styled prompt."""
     return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
 
+
 def get_user_choice(prompt: str, choices: List[str]) -> str:
     """Prompt the user to choose from a list of options."""
-    return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", choices=choices, show_choices=True)
+    return Prompt.ask(
+        f"[bold {NordColors.NORD15}]{prompt}[/]", choices=choices, show_choices=True
+    )
+
 
 def get_user_confirmation(prompt: str) -> bool:
     """Get a yes/no confirmation from the user."""
     return Confirm.ask(f"[bold {NordColors.NORD15}]{prompt}[/]")
+
 
 def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
     """Create a table to display menu options."""
@@ -142,12 +166,14 @@ def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
         table.add_row(key, desc)
     return table
 
+
 # ==============================
 # Logging Setup
 # ==============================
 def setup_logging(log_file: str = LOG_FILE) -> None:
     """Configure basic logging for the utility."""
     import logging
+
     try:
         log_dir = os.path.dirname(log_file)
         if log_dir and not os.path.exists(log_dir):
@@ -163,6 +189,7 @@ def setup_logging(log_file: str = LOG_FILE) -> None:
         print_warning(f"Could not set up logging to {log_file}: {e}")
         print_step("Continuing without logging to file...")
 
+
 # ==============================
 # Signal Handling & Cleanup
 # ==============================
@@ -171,23 +198,32 @@ def cleanup() -> None:
     print_step("Performing cleanup tasks...")
     # Additional cleanup tasks can be added here if needed
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     print_warning(f"\nScript interrupted by {sig_name}.")
     cleanup()
     sys.exit(128 + signum)
 
+
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ==============================
 # Progress Tracking Classes
 # ==============================
 class ProgressManager:
     """Unified progress tracking system using Rich Progress."""
+
     def __init__(self):
         self.progress = Progress(
             SpinnerColumn(),
@@ -199,23 +235,33 @@ class ProgressManager:
             console=console,
             expand=True,
         )
+
     def __enter__(self):
         return self
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.progress.stop()
-    def add_task(self, description: str, total: float, color: str = NordColors.NORD8) -> TaskID:
+
+    def add_task(
+        self, description: str, total: float, color: str = NordColors.NORD8
+    ) -> TaskID:
         return self.progress.add_task(
             description, total=total, color=color, status=f"{NordColors.NORD9}starting"
         )
+
     def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
         self.progress.update(task_id, advance=advance, **kwargs)
+
     def start(self):
         self.progress.start()
+
     def stop(self):
         self.progress.stop()
 
+
 class Spinner:
     """Thread-safe spinner for indeterminate progress."""
+
     def __init__(self, message: str):
         self.message = message
         self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -224,6 +270,7 @@ class Spinner:
         self.thread: threading.Thread = None
         self.start_time = 0
         self._lock = threading.Lock()
+
     def _spin(self) -> None:
         while self.spinning:
             elapsed = time.time() - self.start_time
@@ -237,12 +284,14 @@ class Spinner:
                 )
                 self.current = (self.current + 1) % len(self.spinner_chars)
             time.sleep(0.1)
+
     def start(self) -> None:
         with self._lock:
             self.spinning = True
             self.start_time = time.time()
             self.thread = threading.Thread(target=self._spin, daemon=True)
             self.thread.start()
+
     def stop(self, success: bool = True) -> None:
         with self._lock:
             self.spinning = False
@@ -261,11 +310,14 @@ class Spinner:
                     f"[{NordColors.NORD11}]✗[/] [{NordColors.NORD8}]{self.message}[/] "
                     f"[{NordColors.NORD11}]failed[/] after {time_str}"
                 )
+
     def __enter__(self):
         self.start()
         return self
+
     def __exit__(self, exc_type, exc_value, traceback):
         self.stop(success=exc_type is None)
+
 
 def format_time(seconds: float) -> str:
     """Format seconds into a human-readable time string."""
@@ -276,17 +328,30 @@ def format_time(seconds: float) -> str:
     else:
         return f"{seconds / 3600:.1f}h"
 
+
 # ==============================
 # System Helper Functions
 # ==============================
-def run_command(cmd: List[str], shell: bool = False, check: bool = True,
-                capture_output: bool = True, timeout: int = -360, verbose: bool = False) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: List[str],
+    shell: bool = False,
+    check: bool = True,
+    capture_output: bool = True,
+    timeout: int = -360,
+    verbose: bool = False,
+) -> subprocess.CompletedProcess:
     """Run a shell command and return the CompletedProcess; raise errors if needed."""
     if verbose:
         print_step(f"Executing: {cmd if shell else ' '.join(cmd)}")
     try:
-        return subprocess.run(cmd, shell=shell, check=check, text=True,
-                              capture_output=capture_output, timeout=timeout)
+        return subprocess.run(
+            cmd,
+            shell=shell,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {cmd if shell else ' '.join(cmd)}")
         if hasattr(e, "stdout") and e.stdout:
@@ -298,9 +363,11 @@ def run_command(cmd: List[str], shell: bool = False, check: bool = True,
         print_error(f"Command timed out after {timeout} seconds")
         raise
 
+
 def check_root() -> bool:
     """Return True if running with root privileges."""
     return os.geteuid() == 0
+
 
 def ensure_root() -> None:
     """Exit if not running with root privileges."""
@@ -308,6 +375,7 @@ def ensure_root() -> None:
         print_error("This operation requires root privileges.")
         print_info("Please run the script with sudo.")
         sys.exit(1)
+
 
 # ==============================
 # Tailscale Operation Functions
@@ -319,7 +387,10 @@ def uninstall_tailscale() -> None:
     steps = [
         ("Stopping tailscaled service", ["systemctl", "stop", "tailscaled"]),
         ("Disabling tailscaled service", ["systemctl", "disable", "tailscaled"]),
-        ("Removing tailscale package", ["apt-get", "remove", "--purge", "tailscale", "-y"]),
+        (
+            "Removing tailscale package",
+            ["apt-get", "remove", "--purge", "tailscale", "-y"],
+        ),
         ("Autoremoving unused packages", ["apt-get", "autoremove", "-y"]),
     ]
     with ProgressManager() as progress:
@@ -329,7 +400,9 @@ def uninstall_tailscale() -> None:
             print_step(desc)
             try:
                 run_command(cmd)
-                progress.update(task, advance=1, status=f"[{NordColors.NORD9}]Completed")
+                progress.update(
+                    task, advance=1, status=f"[{NordColors.NORD9}]Completed"
+                )
             except Exception as e:
                 print_error(f"Error during {desc}: {e}")
                 if not get_user_confirmation("Continue with remaining steps?"):
@@ -346,6 +419,7 @@ def uninstall_tailscale() -> None:
             except Exception as e:
                 print_warning(f"Failed to remove {path}: {e}")
     print_success("Tailscale uninstalled and cleaned up.")
+
 
 def install_tailscale() -> None:
     """Install tailscale using the official install script."""
@@ -365,6 +439,7 @@ def install_tailscale() -> None:
             spinner.stop(success=False)
             raise
 
+
 def start_tailscale_service() -> None:
     """Enable and start the tailscaled service."""
     ensure_root()
@@ -380,7 +455,9 @@ def start_tailscale_service() -> None:
             print_step(desc)
             try:
                 run_command(cmd)
-                progress.update(task, advance=1, status=f"[{NordColors.NORD9}]Completed")
+                progress.update(
+                    task, advance=1, status=f"[{NordColors.NORD9}]Completed"
+                )
             except Exception as e:
                 print_error(f"Error during {desc}: {e}")
                 progress.update(task, advance=1, status=f"[{NordColors.NORD11}]Failed")
@@ -388,6 +465,7 @@ def start_tailscale_service() -> None:
                     print_warning("Service configuration aborted.")
                     return
     print_success("Tailscale service enabled and started.")
+
 
 def tailscale_up() -> None:
     """Run 'tailscale up' to bring up the daemon."""
@@ -404,6 +482,7 @@ def tailscale_up() -> None:
             print_error(f"Failed to bring Tailscale up: {e}")
             raise
 
+
 def check_tailscale_status() -> None:
     """Check and display the current Tailscale status."""
     print_section("Tailscale Status")
@@ -412,14 +491,22 @@ def check_tailscale_status() -> None:
             result = run_command(["tailscale", "status"])
             spinner.stop(success=True)
             if result.stdout.strip():
-                console.print(Panel(result.stdout, title="Tailscale Status",
-                                    border_style=f"bold {NordColors.NORD8}"))
+                console.print(
+                    Panel(
+                        result.stdout,
+                        title="Tailscale Status",
+                        border_style=f"bold {NordColors.NORD8}",
+                    )
+                )
             else:
-                print_warning("No status information available. Tailscale may not be running.")
+                print_warning(
+                    "No status information available. Tailscale may not be running."
+                )
         except Exception as e:
             spinner.stop(success=False)
             print_error(f"Failed to check Tailscale status: {e}")
             print_info("Tailscale may not be installed or running.")
+
 
 def reset_tailscale() -> None:
     """Perform a complete reset of Tailscale: uninstall, install, start, and run 'tailscale up'."""
@@ -441,6 +528,7 @@ def reset_tailscale() -> None:
         print_error(f"Reset process failed: {e}")
         print_warning("Tailscale may be in an inconsistent state.")
 
+
 # ==============================
 # Menu System
 # ==============================
@@ -451,7 +539,9 @@ def main_menu() -> None:
         print_header(APP_NAME)
         print_info(f"Version: {VERSION}")
         print_info(f"System: {platform.system()} {platform.release()}")
-        print_info(f"User: {os.environ.get('USER', os.environ.get('USERNAME', 'Unknown'))}")
+        print_info(
+            f"User: {os.environ.get('USER', os.environ.get('USERNAME', 'Unknown'))}"
+        )
         print_info(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print_info(f"Running as root: {'Yes' if check_root() else 'No'}")
         menu_options = [
@@ -493,6 +583,7 @@ def main_menu() -> None:
             print_error("Invalid selection. Please try again.")
             time.sleep(1)
 
+
 # ==============================
 # Main Entry Point
 # ==============================
@@ -507,8 +598,10 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -196,10 +196,11 @@ def create_header() -> Panel:
     # Custom ASCII art fallback if all else fails (kept small and tech-looking)
     if not ascii_art or len(ascii_art.strip()) == 0:
         ascii_art = """
-  ___ ___ _  _   ___ ___ _    ___ ___ _____ ___  ___ 
- / __/ __| || | / __| __| |  | __/ __|_   _/ _ \| _ \\
- \__ \__ \ __ | \__ \ _|| |__| _| (__  | || (_) |   /
- |___/___/_||_| |___/___|____|___\___| |_| \___/|_|_\\
+         _                _           _             
+ ___ ___| |__    ___  ___| | ___  ___| |_ ___  _ __ 
+/ __/ __| '_ \  / __|/ _ \ |/ _ \/ __| __/ _ \| '__|
+\__ \__ \ | | | \__ \  __/ |  __/ (__| || (_) | |   
+|___/___/_| |_| |___/\___|_|\___|\___|\__\___/|_|   
         """
 
     # Clean up extra whitespace that might cause display issues

@@ -32,7 +32,13 @@ from urllib.request import Request, urlopen
 from typing import Any, Dict, List
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import pyfiglet
 
 # ------------------------------
@@ -58,10 +64,12 @@ IP_SERVICES = [
 # ------------------------------
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Display a large header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
+
 
 def print_section(title: str) -> None:
     """Print a formatted section header."""
@@ -70,31 +78,38 @@ def print_section(title: str) -> None:
     console.print(f"[bold #88C0D0]  {title.center(TERM_WIDTH - 4)}[/bold #88C0D0]")
     console.print(f"[bold #88C0D0]{border}[/bold #88C0D0]\n")
 
+
 def print_info(message: str) -> None:
     """Print an informational message."""
     console.print(f"[#81A1C1]{message}[/#81A1C1]")
+
 
 def print_success(message: str) -> None:
     """Print a success message."""
     console.print(f"[bold #A3BE8C]✓ {message}[/bold #A3BE8C]")
 
+
 def print_warning(message: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #EBCB8B]⚠ {message}[/bold #EBCB8B]")
+
 
 def print_error(message: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {message}[/bold #BF616A]")
 
+
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
+
 
 # ------------------------------
 # Console Spinner for Progress Indication
 # ------------------------------
 class ConsoleSpinner:
     """A spinner to indicate progress for operations with unknown duration."""
+
     def __init__(self, message: str) -> None:
         self.message = message
         self.spinning = True
@@ -123,6 +138,7 @@ class ConsoleSpinner:
         sys.stdout.write("\r" + " " * TERM_WIDTH + "\r")
         sys.stdout.flush()
 
+
 # ------------------------------
 # Logging Configuration
 # ------------------------------
@@ -131,23 +147,22 @@ def setup_logging() -> None:
     log_dir = os.path.dirname(LOG_FILE)
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir, exist_ok=True)
-    
+
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-    
+
     # Remove any existing handlers
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
-    
+
     formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
-    
+
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
-    
+
     try:
         file_handler = logging.FileHandler(LOG_FILE)
         file_handler.setFormatter(formatter)
@@ -157,6 +172,7 @@ def setup_logging() -> None:
         print_warning(f"Failed to set up log file {LOG_FILE}: {e}")
         print_warning("Continuing with console logging only")
 
+
 # ------------------------------
 # Signal Handling & Cleanup
 # ------------------------------
@@ -165,18 +181,26 @@ def cleanup() -> None:
     print_step("Performing cleanup tasks before exit.")
     logging.info("Performing cleanup tasks before exit.")
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     print_warning(f"Script interrupted by {sig_name}.")
     logging.error(f"Script interrupted by {sig_name}.")
     cleanup()
     sys.exit(128 + signum)
 
+
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ------------------------------
 # Dependency & Privilege Checks
@@ -191,20 +215,27 @@ def check_dependencies() -> None:
         print("Please install required packages using pip: pip install rich pyfiglet")
         sys.exit(1)
 
+
 def check_root() -> None:
     """Ensure the script is run as root."""
     if os.geteuid() != 0:
         print_error("This script must be run as root.")
         sys.exit(1)
 
+
 def validate_config() -> None:
     """Ensure required environment variables are set."""
     if not CF_API_TOKEN:
-        print_error("Environment variable 'CF_API_TOKEN' is not set. Please set it in /etc/environment.")
+        print_error(
+            "Environment variable 'CF_API_TOKEN' is not set. Please set it in /etc/environment."
+        )
         sys.exit(1)
     if not CF_ZONE_ID:
-        print_error("Environment variable 'CF_ZONE_ID' is not set. Please set it in /etc/environment.")
+        print_error(
+            "Environment variable 'CF_ZONE_ID' is not set. Please set it in /etc/environment."
+        )
         sys.exit(1)
+
 
 # ------------------------------
 # Helper Functions
@@ -232,6 +263,7 @@ def get_public_ip() -> str:
     logging.error("Failed to retrieve public IP from all services.")
     sys.exit(1)
 
+
 def fetch_dns_records() -> List[Dict[str, Any]]:
     """Fetch all DNS A records from Cloudflare."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records?type=A"
@@ -253,7 +285,10 @@ def fetch_dns_records() -> List[Dict[str, Any]]:
         logging.error(f"Failed to fetch DNS records from Cloudflare: {e}")
         sys.exit(1)
 
-def update_dns_record(record_id: str, record_name: str, current_ip: str, proxied: bool) -> bool:
+
+def update_dns_record(
+    record_id: str, record_name: str, current_ip: str, proxied: bool
+) -> bool:
     """Update a single DNS A record with the new IP address."""
     url = f"https://api.cloudflare.com/client/v4/zones/{CF_ZONE_ID}/dns_records/{record_id}"
     headers = {
@@ -288,6 +323,7 @@ def update_dns_record(record_id: str, record_name: str, current_ip: str, proxied
         logging.warning(f"Error updating DNS record '{record_name}': {e}")
         return False
 
+
 # ------------------------------
 # Main Functionality
 # ------------------------------
@@ -295,21 +331,21 @@ def update_cloudflare_dns() -> bool:
     """Update Cloudflare DNS A records with the current public IP address."""
     print_section("Cloudflare DNS Update Process")
     logging.info("Starting Cloudflare DNS update process")
-    
+
     print_info("Fetching current public IP...")
     logging.info("Fetching current public IP...")
     with ConsoleSpinner("Retrieving public IP..."):
         current_ip = get_public_ip()
     print_info(f"Current public IP: {current_ip}")
     logging.info(f"Current public IP: {current_ip}")
-    
+
     print_info("Fetching DNS records from Cloudflare...")
     logging.info("Fetching DNS records from Cloudflare...")
     with ConsoleSpinner("Fetching DNS records..."):
         records = fetch_dns_records()
     print_info(f"Found {len(records)} DNS records")
     logging.info(f"Found {len(records)} DNS records")
-    
+
     updates = 0
     errors = 0
     with Progress(
@@ -339,7 +375,7 @@ def update_cloudflare_dns() -> bool:
             else:
                 logging.debug(f"No update needed for '{record_name}' (IP: {record_ip})")
             progress.update(task, advance=1)
-    
+
     if errors > 0:
         print_warning(f"Completed with {errors} error(s) and {updates} update(s)")
         logging.warning(f"Completed with {errors} error(s) and {updates} update(s)")
@@ -352,6 +388,7 @@ def update_cloudflare_dns() -> bool:
         print_success("No DNS records required updating")
         logging.info("No DNS records required updating")
         return True
+
 
 # ------------------------------
 # Interactive Menu Functions
@@ -397,6 +434,7 @@ def interactive_menu() -> None:
             print_error("Invalid choice. Please try again.")
         input("\nPress Enter to continue...")
 
+
 # ------------------------------
 # Main Entry Point
 # ------------------------------
@@ -404,12 +442,14 @@ def main() -> None:
     """Main function: set up logging, validate configuration, and run the updater."""
     try:
         print_header("Cloudflare DNS Updater v4.2.0")
-        console.print(f"Date: [bold #81A1C1]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #81A1C1]")
+        console.print(
+            f"Date: [bold #81A1C1]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #81A1C1]"
+        )
         setup_logging()
         check_dependencies()
         check_root()
         validate_config()
-        
+
         if len(sys.argv) > 1 and sys.argv[1] == "--non-interactive":
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logging.info("=" * 60)
@@ -432,6 +472,7 @@ def main() -> None:
         print_error(f"Unexpected error: {e}")
         logging.exception("Unhandled exception")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

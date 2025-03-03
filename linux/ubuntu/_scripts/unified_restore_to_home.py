@@ -8,7 +8,7 @@ of available repositories and prompts the user to select one or more for restore
 Each selected repository is restored into its own subfolder under the restore
 base directory. Restic is used for the restore operation, with the RESTIC_PASSWORD
 baked into the script.
- 
+
 Note: Run this script with root privileges.
 """
 
@@ -25,7 +25,13 @@ from typing import Dict, List, Optional, Tuple, Set
 
 import pyfiglet
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 # ====================================================
 # Configuration & Constants
@@ -56,38 +62,48 @@ LOG_FILE = "/var/log/unified_restore.log"
 
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print an ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+
 
 def setup_logging() -> None:
     """Set up logging to file."""
     log_dir = Path(LOG_FILE).parent
     log_dir.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a") as log_file:
-        log_file.write(f"\n--- Restore session started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        log_file.write(
+            f"\n--- Restore session started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
+        )
     print_success(f"Logging to {LOG_FILE}")
+
 
 def log_message(message: str, level: str = "INFO") -> None:
     """Append a log message to the log file."""
@@ -95,11 +111,15 @@ def log_message(message: str, level: str = "INFO") -> None:
     with open(LOG_FILE, "a") as log_file:
         log_file.write(f"{timestamp} - {level} - {message}\n")
 
+
 # ====================================================
 # Command Execution Helper
 # ====================================================
 
-def run_command(cmd: List[str], env=None, check=True, capture_output=True, timeout=None):
+
+def run_command(
+    cmd: List[str], env=None, check=True, capture_output=True, timeout=None
+):
     """Execute a command and handle errors appropriately."""
     try:
         print_step(f"Running command: {' '.join(cmd)}")
@@ -126,9 +146,11 @@ def run_command(cmd: List[str], env=None, check=True, capture_output=True, timeo
         print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+
 # ====================================================
 # Signal Handling & Cleanup
 # ====================================================
+
 
 def signal_handler(sig, frame):
     """Handle SIGINT and SIGTERM signals."""
@@ -137,10 +159,12 @@ def signal_handler(sig, frame):
     cleanup()
     sys.exit(128 + sig)
 
+
 def cleanup():
     """Perform any necessary cleanup tasks before exiting."""
     print_step("Performing cleanup tasks...")
     # Additional cleanup steps can be added here
+
 
 atexit.register(cleanup)
 signal.signal(signal.SIGINT, signal_handler)
@@ -150,6 +174,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 # Core Functions
 # ====================================================
 
+
 def check_root() -> bool:
     """Check if the script is running with root privileges."""
     if os.geteuid() != 0:
@@ -157,11 +182,12 @@ def check_root() -> bool:
         return False
     return True
 
+
 def scan_for_repos() -> Dict[int, Tuple[str, str]]:
     """
     Recursively scan the B2 bucket for restic repositories.
     A repository is identified by the presence of a 'config' file.
-    
+
     Returns:
         A dictionary mapping menu numbers to tuples of (repository name, repository path).
     """
@@ -197,7 +223,10 @@ def scan_for_repos() -> Dict[int, Tuple[str, str]]:
         log_message(f"Error scanning B2 bucket: {e}", "ERROR")
     return repos
 
-def run_restic(repo: str, args: List[str], capture_output: bool = False) -> subprocess.CompletedProcess:
+
+def run_restic(
+    repo: str, args: List[str], capture_output: bool = False
+) -> subprocess.CompletedProcess:
     """
     Run a restic command with the appropriate environment variables.
     Retries the command up to MAX_RETRIES on transient errors.
@@ -219,8 +248,13 @@ def run_restic(repo: str, args: List[str], capture_output: bool = False) -> subp
             if "timeout" in error_msg.lower() or "connection" in error_msg.lower():
                 retries += 1
                 delay = RETRY_DELAY * (2 ** (retries - 1))
-                print_warning(f"Transient error; retrying in {delay} seconds (attempt {retries}/{MAX_RETRIES}).")
-                log_message(f"Transient error in restic command; retrying in {delay} seconds (attempt {retries}/{MAX_RETRIES})", "WARNING")
+                print_warning(
+                    f"Transient error; retrying in {delay} seconds (attempt {retries}/{MAX_RETRIES})."
+                )
+                log_message(
+                    f"Transient error in restic command; retrying in {delay} seconds (attempt {retries}/{MAX_RETRIES})",
+                    "WARNING",
+                )
                 time.sleep(delay)
             else:
                 print_error(f"Restic command failed: {error_msg}")
@@ -231,10 +265,11 @@ def run_restic(repo: str, args: List[str], capture_output: bool = False) -> subp
     log_message(error_msg, "ERROR")
     raise RuntimeError(error_msg)
 
+
 def get_latest_snapshot(repo: str) -> Optional[str]:
     """
     Retrieve the ID of the latest snapshot from the given repository.
-    
+
     Returns:
         The snapshot ID as a string, or None if no snapshots are found.
     """
@@ -258,6 +293,7 @@ def get_latest_snapshot(repo: str) -> Optional[str]:
         log_message(f"Error retrieving snapshots for {repo}: {e}", "ERROR")
         return None
 
+
 def restore_repo(repo: str, target: Path) -> bool:
     """
     Restore the latest snapshot from the given repository into the target directory.
@@ -275,7 +311,9 @@ def restore_repo(repo: str, target: Path) -> bool:
     log_message(f"Restoring snapshot {snap_id} into {target}")
     try:
         with console.status(f"[bold #81A1C1]Restoring from {repo}...", spinner="dots"):
-            run_restic(repo, ["restore", snap_id, "--target", str(target)], capture_output=True)
+            run_restic(
+                repo, ["restore", snap_id, "--target", str(target)], capture_output=True
+            )
         if not any(target.iterdir()):
             print_error(f"Restore failed: {target} is empty after restore.")
             log_message(f"Restore failed: {target} is empty after restore.", "ERROR")
@@ -288,6 +326,7 @@ def restore_repo(repo: str, target: Path) -> bool:
         log_message(f"Restore failed for {repo}: {e}", "ERROR")
         return False
 
+
 def display_repos(repos: Dict[int, Tuple[str, str]]) -> None:
     """Display available repositories in a formatted list."""
     if not repos:
@@ -296,15 +335,20 @@ def display_repos(repos: Dict[int, Tuple[str, str]]) -> None:
     print_section("Available Restic Repositories")
     max_num_width = len(str(max(repos.keys())))
     max_name_width = max(len(name) for num, (name, _) in repos.items())
-    console.print(f"  {'#'.ljust(max_num_width)}  {'Repository Name'.ljust(max_name_width)}  {'Path'}")
+    console.print(
+        f"  {'#'.ljust(max_num_width)}  {'Repository Name'.ljust(max_name_width)}  {'Path'}"
+    )
     console.print(f"  {'-' * max_num_width}  {'-' * max_name_width}  {'-' * 30}")
     for num, (name, path) in repos.items():
-        console.print(f"  {str(num).ljust(max_num_width)}  {name.ljust(max_name_width)}  {path}")
+        console.print(
+            f"  {str(num).ljust(max_num_width)}  {name.ljust(max_name_width)}  {path}"
+        )
+
 
 def select_repos(repos: Dict[int, Tuple[str, str]]) -> Dict[int, Tuple[str, str]]:
     """
     Prompt the user to select repositories for restore.
-    
+
     Returns:
         A dictionary of selected repositories keyed by their menu number.
     """
@@ -312,7 +356,9 @@ def select_repos(repos: Dict[int, Tuple[str, str]]) -> Dict[int, Tuple[str, str]
         return {}
     display_repos(repos)
     while True:
-        console.print("\nEnter the numbers of the repositories to restore (space-separated), or type 'all':")
+        console.print(
+            "\nEnter the numbers of the repositories to restore (space-separated), or type 'all':"
+        )
         selection = input("> ").strip().lower()
         if not selection:
             print_warning("No selection made. Please try again.")
@@ -333,23 +379,31 @@ def select_repos(repos: Dict[int, Tuple[str, str]]) -> Dict[int, Tuple[str, str]
             print_success(f"Selected {len(selected)} repositories for restore.")
             return selected
         except ValueError:
-            print_error("Invalid input. Please enter valid numbers separated by spaces.")
+            print_error(
+                "Invalid input. Please enter valid numbers separated by spaces."
+            )
+
 
 def single_repo_input() -> Dict[int, Tuple[str, str]]:
     """
     Prompt the user to manually enter a complete restic repository path.
-    
+
     Returns:
         A dictionary with one entry mapping 1 to (repo_name, repo_path).
     """
     print_section("Manual Repository Input")
-    print_step("Enter a complete restic repository path (e.g., 'b2:sawyer-backups:some/repo').")
+    print_step(
+        "Enter a complete restic repository path (e.g., 'b2:sawyer-backups:some/repo')."
+    )
     repo_path = input("Repository path: ").strip()
     if not repo_path:
         print_error("No repository path provided.")
         return {}
-    repo_name = repo_path.split(":")[-1].split("/")[-1] if ":" in repo_path else "CustomRepo"
+    repo_name = (
+        repo_path.split(":")[-1].split("/")[-1] if ":" in repo_path else "CustomRepo"
+    )
     return {1: (repo_name, repo_path)}
+
 
 def print_summary(results: Dict[str, bool], total_time: float) -> None:
     """Print a summary of the restore operations."""
@@ -369,11 +423,15 @@ def print_summary(results: Dict[str, bool], total_time: float) -> None:
         status = "SUCCESS" if success else "FAILED"
         color = "#8FBCBB" if success else "#BF616A"
         console.print(f"{repo_name}: [bold {color}]{status}[/bold {color}]")
-    log_message(f"Restore summary: {successful} successful, {failed} failed, {total_time:.2f} seconds")
+    log_message(
+        f"Restore summary: {successful} successful, {failed} failed, {total_time:.2f} seconds"
+    )
+
 
 # ====================================================
 # Interactive Menu
 # ====================================================
+
 
 def interactive_menu() -> None:
     """Display the interactive menu and process user input."""
@@ -418,14 +476,18 @@ def interactive_menu() -> None:
         else:
             print_warning("Invalid selection, please try again.")
 
+
 # ====================================================
 # Main Entry Point
 # ====================================================
 
+
 def main() -> None:
     """Main function to run the restore script."""
     print_header("Unified Restore Script")
-    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+    console.print(
+        f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
+    )
     setup_logging()
     if not check_root():
         sys.exit(1)
@@ -440,6 +502,7 @@ def main() -> None:
     print_success("Script execution completed.")
     log_message("Script execution completed.")
 
+
 if __name__ == "__main__":
     try:
         main()
@@ -451,5 +514,6 @@ if __name__ == "__main__":
         print_error(f"Unhandled error: {e}")
         log_message(f"Unhandled error: {e}", "ERROR")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

@@ -35,7 +35,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn, TaskID
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TaskID,
+)
 import pyfiglet
 
 # ==============================
@@ -88,11 +95,11 @@ NETWORK_PATTERNS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-SUMMARY_INTERVAL = 30        # Seconds between summary reports
-UPDATE_INTERVAL = 0.1        # Seconds between log file checks
+SUMMARY_INTERVAL = 30  # Seconds between summary reports
+UPDATE_INTERVAL = 0.1  # Seconds between log file checks
 ANIMATION_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-MAX_LINE_LENGTH = 120        # Maximum characters to display per log line
-MAX_STORED_ENTRIES = 1000    # Maximum number of stored log matches
+MAX_LINE_LENGTH = 120  # Maximum characters to display per log line
+MAX_STORED_ENTRIES = 1000  # Maximum number of stored log matches
 
 TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
 TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
@@ -102,8 +109,10 @@ TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 # ==============================
 console = Console()
 
+
 class NordColors:
     """Nord theme color palette for consistent UI styling."""
+
     # Polar Night (background)
     NORD0 = "#2E3440"
     NORD1 = "#3B4252"
@@ -125,14 +134,18 @@ class NordColors:
     NORD14 = "#A3BE8C"  # Green – success
     NORD15 = "#B48EAD"  # Purple – critical
 
+
 # ==============================
 # UI Helper Functions
 # ==============================
 def print_header(text: str) -> None:
     """Print a striking header using pyfiglet inside a Rich panel."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
-    panel = Panel(ascii_art, style=f"bold {NordColors.NORD8}", border_style=NordColors.NORD8)
+    panel = Panel(
+        ascii_art, style=f"bold {NordColors.NORD8}", border_style=NordColors.NORD8
+    )
     console.print(panel)
+
 
 def print_section(title: str) -> None:
     """Print a formatted section header."""
@@ -141,45 +154,58 @@ def print_section(title: str) -> None:
     console.print(f"[bold {NordColors.NORD8}]{title.center(TERM_WIDTH)}[/]")
     console.print(f"[bold {NordColors.NORD8}]{border}[/]\n")
 
+
 def print_info(message: str) -> None:
     """Display an informational message."""
     console.print(f"[{NordColors.NORD9}]{message}[/]")
+
 
 def print_success(message: str) -> None:
     """Display a success message."""
     console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
 
+
 def print_warning(message: str) -> None:
     """Display a warning message."""
     console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
+
 
 def print_error(message: str) -> None:
     """Display an error message."""
     console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
 
+
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[{NordColors.NORD8}]• {text}[/]")
+
 
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
 
+
 def pause() -> None:
     """Pause execution until the user presses Enter."""
     console.input(f"\n[{NordColors.NORD15}]Press Enter to continue...[/]")
+
 
 def get_user_input(prompt: str, default: str = "") -> str:
     """Prompt the user for input with a styled message."""
     return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
 
+
 def get_user_choice(prompt: str, choices: List[str]) -> str:
     """Prompt the user to choose from a list of options."""
-    return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", choices=choices, show_choices=True)
+    return Prompt.ask(
+        f"[bold {NordColors.NORD15}]{prompt}[/]", choices=choices, show_choices=True
+    )
+
 
 def get_user_confirmation(prompt: str) -> bool:
     """Prompt the user for a Yes/No confirmation."""
     return Confirm.ask(f"[bold {NordColors.NORD15}]{prompt}[/]")
+
 
 def create_menu_table(title: str, options: List[tuple]) -> Table:
     """Generate a table for menu options."""
@@ -190,15 +216,18 @@ def create_menu_table(title: str, options: List[tuple]) -> Table:
         table.add_row(key, desc)
     return table
 
+
 def truncate_line(line: str, max_length: int = MAX_LINE_LENGTH) -> str:
     """Truncate a log line to a maximum length."""
-    return line if len(line) <= max_length else line[:max_length - 3] + "..."
+    return line if len(line) <= max_length else line[: max_length - 3] + "..."
+
 
 def format_timestamp(timestamp: Optional[float] = None) -> str:
     """Convert a timestamp to a human-readable string."""
     if timestamp is None:
         timestamp = time.time()
     return datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
 
 # ==============================
 # System Helper Functions
@@ -207,10 +236,14 @@ def check_root_privileges() -> bool:
     """Return True if the script is run with root privileges."""
     return os.geteuid() == 0
 
+
 def warn_if_not_root() -> None:
     """Warn the user if root privileges are not present."""
     if not check_root_privileges():
-        print_warning("Running without root privileges – some log files may be inaccessible.")
+        print_warning(
+            "Running without root privileges – some log files may be inaccessible."
+        )
+
 
 # ==============================
 # Signal Handling & Cleanup
@@ -220,17 +253,25 @@ def cleanup() -> None:
     print_step("Performing cleanup tasks...")
     # (Add additional cleanup here if needed)
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     print_warning(f"\nScript interrupted by {sig_name}.")
     cleanup()
     sys.exit(128 + signum)
 
+
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ==============================
 # Data Classes & Log Statistics
@@ -238,27 +279,34 @@ for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
 @dataclass
 class LogPattern:
     """Represents a regex pattern for log monitoring."""
+
     name: str
     pattern: Pattern
     description: str
     severity: int
 
+
 @dataclass
 class LogMatch:
     """Represents a match of a log pattern."""
+
     timestamp: float
     log_file: str
     pattern_name: str
     severity: int
     line: str
 
+
 class LogStatistics:
     """Tracks statistics about processed log lines and pattern matches."""
+
     def __init__(self) -> None:
         self.total_lines: int = 0
         self.total_matches: int = 0
         self.pattern_matches: Dict[str, int] = defaultdict(int)
-        self.file_matches: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.file_matches: Dict[str, Dict[str, int]] = defaultdict(
+            lambda: defaultdict(int)
+        )
         self.severity_counts: Dict[int, int] = defaultdict(int)
         self.start_time: float = time.time()
         self.lock = threading.Lock()
@@ -274,11 +322,13 @@ class LogStatistics:
             self.file_matches[log_file][pattern_name] += 1
             self.severity_counts[severity] += 1
 
+
 # ==============================
 # Progress Tracking Classes
 # ==============================
 class ProgressManager:
     """Unified progress tracking using Rich Progress."""
+
     def __init__(self):
         self.progress = Progress(
             SpinnerColumn(),
@@ -297,7 +347,9 @@ class ProgressManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.progress.stop()
 
-    def add_task(self, description: str, total: float, color: str = NordColors.NORD8) -> TaskID:
+    def add_task(
+        self, description: str, total: float, color: str = NordColors.NORD8
+    ) -> TaskID:
         return self.progress.add_task(
             description, total=total, color=color, status=f"{NordColors.NORD9}starting"
         )
@@ -311,8 +363,10 @@ class ProgressManager:
     def stop(self):
         self.progress.stop()
 
+
 class Spinner:
     """A simple, thread-safe spinner for indeterminate progress."""
+
     def __init__(self, message: str):
         self.message = message
         self.spinner_chars = ANIMATION_FRAMES
@@ -335,7 +389,7 @@ class Spinner:
                 )
                 self.current = (self.current + 1) % len(self.spinner_chars)
             time.sleep(0.1)
-            
+
     def start(self) -> None:
         with self._lock:
             self.spinning = True
@@ -352,11 +406,15 @@ class Spinner:
             time_str = format_time(elapsed)
             console.print("\r" + " " * TERM_WIDTH, end="\r")
             if success:
-                console.print(f"[{NordColors.NORD14}]✓[/] [{NordColors.NORD8}]{self.message}[/] "
-                              f"[{NordColors.NORD14}]completed[/] in {time_str}")
+                console.print(
+                    f"[{NordColors.NORD14}]✓[/] [{NordColors.NORD8}]{self.message}[/] "
+                    f"[{NordColors.NORD14}]completed[/] in {time_str}"
+                )
             else:
-                console.print(f"[{NordColors.NORD11}]✗[/] [{NordColors.NORD8}]{self.message}[/] "
-                              f"[{NordColors.NORD11}]failed[/] after {time_str}")
+                console.print(
+                    f"[{NordColors.NORD11}]✗[/] [{NordColors.NORD8}]{self.message}[/] "
+                    f"[{NordColors.NORD11}]failed[/] after {time_str}"
+                )
 
     def __enter__(self):
         self.start()
@@ -364,6 +422,7 @@ class Spinner:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.stop(success=exc_type is None)
+
 
 def format_time(seconds: float) -> str:
     """Format seconds into a readable time string."""
@@ -374,6 +433,7 @@ def format_time(seconds: float) -> str:
     else:
         return f"{seconds / 3600:.1f}h"
 
+
 # ==============================
 # Core Log Monitor Class
 # ==============================
@@ -382,6 +442,7 @@ class LogMonitor:
     Monitors a list of log files for specified patterns in real time.
     Supports live summary reporting and export of matched log entries.
     """
+
     def __init__(
         self,
         log_files: List[str],
@@ -463,8 +524,10 @@ class LogMonitor:
         timestamp = format_timestamp(match.timestamp)
         filename = Path(match.log_file).name
         line = truncate_line(match.line)
-        console.print(f"[dim]{timestamp}[/dim] [bold {color}][{match.pattern_name.upper()}][/bold {color}] "
-                      f"([italic]{filename}[/italic]): {line}")
+        console.print(
+            f"[dim]{timestamp}[/dim] [bold {color}][{match.pattern_name.upper()}][/bold {color}] "
+            f"([italic]{filename}[/italic]): {line}"
+        )
 
     def _get_severity_color(self, severity: int) -> str:
         """Return a Nord-themed color based on the severity level."""
@@ -475,15 +538,18 @@ class LogMonitor:
         elif severity == 3:
             return NordColors.NORD13  # Warning – Yellow
         elif severity == 4:
-            return NordColors.NORD7   # Notice – Light Blue
-        return NordColors.NORD4      # Default – Light Grey
+            return NordColors.NORD7  # Notice – Light Blue
+        return NordColors.NORD4  # Default – Light Grey
 
     def _display_activity_indicator(self) -> None:
         """Display a live animated indicator of log monitoring activity."""
         self.animation_index = (self.animation_index + 1) % len(ANIMATION_FRAMES)
         indicator = ANIMATION_FRAMES[self.animation_index]
-        console.print(f"\r[dim]{indicator} Monitoring {len(self.log_files)} log file(s)... "
-                      f"({self.stats.total_matches} matches, {self.stats.total_lines} lines)[/dim]", end="")
+        console.print(
+            f"\r[dim]{indicator} Monitoring {len(self.log_files)} log file(s)... "
+            f"({self.stats.total_matches} matches, {self.stats.total_lines} lines)[/dim]",
+            end="",
+        )
 
     def _print_summary(self, force: bool = False) -> None:
         """Display a summary report of log statistics if enough time has passed."""
@@ -498,37 +564,66 @@ class LogMonitor:
         elapsed = now - self.stats.start_time
         elapsed_str = f"{int(elapsed // 3600)}h {int((elapsed % 3600) // 60)}m {int(elapsed % 60)}s"
         print_section("Log Monitor Summary")
-        console.print(f"Monitoring Duration: [bold {NordColors.NORD4}]{elapsed_str}[/bold {NordColors.NORD4}]")
-        console.print(f"Total Lines Processed: [bold {NordColors.NORD4}]{self.stats.total_lines}[/bold {NordColors.NORD4}]")
-        console.print(f"Total Matches: [bold {NordColors.NORD4}]{self.stats.total_matches}[/bold {NordColors.NORD4}]")
+        console.print(
+            f"Monitoring Duration: [bold {NordColors.NORD4}]{elapsed_str}[/bold {NordColors.NORD4}]"
+        )
+        console.print(
+            f"Total Lines Processed: [bold {NordColors.NORD4}]{self.stats.total_lines}[/bold {NordColors.NORD4}]"
+        )
+        console.print(
+            f"Total Matches: [bold {NordColors.NORD4}]{self.stats.total_matches}[/bold {NordColors.NORD4}]"
+        )
 
         if self.stats.severity_counts:
-            console.print(f"\n[bold {NordColors.NORD8}]Severity Breakdown:[/bold {NordColors.NORD8}]")
+            console.print(
+                f"\n[bold {NordColors.NORD8}]Severity Breakdown:[/bold {NordColors.NORD8}]"
+            )
             for severity in sorted(self.stats.severity_counts.keys()):
                 count = self.stats.severity_counts[severity]
                 color = self._get_severity_color(severity)
-                severity_name = {1: "Critical", 2: "Error", 3: "Warning", 4: "Notice"}.get(severity, f"Level {severity}")
-                console.print(f"  [bold {color}]{severity_name}: {count}[/bold {color}]")
+                severity_name = {
+                    1: "Critical",
+                    2: "Error",
+                    3: "Warning",
+                    4: "Notice",
+                }.get(severity, f"Level {severity}")
+                console.print(
+                    f"  [bold {color}]{severity_name}: {count}[/bold {color}]"
+                )
 
         if self.stats.pattern_matches:
-            console.print(f"\n[bold {NordColors.NORD8}]Pattern Matches:[/bold {NordColors.NORD8}]")
-            for pattern, count in sorted(self.stats.pattern_matches.items(), key=lambda x: x[1], reverse=True):
+            console.print(
+                f"\n[bold {NordColors.NORD8}]Pattern Matches:[/bold {NordColors.NORD8}]"
+            )
+            for pattern, count in sorted(
+                self.stats.pattern_matches.items(), key=lambda x: x[1], reverse=True
+            ):
                 pattern_obj = self.patterns.get(pattern)
                 if pattern_obj:
                     color = self._get_severity_color(pattern_obj.severity)
-                    console.print(f"  [bold {color}]{pattern.upper()}: {count}[/bold {color}]")
+                    console.print(
+                        f"  [bold {color}]{pattern.upper()}: {count}[/bold {color}]"
+                    )
 
         if self.stats.file_matches:
-            console.print(f"\n[bold {NordColors.NORD8}]Log File Activity:[/bold {NordColors.NORD8}]")
+            console.print(
+                f"\n[bold {NordColors.NORD8}]Log File Activity:[/bold {NordColors.NORD8}]"
+            )
             for log_file, patterns in self.stats.file_matches.items():
                 total = sum(patterns.values())
                 filename = Path(log_file).name
-                console.print(f"  [{NordColors.NORD4}]{filename}[/{NordColors.NORD4}]: {total} matches")
-                for pattern, count in sorted(patterns.items(), key=lambda x: x[1], reverse=True)[:3]:
+                console.print(
+                    f"  [{NordColors.NORD4}]{filename}[/{NordColors.NORD4}]: {total} matches"
+                )
+                for pattern, count in sorted(
+                    patterns.items(), key=lambda x: x[1], reverse=True
+                )[:3]:
                     pattern_obj = self.patterns.get(pattern)
                     if pattern_obj:
                         color = self._get_severity_color(pattern_obj.severity)
-                        console.print(f"    [bold {color}]{pattern.upper()}: {count}[/bold {color}]")
+                        console.print(
+                            f"    [bold {color}]{pattern.upper()}: {count}[/bold {color}]"
+                        )
         console.print("")
 
     def export_results(self, export_format: str, output_file: str) -> bool:
@@ -540,27 +635,34 @@ class LogMonitor:
             return False
         try:
             if export_format.lower() == "json":
-                serializable = [{
-                    "timestamp": format_timestamp(match.timestamp),
-                    "log_file": match.log_file,
-                    "pattern": match.pattern_name,
-                    "severity": match.severity,
-                    "line": match.line
-                } for match in matches_copy]
+                serializable = [
+                    {
+                        "timestamp": format_timestamp(match.timestamp),
+                        "log_file": match.log_file,
+                        "pattern": match.pattern_name,
+                        "severity": match.severity,
+                        "line": match.line,
+                    }
+                    for match in matches_copy
+                ]
                 with open(output_file, "w", encoding="utf-8") as f:
                     json.dump(serializable, f, indent=2)
             elif export_format.lower() == "csv":
                 with open(output_file, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-                    writer.writerow(["Timestamp", "Log File", "Pattern", "Severity", "Line"])
+                    writer.writerow(
+                        ["Timestamp", "Log File", "Pattern", "Severity", "Line"]
+                    )
                     for match in matches_copy:
-                        writer.writerow([
-                            format_timestamp(match.timestamp),
-                            match.log_file,
-                            match.pattern_name,
-                            match.severity,
-                            match.line,
-                        ])
+                        writer.writerow(
+                            [
+                                format_timestamp(match.timestamp),
+                                match.log_file,
+                                match.pattern_name,
+                                match.severity,
+                                match.line,
+                            ]
+                        )
             else:
                 print_error(f"Unsupported export format: {export_format}")
                 return False
@@ -593,7 +695,9 @@ class LogMonitor:
 
         threads = []
         for log_file in self.log_files:
-            thread = threading.Thread(target=self._process_log_file, args=(log_file,), daemon=True)
+            thread = threading.Thread(
+                target=self._process_log_file, args=(log_file,), daemon=True
+            )
             thread.start()
             threads.append(thread)
 
@@ -619,6 +723,7 @@ class LogMonitor:
         self.shutdown_flag = True
         self.stop_event.set()
 
+
 # ==============================
 # Menu Functions
 # ==============================
@@ -627,13 +732,19 @@ def select_log_files_menu() -> List[str]:
     print_section("Select Log Files")
     print_info("Choose log files to monitor from the defaults below:")
 
-    table = Table(title="Default Log Files", box=None, title_style=f"bold {NordColors.NORD8}")
+    table = Table(
+        title="Default Log Files", box=None, title_style=f"bold {NordColors.NORD8}"
+    )
     table.add_column("Option", style=f"{NordColors.NORD9}", justify="right")
     table.add_column("Log File", style=f"{NordColors.NORD4}")
     table.add_column("Status", style=f"{NordColors.NORD14}")
 
     for i, log_file in enumerate(DEFAULT_LOG_FILES, 1):
-        status = "Available" if os.path.exists(log_file) and os.access(log_file, os.R_OK) else "Not accessible"
+        status = (
+            "Available"
+            if os.path.exists(log_file) and os.access(log_file, os.R_OK)
+            else "Not accessible"
+        )
         status_color = NordColors.NORD14 if "Available" in status else NordColors.NORD11
         table.add_row(str(i), log_file, f"[{status_color}]{status}[/{status_color}]")
     console.print(table)
@@ -652,9 +763,15 @@ def select_log_files_menu() -> List[str]:
 
         if choice == "a":
             for log_file in DEFAULT_LOG_FILES:
-                if os.path.exists(log_file) and os.access(log_file, os.R_OK) and log_file not in selected_files:
+                if (
+                    os.path.exists(log_file)
+                    and os.access(log_file, os.R_OK)
+                    and log_file not in selected_files
+                ):
                     selected_files.append(log_file)
-            print_success(f"Added all available default logs ({len(selected_files)} selected).")
+            print_success(
+                f"Added all available default logs ({len(selected_files)} selected)."
+            )
         elif choice == "c":
             custom_path = get_user_input("Enter the full path to the log file:")
             if os.path.exists(custom_path):
@@ -682,7 +799,9 @@ def select_log_files_menu() -> List[str]:
                 break
         elif "," in choice or choice.isdigit():
             try:
-                indices = [int(i.strip()) for i in choice.split(",") if i.strip().isdigit()]
+                indices = [
+                    int(i.strip()) for i in choice.split(",") if i.strip().isdigit()
+                ]
                 for idx in indices:
                     if 1 <= idx <= len(DEFAULT_LOG_FILES):
                         log_file = DEFAULT_LOG_FILES[idx - 1]
@@ -697,10 +816,13 @@ def select_log_files_menu() -> List[str]:
                     else:
                         print_error(f"Invalid option: {idx}")
             except ValueError:
-                print_error("Invalid input. Please enter numbers or comma-separated numbers.")
+                print_error(
+                    "Invalid input. Please enter numbers or comma-separated numbers."
+                )
         else:
             print_error("Invalid choice. Please try again.")
     return selected_files
+
 
 def configure_patterns_menu() -> Dict[str, Dict[str, Any]]:
     """Menu for configuring log patterns."""
@@ -710,15 +832,29 @@ def configure_patterns_menu() -> Dict[str, Dict[str, Any]]:
     selected_patterns = all_patterns.copy()
 
     while True:
-        table = Table(title="Current Pattern Configuration", box=None, title_style=f"bold {NordColors.NORD8}")
+        table = Table(
+            title="Current Pattern Configuration",
+            box=None,
+            title_style=f"bold {NordColors.NORD8}",
+        )
         table.add_column("Name", style=f"{NordColors.NORD9}")
         table.add_column("Regex Pattern", style=f"{NordColors.NORD4}")
         table.add_column("Severity", style=f"{NordColors.NORD13}", justify="center")
         table.add_column("Status", style=f"{NordColors.NORD14}")
         for name, config in selected_patterns.items():
-            severity_color = {1: NordColors.NORD15, 2: NordColors.NORD11, 3: NordColors.NORD13, 4: NordColors.NORD7}.get(config["severity"], NordColors.NORD4)
+            severity_color = {
+                1: NordColors.NORD15,
+                2: NordColors.NORD11,
+                3: NordColors.NORD13,
+                4: NordColors.NORD7,
+            }.get(config["severity"], NordColors.NORD4)
             status = "✓"
-            table.add_row(name.upper(), truncate_line(config["pattern"], 40), f"[{severity_color}]{config['severity']}[/{severity_color}]", f"[{NordColors.NORD14}]{status}[/{NordColors.NORD14}]")
+            table.add_row(
+                name.upper(),
+                truncate_line(config["pattern"], 40),
+                f"[{severity_color}]{config['severity']}[/{severity_color}]",
+                f"[{NordColors.NORD14}]{status}[/{NordColors.NORD14}]",
+            )
         console.print(table)
 
         options = [
@@ -752,14 +888,20 @@ def configure_patterns_menu() -> Dict[str, Dict[str, Any]]:
                 print_error("Severity must be a number between 1 and 4.")
                 continue
             description = get_user_input("Enter pattern description:")
-            selected_patterns[name] = {"pattern": pattern, "description": description, "severity": severity}
+            selected_patterns[name] = {
+                "pattern": pattern,
+                "description": description,
+                "severity": severity,
+            }
             print_success(f"Added pattern: {name}")
         elif choice == "e":
             name = get_user_input("Enter pattern name to edit:").strip()
             if name not in selected_patterns:
                 print_error(f"Pattern '{name}' not found.")
                 continue
-            pattern = get_user_input("Enter new regex pattern (leave empty to keep current):").strip()
+            pattern = get_user_input(
+                "Enter new regex pattern (leave empty to keep current):"
+            ).strip()
             if pattern:
                 try:
                     re.compile(pattern)
@@ -767,7 +909,9 @@ def configure_patterns_menu() -> Dict[str, Dict[str, Any]]:
                 except re.error as e:
                     print_error(f"Invalid regex: {e}")
                     continue
-            severity_input = get_user_input(f"Enter new severity (current: {selected_patterns[name]['severity']}, leave empty to keep):")
+            severity_input = get_user_input(
+                f"Enter new severity (current: {selected_patterns[name]['severity']}, leave empty to keep):"
+            )
             if severity_input:
                 try:
                     severity = int(severity_input)
@@ -778,7 +922,9 @@ def configure_patterns_menu() -> Dict[str, Dict[str, Any]]:
                 except ValueError:
                     print_error("Invalid severity value.")
                     continue
-            description = get_user_input("Enter new description (leave empty to keep current):")
+            description = get_user_input(
+                "Enter new description (leave empty to keep current):"
+            )
             if description:
                 selected_patterns[name]["description"] = description
             print_success(f"Updated pattern: {name}")
@@ -787,7 +933,9 @@ def configure_patterns_menu() -> Dict[str, Dict[str, Any]]:
             if name not in selected_patterns:
                 print_error(f"Pattern '{name}' not found.")
                 continue
-            if get_user_confirmation(f"Are you sure you want to remove pattern '{name}'?"):
+            if get_user_confirmation(
+                f"Are you sure you want to remove pattern '{name}'?"
+            ):
                 del selected_patterns[name]
                 print_success(f"Removed pattern: {name}")
         elif choice == "d":
@@ -795,6 +943,7 @@ def configure_patterns_menu() -> Dict[str, Dict[str, Any]]:
         else:
             print_error("Invalid choice. Please try again.")
     return selected_patterns
+
 
 def export_options_menu(monitor: LogMonitor) -> None:
     """Menu for exporting monitoring results."""
@@ -816,11 +965,14 @@ def export_options_menu(monitor: LogMonitor) -> None:
     export_format = "json" if choice == "1" else "csv"
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     default_filename = f"log_monitor_results_{timestamp}.{export_format}"
-    output_file = get_user_input(f"Enter output filename (default: {default_filename}):", default_filename)
+    output_file = get_user_input(
+        f"Enter output filename (default: {default_filename}):", default_filename
+    )
     with Spinner(f"Exporting data to {export_format.upper()}") as spinner:
         success = monitor.export_results(export_format, output_file)
         spinner.stop(success=success)
     pause()
+
 
 def monitor_settings_menu() -> Dict[str, Any]:
     """Menu for configuring monitoring settings."""
@@ -848,13 +1000,19 @@ def monitor_settings_menu() -> Dict[str, Any]:
         choice = get_user_input("Enter your choice:")
         if choice == "1":
             settings["quiet_mode"] = not settings["quiet_mode"]
-            print_success(f"Quiet Mode {'Enabled' if settings['quiet_mode'] else 'Disabled'}")
+            print_success(
+                f"Quiet Mode {'Enabled' if settings['quiet_mode'] else 'Disabled'}"
+            )
         elif choice == "2":
             settings["stats_only"] = not settings["stats_only"]
-            print_success(f"Stats Only Mode {'Enabled' if settings['stats_only'] else 'Disabled'}")
+            print_success(
+                f"Stats Only Mode {'Enabled' if settings['stats_only'] else 'Disabled'}"
+            )
         elif choice == "3":
             try:
-                interval = int(get_user_input("Enter summary interval in seconds (10-600):"))
+                interval = int(
+                    get_user_input("Enter summary interval in seconds (10-600):")
+                )
                 if not 10 <= interval <= 600:
                     print_error("Interval must be between 10 and 600 seconds.")
                     continue
@@ -864,7 +1022,9 @@ def monitor_settings_menu() -> Dict[str, Any]:
                 print_error("Please enter a valid number.")
         elif choice == "4":
             try:
-                max_entries = int(get_user_input("Enter max stored entries (100-10000):"))
+                max_entries = int(
+                    get_user_input("Enter max stored entries (100-10000):")
+                )
                 if not 100 <= max_entries <= 10000:
                     print_error("Value must be between 100 and 10000.")
                     continue
@@ -877,6 +1037,7 @@ def monitor_settings_menu() -> Dict[str, Any]:
         else:
             print_error("Invalid choice. Please try again.")
     return settings
+
 
 def main_menu() -> None:
     """Display the main menu and handle user interactions."""
@@ -919,10 +1080,17 @@ def main_menu() -> None:
                 print_error("No log files selected for monitoring.")
                 pause()
                 continue
-            log_monitor = LogMonitor(log_files, pattern_configs, max_stored_entries=MAX_STORED_ENTRIES, summary_interval=SUMMARY_INTERVAL)
+            log_monitor = LogMonitor(
+                log_files,
+                pattern_configs,
+                max_stored_entries=MAX_STORED_ENTRIES,
+                summary_interval=SUMMARY_INTERVAL,
+            )
             settings = monitor_settings_menu()
             try:
-                log_monitor.start_monitoring(quiet=settings["quiet_mode"], stats_only=settings["stats_only"])
+                log_monitor.start_monitoring(
+                    quiet=settings["quiet_mode"], stats_only=settings["stats_only"]
+                )
             except KeyboardInterrupt:
                 pass
             finally:
@@ -935,7 +1103,9 @@ def main_menu() -> None:
                 export_options_menu(log_monitor)
         elif choice == "0":
             if log_monitor and not log_monitor.stop_event.is_set():
-                if get_user_confirmation("Monitoring is still active. Are you sure you want to exit?"):
+                if get_user_confirmation(
+                    "Monitoring is still active. Are you sure you want to exit?"
+                ):
                     log_monitor.stop_monitoring()
                 else:
                     continue
@@ -947,6 +1117,7 @@ def main_menu() -> None:
         else:
             print_error("Invalid selection. Please try again.")
             time.sleep(1)
+
 
 # ==============================
 # Main Entry Point
@@ -962,8 +1133,10 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

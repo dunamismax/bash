@@ -23,7 +23,13 @@ from pathlib import Path
 from typing import Any, Dict
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 from rich.prompt import Prompt, Confirm
 import pyfiglet
 
@@ -32,41 +38,52 @@ import pyfiglet
 # ----------------------------------------------------------------------
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Display a striking header using pyfiglet inside a rich panel."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Display a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Display a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Display a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Display a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Display an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
 
+
 # ----------------------------------------------------------------------
 # Command Execution Helper
 # ----------------------------------------------------------------------
-def run_command(cmd: list[str], check: bool = True, timeout: int = 30) -> subprocess.CompletedProcess:
+def run_command(
+    cmd: list[str], check: bool = True, timeout: int = 30
+) -> subprocess.CompletedProcess:
     """
     Execute a system command with error handling.
     """
     try:
         print_step(f"Executing: {' '.join(cmd)}")
-        result = subprocess.run(cmd, check=check, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            cmd, check=check, capture_output=True, text=True, timeout=timeout
+        )
         return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
@@ -82,6 +99,7 @@ def run_command(cmd: list[str], check: bool = True, timeout: int = 30) -> subpro
         print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+
 # ----------------------------------------------------------------------
 # Signal Handling & Cleanup
 # ----------------------------------------------------------------------
@@ -90,6 +108,7 @@ def cleanup() -> None:
     print_step("Performing cleanup tasks...")
     # Add any additional cleanup steps here
 
+
 def signal_handler(sig, frame) -> None:
     """Handle interrupt signals gracefully."""
     sig_name = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
@@ -97,7 +116,9 @@ def signal_handler(sig, frame) -> None:
     cleanup()
     sys.exit(128 + sig)
 
+
 atexit.register(cleanup)
+
 
 # ----------------------------------------------------------------------
 # Deployment Status Tracking
@@ -106,6 +127,7 @@ class DeploymentStatus:
     """
     Tracks deployment steps and statistics.
     """
+
     def __init__(self) -> None:
         self.steps: Dict[str, Dict[str, str]] = {
             "ownership_check": {"status": "pending", "message": ""},
@@ -141,6 +163,7 @@ class DeploymentStatus:
             "end_time": None,
         }
 
+
 # ----------------------------------------------------------------------
 # Deployment Manager
 # ----------------------------------------------------------------------
@@ -148,6 +171,7 @@ class DeploymentManager:
     """
     Manages the deployment process.
     """
+
     def __init__(self) -> None:
         self.script_source: str = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
         self.script_target: str = "/home/sawyer/bin"
@@ -177,7 +201,9 @@ class DeploymentManager:
         return True
 
     def check_ownership(self) -> bool:
-        self.status.update_step("ownership_check", "in_progress", "Checking ownership...")
+        self.status.update_step(
+            "ownership_check", "in_progress", "Checking ownership..."
+        )
         try:
             stat_info = os.stat(self.script_source)
             owner = pwd.getpwuid(stat_info.st_uid).pw_name
@@ -207,22 +233,32 @@ class DeploymentManager:
                 console=console,
             ) as progress:
                 task = progress.add_task("Running dry deployment...", total=1)
-                result = run_command([
-                    "rsync",
-                    "--dry-run",
-                    "-av",
-                    "--delete",
-                    "--itemize-changes",
-                    f"{self.script_source.rstrip('/')}/",
-                    self.script_target,
-                ])
+                result = run_command(
+                    [
+                        "rsync",
+                        "--dry-run",
+                        "-av",
+                        "--delete",
+                        "--itemize-changes",
+                        f"{self.script_source.rstrip('/')}/",
+                        self.script_target,
+                    ]
+                )
                 progress.update(task, advance=1)
 
-            changes = [line for line in result.stdout.splitlines() if line and not line.startswith(">")]
+            changes = [
+                line
+                for line in result.stdout.splitlines()
+                if line and not line.startswith(">")
+            ]
             new_files = sum(1 for line in changes if line.startswith(">f+"))
             updated_files = sum(1 for line in changes if line.startswith(">f."))
             deleted_files = sum(1 for line in changes if line.startswith("*deleting"))
-            self.status.update_stats(new_files=new_files, updated_files=updated_files, deleted_files=deleted_files)
+            self.status.update_stats(
+                new_files=new_files,
+                updated_files=updated_files,
+                deleted_files=deleted_files,
+            )
             msg = f"Dry run: {new_files} new, {updated_files} updated, {deleted_files} deletions."
             self.status.update_step("dry_run", "success", msg)
             print_success(msg)
@@ -244,21 +280,31 @@ class DeploymentManager:
                 console=console,
             ) as progress:
                 task = progress.add_task("Deploying scripts...", total=1)
-                result = run_command([
-                    "rsync",
-                    "-avc",  # checksum flag to detect modifications
-                    "--delete",
-                    "--itemize-changes",
-                    f"{self.script_source.rstrip('/')}/",
-                    self.script_target,
-                ])
+                result = run_command(
+                    [
+                        "rsync",
+                        "-avc",  # checksum flag to detect modifications
+                        "--delete",
+                        "--itemize-changes",
+                        f"{self.script_source.rstrip('/')}/",
+                        self.script_target,
+                    ]
+                )
                 progress.update(task, advance=1)
 
-            changes = [line for line in result.stdout.splitlines() if line and not line.startswith(">")]
+            changes = [
+                line
+                for line in result.stdout.splitlines()
+                if line and not line.startswith(">")
+            ]
             new_files = sum(1 for line in changes if line.startswith(">f+"))
             updated_files = sum(1 for line in changes if line.startswith(">f."))
             deleted_files = sum(1 for line in changes if line.startswith("*deleting"))
-            self.status.update_stats(new_files=new_files, updated_files=updated_files, deleted_files=deleted_files)
+            self.status.update_stats(
+                new_files=new_files,
+                updated_files=updated_files,
+                deleted_files=deleted_files,
+            )
             msg = f"Deployment: {new_files} new, {updated_files} updated, {deleted_files} deleted."
             self.status.update_step("deployment", "success", msg)
             print_success(msg)
@@ -270,7 +316,9 @@ class DeploymentManager:
             return False
 
     def set_permissions(self) -> bool:
-        self.status.update_step("permission_set", "in_progress", "Setting permissions...")
+        self.status.update_step(
+            "permission_set", "in_progress", "Setting permissions..."
+        )
         try:
             with Progress(
                 SpinnerColumn(style="bold #81A1C1"),
@@ -279,17 +327,19 @@ class DeploymentManager:
                 console=console,
             ) as progress:
                 task = progress.add_task("Setting file permissions...", total=1)
-                run_command([
-                    "find",
-                    self.script_target,
-                    "-type",
-                    "f",
-                    "-exec",
-                    "chmod",
-                    "755",
-                    "{}",
-                    ";",
-                ])
+                run_command(
+                    [
+                        "find",
+                        self.script_target,
+                        "-type",
+                        "f",
+                        "-exec",
+                        "chmod",
+                        "755",
+                        "{}",
+                        ";",
+                    ]
+                )
                 progress.update(task, advance=1)
             msg = "Permissions set successfully."
             self.status.update_step("permission_set", "success", msg)
@@ -312,13 +362,23 @@ class DeploymentManager:
                 "pending": "#D8DEE9",
                 "in_progress": "#81A1C1",
             }.get(data["status"], "#D8DEE9")
-            console.print(f"[{status_color}]{icon}[/{status_color}] {step}: [bold {status_color}]{data['status'].upper()}[/bold {status_color}] - {data['message']}")
+            console.print(
+                f"[{status_color}]{icon}[/{status_color}] {step}: [bold {status_color}]{data['status'].upper()}[/bold {status_color}] - {data['message']}"
+            )
         if self.status.stats["start_time"]:
-            elapsed = (self.status.stats["end_time"] or time.time()) - self.status.stats["start_time"]
+            elapsed = (
+                self.status.stats["end_time"] or time.time()
+            ) - self.status.stats["start_time"]
             console.print("\n[bold #88C0D0]Deployment Statistics:[/bold #88C0D0]")
-            console.print(f"  [#88C0D0]•[/#88C0D0] New Files: {self.status.stats['new_files']}")
-            console.print(f"  [#88C0D0]•[/#88C0D0] Updated Files: {self.status.stats['updated_files']}")
-            console.print(f"  [#88C0D0]•[/#88C0D0] Deleted Files: {self.status.stats['deleted_files']}")
+            console.print(
+                f"  [#88C0D0]•[/#88C0D0] New Files: {self.status.stats['new_files']}"
+            )
+            console.print(
+                f"  [#88C0D0]•[/#88C0D0] Updated Files: {self.status.stats['updated_files']}"
+            )
+            console.print(
+                f"  [#88C0D0]•[/#88C0D0] Deleted Files: {self.status.stats['deleted_files']}"
+            )
             console.print(f"  [#88C0D0]•[/#88C0D0] Total Time: {elapsed:.2f} seconds")
 
     def configure_deployment(self) -> None:
@@ -326,18 +386,32 @@ class DeploymentManager:
         print_step("Current configuration:")
         console.print(f"  [#D8DEE9]•[/#D8DEE9] Source directory: {self.script_source}")
         console.print(f"  [#D8DEE9]•[/#D8DEE9] Target directory: {self.script_target}")
-        console.print(f"  [#D8DEE9]•[/#D8DEE9] Expected source owner: {self.expected_owner}")
+        console.print(
+            f"  [#D8DEE9]•[/#D8DEE9] Expected source owner: {self.expected_owner}"
+        )
         console.print(f"  [#D8DEE9]•[/#D8DEE9] Log file: {self.log_file}")
         if Confirm.ask("\nWould you like to change these settings?", default=False):
-            self.script_source = Prompt.ask("Enter source directory path", default=self.script_source)
-            self.script_target = Prompt.ask("Enter target directory path", default=self.script_target)
-            self.expected_owner = Prompt.ask("Enter expected source owner", default=self.expected_owner)
+            self.script_source = Prompt.ask(
+                "Enter source directory path", default=self.script_source
+            )
+            self.script_target = Prompt.ask(
+                "Enter target directory path", default=self.script_target
+            )
+            self.expected_owner = Prompt.ask(
+                "Enter expected source owner", default=self.expected_owner
+            )
             self.log_file = Prompt.ask("Enter log file path", default=self.log_file)
             print_success("Deployment parameters updated.")
             print_step("Updated configuration:")
-            console.print(f"  [#D8DEE9]•[/#D8DEE9] Source directory: {self.script_source}")
-            console.print(f"  [#D8DEE9]•[/#D8DEE9] Target directory: {self.script_target}")
-            console.print(f"  [#D8DEE9]•[/#D8DEE9] Expected source owner: {self.expected_owner}")
+            console.print(
+                f"  [#D8DEE9]•[/#D8DEE9] Source directory: {self.script_source}"
+            )
+            console.print(
+                f"  [#D8DEE9]•[/#D8DEE9] Target directory: {self.script_target}"
+            )
+            console.print(
+                f"  [#D8DEE9]•[/#D8DEE9] Expected source owner: {self.expected_owner}"
+            )
             console.print(f"  [#D8DEE9]•[/#D8DEE9] Log file: {self.log_file}")
         else:
             print_step("Configuration unchanged.")
@@ -415,14 +489,25 @@ class DeploymentManager:
                 "pending": "#D8DEE9",
                 "in_progress": "#81A1C1",
             }.get(data["status"], "#D8DEE9")
-            console.print(f"[{status_color}]{icon}[/{status_color}] {step}: [bold {status_color}]{data['status'].upper()}[/bold {status_color}] - {data['message']}")
+            console.print(
+                f"[{status_color}]{icon}[/{status_color}] {step}: [bold {status_color}]{data['status'].upper()}[/bold {status_color}] - {data['message']}"
+            )
         if self.status.stats["start_time"]:
-            elapsed = (self.status.stats["end_time"] or time.time()) - self.status.stats["start_time"]
+            elapsed = (
+                self.status.stats["end_time"] or time.time()
+            ) - self.status.stats["start_time"]
             console.print("\n[bold #88C0D0]Deployment Statistics:[/bold #88C0D0]")
-            console.print(f"  [#88C0D0]•[/#88C0D0] New Files: {self.status.stats['new_files']}")
-            console.print(f"  [#88C0D0]•[/#88C0D0] Updated Files: {self.status.stats['updated_files']}")
-            console.print(f"  [#88C0D0]•[/#88C0D0] Deleted Files: {self.status.stats['deleted_files']}")
+            console.print(
+                f"  [#88C0D0]•[/#88C0D0] New Files: {self.status.stats['new_files']}"
+            )
+            console.print(
+                f"  [#88C0D0]•[/#88C0D0] Updated Files: {self.status.stats['updated_files']}"
+            )
+            console.print(
+                f"  [#88C0D0]•[/#88C0D0] Deleted Files: {self.status.stats['deleted_files']}"
+            )
             console.print(f"  [#88C0D0]•[/#88C0D0] Total Time: {elapsed:.2f} seconds")
+
 
 # ----------------------------------------------------------------------
 # Interactive Menu
@@ -444,7 +529,9 @@ def interactive_menu() -> None:
 
     while True:
         print_header("Script Deployment System")
-        console.print(f"Current Time: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+        console.print(
+            f"Current Time: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
+        )
         print_section("Main Menu")
         console.print("1. Configure Deployment Parameters")
         console.print("2. Verify Paths and Ownership")
@@ -453,7 +540,9 @@ def interactive_menu() -> None:
         console.print("5. View Deployment Status")
         console.print("6. Exit")
 
-        choice = Prompt.ask("Select an option", choices=["1", "2", "3", "4", "5", "6"], default="1")
+        choice = Prompt.ask(
+            "Select an option", choices=["1", "2", "3", "4", "5", "6"], default="1"
+        )
 
         if choice == "1":
             manager.configure_deployment()
@@ -484,6 +573,7 @@ def interactive_menu() -> None:
         if choice != "6":
             input("\nPress Enter to return to the menu...")
 
+
 # ----------------------------------------------------------------------
 # Main Entry Point
 # ----------------------------------------------------------------------
@@ -496,8 +586,10 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unhandled error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

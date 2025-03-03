@@ -29,7 +29,13 @@ from typing import Dict, List, Optional
 
 import pyfiglet
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 import shutil
 
 # ----------------------------------------------------------------
@@ -71,10 +77,12 @@ DEFAULT_NETWORK_XML = """<network>
 # ----------------------------------------------------------------
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a striking header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
+
 
 def print_section(title: str) -> None:
     """Print a formatted section header."""
@@ -83,25 +91,31 @@ def print_section(title: str) -> None:
     console.print(f"[bold #88C0D0]  {title.center(TERM_WIDTH - 4)}[/bold #88C0D0]")
     console.print(f"[bold #88C0D0]{border}[/bold #88C0D0]\n")
 
+
 def print_info(message: str) -> None:
     """Print an informational message."""
     console.print(f"[#81A1C1]{message}[/#81A1C1]")
+
 
 def print_success(message: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {message}[/bold #8FBCBB]")
 
+
 def print_warning(message: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #EBCB8B]⚠ {message}[/bold #EBCB8B]")
+
 
 def print_error(message: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {message}[/bold #BF616A]")
 
+
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
+
 
 def check_root() -> bool:
     """Ensure the script is run with root privileges."""
@@ -109,6 +123,7 @@ def check_root() -> bool:
         print_error("This script must be run as root.")
         return False
     return True
+
 
 def check_dependencies() -> bool:
     """Check if required dependencies are available."""
@@ -118,6 +133,7 @@ def check_dependencies() -> bool:
         print_error(f"Missing required dependencies: {', '.join(missing)}")
         return False
     return True
+
 
 # ----------------------------------------------------------------
 # Logging Setup
@@ -149,6 +165,7 @@ def setup_logging() -> None:
         logger.warning(f"Could not set up log file: {e}")
         logger.warning("Continuing with console logging only")
 
+
 # ----------------------------------------------------------------
 # Signal Handling & Cleanup
 # ----------------------------------------------------------------
@@ -157,11 +174,17 @@ def cleanup() -> None:
     print_step("Performing cleanup tasks...")
     logging.info("Performing cleanup tasks...")
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     print_warning(f"Script interrupted by {sig_name}.")
     logging.error(f"Script interrupted by {sig_name}.")
     cleanup()
@@ -172,8 +195,10 @@ def signal_handler(signum, frame) -> None:
     else:
         sys.exit(128 + signum)
 
+
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ----------------------------------------------------------------
 # Command Execution Helper
@@ -216,6 +241,7 @@ def run_command(
         print_error(f"Command failed: {cmd_str}")
         raise
 
+
 # ----------------------------------------------------------------
 # VM Management Helper Functions
 # ----------------------------------------------------------------
@@ -223,7 +249,9 @@ def ensure_default_network() -> bool:
     """
     Ensure the 'default' virtual network is active. If not, create and start it.
     """
-    with console.status("[bold #81A1C1]Checking default network status...", spinner="dots"):
+    with console.status(
+        "[bold #81A1C1]Checking default network status...", spinner="dots"
+    ):
         try:
             output = run_command(["virsh", "net-list", "--all"], capture_output=True)
             if "default" in output:
@@ -256,6 +284,7 @@ def ensure_default_network() -> bool:
             print_error(f"Failed to configure default network: {e}")
             return False
 
+
 def get_vm_list() -> List[Dict[str, str]]:
     """
     Retrieve VM list using 'virsh list --all'.
@@ -268,22 +297,27 @@ def get_vm_list() -> List[Dict[str, str]]:
         vms = []
         lines = output.strip().splitlines()
         try:
-            sep_index = next(i for i, line in enumerate(lines) if line.lstrip().startswith("---"))
+            sep_index = next(
+                i for i, line in enumerate(lines) if line.lstrip().startswith("---")
+            )
         except StopIteration:
             sep_index = 1
-        for line in lines[sep_index + 1:]:
+        for line in lines[sep_index + 1 :]:
             if line.strip():
                 parts = line.split()
                 if len(parts) >= 2:
-                    vms.append({
-                        "id": parts[0],
-                        "name": parts[1],
-                        "state": " ".join(parts[2:]) if len(parts) > 2 else "",
-                    })
+                    vms.append(
+                        {
+                            "id": parts[0],
+                            "name": parts[1],
+                            "state": " ".join(parts[2:]) if len(parts) > 2 else "",
+                        }
+                    )
         return vms
     except Exception as e:
         logging.error(f"Failed to retrieve VM list: {e}")
         return []
+
 
 def get_vm_snapshots(vm_name: str) -> List[Dict[str, str]]:
     """
@@ -296,26 +330,39 @@ def get_vm_snapshots(vm_name: str) -> List[Dict[str, str]]:
         List of snapshot info dictionaries.
     """
     try:
-        output = run_command(["virsh", "snapshot-list", vm_name], capture_output=True, check=False)
+        output = run_command(
+            ["virsh", "snapshot-list", vm_name], capture_output=True, check=False
+        )
         if not output or "failed" in output.lower():
             return []
         snapshots = []
         lines = output.strip().splitlines()
-        data_lines = [line for line in lines if line.strip() and not line.startswith("Name") and not line.startswith("----")]
+        data_lines = [
+            line
+            for line in lines
+            if line.strip()
+            and not line.startswith("Name")
+            and not line.startswith("----")
+        ]
         for line in data_lines:
             parts = line.split()
             if len(parts) >= 1:
-                snapshots.append({
-                    "name": parts[0],
-                    "creation_time": " ".join(parts[1:3]) if len(parts) > 2 else "",
-                    "state": parts[3] if len(parts) > 3 else "",
-                })
+                snapshots.append(
+                    {
+                        "name": parts[0],
+                        "creation_time": " ".join(parts[1:3]) if len(parts) > 2 else "",
+                        "state": parts[3] if len(parts) > 3 else "",
+                    }
+                )
         return snapshots
     except Exception as e:
         logging.error(f"Failed to retrieve snapshots for VM '{vm_name}': {e}")
         return []
 
-def select_vm(prompt: str = "Select a VM by number (or 'q' to cancel): ") -> Optional[str]:
+
+def select_vm(
+    prompt: str = "Select a VM by number (or 'q' to cancel): ",
+) -> Optional[str]:
     """
     Prompt the user to select a VM from the list.
 
@@ -340,8 +387,10 @@ def select_vm(prompt: str = "Select a VM by number (or 'q' to cancel): ") -> Opt
             state_str = f"[#BF616A]{vm['state']}[/#BF616A]"
         else:
             state_str = f"[#D8DEE9]{vm['state']}[/#D8DEE9]"
-        print(f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{vm['name']:<25}[/#D8DEE9] {state_str:<15}")
-    
+        print(
+            f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{vm['name']:<25}[/#D8DEE9] {state_str:<15}"
+        )
+
     while True:
         choice = input(f"\n[bold #B48EAD]{prompt}[/bold #B48EAD] ").strip()
         if choice.lower() == "q":
@@ -355,7 +404,10 @@ def select_vm(prompt: str = "Select a VM by number (or 'q' to cancel): ") -> Opt
         except ValueError:
             print_error("Please enter a valid number.")
 
-def select_snapshot(vm_name: str, prompt: str = "Select a snapshot by number (or 'q' to cancel): ") -> Optional[str]:
+
+def select_snapshot(
+    vm_name: str, prompt: str = "Select a snapshot by number (or 'q' to cancel): "
+) -> Optional[str]:
     """
     Prompt the user to select a snapshot for a VM.
 
@@ -371,8 +423,10 @@ def select_snapshot(vm_name: str, prompt: str = "Select a snapshot by number (or
     print(f"[#ECEFF4]{'No.':<5} {'Name':<25} {'Creation Time':<25}[/#ECEFF4]")
     print(f"[#81A1C1]{'─' * 60}[/#81A1C1]")
     for idx, snap in enumerate(snapshots, start=1):
-        print(f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{snap['name']:<25}[/#D8DEE9] [#81A1C1]{snap['creation_time']:<25}[/#81A1C1]")
-    
+        print(
+            f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{snap['name']:<25}[/#D8DEE9] [#81A1C1]{snap['creation_time']:<25}[/#81A1C1]"
+        )
+
     while True:
         choice = input(f"\n[bold #B48EAD]{prompt}[/bold #B48EAD] ").strip()
         if choice.lower() == "q":
@@ -385,6 +439,7 @@ def select_snapshot(vm_name: str, prompt: str = "Select a snapshot by number (or
                 print_error("Invalid selection number.")
         except ValueError:
             print_error("Please enter a valid number.")
+
 
 # ----------------------------------------------------------------
 # VM Management Functions
@@ -408,7 +463,10 @@ def list_vms() -> None:
             state_str = f"[#BF616A]{vm['state']}[/#BF616A]"
         else:
             state_str = f"[#D8DEE9]{vm['state']}[/#D8DEE9]"
-        print(f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{vm['name']:<25}[/#D8DEE9] {state_str:<15} [#D8DEE9]{vm['id']}[/#D8DEE9]")
+        print(
+            f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{vm['name']:<25}[/#D8DEE9] {state_str:<15} [#D8DEE9]{vm['id']}[/#D8DEE9]"
+        )
+
 
 def create_vm() -> None:
     """Create a new VM by gathering user input interactively."""
@@ -418,7 +476,12 @@ def create_vm() -> None:
         return
 
     default_name = f"vm-{int(time.time()) % 10000}"
-    vm_name = input(f"[bold #B48EAD]Enter VM name (default: {default_name}): [/bold #B48EAD] ").strip() or default_name
+    vm_name = (
+        input(
+            f"[bold #B48EAD]Enter VM name (default: {default_name}): [/bold #B48EAD] "
+        ).strip()
+        or default_name
+    )
     vm_name = "".join(c for c in vm_name if c.isalnum() or c in "-_")
     if not vm_name:
         print_error("Invalid VM name.")
@@ -426,9 +489,22 @@ def create_vm() -> None:
 
     print_section("Specify VM Resources")
     try:
-        vcpus = int(input(f"[bold #B48EAD]vCPUs (default: {DEFAULT_VCPUS}): [/bold #B48EAD] ") or DEFAULT_VCPUS)
-        ram = int(input(f"[bold #B48EAD]RAM in MB (default: {DEFAULT_RAM_MB}): [/bold #B48EAD] ") or DEFAULT_RAM_MB)
-        disk_size = int(input(f"[bold #B48EAD]Disk size in GB (default: {DEFAULT_DISK_GB}): [/bold #B48EAD] ") or DEFAULT_DISK_GB)
+        vcpus = int(
+            input(f"[bold #B48EAD]vCPUs (default: {DEFAULT_VCPUS}): [/bold #B48EAD] ")
+            or DEFAULT_VCPUS
+        )
+        ram = int(
+            input(
+                f"[bold #B48EAD]RAM in MB (default: {DEFAULT_RAM_MB}): [/bold #B48EAD] "
+            )
+            or DEFAULT_RAM_MB
+        )
+        disk_size = int(
+            input(
+                f"[bold #B48EAD]Disk size in GB (default: {DEFAULT_DISK_GB}): [/bold #B48EAD] "
+            )
+            or DEFAULT_DISK_GB
+        )
     except ValueError:
         print_error("vCPUs, RAM, and disk size must be numbers.")
         return
@@ -439,7 +515,9 @@ def create_vm() -> None:
 
     disk_image = os.path.join(VM_IMAGE_DIR, f"{vm_name}.qcow2")
     if os.path.exists(disk_image):
-        print_error(f"Disk image '{disk_image}' already exists. Choose a different VM name.")
+        print_error(
+            f"Disk image '{disk_image}' already exists. Choose a different VM name."
+        )
         return
 
     print_section("Installation Media")
@@ -450,7 +528,9 @@ def create_vm() -> None:
         print_info("VM creation cancelled.")
         return
 
-    iso_path = input(f"[bold #B48EAD]Enter full path to the ISO file: [/bold #B48EAD] ").strip()
+    iso_path = input(
+        f"[bold #B48EAD]Enter full path to the ISO file: [/bold #B48EAD] "
+    ).strip()
     if not os.path.isfile(iso_path):
         print_error("ISO file not found. VM creation cancelled.")
         return
@@ -460,7 +540,9 @@ def create_vm() -> None:
     print_info(f"Creating {disk_size}GB disk image at {disk_image}")
     with console.status("[bold #81A1C1]Creating disk image...", spinner="dots"):
         try:
-            run_command(["qemu-img", "create", "-f", "qcow2", disk_image, f"{disk_size}G"])
+            run_command(
+                ["qemu-img", "create", "-f", "qcow2", disk_image, f"{disk_size}G"]
+            )
             print_success("Disk image created successfully")
         except Exception as e:
             print_error(f"Failed to create disk image: {e}")
@@ -471,14 +553,22 @@ def create_vm() -> None:
     with console.status("[bold #81A1C1]Creating virtual machine...", spinner="dots"):
         virt_install_cmd = [
             "virt-install",
-            "--name", vm_name,
-            "--ram", str(ram),
-            "--vcpus", str(vcpus),
-            "--disk", f"path={disk_image},size={disk_size},format=qcow2",
-            "--cdrom", iso_path,
-            "--os-variant", DEFAULT_OS_VARIANT,
-            "--network", "default",
-            "--graphics", "vnc",
+            "--name",
+            vm_name,
+            "--ram",
+            str(ram),
+            "--vcpus",
+            str(vcpus),
+            "--disk",
+            f"path={disk_image},size={disk_size},format=qcow2",
+            "--cdrom",
+            iso_path,
+            "--os-variant",
+            DEFAULT_OS_VARIANT,
+            "--network",
+            "default",
+            "--graphics",
+            "vnc",
             "--noautoconsole",
         ]
         try:
@@ -490,10 +580,13 @@ def create_vm() -> None:
             print_error(f"Failed to create VM '{vm_name}': {e}")
             print_info("Cleaning up failed VM creation...")
             try:
-                run_command(["virsh", "undefine", vm_name, "--remove-all-storage"], check=False)
+                run_command(
+                    ["virsh", "undefine", vm_name, "--remove-all-storage"], check=False
+                )
             except Exception:
                 print_warning("Incomplete cleanup")
             return
+
 
 def start_vm() -> None:
     """Start an existing VM after ensuring the default network is active."""
@@ -510,11 +603,14 @@ def start_vm() -> None:
             print_warning(f"VM '{vm_name}' is already running.")
             return
         print_info(f"Starting VM '{vm_name}'...")
-        with console.status(f"[bold #81A1C1]Starting VM '{vm_name}'...", spinner="dots"):
+        with console.status(
+            f"[bold #81A1C1]Starting VM '{vm_name}'...", spinner="dots"
+        ):
             run_command(["virsh", "start", vm_name])
             print_success(f"VM '{vm_name}' started successfully")
     except Exception as e:
         print_error(f"Error starting VM '{vm_name}': {e}")
+
 
 def stop_vm() -> None:
     """Stop a running VM with graceful shutdown and forced destruction if needed."""
@@ -529,10 +625,14 @@ def stop_vm() -> None:
     try:
         print_info(f"Sending shutdown signal to VM '{vm_name}'...")
         run_command(["virsh", "shutdown", vm_name])
-        with console.status("[bold #81A1C1]Waiting for VM to shut down...", spinner="dots"):
+        with console.status(
+            "[bold #81A1C1]Waiting for VM to shut down...", spinner="dots"
+        ):
             for _ in range(30):
                 time.sleep(1)
-                output = run_command(["virsh", "domstate", vm_name], capture_output=True, check=False)
+                output = run_command(
+                    ["virsh", "domstate", vm_name], capture_output=True, check=False
+                )
                 if "shut off" in output.lower():
                     print_success("VM shut down successfully")
                     return
@@ -542,24 +642,33 @@ def stop_vm() -> None:
     except Exception as e:
         print_error(f"Error stopping VM '{vm_name}': {e}")
 
+
 def delete_vm() -> None:
     """Delete an existing VM and its associated storage."""
     print_header("Delete Virtual Machine")
     vm_name = select_vm("Select a VM to delete (or 'q' to cancel): ")
     if not vm_name:
         return
-    confirm = input(f"[bold #B48EAD]Are you sure you want to delete VM '{vm_name}'? (y/n): [/bold #B48EAD] ").lower()
+    confirm = input(
+        f"[bold #B48EAD]Are you sure you want to delete VM '{vm_name}'? (y/n): [/bold #B48EAD] "
+    ).lower()
     if confirm != "y":
         print_info("Deletion cancelled")
         return
     try:
-        output = run_command(["virsh", "domstate", vm_name], capture_output=True, check=False)
+        output = run_command(
+            ["virsh", "domstate", vm_name], capture_output=True, check=False
+        )
         if "running" in output.lower():
             print_info(f"Shutting down VM '{vm_name}'...")
             run_command(["virsh", "shutdown", vm_name], check=False)
-            with console.status("[bold #81A1C1]Waiting for VM shutdown...", spinner="dots"):
+            with console.status(
+                "[bold #81A1C1]Waiting for VM shutdown...", spinner="dots"
+            ):
                 time.sleep(5)
-            output = run_command(["virsh", "domstate", vm_name], capture_output=True, check=False)
+            output = run_command(
+                ["virsh", "domstate", vm_name], capture_output=True, check=False
+            )
             if "running" in output.lower():
                 print_warning("Forcing VM off...")
                 run_command(["virsh", "destroy", vm_name], check=False)
@@ -569,6 +678,7 @@ def delete_vm() -> None:
         print_success(f"VM '{vm_name}' deleted successfully")
     except Exception as e:
         print_error(f"Error deleting VM '{vm_name}': {e}")
+
 
 def show_vm_info() -> None:
     """Display detailed information for a selected VM."""
@@ -582,21 +692,31 @@ def show_vm_info() -> None:
         for line in output.splitlines():
             if ":" in line:
                 key, value = line.split(":", 1)
-                print(f"[#81A1C1]{key.strip()}:[/#81A1C1] [#D8DEE9]{value.strip()}[/#D8DEE9]")
+                print(
+                    f"[#81A1C1]{key.strip()}:[/#81A1C1] [#D8DEE9]{value.strip()}[/#D8DEE9]"
+                )
         print_section("Network Information")
-        net_output = run_command(["virsh", "domifaddr", vm_name], capture_output=True, check=False)
+        net_output = run_command(
+            ["virsh", "domifaddr", vm_name], capture_output=True, check=False
+        )
         if net_output and "failed" not in net_output.lower():
             print(f"[#D8DEE9]{net_output}[/#D8DEE9]")
         else:
             print_info("No network information available")
         print_section("Snapshots")
         snapshots = get_vm_snapshots(vm_name)
-        print(f"[#81A1C1]Total snapshots:[/#81A1C1] [#D8DEE9]{len(snapshots)}[/#D8DEE9]")
+        print(
+            f"[#81A1C1]Total snapshots:[/#81A1C1] [#D8DEE9]{len(snapshots)}[/#D8DEE9]"
+        )
         if snapshots:
             for idx, snap in enumerate(snapshots, 1):
-                print(f"  [#D8DEE9]{idx}.[/#D8DEE9] [#D8DEE9]{snap['name']}[/#D8DEE9] ([#81A1C1]{snap['creation_time']}[/#81A1C1])")
+                print(
+                    f"  [#D8DEE9]{idx}.[/#D8DEE9] [#D8DEE9]{snap['name']}[/#D8DEE9] ([#81A1C1]{snap['creation_time']}[/#81A1C1])"
+                )
         print_section("Storage Devices")
-        storage_output = run_command(["virsh", "domblklist", vm_name], capture_output=True)
+        storage_output = run_command(
+            ["virsh", "domblklist", vm_name], capture_output=True
+        )
         if "Target     Source" in storage_output:
             lines = storage_output.splitlines()
             print(f"[#5E81AC]{lines[0]}[/#5E81AC]")
@@ -607,6 +727,7 @@ def show_vm_info() -> None:
             print(f"[#D8DEE9]{storage_output}[/#D8DEE9]")
     except Exception as e:
         print_error(f"Error retrieving VM info: {e}")
+
 
 def list_vm_snapshots(vm: Optional[str] = None) -> None:
     """
@@ -625,7 +746,10 @@ def list_vm_snapshots(vm: Optional[str] = None) -> None:
     print(f"[#ECEFF4]{'No.':<5} {'Name':<25} {'Creation Time':<25}[/#ECEFF4]")
     print(f"[#81A1C1]{'─' * 60}[/#81A1C1]")
     for idx, snap in enumerate(snapshots, start=1):
-        print(f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{snap['name']:<25}[/#D8DEE9] [#81A1C1]{snap['creation_time']:<25}[/#81A1C1]")
+        print(
+            f"[#D8DEE9]{idx:<5}[/#D8DEE9] [#D8DEE9]{snap['name']:<25}[/#D8DEE9] [#81A1C1]{snap['creation_time']:<25}[/#81A1C1]"
+        )
+
 
 def create_snapshot() -> None:
     """Create a snapshot for a VM."""
@@ -635,8 +759,15 @@ def create_snapshot() -> None:
         return
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     default_snapshot = f"{vm_name}-snap-{timestamp}"
-    snapshot_name = input(f"[bold #B48EAD]Enter snapshot name (default: {default_snapshot}): [/bold #B48EAD] ").strip() or default_snapshot
-    description = input(f"[bold #B48EAD]Enter snapshot description (optional): [/bold #B48EAD] ").strip()
+    snapshot_name = (
+        input(
+            f"[bold #B48EAD]Enter snapshot name (default: {default_snapshot}): [/bold #B48EAD] "
+        ).strip()
+        or default_snapshot
+    )
+    description = input(
+        f"[bold #B48EAD]Enter snapshot description (optional): [/bold #B48EAD] "
+    ).strip()
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
     snapshot_xml = f"""<domainsnapshot>
   <name>{snapshot_name}</name>
@@ -646,7 +777,9 @@ def create_snapshot() -> None:
     try:
         with os.fdopen(fd, "w") as f:
             f.write(snapshot_xml)
-        with console.status(f"[bold #81A1C1]Creating snapshot '{snapshot_name}'...", spinner="dots"):
+        with console.status(
+            f"[bold #81A1C1]Creating snapshot '{snapshot_name}'...", spinner="dots"
+        ):
             run_command(["virsh", "snapshot-create", vm_name, "--xmlfile", xml_path])
         print_success(f"Snapshot '{snapshot_name}' created successfully")
     except Exception as e:
@@ -655,25 +788,43 @@ def create_snapshot() -> None:
         if os.path.exists(xml_path):
             os.unlink(xml_path)
 
+
 def revert_to_snapshot() -> None:
     """Revert a VM to a selected snapshot."""
     print_header("Revert VM to Snapshot")
     vm_name = select_vm("Select a VM to revert (or 'q' to cancel): ")
     if not vm_name:
         return
-    snapshot_name = select_snapshot(vm_name, "Select a snapshot to revert to (or 'q' to cancel): ")
+    snapshot_name = select_snapshot(
+        vm_name, "Select a snapshot to revert to (or 'q' to cancel): "
+    )
     if not snapshot_name:
         return
-    confirm = input(f"[bold #B48EAD]Confirm revert of VM '{vm_name}' to snapshot '{snapshot_name}'? (y/n): [/bold #B48EAD] ").strip().lower()
+    confirm = (
+        input(
+            f"[bold #B48EAD]Confirm revert of VM '{vm_name}' to snapshot '{snapshot_name}'? (y/n): [/bold #B48EAD] "
+        )
+        .strip()
+        .lower()
+    )
     if confirm != "y":
         print_info("Revert operation cancelled")
         return
     try:
         with console.status("[bold #81A1C1]Reverting to snapshot...", spinner="dots"):
             run_command(["virsh", "snapshot-revert", vm_name, snapshot_name])
-        print_success(f"VM '{vm_name}' reverted to snapshot '{snapshot_name}' successfully")
-        if "running" in run_command(["virsh", "domstate", vm_name], capture_output=True).lower():
-            restart = input(f"[bold #B48EAD]Restart VM now? (y/n): [/bold #B48EAD] ").strip().lower()
+        print_success(
+            f"VM '{vm_name}' reverted to snapshot '{snapshot_name}' successfully"
+        )
+        if (
+            "running"
+            in run_command(["virsh", "domstate", vm_name], capture_output=True).lower()
+        ):
+            restart = (
+                input(f"[bold #B48EAD]Restart VM now? (y/n): [/bold #B48EAD] ")
+                .strip()
+                .lower()
+            )
             if restart == "y":
                 print_info(f"Starting VM '{vm_name}'...")
                 run_command(["virsh", "start", vm_name])
@@ -681,25 +832,37 @@ def revert_to_snapshot() -> None:
     except Exception as e:
         print_error(f"Failed to revert snapshot: {e}")
 
+
 def delete_snapshot() -> None:
     """Delete a snapshot for a VM."""
     print_header("Delete VM Snapshot")
     vm_name = select_vm("Select a VM (or 'q' to cancel): ")
     if not vm_name:
         return
-    snapshot_name = select_snapshot(vm_name, "Select a snapshot to delete (or 'q' to cancel): ")
+    snapshot_name = select_snapshot(
+        vm_name, "Select a snapshot to delete (or 'q' to cancel): "
+    )
     if not snapshot_name:
         return
-    confirm = input(f"[bold #B48EAD]Delete snapshot '{snapshot_name}' for VM '{vm_name}'? (y/n): [/bold #B48EAD] ").strip().lower()
+    confirm = (
+        input(
+            f"[bold #B48EAD]Delete snapshot '{snapshot_name}' for VM '{vm_name}'? (y/n): [/bold #B48EAD] "
+        )
+        .strip()
+        .lower()
+    )
     if confirm != "y":
         print_info("Deletion cancelled")
         return
     try:
-        with console.status(f"[bold #81A1C1]Deleting snapshot '{snapshot_name}'...", spinner="dots"):
+        with console.status(
+            f"[bold #81A1C1]Deleting snapshot '{snapshot_name}'...", spinner="dots"
+        ):
             run_command(["virsh", "snapshot-delete", vm_name, snapshot_name])
         print_success(f"Snapshot '{snapshot_name}' deleted successfully")
     except Exception as e:
         print_error(f"Failed to delete snapshot: {e}")
+
 
 # ----------------------------------------------------------------
 # Interactive Menu Functions
@@ -713,7 +876,9 @@ def snapshot_management_menu() -> None:
         console.print("[#D8DEE9]3. Revert to Snapshot[/#D8DEE9]")
         console.print("[#D8DEE9]4. Delete Snapshot[/#D8DEE9]")
         console.print("[#D8DEE9]5. Return to Main Menu[/#D8DEE9]")
-        snap_choice = input("\n[bold #B48EAD]Enter your choice: [/bold #B48EAD] ").strip()
+        snap_choice = input(
+            "\n[bold #B48EAD]Enter your choice: [/bold #B48EAD] "
+        ).strip()
         if snap_choice == "1":
             list_vm_snapshots()
         elif snap_choice == "2":
@@ -727,6 +892,7 @@ def snapshot_management_menu() -> None:
         else:
             print_error("Invalid choice. Please try again.")
         input("\n[bold #B48EAD]Press Enter to continue...[/bold #B48EAD]")
+
 
 def interactive_menu() -> None:
     """Display the interactive VM management menu."""
@@ -763,6 +929,7 @@ def interactive_menu() -> None:
         if choice != "7":
             input("\n[bold #B48EAD]Press Enter to continue...[/bold #B48EAD]")
 
+
 # ----------------------------------------------------------------
 # Main Entry Point
 # ----------------------------------------------------------------
@@ -771,7 +938,9 @@ def main() -> None:
     try:
         print_header("Enhanced VM Manager v1.0.0")
         console.print(f"Hostname: [bold #81A1C1]{HOSTNAME}[/bold #81A1C1]")
-        console.print(f"Date: [bold #81A1C1]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #81A1C1]")
+        console.print(
+            f"Date: [bold #81A1C1]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #81A1C1]"
+        )
         if not check_root():
             sys.exit(1)
         setup_logging()
@@ -789,6 +958,7 @@ def main() -> None:
         print_error(f"Unexpected error: {e}")
         logging.exception("Unhandled exception")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

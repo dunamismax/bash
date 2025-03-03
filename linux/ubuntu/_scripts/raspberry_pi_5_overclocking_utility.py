@@ -67,10 +67,11 @@ FAN_MAX_SPEED = 255  # Maximum PWM value
 # Temperature settings
 TEMP_PATH = "/sys/class/thermal/thermal_zone0/temp"
 CRITICAL_TEMP = 80  # Celsius
-WARNING_TEMP = 75   # Celsius
+WARNING_TEMP = 75  # Celsius
 
 # Terminal dimensions
 import shutil
+
 TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
 TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 
@@ -79,8 +80,10 @@ TERM_HEIGHT = min(shutil.get_terminal_size().lines, 30)
 # ==============================
 console = Console()
 
+
 class NordColors:
     """Nord theme color palette."""
+
     NORD0 = "#2E3440"  # Dark background
     NORD1 = "#3B4252"
     NORD2 = "#434C5E"
@@ -98,14 +101,18 @@ class NordColors:
     NORD14 = "#A3BE8C"  # Green – success
     NORD15 = "#B48EAD"  # Purple – special
 
+
 # ==============================
 # UI Helper Functions
 # ==============================
 def print_header(text: str) -> None:
     """Display a striking header using pyfiglet in a Rich panel."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
-    panel = Panel(ascii_art, style=f"bold {NordColors.NORD8}", border_style=NordColors.NORD8)
+    panel = Panel(
+        ascii_art, style=f"bold {NordColors.NORD8}", border_style=NordColors.NORD8
+    )
     console.print(panel)
+
 
 def print_section(title: str) -> None:
     """Print a formatted section header."""
@@ -114,41 +121,51 @@ def print_section(title: str) -> None:
     console.print(f"[bold {NordColors.NORD8}]{title.center(TERM_WIDTH)}[/]")
     console.print(f"[bold {NordColors.NORD8}]{border}[/]\n")
 
+
 def print_info(message: str) -> None:
     """Display an informational message."""
     console.print(f"[{NordColors.NORD9}]{message}[/]")
+
 
 def print_success(message: str) -> None:
     """Display a success message."""
     console.print(f"[bold {NordColors.NORD14}]✓ {message}[/]")
 
+
 def print_warning(message: str) -> None:
     """Display a warning message."""
     console.print(f"[bold {NordColors.NORD13}]⚠ {message}[/]")
+
 
 def print_error(message: str) -> None:
     """Display an error message."""
     console.print(f"[bold {NordColors.NORD11}]✗ {message}[/]")
 
+
 def print_step(message: str) -> None:
     """Print a step description."""
     console.print(f"[{NordColors.NORD8}]• {message}[/]")
+
 
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
 
+
 def pause() -> None:
     """Pause execution until the user presses Enter."""
     console.input(f"\n[{NordColors.NORD15}]Press Enter to continue...[/]")
+
 
 def get_user_input(prompt: str, default: str = "") -> str:
     """Get input from the user with a styled prompt."""
     return Prompt.ask(f"[bold {NordColors.NORD15}]{prompt}[/]", default=default)
 
+
 def get_user_confirmation(prompt: str) -> bool:
     """Get a Yes/No confirmation from the user."""
     return Confirm.ask(f"[bold {NordColors.NORD15}]{prompt}[/]")
+
 
 def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
     """Create a table to display menu options."""
@@ -159,12 +176,14 @@ def create_menu_table(title: str, options: List[Tuple[str, str]]) -> Table:
         table.add_row(key, desc)
     return table
 
+
 # ==============================
 # Logging Setup
 # ==============================
 def setup_logging(log_file: str = LOG_FILE) -> None:
     """Set up file logging for the utility."""
     import logging
+
     try:
         log_dir = os.path.dirname(log_file)
         if log_dir and not os.path.exists(log_dir):
@@ -180,6 +199,7 @@ def setup_logging(log_file: str = LOG_FILE) -> None:
         print_warning(f"Could not set up logging: {e}")
         print_step("Continuing without file logging...")
 
+
 # ==============================
 # Signal Handling & Cleanup
 # ==============================
@@ -188,17 +208,25 @@ def cleanup() -> None:
     print_step("Performing cleanup tasks...")
     # Additional cleanup tasks can be added here
 
+
 atexit.register(cleanup)
+
 
 def signal_handler(signum, frame) -> None:
     """Handle termination signals gracefully."""
-    sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+    sig_name = (
+        signal.Signals(signum).name
+        if hasattr(signal, "Signals")
+        else f"signal {signum}"
+    )
     print_warning(f"\nScript interrupted by {sig_name}.")
     cleanup()
     sys.exit(128 + signum)
 
+
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
+
 
 # ==============================
 # System Validation Functions
@@ -207,23 +235,30 @@ def check_root() -> bool:
     """Return True if the script is running with root privileges."""
     return os.geteuid() == 0
 
+
 def validate_system() -> bool:
     """Validate that the system is a Raspberry Pi 5 running Ubuntu 24.10."""
     # Check for ARM architecture
     machine = platform.machine()
     if not machine.startswith(("aarch64", "arm")):
-        print_error(f"Unsupported architecture: {machine}. This utility requires ARM architecture.")
+        print_error(
+            f"Unsupported architecture: {machine}. This utility requires ARM architecture."
+        )
         return False
     # Validate Raspberry Pi 5 model
     try:
         with open("/proc/device-tree/model", "r") as f:
             model = f.read()
             if "Raspberry Pi 5" not in model:
-                print_warning(f"Model does not appear to be Raspberry Pi 5: {model.strip()}")
+                print_warning(
+                    f"Model does not appear to be Raspberry Pi 5: {model.strip()}"
+                )
                 if not get_user_confirmation("Continue anyway?"):
                     return False
     except FileNotFoundError:
-        print_warning("Cannot determine Raspberry Pi model. This utility is designed for Pi 5.")
+        print_warning(
+            "Cannot determine Raspberry Pi model. This utility is designed for Pi 5."
+        )
         if not get_user_confirmation("Continue anyway?"):
             return False
     # Validate OS version (Ubuntu 24.10)
@@ -236,10 +271,13 @@ def validate_system() -> bool:
                 if not get_user_confirmation("Continue anyway?"):
                     return False
     else:
-        print_warning("Cannot determine OS version. This utility is designed for Ubuntu 24.10.")
+        print_warning(
+            "Cannot determine OS version. This utility is designed for Ubuntu 24.10."
+        )
         if not get_user_confirmation("Continue anyway?"):
             return False
     return True
+
 
 # ==============================
 # CPU and Cooling Management
@@ -253,6 +291,7 @@ def read_current_cpu_freq() -> int:
         print_error(f"Failed to read CPU frequency: {e}")
         return 0
 
+
 def read_cpu_temp() -> float:
     """Read the current CPU temperature (°C)."""
     try:
@@ -262,9 +301,17 @@ def read_cpu_temp() -> float:
         print_error(f"Failed to read CPU temperature: {e}")
         return 0.0
 
+
 def set_cpu_governor(governor: str = "performance") -> bool:
     """Set the CPU governor for all cores."""
-    valid_governors = ["performance", "powersave", "userspace", "ondemand", "conservative", "schedutil"]
+    valid_governors = [
+        "performance",
+        "powersave",
+        "userspace",
+        "ondemand",
+        "conservative",
+        "schedutil",
+    ]
     if governor not in valid_governors:
         print_error(f"Invalid governor: {governor}")
         return False
@@ -281,12 +328,17 @@ def set_cpu_governor(governor: str = "performance") -> bool:
         print_success(f"CPU governor set to {governor} for all cores")
     return success
 
+
 def set_fan_speed(speed: int = FAN_MAX_SPEED) -> bool:
     """Set the fan speed (0–255)."""
     try:
         # Find fan control paths using shell globbing
-        fan_control_actual = subprocess.getoutput("ls -1 /sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1")
-        fan_manual_actual = subprocess.getoutput("ls -1 /sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1_enable")
+        fan_control_actual = subprocess.getoutput(
+            "ls -1 /sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1"
+        )
+        fan_manual_actual = subprocess.getoutput(
+            "ls -1 /sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1_enable"
+        )
         if not os.path.exists(fan_manual_actual):
             print_error(f"Fan control path not found: {fan_manual_actual}")
             return False
@@ -304,6 +356,7 @@ def set_fan_speed(speed: int = FAN_MAX_SPEED) -> bool:
         print_error(f"Failed to set fan speed: {e}")
         return False
 
+
 def backup_config_file() -> bool:
     """Backup the boot configuration file."""
     if os.path.exists(CONFIG_BOOT):
@@ -317,6 +370,7 @@ def backup_config_file() -> bool:
     else:
         print_error(f"Config file not found: {CONFIG_BOOT}")
         return False
+
 
 def update_config_for_overclock() -> bool:
     """Update config.txt to enable overclocking to 3.1 GHz."""
@@ -356,6 +410,7 @@ def update_config_for_overclock() -> bool:
     except Exception as e:
         print_error(f"Failed to update config: {e}")
         return False
+
 
 def setup_systemd_service() -> bool:
     """Create and enable a systemd service to apply settings at boot."""
@@ -427,12 +482,17 @@ WantedBy=multi-user.target
         print_error(f"Failed to setup systemd service: {e}")
         return False
 
+
 def monitor_temperature_and_frequency(duration: int = 60) -> None:
     """Monitor CPU temperature and frequency for a specified duration."""
     print_section("Temperature and Frequency Monitor")
     print_info(f"Monitoring for {duration} seconds. Press Ctrl+C to stop.")
-    print_info(f"Target frequency: {TARGET_FREQ_GHZ} GHz | Critical temperature: {CRITICAL_TEMP}°C")
-    console.print(f"[bold]{'Time':<12} {'Temperature':<20} {'Frequency':<15} {'Status':<10}[/bold]")
+    print_info(
+        f"Target frequency: {TARGET_FREQ_GHZ} GHz | Critical temperature: {CRITICAL_TEMP}°C"
+    )
+    console.print(
+        f"[bold]{'Time':<12} {'Temperature':<20} {'Frequency':<15} {'Status':<10}[/bold]"
+    )
     console.print("─" * 60)
     try:
         start_time = time.time()
@@ -448,12 +508,23 @@ def monitor_temperature_and_frequency(duration: int = 60) -> None:
                 status = f"[bold {NordColors.NORD14}]OPTIMAL[/]"
             else:
                 status = f"[{NordColors.NORD4}]OK[/]"
-            temp_color = NordColors.NORD11 if current_temp >= CRITICAL_TEMP else (NordColors.NORD13 if current_temp >= WARNING_TEMP else NordColors.NORD14)
+            temp_color = (
+                NordColors.NORD11
+                if current_temp >= CRITICAL_TEMP
+                else (
+                    NordColors.NORD13
+                    if current_temp >= WARNING_TEMP
+                    else NordColors.NORD14
+                )
+            )
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            console.print(f"{timestamp:<12} [{temp_color}]{current_temp:.1f}°C[/] {'':10} {current_freq_ghz:.2f} GHz {'':5} {status}")
+            console.print(
+                f"{timestamp:<12} [{temp_color}]{current_temp:.1f}°C[/] {'':10} {current_freq_ghz:.2f} GHz {'':5} {status}"
+            )
             time.sleep(1)
     except KeyboardInterrupt:
         print_warning("\nMonitoring stopped by user.")
+
 
 def apply_all_settings() -> bool:
     """Apply overclocking, CPU governor, and fan settings."""
@@ -480,6 +551,7 @@ def apply_all_settings() -> bool:
     else:
         print_warning("Some settings failed to apply. See errors above.")
     return success
+
 
 # ==============================
 # Menu Systems
@@ -526,7 +598,9 @@ def main_menu() -> None:
         elif choice == "6":
             duration = 60
             try:
-                duration_input = get_user_input("Monitoring duration in seconds (default: 60)")
+                duration_input = get_user_input(
+                    "Monitoring duration in seconds (default: 60)"
+                )
                 if duration_input:
                     duration = int(duration_input)
             except ValueError:
@@ -542,6 +616,7 @@ def main_menu() -> None:
         else:
             print_error("Invalid selection. Please try again.")
             time.sleep(1)
+
 
 # ==============================
 # Main Entry Point
@@ -564,8 +639,10 @@ def main() -> None:
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

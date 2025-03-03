@@ -31,7 +31,13 @@ import pyfiglet
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 # ====================================================
 # Configuration & Constants
@@ -76,38 +82,48 @@ LOG_FILE = "/var/log/restore_script.log"
 
 console = Console()
 
+
 def print_header(text: str) -> None:
     """Print a striking ASCII art header using pyfiglet."""
     ascii_art = pyfiglet.figlet_format(text, font="slant")
     console.print(ascii_art, style="bold #88C0D0")
 
+
 def print_section(text: str) -> None:
     """Print a section header."""
     console.print(f"\n[bold #88C0D0]{text}[/bold #88C0D0]")
+
 
 def print_step(text: str) -> None:
     """Print a step description."""
     console.print(f"[#88C0D0]• {text}[/#88C0D0]")
 
+
 def print_success(text: str) -> None:
     """Print a success message."""
     console.print(f"[bold #8FBCBB]✓ {text}[/bold #8FBCBB]")
+
 
 def print_warning(text: str) -> None:
     """Print a warning message."""
     console.print(f"[bold #5E81AC]⚠ {text}[/bold #5E81AC]")
 
+
 def print_error(text: str) -> None:
     """Print an error message."""
     console.print(f"[bold #BF616A]✗ {text}[/bold #BF616A]")
+
 
 def setup_logging() -> None:
     """Initialize logging to file."""
     log_dir = Path(LOG_FILE).parent
     log_dir.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a") as log_file:
-        log_file.write(f"\n--- Restore session started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        log_file.write(
+            f"\n--- Restore session started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
+        )
     print_success(f"Logging to {LOG_FILE}")
+
 
 def log_message(message: str, level: str = "INFO") -> None:
     """Append a message to the log file."""
@@ -115,11 +131,15 @@ def log_message(message: str, level: str = "INFO") -> None:
     with open(LOG_FILE, "a") as log_file:
         log_file.write(f"{timestamp} - {level} - {message}\n")
 
+
 # ====================================================
 # Command Execution Helper
 # ====================================================
 
-def run_command(cmd: List[str], env=None, check=True, capture_output=True, timeout=None):
+
+def run_command(
+    cmd: List[str], env=None, check=True, capture_output=True, timeout=None
+):
     """Execute a command and handle errors appropriately."""
     try:
         result = subprocess.run(
@@ -145,9 +165,11 @@ def run_command(cmd: List[str], env=None, check=True, capture_output=True, timeo
         print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
         raise
 
+
 # ====================================================
 # Signal Handling & Cleanup
 # ====================================================
+
 
 def signal_handler(sig, frame):
     """Handle SIGINT and SIGTERM signals gracefully."""
@@ -156,11 +178,13 @@ def signal_handler(sig, frame):
     cleanup()
     sys.exit(128 + sig)
 
+
 def cleanup():
     """Perform any necessary cleanup tasks before exit."""
     print_step("Performing cleanup tasks...")
     log_message("Cleanup performed during script exit")
     # Additional cleanup steps can be added here
+
 
 atexit.register(cleanup)
 signal.signal(signal.SIGINT, signal_handler)
@@ -170,12 +194,14 @@ signal.signal(signal.SIGTERM, signal_handler)
 # Core Restore Functions
 # ====================================================
 
+
 def check_root() -> bool:
     """Check if the script is running with root privileges."""
     if os.geteuid() != 0:
         print_error("This script must be run with root privileges.")
         return False
     return True
+
 
 def control_service(service: str, action: str) -> bool:
     """
@@ -190,18 +216,26 @@ def control_service(service: str, action: str) -> bool:
         status_result = run_command(["systemctl", "is-active", service], check=False)
         expected = "active" if action == "start" else "inactive"
         actual = status_result.stdout.strip()
-        if (action == "start" and actual == "active") or (action == "stop" and actual != "active"):
+        if (action == "start" and actual == "active") or (
+            action == "stop" and actual != "active"
+        ):
             print_success(f"Service '{service}' {action}ed successfully")
             log_message(f"Service '{service}' {action}ed successfully")
             return True
         else:
-            print_warning(f"Service '{service}' did not {action} properly (status: {actual})")
-            log_message(f"Service '{service}' did not {action} properly (status: {actual})", "WARNING")
+            print_warning(
+                f"Service '{service}' did not {action} properly (status: {actual})"
+            )
+            log_message(
+                f"Service '{service}' did not {action} properly (status: {actual})",
+                "WARNING",
+            )
             return False
     except Exception as e:
         print_error(f"Failed to {action} service '{service}': {e}")
         log_message(f"Failed to {action} service '{service}': {e}", "ERROR")
         return False
+
 
 def is_restore_needed(source_path: str, target_path: str) -> bool:
     """
@@ -221,12 +255,17 @@ def is_restore_needed(source_path: str, target_path: str) -> bool:
     source_files = sum(1 for _ in source.rglob("*") if _.is_file())
     target_files = sum(1 for _ in target.rglob("*") if _.is_file())
     if source_files != target_files:
-        print_step(f"File count differs. Source: {source_files}, Target: {target_files}")
-        log_message(f"File count differs. Source: {source_files}, Target: {target_files}")
+        print_step(
+            f"File count differs. Source: {source_files}, Target: {target_files}"
+        )
+        log_message(
+            f"File count differs. Source: {source_files}, Target: {target_files}"
+        )
         return True
     print_step("Source and target directories appear identical")
     log_message("Source and target directories appear identical")
     return False
+
 
 def copy_directory(source_path: str, target_path: str) -> bool:
     """
@@ -256,7 +295,9 @@ def copy_directory(source_path: str, target_path: str) -> bool:
         if file_path.is_file():
             file_count += 1
             total_size += file_path.stat().st_size
-    print_step(f"Found {file_count} files, total size: {total_size / (1024*1024):.2f} MB")
+    print_step(
+        f"Found {file_count} files, total size: {total_size / (1024 * 1024):.2f} MB"
+    )
     copied_size = 0
     errors = []
     with Progress(
@@ -271,7 +312,9 @@ def copy_directory(source_path: str, target_path: str) -> bool:
         current_task = progress.add_task("Copying file", total=1, visible=False)
         for source_file in source.rglob("*"):
             if source_file.is_dir():
-                (target / source_file.relative_to(source)).mkdir(parents=True, exist_ok=True)
+                (target / source_file.relative_to(source)).mkdir(
+                    parents=True, exist_ok=True
+                )
                 continue
             rel_path = source_file.relative_to(source)
             target_file = target / rel_path
@@ -296,8 +339,10 @@ def copy_directory(source_path: str, target_path: str) -> bool:
                     break
                 except Exception as e:
                     if attempt < MAX_RETRIES - 1:
-                        delay = RETRY_DELAY * (2 ** attempt)
-                        progress.update(current_task, description=f"Retry in {delay}s: {rel_path}")
+                        delay = RETRY_DELAY * (2**attempt)
+                        progress.update(
+                            current_task, description=f"Retry in {delay}s: {rel_path}"
+                        )
                         time.sleep(delay)
                     else:
                         errors.append((str(rel_path), str(e)))
@@ -309,12 +354,13 @@ def copy_directory(source_path: str, target_path: str) -> bool:
         for file_path, error in errors[:5]:
             print_error(f"Error copying {file_path}: {error}")
         if len(errors) > 5:
-            print_warning(f"...and {len(errors)-5} more errors")
+            print_warning(f"...and {len(errors) - 5} more errors")
         return False
     else:
         print_success("Files copied successfully.")
         log_message("Copy completed successfully")
         return True
+
 
 def restore_task(task_key: str) -> bool:
     """
@@ -357,6 +403,7 @@ def restore_task(task_key: str) -> bool:
         log_message(f"Failed to restore {name}", "ERROR")
     return success
 
+
 def restore_all() -> Dict[str, bool]:
     """
     Restore all tasks defined in RESTORE_TASKS.
@@ -369,6 +416,7 @@ def restore_all() -> Dict[str, bool]:
         results[key] = restore_task(key)
         time.sleep(1)
     return results
+
 
 def print_status_report(results: Dict[str, bool]) -> None:
     """Print a summary report of the restore statuses."""
@@ -383,12 +431,15 @@ def print_status_report(results: Dict[str, bool]) -> None:
         description = RESTORE_TASKS[key].get("description", "")
         status_style = "bold #8FBCBB" if success else "bold #BF616A"
         status_text = "SUCCESS" if success else "FAILED"
-        table.add_row(name, f"[{status_style}]{status_text}[/{status_style}]", description)
+        table.add_row(
+            name, f"[{status_style}]{status_text}[/{status_style}]", description
+        )
     console.print(table)
     for key, success in results.items():
         name = RESTORE_TASKS[key]["name"]
         status = "SUCCESS" if success else "FAILED"
         log_message(f"Restore {status} for {name}")
+
 
 def prompt_yes_no(question: str) -> bool:
     """Prompt the user with a yes/no question and return True for yes."""
@@ -400,6 +451,7 @@ def prompt_yes_no(question: str) -> bool:
             return False
         else:
             print_warning("Please enter 'y' or 'n'.")
+
 
 def display_tasks_table() -> None:
     """Display available restore tasks in a formatted table."""
@@ -417,15 +469,19 @@ def display_tasks_table() -> None:
         table.add_row(str(i), task["name"], description, source_path)
     console.print(table)
 
+
 # ====================================================
 # Interactive Menu Functions
 # ====================================================
+
 
 def interactive_menu() -> None:
     """Display and handle the interactive menu for restore operations."""
     while True:
         print_header("Restore Menu")
-        console.print(Panel.fit("[bold #D8DEE9]Select an option:[/]", border_style="#88C0D0"))
+        console.print(
+            Panel.fit("[bold #D8DEE9]Select an option:[/]", border_style="#88C0D0")
+        )
         console.print("1. [bold #88C0D0]View Available Restore Tasks[/]")
         console.print("2. [bold #88C0D0]Restore Individual Task[/]")
         console.print("3. [bold #88C0D0]Restore All Tasks[/]")
@@ -438,7 +494,13 @@ def interactive_menu() -> None:
         elif choice == "2":
             display_tasks_table()
             while True:
-                task_choice = input(f"\n[?] Enter task number (1-{len(RESTORE_TASKS)}) or 'c' to cancel: ").strip().lower()
+                task_choice = (
+                    input(
+                        f"\n[?] Enter task number (1-{len(RESTORE_TASKS)}) or 'c' to cancel: "
+                    )
+                    .strip()
+                    .lower()
+                )
                 if task_choice == "c":
                     break
                 try:
@@ -446,30 +508,44 @@ def interactive_menu() -> None:
                     if 1 <= task_num <= len(RESTORE_TASKS):
                         task_key = list(RESTORE_TASKS.keys())[task_num - 1]
                         task_name = RESTORE_TASKS[task_key]["name"]
-                        if prompt_yes_no(f"Are you sure you want to restore {task_name}?"):
+                        if prompt_yes_no(
+                            f"Are you sure you want to restore {task_name}?"
+                        ):
                             start_time = time.time()
                             success = restore_task(task_key)
                             elapsed = time.time() - start_time
                             if success:
-                                print_success(f"Restore completed in {elapsed:.2f} seconds")
+                                print_success(
+                                    f"Restore completed in {elapsed:.2f} seconds"
+                                )
                             else:
-                                print_error(f"Restore failed after {elapsed:.2f} seconds")
+                                print_error(
+                                    f"Restore failed after {elapsed:.2f} seconds"
+                                )
                         break
                     else:
-                        print_error(f"Enter a number between 1 and {len(RESTORE_TASKS)}")
+                        print_error(
+                            f"Enter a number between 1 and {len(RESTORE_TASKS)}"
+                        )
                 except ValueError:
                     print_error("Please enter a valid number")
             input("\nPress Enter to return to the menu...")
         elif choice == "3":
-            if prompt_yes_no("Are you sure you want to restore ALL tasks? This may take some time."):
+            if prompt_yes_no(
+                "Are you sure you want to restore ALL tasks? This may take some time."
+            ):
                 start_time = time.time()
                 results = restore_all()
                 elapsed = time.time() - start_time
                 print_status_report(results)
                 if all(results.values()):
-                    print_success(f"All tasks restored successfully in {elapsed:.2f} seconds")
+                    print_success(
+                        f"All tasks restored successfully in {elapsed:.2f} seconds"
+                    )
                 else:
-                    print_warning(f"Some tasks failed. Total time: {elapsed:.2f} seconds")
+                    print_warning(
+                        f"Some tasks failed. Total time: {elapsed:.2f} seconds"
+                    )
             input("\nPress Enter to return to the menu...")
         elif choice == "4":
             try:
@@ -496,14 +572,18 @@ def interactive_menu() -> None:
             print_error("Invalid choice. Please enter a number between 1 and 5.")
             time.sleep(1)
 
+
 # ====================================================
 # Main Entry Point
 # ====================================================
 
+
 def main() -> None:
     """Main function to run the interactive restore script."""
     print_header("Enhanced Restore Script")
-    console.print(f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]")
+    console.print(
+        f"Timestamp: [bold #D8DEE9]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold #D8DEE9]"
+    )
     setup_logging()
     if not check_root():
         sys.exit(1)
@@ -514,7 +594,9 @@ def main() -> None:
         if not source_dir.exists():
             missing_sources.append((task["name"], str(source_dir)))
     if missing_sources:
-        print_warning(f"Found {len(missing_sources)} tasks with missing source directories:")
+        print_warning(
+            f"Found {len(missing_sources)} tasks with missing source directories:"
+        )
         for name, path in missing_sources:
             print_error(f"• {name}: {path}")
         if not prompt_yes_no("Continue anyway?"):
@@ -524,6 +606,7 @@ def main() -> None:
     interactive_menu()
     print_success("Script execution completed")
     log_message("Script execution completed")
+
 
 if __name__ == "__main__":
     try:
@@ -536,5 +619,6 @@ if __name__ == "__main__":
         print_error(f"Unhandled error: {e}")
         log_message(f"Unhandled error: {e}", "ERROR")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
