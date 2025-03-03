@@ -1044,8 +1044,57 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
         print_step("Run 'pip install yt-dlp' to install it")
         return title, is_playlist, estimated_size
 
+    # Try to get basic info without browser cookies first
     try:
-        # First, check if the URL is valid with a simple test
+        # Simple command without cookies
+        simple_cmd = ["yt-dlp", "--skip-download", "--print", "title", url]
+        print_step(f"Checking YouTube URL: {url}")
+        simple_result = run_direct_command(simple_cmd, False)
+
+        if simple_result.returncode == 0 and simple_result.stdout.strip():
+            # Success without cookies
+            title = simple_result.stdout.strip()
+            print_success(f"Found video: {title}")
+
+            # Check if it's a playlist
+            playlist_cmd = ["yt-dlp", "--flat-playlist", "--print", "playlist_id", url]
+            playlist_result = run_direct_command(playlist_cmd, False)
+            is_playlist = bool(playlist_result.stdout.strip())
+
+            if is_playlist:
+                # Get playlist title
+                playlist_title_cmd = [
+                    "yt-dlp",
+                    "--flat-playlist",
+                    "--print",
+                    "playlist_title",
+                    url,
+                ]
+                playlist_title_result = run_direct_command(playlist_title_cmd, False)
+                if playlist_title_result.stdout.strip():
+                    title = playlist_title_result.stdout.strip()
+            else:
+                # Try to get duration for size estimation
+                duration_cmd = ["yt-dlp", "--print", "duration", url]
+                duration_result = run_direct_command(duration_cmd, False)
+
+                if (
+                    duration_result.returncode == 0
+                    and duration_result.stdout.strip()
+                    and duration_result.stdout.strip().replace(".", "", 1).isdigit()
+                ):
+                    duration = float(duration_result.stdout.strip())
+                    # Rough estimate: ~10 MB per minute of video at high quality
+                    estimated_size = int(duration * 60 * 10 * 1024)
+
+            return title, is_playlist, estimated_size
+    except Exception as e:
+        print_warning(f"Basic info check failed: {e}")
+
+    # If we couldn't get info without cookies, try with cookies
+    try:
+        print_step("Trying to get video info with browser cookies...")
+        # Check if it's valid with cookies
         test_cmd = [
             "yt-dlp",
             "--cookies-from-browser",
@@ -1055,66 +1104,41 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
             "title",
             url,
         ]
-        print_step(f"Validating YouTube URL: {url}")
         test_result = run_direct_command(test_cmd, False)
 
-        if test_result.returncode != 0:
-            error_msg = (
-                test_result.stderr.strip() if test_result.stderr else "Unknown error"
-            )
-            print_error(f"Invalid YouTube URL: {error_msg}")
-            return title, is_playlist, estimated_size
-
-        if test_result.stdout.strip():
+        if test_result.returncode == 0 and test_result.stdout.strip():
             title = test_result.stdout.strip()
+            print_success(f"Found video with cookies: {title}")
 
-        # Check if it's a playlist
-        playlist_cmd = [
-            "yt-dlp",
-            "--cookies-from-browser",
-            browser,
-            "--flat-playlist",
-            "--print",
-            "playlist_id",
-            url,
-        ]
-        playlist_result = run_direct_command(playlist_cmd, False)
-
-        is_playlist = bool(playlist_result.stdout.strip())
-
-        # If it's a playlist, get the playlist title
-        if is_playlist:
-            playlist_title_cmd = [
+            # Check if it's a playlist
+            playlist_cmd = [
                 "yt-dlp",
                 "--cookies-from-browser",
                 browser,
                 "--flat-playlist",
                 "--print",
-                "playlist_title",
+                "playlist_id",
                 url,
             ]
-            playlist_title_result = run_direct_command(playlist_title_cmd, False)
+            playlist_result = run_direct_command(playlist_cmd, False)
+            is_playlist = bool(playlist_result.stdout.strip())
 
-            if playlist_title_result.stdout.strip():
-                title = playlist_title_result.stdout.strip()
-        # If it's a single video, try to estimate size
-        else:
-            # Try to get file size
-            size_cmd = [
-                "yt-dlp",
-                "--cookies-from-browser",
-                browser,
-                "--print",
-                "filesize",
-                url,
-            ]
-            size_result = run_direct_command(size_cmd, False)
-
-            if size_result.stdout.strip() and size_result.stdout.strip().isdigit():
-                estimated_size = int(size_result.stdout.strip())
-
-            # If size estimation fails, try using duration
-            if estimated_size == 0:
+            if is_playlist:
+                # Get playlist title
+                playlist_title_cmd = [
+                    "yt-dlp",
+                    "--cookies-from-browser",
+                    browser,
+                    "--flat-playlist",
+                    "--print",
+                    "playlist_title",
+                    url,
+                ]
+                playlist_title_result = run_direct_command(playlist_title_cmd, False)
+                if playlist_title_result.stdout.strip():
+                    title = playlist_title_result.stdout.strip()
+            else:
+                # Try to get duration for size estimation
                 duration_cmd = [
                     "yt-dlp",
                     "--cookies-from-browser",
@@ -1126,20 +1150,24 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
                 duration_result = run_direct_command(duration_cmd, False)
 
                 if (
-                    duration_result.stdout.strip()
+                    duration_result.returncode == 0
+                    and duration_result.stdout.strip()
                     and duration_result.stdout.strip().replace(".", "", 1).isdigit()
                 ):
                     duration = float(duration_result.stdout.strip())
                     # Rough estimate: ~10 MB per minute of video at high quality
                     estimated_size = int(duration * 60 * 10 * 1024)
 
-        print_success(
-            f"Retrieved YouTube info: {title} ({'Playlist' if is_playlist else 'Video'})"
-        )
-        return title, is_playlist, estimated_size
+            return title, is_playlist, estimated_size
+        else:
+            # URL is likely invalid or inaccessible
+            error_msg = (
+                test_result.stderr.strip() if test_result.stderr else "Unknown error"
+            )
+            print_warning(f"Could not get info: {error_msg}")
+            return title, is_playlist, estimated_size
     except Exception as e:
-        print_error(f"Error getting YouTube info: {str(e)}")
-        console.print_exception(show_locals=True)
+        print_warning(f"Error getting YouTube info: {e}")
         return title, is_playlist, estimated_size
 
 
@@ -1340,83 +1368,143 @@ def download_youtube(
             print_step("Run 'pip install yt-dlp' to install it")
             return False
 
-        # Get YouTube video information
-        title, is_playlist, estimated_size = get_youtube_info(url, browser)
-
-        # Create DownloadSource
-        source = DownloadSource(
-            url=url,
-            download_type=DownloadType.YOUTUBE,
-            name=title,
-            size=estimated_size,
-            is_video=True,
-            is_playlist=is_playlist,
+        # Show basic info panel first
+        display_panel(
+            f"URL: {url}\nDestination: {output_dir}\nBrowser: {browser}",
+            style=NordColors.FROST_3,
+            title="YouTube Download",
         )
 
-        # Show information panel
-        content_type = "Playlist" if is_playlist else "Video"
-        info_text = f"Title: {title}\nType: {content_type}\n"
+        print_step("Starting download process...")
 
-        if not is_playlist and estimated_size:
-            info_text += f"Estimated size: {format_size(estimated_size)}\n"
-
-        info_text += f"Destination: {output_dir}"
-
-        display_panel(info_text, style=NordColors.FROST_3, title="YouTube Download")
-
-        # Prepare output template and full path
+        # First try a direct simple download without browser cookies
+        # Prepare output template
         output_path = os.path.join(output_dir, AppConfig.YTDLP_OUTPUT_TEMPLATE)
 
-        # Build command - use list form without extra quotes to avoid shell interpretation issues
-        cmd = [
+        # Build a simpler command first (without browser cookies)
+        simple_cmd = [
             "yt-dlp",
-            "--cookies-from-browser",
-            browser,
             "-S",
             AppConfig.YTDLP_FORMAT_SELECTION,
             "-o",
             output_path,
-            url,
         ]
 
+        # Add verbose flag if requested
         if verbose:
-            cmd.insert(1, "--verbose")
+            simple_cmd.append("--verbose")
+            print_step("Verbose mode enabled")
 
-        # Log the command we're about to run
-        print_step(f"Running command: {' '.join(cmd)}")
+        # Add URL
+        simple_cmd.append(url)
 
-        # For playlist or verbose mode, use simpler progress display
-        if is_playlist or verbose:
+        print_step("Attempting download without cookies first...")
+        print_step(f"Command: {' '.join(simple_cmd)}")
+
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Downloading"),
+            BarColumn(
+                bar_width=AppConfig.PROGRESS_WIDTH,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            download_task = progress.add_task("Downloading YouTube content", total=100)
+
+            # Run command and capture output
+            # Use a simple approach for better reliability
+            process = subprocess.Popen(
+                simple_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+
+            # Monitor output
+            success = True
+            stderr_buffer = []
+            need_browser_cookies = False
+
+            while True:
+                # Check if the process has ended
+                returncode = process.poll()
+                if returncode is not None:
+                    # Process ended
+                    if returncode != 0:
+                        success = False
+                        # Check if we need to try with cookies
+                        stderr_data = process.stderr.read()
+                        if (
+                            "Video unavailable" in stderr_data
+                            or "Sign in to confirm your age" in stderr_data
+                        ):
+                            need_browser_cookies = True
+                            stderr_buffer.append(stderr_data)
+                        else:
+                            stderr_buffer.append(stderr_data)
+                    break
+
+                # Read stdout for progress
+                try:
+                    stdout_line = process.stdout.readline()
+                    if stdout_line:
+                        if "[download]" in stdout_line and "%" in stdout_line:
+                            # Extract percentage
+                            pct_match = re.search(r"(\d+\.\d+)%", stdout_line)
+                            if pct_match:
+                                pct = float(pct_match.group(1))
+                                progress.update(download_task, completed=pct)
+                        elif "Downloading video" in stdout_line:
+                            progress.update(
+                                download_task, description="Downloading video"
+                            )
+                        elif "Downloading audio" in stdout_line:
+                            progress.update(
+                                download_task, description="Downloading audio"
+                            )
+                        elif "Merging formats" in stdout_line:
+                            progress.update(
+                                download_task,
+                                description="Merging formats",
+                                completed=99,
+                            )
+                except Exception as e:
+                    if verbose:
+                        print_warning(f"Error reading output: {e}")
+
+                # Small delay to prevent CPU hogging
+                time.sleep(0.1)
+
+        # Check if we need to try with browser cookies
+        if not success and need_browser_cookies:
+            print_step("First attempt failed. Trying with browser cookies...")
+
+            # Build command with browser cookies
+            cookie_cmd = [
+                "yt-dlp",
+                "--cookies-from-browser",
+                browser,
+                "-S",
+                AppConfig.YTDLP_FORMAT_SELECTION,
+                "-o",
+                output_path,
+            ]
+
+            if verbose:
+                cookie_cmd.append("--verbose")
+
+            cookie_cmd.append(url)
+
+            print_step(f"Command: {' '.join(cookie_cmd)}")
+
             with Progress(
                 SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
-                TextColumn(f"[bold {NordColors.FROST_2}]Downloading {content_type}"),
-                TextColumn(f"[{NordColors.SNOW_STORM_1}]Time: {{task.elapsed:.1f}}s"),
-                console=console,
-            ) as progress:
-                task = progress.add_task("Downloading")
-
-                # Use subprocess.run with shell=False (safer)
-                process = subprocess.run(cmd, text=True, capture_output=True)
-
-                if process.returncode != 0:
-                    print_error(
-                        f"Download failed with return code {process.returncode}"
-                    )
-                    # Display detailed error information
-                    if process.stderr:
-                        error_panel = Panel(
-                            Text(process.stderr),
-                            title="[bold red]yt-dlp Error Output[/]",
-                            border_style=Style(color=NordColors.RED),
-                            padding=(1, 2),
-                        )
-                        console.print(error_panel)
-                    return False
-        else:
-            # For single videos, capture and display progress
-            with Progress(
-                SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
-                TextColumn(f"[bold {NordColors.FROST_2}]Downloading"),
+                TextColumn(f"[bold {NordColors.FROST_2}]Downloading with cookies"),
                 BarColumn(
                     bar_width=AppConfig.PROGRESS_WIDTH,
                     style=NordColors.FROST_4,
@@ -1426,127 +1514,106 @@ def download_youtube(
                 TimeRemainingColumn(),
                 console=console,
             ) as progress:
-                task = progress.add_task("Downloading Video", total=100)
-
-                # Run the command with shell=False and capture output
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                    universal_newlines=True,
+                download_task = progress.add_task(
+                    "Downloading with browser cookies", total=100
                 )
 
-                # For storing partial stderr lines
-                stderr_buffer = []
-
-                # Parse yt-dlp output for progress
-                while True:
-                    # Read from stdout if available
-                    line = None
-                    try:
-                        line = process.stdout.readline()
-                    except:
-                        pass
-
-                    if not line and process.poll() is not None:
-                        break
-
-                    if line:
-                        # Update progress based on output
-                        if "[download]" in line and "%" in line:
-                            try:
-                                parts = line.split()
-                                for part in parts:
-                                    if "%" in part:
-                                        pct_str = part.rstrip("%").rstrip(",")
-                                        progress.update(task, completed=float(pct_str))
-                                        break
-                            except Exception:
-                                pass
-                        elif "Downloading video" in line:
-                            progress.update(task, description="Downloading video")
-                        elif "Downloading audio" in line:
-                            progress.update(task, description="Downloading audio")
-                        elif "Merging formats" in line:
-                            progress.update(
-                                task, completed=99, description="Merging formats"
-                            )
-
-                    # Check stderr
-                    try:
-                        err_line = process.stderr.readline()
-                        if err_line:
-                            stderr_buffer.append(err_line)
-                    except:
-                        pass
-
-                    # Small delay to prevent CPU hogging
-                    time.sleep(0.01)
-
-                # Process has finished - read any remaining output
-                for line in process.stdout:
-                    if "[download]" in line and "%" in line:
-                        try:
-                            parts = line.split()
-                            for part in parts:
-                                if "%" in part:
-                                    pct_str = part.rstrip("%").rstrip(",")
-                                    progress.update(task, completed=float(pct_str))
-                                    break
-                        except Exception:
-                            pass
-
-                # Read any remaining stderr
-                for line in process.stderr:
-                    stderr_buffer.append(line)
-
-                returncode = process.poll()
-                if returncode != 0:
-                    print_error(f"Download failed with return code {returncode}")
-
-                    # Display detailed error information
-                    if stderr_buffer:
-                        error_text = "".join(stderr_buffer)
-                        error_panel = Panel(
-                            Text(error_text),
-                            title="[bold red]yt-dlp Error Output[/]",
-                            border_style=Style(color=NordColors.RED),
-                            padding=(1, 2),
-                        )
-                        console.print(error_panel)
-
-                    # Common error debugging guidance
-                    print_step("Troubleshooting steps:")
-                    print_message(
-                        "1. Check if the URL is valid and accessible in your browser",
-                        NordColors.YELLOW,
+                # Direct command execution
+                try:
+                    result = subprocess.run(
+                        cookie_cmd, text=True, capture_output=True, check=False
                     )
-                    print_message(
-                        "2. Verify that your browser cookies are working correctly",
-                        NordColors.YELLOW,
-                    )
-                    print_message(
-                        "3. Try running with --verbose option for more information",
-                        NordColors.YELLOW,
-                    )
-                    if stderr_buffer and any(
-                        "Unable to extract" in line for line in stderr_buffer
-                    ):
-                        print_message(
-                            "4. This video may be region-restricted or private",
-                            NordColors.YELLOW,
-                        )
-                    if stderr_buffer and any(
-                        "Cookies from" in line for line in stderr_buffer
-                    ):
-                        print_message(
-                            "4. There might be an issue with browser cookie extraction",
-                            NordColors.YELLOW,
-                        )
 
-                    return False
+                    # Check if it succeeded
+                    if result.returncode == 0:
+                        success = True
+                        progress.update(download_task, completed=100)
+                    else:
+                        success = False
+                        stderr_buffer = [result.stderr]
+                except Exception as e:
+                    print_error(f"Command execution error: {e}")
+                    success = False
+
+        # If neither approach worked, display error information
+        if not success:
+            print_error("Download failed")
+
+            # Display error information
+            if stderr_buffer:
+                error_text = "".join(stderr_buffer)
+                error_panel = Panel(
+                    Text(error_text),
+                    title="[bold red]yt-dlp Error Output[/]",
+                    border_style=Style(color=NordColors.RED),
+                    padding=(1, 2),
+                )
+                console.print(error_panel)
+
+            # Advanced troubleshooting steps
+            print_step("Advanced Troubleshooting:")
+            print_message(
+                "1. Check if the URL is valid and the video exists", NordColors.YELLOW
+            )
+            print_message(
+                "2. Try a direct command from your terminal:", NordColors.YELLOW
+            )
+            print_message(
+                f'   yt-dlp -S {AppConfig.YTDLP_FORMAT_SELECTION} "{url}"',
+                NordColors.FROST_1,
+            )
+            print_message("3. For age-restricted content, try:", NordColors.YELLOW)
+            print_message(
+                f'   yt-dlp --cookies-from-browser {browser} "{url}"',
+                NordColors.FROST_1,
+            )
+            print_message(
+                "4. Update yt-dlp with: pip install -U yt-dlp", NordColors.YELLOW
+            )
+
+            # Check for specific error types
+            error_text = "".join(stderr_buffer) if stderr_buffer else ""
+            if "unable to open browser profile" in error_text.lower():
+                print_message("Browser profile issue detected:", NordColors.RED)
+                print_message(
+                    "- Check that the selected browser is properly installed",
+                    NordColors.YELLOW,
+                )
+                print_message("- Try another browser from the list", NordColors.YELLOW)
+            elif "video is only available for registered users" in error_text.lower():
+                print_message("This video requires login:", NordColors.RED)
+                print_message(
+                    "- Make sure you're logged into YouTube in your browser",
+                    NordColors.YELLOW,
+                )
+                print_message(
+                    "- Try using the browser where you're logged in", NordColors.YELLOW
+                )
+
+            return False
+
+        # If we got here, the download was successful
+        # Get the video title from the downloaded file
+        title = "YouTube Video"
+        try:
+            # Try to find the downloaded file in the output directory
+            files = os.listdir(output_dir)
+            # Find most recent file
+            downloaded_file = None
+            newest_time = 0
+            for file in files:
+                if file.endswith(".mp4") or file.endswith(".webm"):
+                    file_path = os.path.join(output_dir, file)
+                    file_time = os.path.getmtime(file_path)
+                    if file_time > newest_time:
+                        newest_time = file_time
+                        downloaded_file = file
+
+            if downloaded_file:
+                title = downloaded_file.rsplit(".", 1)[0]  # Remove extension
+        except Exception as e:
+            if verbose:
+                print_warning(f"Could not determine downloaded file: {e}")
 
         display_panel(
             f"Successfully downloaded: {title}\nLocation: {output_dir}",
