@@ -179,7 +179,7 @@ class AppConfig:
 
     # YouTube download settings
     YTDLP_OUTPUT_TEMPLATE = "%(title)s.%(ext)s"
-    YTDLP_FORMAT_SELECTION = "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"
+    YTDLP_FORMAT_SELECTION = "ext:mp4:m4a"
 
     # Browsers for cookie extraction, ordered by preference
     BROWSER_PRIORITIES = {
@@ -999,21 +999,16 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
         return title, is_playlist, estimated_size
 
     try:
-        # First check if it's a playlist
+        # Check if it's a playlist
         cmd = [
             "yt-dlp",
-            "--no-warnings",
+            "--cookies-from-browser",
+            browser,
             "--flat-playlist",
             "--print",
             "playlist_id",
             url,
         ]
-        try:
-            # Add cookies if we have the browser available
-            if browser:
-                cmd = ["yt-dlp", "--cookies-from-browser", browser] + cmd[1:]
-        except:
-            pass
 
         result = run_command(cmd, capture_output=True, check=False)
         is_playlist = bool(result.stdout.strip())
@@ -1022,30 +1017,19 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
         if is_playlist:
             cmd = [
                 "yt-dlp",
-                "--no-warnings",
+                "--cookies-from-browser",
+                browser,
                 "--flat-playlist",
                 "--print",
                 "playlist_title",
                 url,
             ]
-            # Add cookies if available
-            if browser:
-                cmd[1:1] = ["--cookies-from-browser", browser]
 
             result = run_command(cmd, capture_output=True, check=False)
             if result.stdout.strip():
                 title = result.stdout.strip()
         else:
-            cmd = [
-                "yt-dlp",
-                "--no-warnings",
-                "--print",
-                "title",
-                url,
-            ]
-            # Add cookies if available
-            if browser:
-                cmd[1:1] = ["--cookies-from-browser", browser]
+            cmd = ["yt-dlp", "--cookies-from-browser", browser, "--print", "title", url]
 
             result = run_command(cmd, capture_output=True, check=False)
             if result.stdout.strip():
@@ -1055,13 +1039,12 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
             if not is_playlist:
                 cmd = [
                     "yt-dlp",
-                    "--no-warnings",
+                    "--cookies-from-browser",
+                    browser,
                     "--print",
                     "filesize",
                     url,
                 ]
-                if browser:
-                    cmd[1:1] = ["--cookies-from-browser", browser]
 
                 result = run_command(cmd, capture_output=True, check=False)
                 if result.stdout.strip().isdigit():
@@ -1071,13 +1054,12 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
                 if estimated_size == 0:
                     cmd = [
                         "yt-dlp",
-                        "--no-warnings",
+                        "--cookies-from-browser",
+                        browser,
                         "--print",
                         "duration",
                         url,
                     ]
-                    if browser:
-                        cmd[1:1] = ["--cookies-from-browser", browser]
 
                     result = run_command(cmd, capture_output=True, check=False)
                     if (
@@ -1301,25 +1283,26 @@ def download_youtube(
         display_panel(info_text, style=NordColors.FROST_3, title="YouTube Download")
 
         # Prepare output template and full path
-        output_template = os.path.join(output_dir, AppConfig.YTDLP_OUTPUT_TEMPLATE)
+        output_path = os.path.join(output_dir, AppConfig.YTDLP_OUTPUT_TEMPLATE)
 
-        # Prepare command with browser cookies and format selection
+        # Escape single quotes in the path and URL for shell safety
+        safe_output_path = output_path.replace("'", "'\\''")
+        safe_url = url.replace("'", "'\\''")
+
+        # Prepare command with browser cookies and format selection - exact format as specified
         cmd = [
             "yt-dlp",
             "--cookies-from-browser",
-            browser,  # Use browser cookies
+            browser,
             "-S",
-            AppConfig.YTDLP_FORMAT_SELECTION,  # Format selection
+            AppConfig.YTDLP_FORMAT_SELECTION,
             "-o",
-            output_template,  # Output template
+            f"'{safe_output_path}'",
+            f"'{safe_url}'",
         ]
 
         if verbose:
-            cmd.append("--verbose")
-        else:
-            cmd.append("--progress")
-
-        cmd.append(url)
+            cmd.insert(1, "--verbose")
 
         # For playlist or verbose mode, use simpler progress display
         if is_playlist or verbose:
@@ -1330,17 +1313,24 @@ def download_youtube(
                 console=console,
             ) as progress:
                 task = progress.add_task("Downloading")
-                run_command(cmd, verbose=verbose, timeout=AppConfig.DOWNLOAD_TIMEOUT)
+                # Use a shell=True approach since we're using quotes in the command
+                cmd_str = " ".join(cmd)
+                result = subprocess.run(
+                    cmd_str,
+                    shell=True,
+                    text=True,
+                    capture_output=not verbose,
+                    check=False,
+                )
+
+                if result.returncode != 0:
+                    print_error(f"Download failed with return code {result.returncode}")
+                    if result.stderr:
+                        print_error(f"Error: {result.stderr}")
+                    return False
         else:
-            # For single videos, parse output for progress information
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-            )
+            # For single videos, use a simpler approach with shell=True
+            cmd_str = " ".join(cmd)
 
             with Progress(
                 SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
@@ -1355,7 +1345,17 @@ def download_youtube(
                 console=console,
             ) as progress:
                 task = progress.add_task("Downloading Video", total=100)
-                stage = "Preparing"
+
+                # Run the command with shell=True
+                process = subprocess.Popen(
+                    cmd_str,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True,
+                )
 
                 # Parse yt-dlp output for progress
                 while True:
@@ -1375,18 +1375,19 @@ def download_youtube(
                         except Exception:
                             pass
                     elif "Downloading video" in line:
-                        stage = "Downloading video"
-                        progress.update(task, description=stage)
+                        progress.update(task, description="Downloading video")
                     elif "Downloading audio" in line:
-                        stage = "Downloading audio"
-                        progress.update(task, description=stage)
+                        progress.update(task, description="Downloading audio")
                     elif "Merging formats" in line:
-                        stage = "Merging formats"
-                        progress.update(task, completed=99, description=stage)
+                        progress.update(
+                            task, completed=99, description="Merging formats"
+                        )
 
                 process.wait()
                 if process.returncode != 0:
-                    print_error("Download failed with non-zero exit code")
+                    print_error(
+                        f"Download failed with return code {process.returncode}"
+                    )
                     return False
 
         display_panel(
