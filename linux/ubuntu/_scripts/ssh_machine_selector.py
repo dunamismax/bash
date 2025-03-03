@@ -437,7 +437,7 @@ def load_tailscale_devices() -> List[Device]:
         ),
         Device(
             name="raspberrypi-3",
-            ip_address="100.69.116.5",
+            ip_address="100.116.191.42",
             description="IoT controller",
         ),
         Device(
