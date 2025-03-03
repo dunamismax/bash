@@ -17,7 +17,7 @@ Usage:
   - Option 5: View deployment status
   - Option 6: Exit the application
 
-Version: 1.0.0
+Version: 2.0.0
 """
 
 import atexit
@@ -30,7 +30,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable, Tuple, Union
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -65,10 +65,14 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration and Constants
 # ----------------------------------------------------------------
-VERSION: str = "1.0.0"
+VERSION: str = "2.0.0"
 APP_NAME: str = "Script Deployment System"
 APP_SUBTITLE: str = "Secure Script Deployment Manager"
 OPERATION_TIMEOUT: int = 30  # seconds
+DEFAULT_SOURCE_DIR: str = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
+DEFAULT_TARGET_DIR: str = "/home/sawyer/bin"
+DEFAULT_OWNER: str = os.environ.get("SUDO_USER", "user")
+DEFAULT_LOG_FILE: str = "/var/log/script-deploy.log"
 
 
 # ----------------------------------------------------------------
@@ -79,11 +83,14 @@ class NordColors:
 
     # Polar Night (dark) shades
     POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_2 = "#3B4252"  # Dark background shade
+    POLAR_NIGHT_3 = "#434C5E"  # Medium background shade
     POLAR_NIGHT_4 = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
     SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
     SNOW_STORM_2 = "#E5E9F0"  # Medium text color
+    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
     FROST_1 = "#8FBCBB"  # Light cyan
@@ -96,6 +103,7 @@ class NordColors:
     ORANGE = "#D08770"  # Orange
     YELLOW = "#EBCB8B"  # Yellow
     GREEN = "#A3BE8C"  # Green
+    PURPLE = "#B48EAD"  # Purple
 
 
 # Create a Rich Console
@@ -116,6 +124,7 @@ def create_header() -> Panel:
     compact_fonts = ["slant", "small", "smslant", "digital", "times"]
 
     # Try each font until we find one that works well
+    ascii_art = ""
     for font_name in compact_fonts:
         try:
             fig = pyfiglet.Figlet(font=font_name, width=60)
@@ -155,7 +164,7 @@ def create_header() -> Panel:
         styled_text += f"[bold {color}]{line}[/]\n"
 
     # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
+    tech_border = f"[{NordColors.FROST_3}]" + "━" * 40 + "[/]"
     styled_text = tech_border + "\n" + styled_text + tech_border
 
     # Create a panel with sufficient padding to avoid cutoff
@@ -236,6 +245,17 @@ def display_panel(
     console.print(panel)
 
 
+def wait_for_keypress(message: str = "Press Enter to continue...") -> None:
+    """
+    Display a message and wait for the user to press Enter.
+
+    Args:
+        message: The message to display
+    """
+    console.print(f"[{NordColors.SNOW_STORM_1}]{message}[/]")
+    input()
+
+
 # ----------------------------------------------------------------
 # Command Execution Helper
 # ----------------------------------------------------------------
@@ -245,6 +265,7 @@ def run_command(
     check: bool = True,
     capture_output: bool = True,
     timeout: int = OPERATION_TIMEOUT,
+    silent: bool = False,
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
@@ -255,12 +276,15 @@ def run_command(
         check: Whether to check the return code
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
+        silent: Whether to suppress command output messages
 
     Returns:
         CompletedProcess instance with command results
     """
     try:
-        print_message(f"Executing: {' '.join(cmd)}")
+        if not silent:
+            print_message(f"Executing: {' '.join(cmd)}")
+
         result = subprocess.run(
             cmd,
             env=env or os.environ.copy(),
@@ -272,9 +296,9 @@ def run_command(
         return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
-        if e.stdout:
+        if e.stdout and not silent:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if e.stderr:
+        if e.stderr and not silent:
             console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
         raise
     except subprocess.TimeoutExpired:
@@ -327,6 +351,7 @@ class DeploymentStatus:
     """
 
     def __init__(self) -> None:
+        """Initialize the deployment status tracking."""
         self.steps: Dict[str, Dict[str, str]] = {
             "ownership_check": {"status": "pending", "message": ""},
             "path_verification": {"status": "pending", "message": ""},
@@ -377,6 +402,91 @@ class DeploymentStatus:
             "end_time": None,
         }
 
+    def get_formatted_duration(self) -> str:
+        """
+        Get the formatted duration of the deployment.
+
+        Returns:
+            Formatted duration string
+        """
+        if not self.stats["start_time"]:
+            return "N/A"
+
+        start = self.stats["start_time"]
+        end = self.stats["end_time"] or time.time()
+        duration = end - start
+
+        if duration < 60:
+            return f"{duration:.2f} seconds"
+        elif duration < 3600:
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            return f"{minutes}m {seconds}s"
+        else:
+            hours = int(duration // 3600)
+            minutes = int((duration % 3600) // 60)
+            seconds = int(duration % 60)
+            return f"{hours}h {minutes}m {seconds}s"
+
+
+# ----------------------------------------------------------------
+# File and Path Utilities
+# ----------------------------------------------------------------
+def is_valid_directory(path: str) -> bool:
+    """
+    Check if a path exists and is a directory.
+
+    Args:
+        path: Directory path to check
+
+    Returns:
+        True if path exists and is a directory, False otherwise
+    """
+    try:
+        path_obj = Path(path)
+        return path_obj.exists() and path_obj.is_dir()
+    except Exception:
+        return False
+
+
+def get_file_owner(file_path: str) -> str:
+    """
+    Get the owner name of a file or directory.
+
+    Args:
+        file_path: Path to the file or directory
+
+    Returns:
+        Username of the owner
+    """
+    try:
+        stat_info = os.stat(file_path)
+        owner = pwd.getpwuid(stat_info.st_uid).pw_name
+        return owner
+    except Exception as e:
+        print_error(f"Error getting file owner: {e}")
+        return "unknown"
+
+
+def count_files_in_directory(directory: str) -> int:
+    """
+    Count the number of files in a directory (recursively).
+
+    Args:
+        directory: Directory path to count files in
+
+    Returns:
+        Number of files found
+    """
+    try:
+        file_count = 0
+        for _, _, files in os.walk(directory):
+            file_count += len(files)
+        return file_count
+    except Exception as e:
+        print_error(f"Error counting files: {e}")
+        return 0
+
 
 # ----------------------------------------------------------------
 # Deployment Manager
@@ -390,11 +500,25 @@ class DeploymentManager:
     """
 
     def __init__(self) -> None:
-        self.script_source: str = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
-        self.script_target: str = "/home/sawyer/bin"
-        self.expected_owner: str = "sawyer"
-        self.log_file: str = "/var/log/deploy-scripts.log"
+        """Initialize the deployment manager with default settings."""
+        self.script_source: str = DEFAULT_SOURCE_DIR
+        self.script_target: str = DEFAULT_TARGET_DIR
+        self.expected_owner: str = DEFAULT_OWNER
+        self.log_file: str = DEFAULT_LOG_FILE
         self.status: DeploymentStatus = DeploymentStatus()
+
+        # Try to detect actual values if running as sudo
+        if os.geteuid() == 0 and "SUDO_USER" in os.environ:
+            sudo_user = os.environ["SUDO_USER"]
+            self.expected_owner = sudo_user
+            home_dir = os.path.expanduser(f"~{sudo_user}")
+            if os.path.exists(home_dir):
+                default_source = os.path.join(home_dir, "scripts/source")
+                default_target = os.path.join(home_dir, "bin")
+                if os.path.exists(default_source):
+                    self.script_source = default_source
+                if os.path.exists(default_target):
+                    self.script_target = default_target
 
     def _handle_interrupt(self, signum: int, frame: Any) -> None:
         """
@@ -447,8 +571,14 @@ class DeploymentManager:
             "ownership_check", "in_progress", "Checking ownership..."
         )
         try:
-            stat_info = os.stat(self.script_source)
-            owner = pwd.getpwuid(stat_info.st_uid).pw_name
+            # Ensure source directory exists before checking ownership
+            if not os.path.exists(self.script_source):
+                msg = f"Source directory does not exist: {self.script_source}"
+                self.status.update_step("ownership_check", "failed", msg)
+                print_error(msg)
+                return False
+
+            owner = get_file_owner(self.script_source)
             if owner != self.expected_owner:
                 msg = f"Source owned by '{owner}', expected '{self.expected_owner}'."
                 self.status.update_step("ownership_check", "failed", msg)
@@ -492,10 +622,7 @@ class DeploymentManager:
         # Check target path
         target_path = Path(self.script_target)
         if not target_path.exists():
-            print_message(
-                f"Target directory does not exist: {self.script_target}",
-                NordColors.YELLOW,
-            )
+            print_warning(f"Target directory does not exist: {self.script_target}")
             try:
                 if Confirm.ask("Create target directory?", default=True):
                     target_path.mkdir(parents=True, exist_ok=True)
@@ -518,9 +645,34 @@ class DeploymentManager:
         else:
             print_success(f"Target directory exists: {self.script_target}")
 
+        # Count files in source directory
+        file_count = count_files_in_directory(self.script_source)
+        if file_count == 0:
+            print_warning(f"Source directory contains no files: {self.script_source}")
+        else:
+            print_success(f"Source directory contains {file_count} files.")
+
         msg = "All paths verified successfully."
         self.status.update_step("path_verification", "success", msg)
         return True
+
+    def analyze_rsync_output(self, output: str) -> Tuple[int, int, int]:
+        """
+        Analyze rsync output to count new, updated, and deleted files.
+
+        Args:
+            output: Output from rsync command
+
+        Returns:
+            Tuple of (new_files, updated_files, deleted_files)
+        """
+        changes = [
+            line for line in output.splitlines() if line and not line.startswith(">f")
+        ]
+        new_files = sum(1 for line in changes if line.startswith(">f+"))
+        updated_files = sum(1 for line in changes if line.startswith(">f."))
+        deleted_files = sum(1 for line in changes if line.startswith("*deleting"))
+        return new_files, updated_files, deleted_files
 
     def perform_dry_run(self) -> bool:
         """
@@ -552,26 +704,55 @@ class DeploymentManager:
                         "--itemize-changes",
                         f"{self.script_source.rstrip('/')}/",
                         self.script_target,
-                    ]
+                    ],
+                    silent=True,
                 )
                 progress.update(task, advance=1)
 
-            changes = [
-                line
-                for line in result.stdout.splitlines()
-                if line and not line.startswith(">")
-            ]
-            new_files = sum(1 for line in changes if line.startswith(">f+"))
-            updated_files = sum(1 for line in changes if line.startswith(">f."))
-            deleted_files = sum(1 for line in changes if line.startswith("*deleting"))
+            # Parse rsync output to get counts
+            new_files, updated_files, deleted_files = self.analyze_rsync_output(
+                result.stdout
+            )
+
+            # Update statistics
             self.status.update_stats(
                 new_files=new_files,
                 updated_files=updated_files,
                 deleted_files=deleted_files,
             )
+
+            # Generate status message
             msg = f"Dry run: {new_files} new, {updated_files} updated, {deleted_files} deletions."
             self.status.update_step("dry_run", "success", msg)
-            print_success(msg)
+
+            # Display detailed panel with changes
+            if new_files > 0 or updated_files > 0 or deleted_files > 0:
+                print_success(msg)
+
+                # Create a table to show what will change
+                change_table = Table(
+                    show_header=True,
+                    header_style=f"bold {NordColors.FROST_1}",
+                    expand=True,
+                    title=f"[bold {NordColors.FROST_2}]Deployment Changes[/]",
+                    border_style=NordColors.FROST_3,
+                    box=None,
+                )
+
+                change_table.add_column("Type", style=f"bold {NordColors.FROST_4}")
+                change_table.add_column("Count", style=f"{NordColors.FROST_2}")
+
+                change_table.add_row("New Files", f"{new_files}")
+                change_table.add_row("Updated Files", f"{updated_files}")
+                change_table.add_row("Deleted Files", f"{deleted_files}")
+                change_table.add_row(
+                    "Total Changes", f"{new_files + updated_files + deleted_files}"
+                )
+
+                console.print(change_table)
+            else:
+                print_message("No changes detected in dry run.", NordColors.YELLOW)
+
             return True
         except Exception as e:
             msg = f"Dry run failed: {e}"
@@ -603,31 +784,33 @@ class DeploymentManager:
                 result = run_command(
                     [
                         "rsync",
-                        "-avc",  # checksum flag to detect modifications
+                        "-avc",  # archive, verbose, checksum flag
                         "--delete",
                         "--itemize-changes",
                         f"{self.script_source.rstrip('/')}/",
                         self.script_target,
-                    ]
+                    ],
+                    silent=True,
                 )
                 progress.update(task, advance=1)
 
-            changes = [
-                line
-                for line in result.stdout.splitlines()
-                if line and not line.startswith(">")
-            ]
-            new_files = sum(1 for line in changes if line.startswith(">f+"))
-            updated_files = sum(1 for line in changes if line.startswith(">f."))
-            deleted_files = sum(1 for line in changes if line.startswith("*deleting"))
+            # Parse rsync output to get counts
+            new_files, updated_files, deleted_files = self.analyze_rsync_output(
+                result.stdout
+            )
+
+            # Update statistics
             self.status.update_stats(
                 new_files=new_files,
                 updated_files=updated_files,
                 deleted_files=deleted_files,
             )
+
+            # Generate status message
             msg = f"Deployment: {new_files} new, {updated_files} updated, {deleted_files} deleted."
             self.status.update_step("deployment", "success", msg)
             print_success(msg)
+
             return True
         except Exception as e:
             msg = f"Deployment failed: {e}"
@@ -668,10 +851,12 @@ class DeploymentManager:
                         "755",
                         "{}",
                         ";",
-                    ]
+                    ],
+                    silent=True,
                 )
                 progress.update(task, advance=1)
-            msg = "Permissions set successfully."
+
+            msg = "Permissions set successfully (files: executable 755)."
             self.status.update_step("permission_set", "success", msg)
             print_success(msg)
             return True
@@ -716,15 +901,45 @@ class DeploymentManager:
         console.print(table)
 
         if Confirm.ask("\nWould you like to change these settings?", default=False):
-            self.script_source = Prompt.ask(
-                "Enter source directory path", default=self.script_source
-            )
+            # Collect input with validation
+            while True:
+                self.script_source = Prompt.ask(
+                    "Enter source directory path", default=self.script_source
+                )
+                if os.path.exists(self.script_source):
+                    if not os.path.isdir(self.script_source):
+                        print_error(
+                            "Source path exists but is not a directory. Please try again."
+                        )
+                        continue
+                    break
+                else:
+                    if Confirm.ask(
+                        "Source directory doesn't exist. Create it?", default=False
+                    ):
+                        try:
+                            os.makedirs(self.script_source, exist_ok=True)
+                            print_success(
+                                f"Created source directory: {self.script_source}"
+                            )
+                            break
+                        except Exception as e:
+                            print_error(f"Failed to create directory: {e}")
+                            continue
+                    else:
+                        print_warning(
+                            "Using non-existent source directory. You'll need to create it later."
+                        )
+                        break
+
             self.script_target = Prompt.ask(
                 "Enter target directory path", default=self.script_target
             )
+
             self.expected_owner = Prompt.ask(
                 "Enter expected source owner", default=self.expected_owner
             )
+
             self.log_file = Prompt.ask("Enter log file path", default=self.log_file)
 
             # Create updated configuration table
@@ -739,11 +954,37 @@ class DeploymentManager:
 
             updated_table.add_column("Parameter", style=f"bold {NordColors.FROST_4}")
             updated_table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
+            updated_table.add_column("Status", justify="center")
 
-            updated_table.add_row("Source Directory", self.script_source)
-            updated_table.add_row("Target Directory", self.script_target)
-            updated_table.add_row("Expected Owner", self.expected_owner)
-            updated_table.add_row("Log File", self.log_file)
+            # Check and display status of each parameter
+            source_exists = os.path.exists(self.script_source)
+            source_status = (
+                Text("✓ EXISTS", style=f"bold {NordColors.GREEN}")
+                if source_exists
+                else Text("✗ MISSING", style=f"bold {NordColors.RED}")
+            )
+
+            target_exists = os.path.exists(self.script_target)
+            target_status = (
+                Text("✓ EXISTS", style=f"bold {NordColors.GREEN}")
+                if target_exists
+                else Text("✗ MISSING", style=f"bold {NordColors.RED}")
+            )
+
+            log_dir = os.path.dirname(self.log_file)
+            log_writable = (
+                os.access(log_dir, os.W_OK) if os.path.exists(log_dir) else False
+            )
+            log_status = (
+                Text("✓ WRITABLE", style=f"bold {NordColors.GREEN}")
+                if log_writable
+                else Text("✗ NOT WRITABLE", style=f"bold {NordColors.RED}")
+            )
+
+            updated_table.add_row("Source Directory", self.script_source, source_status)
+            updated_table.add_row("Target Directory", self.script_target, target_status)
+            updated_table.add_row("Expected Owner", self.expected_owner, Text(""))
+            updated_table.add_row("Log File", self.log_file, log_status)
 
             console.print(updated_table)
             print_success("Deployment parameters updated.")
@@ -758,6 +999,8 @@ class DeploymentManager:
             True if deployment succeeds, False otherwise
         """
         # Setup interrupt signal handling for deployment
+        original_sigint = signal.getsignal(signal.SIGINT)
+        original_sigterm = signal.getsignal(signal.SIGTERM)
         signal.signal(signal.SIGINT, self._handle_interrupt)
         signal.signal(signal.SIGTERM, self._handle_interrupt)
 
@@ -780,32 +1023,62 @@ class DeploymentManager:
         )
         console.print(deployment_panel)
 
-        try:
-            os.makedirs(self.script_target, exist_ok=True)
-        except Exception as e:
-            print_error(f"Failed to create target directory: {e}")
-            return False
-
         # Perform verification steps
         if not self.verify_paths():
+            # Restore original signal handlers
+            signal.signal(signal.SIGINT, original_sigint)
+            signal.signal(signal.SIGTERM, original_sigterm)
             return False
 
         if not self.check_ownership():
+            # Restore original signal handlers
+            signal.signal(signal.SIGINT, original_sigint)
+            signal.signal(signal.SIGTERM, original_sigterm)
             return False
 
         if not self.perform_dry_run():
+            # Restore original signal handlers
+            signal.signal(signal.SIGINT, original_sigint)
+            signal.signal(signal.SIGTERM, original_sigterm)
             return False
 
-        if not Confirm.ask("\nProceed with deployment?", default=True):
+        # If no changes detected, ask if user still wants to proceed
+        total_changes = (
+            self.status.stats["new_files"]
+            + self.status.stats["updated_files"]
+            + self.status.stats["deleted_files"]
+        )
+
+        proceed = True
+        if total_changes == 0:
+            proceed = Confirm.ask(
+                "\nNo changes detected in dry run. Still proceed with deployment?",
+                default=False,
+            )
+        else:
+            proceed = Confirm.ask("\nProceed with deployment?", default=True)
+
+        if not proceed:
             print_warning("Deployment cancelled by user.")
+            # Restore original signal handlers
+            signal.signal(signal.SIGINT, original_sigint)
+            signal.signal(signal.SIGTERM, original_sigterm)
             return False
 
-        if not self.execute_deployment():
-            return False
+        # Execute deployment and set permissions
+        deployment_success = self.execute_deployment()
+        if deployment_success:
+            permission_success = self.set_permissions()
+        else:
+            permission_success = False
 
-        success = self.set_permissions()
         self.status.stats["end_time"] = time.time()
-        return success
+
+        # Restore original signal handlers
+        signal.signal(signal.SIGINT, original_sigint)
+        signal.signal(signal.SIGTERM, original_sigterm)
+
+        return deployment_success and permission_success
 
     def print_status_report(self) -> None:
         """Display a detailed report of the deployment status."""
@@ -835,7 +1108,7 @@ class DeploymentManager:
         status_table.add_column("Details", style=f"{NordColors.SNOW_STORM_1}")
 
         # Status icons and colors
-        icons = {"success": "✓", "failed": "✗", "pending": "?", "in_progress": "⋯"}
+        icons = {"success": "✓", "failed": "✗", "pending": "○", "in_progress": "⋯"}
         colors = {
             "success": NordColors.GREEN,
             "failed": NordColors.RED,
@@ -859,10 +1132,6 @@ class DeploymentManager:
 
         # Only show statistics if a deployment has been started
         if self.status.stats["start_time"]:
-            elapsed = (
-                self.status.stats["end_time"] or time.time()
-            ) - self.status.stats["start_time"]
-
             # Create a table for statistics
             stats_table = Table(
                 show_header=True,
@@ -889,9 +1158,27 @@ class DeploymentManager:
                     self.status.stats["new_files"] + self.status.stats["updated_files"]
                 ),
             )
-            stats_table.add_row("Elapsed Time", f"{elapsed:.2f} seconds")
+            stats_table.add_row("Elapsed Time", self.status.get_formatted_duration())
 
             console.print(stats_table)
+
+            # Log deployment details
+            try:
+                log_dir = os.path.dirname(self.log_file)
+                if os.path.exists(log_dir) and os.access(log_dir, os.W_OK):
+                    with open(self.log_file, "a") as log:
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        log.write(
+                            f"[{timestamp}] Deployment from {self.script_source} to {self.script_target}\n"
+                        )
+                        log.write(
+                            f"New: {self.status.stats['new_files']}, Updated: {self.status.stats['updated_files']}, Deleted: {self.status.stats['deleted_files']}\n"
+                        )
+                        log.write(f"Duration: {self.status.get_formatted_duration()}\n")
+                        log.write("-" * 40 + "\n")
+                    print_success(f"Deployment details logged to {self.log_file}")
+            except Exception as e:
+                print_warning(f"Could not write to log file: {e}")
 
 
 # ----------------------------------------------------------------
@@ -928,10 +1215,13 @@ def display_menu() -> str:
 def interactive_menu() -> None:
     """Display and process the interactive menu."""
     manager = DeploymentManager()
+
+    # Register signal handlers for the menu
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     atexit.register(cleanup)
 
+    # Check root privileges and dependencies
     if not manager.check_root():
         print_error("This script must be run as root (e.g., using sudo).")
         sys.exit(1)
@@ -944,10 +1234,14 @@ def interactive_menu() -> None:
         console.clear()
         console.print(create_header())
 
-        # Display current time
+        # Display current time and hostname
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        hostname = os.uname().nodename
         console.print(
-            Align.center(f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/]")
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
+                f"[{NordColors.SNOW_STORM_1}]Host: {hostname}[/]"
+            )
         )
         console.print()
 
@@ -959,10 +1253,9 @@ def interactive_menu() -> None:
             if manager.verify_paths():
                 manager.check_ownership()
         elif choice == "3":
-            if manager.verify_paths():
+            if manager.verify_paths() and manager.check_ownership():
                 manager.status.reset()
                 manager.status.stats["start_time"] = time.time()
-                manager.check_ownership()
                 manager.perform_dry_run()
                 manager.status.stats["end_time"] = time.time()
                 manager.print_status_report()
@@ -998,11 +1291,7 @@ def interactive_menu() -> None:
             break
 
         if choice != "6":
-            console.print()
-            console.print(
-                f"[{NordColors.SNOW_STORM_1}]Press Enter to return to the menu...[/]"
-            )
-            input()
+            wait_for_keypress()
 
 
 # ----------------------------------------------------------------

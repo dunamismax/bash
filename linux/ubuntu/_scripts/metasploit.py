@@ -12,7 +12,10 @@ Features:
   • Verifies system requirements and dependencies
   • Provides a streamlined setup experience
 
-Run with: sudo python3 metasploit_installer.py
+Usage:
+  Run with: sudo python3 metasploit_installer.py
+
+Version: 2.1.0
 """
 
 import atexit
@@ -23,7 +26,7 @@ import signal
 import subprocess
 import sys
 import time
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any, Tuple, Callable
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -63,6 +66,32 @@ except ImportError:
 # Install rich traceback handler for better error reporting
 install_rich_traceback(show_locals=True)
 
+# ----------------------------------------------------------------
+# Configuration & Constants
+# ----------------------------------------------------------------
+VERSION = "2.1.0"
+APP_NAME = "Metasploit Installer"
+APP_SUBTITLE = "Framework Setup & Configuration"
+
+# Command timeouts (in seconds)
+DEFAULT_TIMEOUT = 300
+INSTALLATION_TIMEOUT = 1200  # 20 minutes for installation on slow machines
+
+# Installer URL
+INSTALLER_URL = "https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb"
+INSTALLER_PATH = "/tmp/msfinstall"
+
+# System dependencies that might be needed
+SYSTEM_DEPENDENCIES = [
+    "build-essential",
+    "libpq-dev",
+    "postgresql",
+    "postgresql-contrib",
+    "curl",
+    "git",
+    "nmap",
+]
+
 
 # ----------------------------------------------------------------
 # Nord-Themed Colors
@@ -94,32 +123,6 @@ class NordColors:
 # Create a Rich Console
 console: Console = Console(theme=None, highlight=False)
 
-# ----------------------------------------------------------------
-# Configuration & Constants
-# ----------------------------------------------------------------
-VERSION = "2.0.0"
-APP_NAME = "Metasploit Installer"
-APP_SUBTITLE = "Framework Setup & Configuration"
-
-# Command timeouts (in seconds)
-DEFAULT_TIMEOUT = 300
-INSTALLATION_TIMEOUT = 1200  # 20 minutes for installation on slow machines
-
-# Installer URL
-INSTALLER_URL = "https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb"
-INSTALLER_PATH = "/tmp/msfinstall"
-
-# System dependencies that might be needed
-SYSTEM_DEPENDENCIES = [
-    "build-essential",
-    "libpq-dev",
-    "postgresql",
-    "postgresql-contrib",
-    "curl",
-    "git",
-    "nmap",
-]
-
 
 # ----------------------------------------------------------------
 # Console and Logging Helpers
@@ -131,13 +134,13 @@ def create_header() -> Panel:
     Returns:
         Panel containing the styled header
     """
-    # Try different fonts
-    fonts = ["slant", "big", "small", "standard", "digital"]
+    # Use smaller, more compact but still tech-looking fonts
+    compact_fonts = ["slant", "small", "smslant", "standard", "digital"]
 
     # Try each font until we find one that works well
-    for font_name in fonts:
+    for font_name in compact_fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)
+            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
             ascii_art = fig.renderText(APP_NAME)
 
             # If we got a reasonable result, use it
@@ -145,6 +148,20 @@ def create_header() -> Panel:
                 break
         except Exception:
             continue
+
+    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
+    if not ascii_art or len(ascii_art.strip()) == 0:
+        ascii_art = """
+                _                  _       _ _   
+ _ __ ___   ___| |_ __ _ ___ _ __ | | ___ (_) |_ 
+| '_ ` _ \ / _ \ __/ _` / __| '_ \| |/ _ \| | __|
+| | | | | |  __/ || (_| \__ \ |_) | | (_) | | |_ 
+|_| |_| |_|\___|\__\__,_|___/ .__/|_|\___/|_|\__|
+                            |_|                  
+        """
+
+    # Clean up extra whitespace that might cause display issues
+    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
 
     # Create a high-tech gradient effect with Nord colors
     colors = [
@@ -155,17 +172,15 @@ def create_header() -> Panel:
     ]
 
     styled_text = ""
-    ascii_lines = ascii_art.split("\n")
     for i, line in enumerate(ascii_lines):
-        if line.strip():
-            color = colors[i % len(colors)]
-            styled_text += f"[bold {color}]{line}[/]\n"
+        color = colors[i % len(colors)]
+        styled_text += f"[bold {color}]{line}[/]\n"
 
-    # Add decorative tech elements
+    # Add decorative tech elements (shorter than before)
     tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
-    styled_text = tech_border + "\n" + styled_text.rstrip() + "\n" + tech_border
+    styled_text = tech_border + "\n" + styled_text + tech_border
 
-    # Create a panel with sufficient padding
+    # Create a panel with sufficient padding to avoid cutoff
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
@@ -334,14 +349,20 @@ atexit.register(cleanup)
 # ----------------------------------------------------------------
 # Core Setup Functions
 # ----------------------------------------------------------------
-def check_system():
-    """Check system compatibility and required tools."""
+def check_system() -> bool:
+    """
+    Check system compatibility and required tools.
+
+    Returns:
+        bool: True if system is compatible, False otherwise
+    """
     print_step("Checking system compatibility...")
 
     # Check OS
     os_name = platform.system().lower()
     if os_name != "linux":
         print_warning(f"This script is designed for Linux, not {os_name}.")
+        return False
 
     # Check if we're on Ubuntu/Debian
     is_ubuntu = False
@@ -400,8 +421,7 @@ def check_system():
         print_step("Installing missing tools...")
         try:
             run_command(["apt-get", "update"])
-            for tool in missing:
-                run_command(["apt-get", "install", "-y", tool])
+            run_command(["apt-get", "install", "-y"] + missing)
             print_success("Required tools installed successfully.")
         except Exception as e:
             print_error(f"Failed to install required tools: {e}")
@@ -412,8 +432,13 @@ def check_system():
     return True
 
 
-def install_system_dependencies():
-    """Install system dependencies that might be needed by Metasploit."""
+def install_system_dependencies() -> bool:
+    """
+    Install system dependencies that might be needed by Metasploit.
+
+    Returns:
+        bool: True if dependencies installed successfully, False otherwise
+    """
     print_step("Installing system dependencies...")
 
     try:
@@ -449,8 +474,13 @@ def install_system_dependencies():
         return False
 
 
-def download_metasploit_installer():
-    """Download the Metasploit installer script."""
+def download_metasploit_installer() -> bool:
+    """
+    Download the Metasploit installer script.
+
+    Returns:
+        bool: True if download successful, False otherwise
+    """
     print_step("Downloading Metasploit installer...")
 
     try:
@@ -469,8 +499,13 @@ def download_metasploit_installer():
         return False
 
 
-def run_metasploit_installer():
-    """Run the Metasploit installer script."""
+def run_metasploit_installer() -> bool:
+    """
+    Run the Metasploit installer script.
+
+    Returns:
+        bool: True if installation successful, False otherwise
+    """
     print_step("Running Metasploit installer...")
 
     display_panel(
@@ -481,11 +516,15 @@ def run_metasploit_installer():
     )
 
     try:
-        with console.status(
-            "[bold blue]Installing Metasploit (this may take a while)...",
-            spinner="dots",
-        ):
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Installing Metasploit"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Installing", total=None)
             result = run_command([INSTALLER_PATH], timeout=INSTALLATION_TIMEOUT)
+            progress.update(task, completed=100)
 
         print_success("Metasploit Framework installed successfully.")
         return True
@@ -494,8 +533,13 @@ def run_metasploit_installer():
         return False
 
 
-def configure_postgresql():
-    """Configure PostgreSQL for Metasploit if needed."""
+def configure_postgresql() -> bool:
+    """
+    Configure PostgreSQL for Metasploit if needed.
+
+    Returns:
+        bool: True if configuration successful, False otherwise
+    """
     print_step("Configuring PostgreSQL for Metasploit...")
 
     try:
@@ -506,7 +550,66 @@ def configure_postgresql():
             run_command(["systemctl", "start", "postgresql"])
             run_command(["systemctl", "enable", "postgresql"])
 
-        print_success("PostgreSQL is running.")
+            # Verify it started successfully
+            pg_verify = run_command(["systemctl", "status", "postgresql"], check=False)
+            if pg_verify.returncode != 0:
+                print_warning("Could not start PostgreSQL service")
+                return False
+
+        print_success("PostgreSQL is running and enabled at startup.")
+
+        # Create msf database user if it doesn't exist
+        print_step("Setting up Metasploit database user...")
+        try:
+            # Check if msf user exists
+            user_check = run_command(
+                [
+                    "sudo",
+                    "-u",
+                    "postgres",
+                    "psql",
+                    "-tAc",
+                    "SELECT 1 FROM pg_roles WHERE rolname='msf'",
+                ],
+                check=False,
+            )
+
+            if "1" not in user_check.stdout:
+                # Create msf user with password 'msf'
+                run_command(
+                    [
+                        "sudo",
+                        "-u",
+                        "postgres",
+                        "psql",
+                        "-c",
+                        "CREATE USER msf WITH PASSWORD 'msf'",
+                    ],
+                    check=False,
+                )
+
+                # Create msf database
+                run_command(
+                    [
+                        "sudo",
+                        "-u",
+                        "postgres",
+                        "psql",
+                        "-c",
+                        "CREATE DATABASE msf OWNER msf",
+                    ],
+                    check=False,
+                )
+
+                print_success("Created Metasploit database and user")
+            else:
+                print_success("Metasploit database user already exists")
+        except Exception as e:
+            print_warning(f"Error setting up database: {e}")
+            print_message(
+                "You may need to run 'msfdb init' manually later", NordColors.YELLOW
+            )
+
         return True
     except Exception as e:
         print_warning(f"PostgreSQL configuration error: {e}")
@@ -517,7 +620,12 @@ def configure_postgresql():
 
 
 def check_installation():
-    """Verify that Metasploit was installed correctly."""
+    """
+    Verify that Metasploit was installed correctly.
+
+    Returns:
+        str or bool: Path to msfconsole if found, False otherwise
+    """
     print_step("Verifying installation...")
 
     # Look for msfconsole in common locations
@@ -571,17 +679,66 @@ def check_installation():
         return False
 
 
+def initialize_database(msfconsole_path) -> bool:
+    """
+    Initialize the Metasploit database.
+
+    Args:
+        msfconsole_path: Path to msfconsole
+
+    Returns:
+        bool: True if initialization successful, False otherwise
+    """
+    print_step("Initializing Metasploit database...")
+
+    msfdb_path = os.path.join(os.path.dirname(msfconsole_path), "msfdb")
+
+    if not os.path.exists(msfdb_path) and not check_command_available("msfdb"):
+        print_warning(
+            "Could not locate msfdb utility. Database initialization might need to be done manually."
+        )
+        return False
+
+    msfdb_cmd = msfdb_path if os.path.exists(msfdb_path) else "msfdb"
+
+    try:
+        with console.status("[bold blue]Initializing database...", spinner="dots"):
+            result = run_command([msfdb_cmd, "init"], check=False)
+
+        if result.returncode == 0:
+            print_success("Metasploit database initialized successfully.")
+            return True
+        else:
+            print_warning("Database initialization may have encountered issues.")
+            print_message(
+                "You can try running 'msfdb init' manually later.", NordColors.YELLOW
+            )
+            return False
+    except Exception as e:
+        print_warning(f"Error initializing database: {e}")
+        print_message(
+            "You can try running 'msfdb init' manually later.", NordColors.YELLOW
+        )
+        return False
+
+
 def launch_msfconsole(msfconsole_path):
-    """Launch msfconsole for interactive configuration."""
-    print_step("Launching Metasploit console for configuration...")
+    """
+    Launch msfconsole for interactive configuration.
+
+    Args:
+        msfconsole_path: Path to msfconsole
+    """
+    print_step("Launching Metasploit console...")
 
     display_panel(
         "Metasploit console will now start.\n\n"
-        "If prompted, type 'yes' to set up the database.\n"
-        "Once started, you can verify the database connection with the command:\n"
+        "You can verify the database connection with the command:\n"
         "[bold]db_status[/]\n\n"
         "If the database is not connected, you can initialize it with:\n"
-        "[bold]msfdb init[/]",
+        "[bold]msfdb init[/]\n\n"
+        "To get help with Metasploit commands, type:\n"
+        "[bold]help[/]",
         style=NordColors.GREEN,
         title="Next Steps",
     )
@@ -605,6 +762,7 @@ def launch_msfconsole(msfconsole_path):
 # ----------------------------------------------------------------
 def run_full_setup():
     """Run the complete Metasploit setup process."""
+    console.clear()
     console.print(create_header())
     console.print()
 
@@ -616,7 +774,8 @@ def run_full_setup():
         "3. Downloading and running the Metasploit installer\n"
         "4. Configuring PostgreSQL database\n"
         "5. Verifying the installation\n"
-        "6. Launching msfconsole for interactive configuration",
+        "6. Initializing the Metasploit database\n"
+        "7. Launching msfconsole for interactive use",
         style=NordColors.FROST_2,
         title="Setup Process",
     )
@@ -662,7 +821,10 @@ def run_full_setup():
         )
         sys.exit(1)
 
-    # Step 7: Launch msfconsole
+    # Step 7: Initialize database
+    initialize_database(msfconsole_path)
+
+    # Step 8: Launch msfconsole
     launch_msfconsole(msfconsole_path)
 
 
@@ -675,6 +837,10 @@ def main():
 
         # Check if running with proper permissions
         if os.geteuid() != 0:
+            console.clear()
+            console.print(create_header())
+            console.print()
+
             print_error("This script must be run with root privileges.")
             print_message(
                 "Please run with: sudo python3 metasploit_installer.py",
@@ -684,7 +850,8 @@ def main():
 
         run_full_setup()
     except KeyboardInterrupt:
-        print_warning("\nProcess interrupted by user.")
+        console.print()
+        print_warning("Process interrupted by user.")
         sys.exit(130)
     except Exception as e:
         print_error(f"Unexpected error: {e}")

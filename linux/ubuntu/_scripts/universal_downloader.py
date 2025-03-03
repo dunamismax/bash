@@ -9,7 +9,7 @@ various content types.
 
 Features:
   • Supports downloading files via wget
-  • Downloads YouTube videos/playlists via yt-dlp
+  • Downloads YouTube videos/playlists via yt-dlp with browser cookies
   • Real-time progress tracking with ETA and speed
   • Automatic dependency management
   • Beautiful Nord-themed terminal interface
@@ -25,7 +25,7 @@ Usage:
     -v, --verbose            Enable verbose output
 
 Note: For full functionality (especially dependencies installation), run with root privileges.
-Version: 3.3.0
+Version: 3.4.0
 """
 
 import atexit
@@ -87,13 +87,14 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-VERSION = "3.3.0"
+VERSION = "3.4.0"
 APP_NAME = "Universal Downloader"
 APP_SUBTITLE = "Files & Media Download Tool"
 
 HOSTNAME = socket.gethostname()
 LOG_FILE = "/var/log/universal_downloader.log"
 DEFAULT_DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
+DEFAULT_USER_HOME = os.path.expanduser("~")
 
 # Define dependency groups
 DEPENDENCIES = {
@@ -110,6 +111,11 @@ PROGRESS_WIDTH = min(50, TERM_WIDTH - 30)  # Adaptive progress bar width
 # Command timeouts
 DEFAULT_TIMEOUT = 300  # 5 minutes default timeout for commands
 DOWNLOAD_TIMEOUT = 7200  # 2 hours timeout for downloads
+
+# YouTube download settings
+YTDLP_OUTPUT_TEMPLATE = "%(title)s.%(ext)s"
+YTDLP_FORMAT_SELECTION = "ext:mp4:m4a"
+BROWSER_SOURCE = "brave"  # Browser to extract cookies from
 
 
 # ----------------------------------------------------------------
@@ -633,16 +639,28 @@ def estimate_youtube_size(url: str) -> int:
     Falls back to a default size if estimation fails.
     """
     try:
-        result = run_command(
-            ["yt-dlp", "--print", "filesize", url], capture_output=True, check=False
-        )
+        cmd = [
+            "yt-dlp",
+            "--cookies-from-browser",
+            BROWSER_SOURCE,
+            "--print",
+            "filesize",
+            url,
+        ]
+        result = run_command(cmd, capture_output=True, check=False)
         if result.stdout.strip().isdigit():
             return int(result.stdout.strip())
 
         # Try estimating based on video duration
-        result = run_command(
-            ["yt-dlp", "--print", "duration", url], capture_output=True, check=False
-        )
+        cmd = [
+            "yt-dlp",
+            "--cookies-from-browser",
+            BROWSER_SOURCE,
+            "--print",
+            "duration",
+            url,
+        ]
+        result = run_command(cmd, capture_output=True, check=False)
         if result.stdout.strip().replace(".", "", 1).isdigit():
             duration = float(result.stdout.strip())
             # Rough estimate: Assume 10 MB per minute of video
@@ -666,26 +684,42 @@ def get_youtube_info(url: str) -> Tuple[str, bool]:
 
     try:
         # First check if it's a playlist
-        result = run_command(
-            ["yt-dlp", "--flat-playlist", "--print", "playlist_id", url],
-            capture_output=True,
-            check=False,
-        )
+        cmd = [
+            "yt-dlp",
+            "--cookies-from-browser",
+            BROWSER_SOURCE,
+            "--flat-playlist",
+            "--print",
+            "playlist_id",
+            url,
+        ]
+        result = run_command(cmd, capture_output=True, check=False)
         is_playlist = bool(result.stdout.strip())
 
         # Then get the title
         if is_playlist:
-            result = run_command(
-                ["yt-dlp", "--flat-playlist", "--print", "playlist_title", url],
-                capture_output=True,
-                check=False,
-            )
+            cmd = [
+                "yt-dlp",
+                "--cookies-from-browser",
+                BROWSER_SOURCE,
+                "--flat-playlist",
+                "--print",
+                "playlist_title",
+                url,
+            ]
+            result = run_command(cmd, capture_output=True, check=False)
             if result.stdout.strip():
                 title = result.stdout.strip()
         else:
-            result = run_command(
-                ["yt-dlp", "--print", "title", url], capture_output=True, check=False
-            )
+            cmd = [
+                "yt-dlp",
+                "--cookies-from-browser",
+                BROWSER_SOURCE,
+                "--print",
+                "title",
+                url,
+            ]
+            result = run_command(cmd, capture_output=True, check=False)
             if result.stdout.strip():
                 title = result.stdout.strip()
     except Exception as e:
@@ -809,7 +843,7 @@ def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool
 
 def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bool:
     """
-    Download a YouTube video using yt-dlp.
+    Download a YouTube video using yt-dlp with browser cookies.
 
     Args:
         url: YouTube URL to download from
@@ -847,16 +881,18 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
 
         display_panel(info_text, style=NordColors.FROST_3, title="YouTube Download")
 
-        # Prepare command
-        output_template = os.path.join(output_dir, "%(title)s.%(ext)s")
+        # Prepare output template and full path
+        output_template = os.path.join(output_dir, YTDLP_OUTPUT_TEMPLATE)
+
+        # Prepare command with browser cookies and format selection
         cmd = [
             "yt-dlp",
-            "-f",
-            "bestvideo+bestaudio/best",
-            "--merge-output-format",
-            "mp4",
+            "--cookies-from-browser",
+            BROWSER_SOURCE,  # Use browser cookies
+            "-S",
+            YTDLP_FORMAT_SELECTION,  # Format selection
             "-o",
-            output_template,
+            output_template,  # Output template
         ]
 
         if verbose:
@@ -1015,7 +1051,12 @@ def create_download_options_table() -> Table:
     )
 
     table.add_row("1", "Standard File", "Download any file using wget", wget_status)
-    table.add_row("2", "YouTube", "Download videos/playlists with yt-dlp", ytdlp_status)
+    table.add_row(
+        "2",
+        "YouTube",
+        f"Download videos/playlists with yt-dlp ({BROWSER_SOURCE} cookies)",
+        ytdlp_status,
+    )
     table.add_row("3", "Exit", "Quit the application", "")
 
     return table
@@ -1113,6 +1154,9 @@ def download_menu() -> None:
             print_error("Invalid selection. Please choose 1-3.")
 
 
+# ----------------------------------------------------------------
+# Command-line Argument Parsing
+# ----------------------------------------------------------------
 def parse_args() -> Dict[str, Any]:
     """Parse command-line arguments into a dictionary."""
     args: Dict[str, Any] = {}
@@ -1175,7 +1219,7 @@ def show_usage() -> None:
     )
     table.add_row(
         "./universal_downloader.py ytdlp <url> [options]",
-        "Download a YouTube video/playlist using yt-dlp",
+        f"Download YouTube with {BROWSER_SOURCE} cookies",
     )
     table.add_row("./universal_downloader.py help", "Show this help information")
 
@@ -1201,6 +1245,30 @@ def show_usage() -> None:
     options_table.add_row("-v, --verbose", "Enable verbose output")
 
     console.print(options_table)
+
+    # YouTube information table
+    youtube_table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        expand=True,
+        title=f"[bold {NordColors.FROST_2}]YouTube Download Configuration[/]",
+        border_style=NordColors.FROST_3,
+        title_justify="center",
+    )
+
+    youtube_table.add_column("Setting", style=f"bold {NordColors.FROST_2}")
+    youtube_table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
+    youtube_table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
+
+    youtube_table.add_row("Browser", BROWSER_SOURCE, "Browser to extract cookies from")
+    youtube_table.add_row(
+        "Format Selection", YTDLP_FORMAT_SELECTION, "Format selection strategy"
+    )
+    youtube_table.add_row(
+        "Output Template", YTDLP_OUTPUT_TEMPLATE, "Filename template for downloads"
+    )
+
+    console.print(youtube_table)
 
     # Examples
     examples_table = Table(

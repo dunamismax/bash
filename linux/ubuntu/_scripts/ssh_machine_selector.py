@@ -1,32 +1,35 @@
 #!/usr/bin/env python3
 """
-Enhanced SSH Selector
+Advanced SSH Selector
 --------------------------------------------------
 
-A sophisticated terminal interface for managing and connecting to SSH endpoints with
-elegant Nord theme styling. Featuring real-time connectivity monitoring, parallel
-device scanning, and intelligent connection management.
+A sophisticated terminal interface for managing SSH connections with elegant Nord theme styling.
+Features device categorization, real-time connectivity status monitoring, and seamless connection
+management with comprehensive device discovery and intelligent connection handling.
 
 Features:
-- Automatic device discovery and status monitoring
 - Parallel network scanning with real-time status updates
-- Tailscale and local network device categorization
-- Elegant Nord-themed user interface
-- SSH connection management with customizable settings
+- Tailscale and local network device categorization with automatic discovery
+- Response time measurement for connection quality assessment
+- Elegant Nord-themed UI with dynamic ASCII art headers
+- Comprehensive SSH connection management with configurable settings
+- Intelligent error handling and connection troubleshooting
 
 Usage:
   Run the script and select a device by number to connect via SSH:
   - Numbers 1-N: Connect to Tailscale devices
   - L1-LN: Connect to local network devices
   - r: Refresh device status
-  - h: Show help
+  - c: Configure SSH options
+  - h: Show help information
   - q: Quit the application
 
-Version: 6.2.0
+Version: 7.0.0
 """
 
 import atexit
 import os
+import platform
 import signal
 import socket
 import subprocess
@@ -61,9 +64,18 @@ try:
     from rich.prompt import Prompt, Confirm
     from rich.traceback import install as install_rich_traceback
 except ImportError:
-    print("This script requires the 'rich' and 'pyfiglet' libraries.")
-    print("Please install them using: pip install rich pyfiglet")
-    sys.exit(1)
+    print("Required libraries not found. Installing dependencies...")
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "rich", "pyfiglet"]
+        )
+        print("Dependencies installed successfully. Restarting script...")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        print(f"Error installing dependencies: {e}")
+        print("Please install the required packages manually:")
+        print("pip install rich pyfiglet")
+        sys.exit(1)
 
 # Install rich traceback handler for better error reporting
 install_rich_traceback(show_locals=True)
@@ -72,23 +84,28 @@ install_rich_traceback(show_locals=True)
 # Configuration
 # ----------------------------------------------------------------
 HOSTNAME: str = socket.gethostname()
-DEFAULT_USERNAME: str = os.environ.get("USER") or "user"
+DEFAULT_USERNAME: str = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
 SSH_COMMAND: str = "ssh"
 PING_TIMEOUT: float = 1.5  # seconds
 PING_COUNT: int = 1
 OPERATION_TIMEOUT: int = 30  # seconds
-VERSION: str = "6.2.0"
+VERSION: str = "7.0.0"
 APP_NAME: str = "SSH Selector"
-APP_SUBTITLE: str = "Secure Connection Manager"
+APP_SUBTITLE: str = "Advanced Connection Manager"
 DEFAULT_SSH_PORT: int = 22
-MAX_PARALLEL_PINGS: int = 20
+MAX_PARALLEL_PINGS: int = min(20, os.cpu_count() or 4)
 
-# Advanced SSH options
-SSH_OPTIONS: Dict[str, str] = {
-    "ServerAliveInterval": "30",
-    "ServerAliveCountMax": "3",
-    "ConnectTimeout": "10",
-    "StrictHostKeyChecking": "accept-new",
+# Advanced SSH options with descriptions
+SSH_OPTIONS: Dict[str, Tuple[str, str]] = {
+    "ServerAliveInterval": ("30", "Time interval (seconds) to send keepalive packets"),
+    "ServerAliveCountMax": (
+        "3",
+        "Number of keepalive packets without response before disconnecting",
+    ),
+    "ConnectTimeout": ("10", "Timeout (seconds) for establishing connection"),
+    "StrictHostKeyChecking": ("accept-new", "Host key verification behavior"),
+    "Compression": ("yes", "Enable compression for slow connections"),
+    "LogLevel": ("ERROR", "Logging verbosity level"),
 }
 
 
@@ -143,6 +160,7 @@ class Device:
         description: Optional description of the device
         port: SSH port to use (default: 22)
         response_time: Last ping response time in milliseconds
+        favorite: Whether this device is marked as a favorite
     """
 
     name: str
@@ -154,6 +172,7 @@ class Device:
     description: Optional[str] = None
     port: int = DEFAULT_SSH_PORT
     response_time: Optional[float] = None  # Latency in ms
+    favorite: bool = False
 
     def get_connection_string(self, username: str) -> str:
         """Return the full SSH connection string."""
@@ -173,6 +192,10 @@ class Device:
         else:
             return Text("○ UNKNOWN", style=f"dim {NordColors.POLAR_NIGHT_4}")
 
+    def get_favorite_indicator(self) -> str:
+        """Return a favorite indicator if this device is marked as favorite."""
+        return "★ " if self.favorite else ""
+
 
 # ----------------------------------------------------------------
 # Console and Logging Helpers
@@ -188,6 +211,7 @@ def create_header() -> Panel:
     compact_fonts = ["small", "slant", "digital", "mini", "smslant"]
 
     # Try each font until we find one that works well
+    ascii_art = ""
     for font_name in compact_fonts:
         try:
             fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
@@ -297,8 +321,16 @@ def display_panel(
     console.print(panel)
 
 
+def print_section(title: str) -> None:
+    """Print a formatted section header."""
+    console.print()
+    console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
+    console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
+    console.print()
+
+
 def show_help() -> None:
-    """Display help information in a styled panel."""
+    """Display comprehensive help information in a styled panel."""
     help_text = """
 [bold]Available Commands:[/]
 
@@ -306,6 +338,8 @@ def show_help() -> None:
 [bold {frost2}]L1-LN[/]:     Connect to Local device by number
 [bold {frost2}]r[/]:         Refresh device status
 [bold {frost2}]c[/]:         Configure SSH options
+[bold {frost2}]f[/]:         Toggle favorite status for a device
+[bold {frost2}]s[/]:         Search for devices by name or IP
 [bold {frost2}]h[/]:         Show this help
 [bold {frost2}]q[/]:         Quit the application
 
@@ -315,6 +349,8 @@ def show_help() -> None:
 • Press Enter with no input to refresh the display
 • Local devices are on your current network
 • Tailscale devices are on your Tailscale VPN network
+• Response times indicate connection quality (lower is better)
+• Favorite devices are marked with a ★ symbol
     """.format(frost2=NordColors.FROST_2)
 
     console.print(
@@ -325,6 +361,52 @@ def show_help() -> None:
             padding=(1, 2),
         )
     )
+
+
+# ----------------------------------------------------------------
+# System Information
+# ----------------------------------------------------------------
+def get_system_info() -> Dict[str, str]:
+    """
+    Gather system information for display and troubleshooting.
+
+    Returns:
+        Dictionary of system information
+    """
+    info = {
+        "Hostname": HOSTNAME,
+        "Platform": platform.system(),
+        "Platform Version": platform.version(),
+        "Python Version": platform.python_version(),
+        "Username": DEFAULT_USERNAME,
+    }
+
+    # Add network interfaces if on Linux/Mac
+    if platform.system() != "Windows":
+        try:
+            import netifaces
+
+            interfaces = netifaces.interfaces()
+            active_interfaces = []
+
+            for iface in interfaces:
+                if iface == "lo":  # Skip loopback
+                    continue
+
+                try:
+                    addr = netifaces.ifaddresses(iface).get(netifaces.AF_INET)
+                    if addr:
+                        active_interfaces.append(f"{iface}: {addr[0]['addr']}")
+                except Exception:
+                    pass
+
+            if active_interfaces:
+                info["Network Interfaces"] = ", ".join(active_interfaces)
+        except ImportError:
+            # netifaces not available
+            pass
+
+    return info
 
 
 # ----------------------------------------------------------------
@@ -396,8 +478,12 @@ def signal_handler(sig: int, frame: Any) -> None:
         sig: Signal number
         frame: Current stack frame
     """
-    sig_name: str = signal.Signals(sig).name
-    print_warning(f"Process interrupted by {sig_name}")
+    try:
+        sig_name: str = signal.Signals(sig).name
+        print_warning(f"Process interrupted by {sig_name}")
+    except (ValueError, AttributeError):
+        print_warning(f"Process interrupted by signal {sig}")
+
     cleanup()
     sys.exit(128 + sig)
 
@@ -423,7 +509,7 @@ def load_tailscale_devices() -> List[Device]:
         Device(
             name="ubuntu-server",
             ip_address="100.109.43.88",
-            description="Primary Server",
+            description="Primary Ubuntu Server",
         ),
         Device(
             name="ubuntu-lenovo",
@@ -443,42 +529,42 @@ def load_tailscale_devices() -> List[Device]:
         Device(
             name="ubuntu-server-vm-01",
             ip_address="100.84.119.114",
-            description="Ubuntu Server VM 1",
+            description="Ubuntu VM 1",
         ),
         Device(
             name="ubuntu-server-vm-02",
             ip_address="100.122.237.56",
-            description="Ubuntu Server VM 2",
+            description="Ubuntu VM 2",
         ),
         Device(
             name="ubuntu-server-vm-03",
             ip_address="100.97.229.120",
-            description="Ubuntu Server VM 3",
+            description="Ubuntu VM 3",
         ),
         Device(
             name="ubuntu-server-vm-04",
             ip_address="100.73.171.7",
-            description="Ubuntu Server VM 4",
+            description="Ubuntu VM 4",
         ),
         Device(
             name="ubuntu-lenovo-vm-01",
             ip_address="100.107.79.81",
-            description="Ubuntu Lenovo VM 1",
+            description="Lenovo VM 1",
         ),
         Device(
             name="ubuntu-lenovo-vm-02",
             ip_address="100.78.101.2",
-            description="Ubuntu Lenovo VM 2",
+            description="Lenovo VM 2",
         ),
         Device(
             name="ubuntu-lenovo-vm-03",
             ip_address="100.95.115.62",
-            description="Ubuntu Lenovo VM 3",
+            description="Lenovo VM 3",
         ),
         Device(
             name="ubuntu-lenovo-vm-04",
             ip_address="100.92.31.94",
-            description="Ubuntu Lenovo VM 4",
+            description="Lenovo VM 4",
         ),
     ]
 
@@ -495,22 +581,22 @@ def load_local_devices() -> List[Device]:
         Device(
             name="ubuntu-server",
             ip_address="192.168.0.73",
-            description="Primary Server",
+            description="Primary Server (LAN)",
         ),
         Device(
             name="ubuntu-lenovo",
             ip_address="192.168.0.31",
-            description="Development Laptop",
+            description="Development Laptop (LAN)",
         ),
         Device(
             name="raspberrypi-5",
             ip_address="192.168.0.40",
-            description="Raspberry Pi 5",
+            description="Raspberry Pi 5 (LAN)",
         ),
         Device(
             name="raspberrypi-3",
             ip_address="192.168.0.100",
-            description="Raspberry Pi 3",
+            description="Raspberry Pi 3 (LAN)",
         ),
     ]
 
@@ -526,6 +612,47 @@ def discover_local_devices() -> List[Device]:
     # In a real application, this would scan local network ranges
     # For now, we'll just return the static list
     return load_local_devices()
+
+
+def search_devices(devices: List[Device], search_term: str) -> List[Device]:
+    """
+    Search for devices by name, IP, or description.
+
+    Args:
+        devices: List of devices to search through
+        search_term: Search term to match against device properties
+
+    Returns:
+        List of matching devices
+    """
+    search_term = search_term.lower()
+    return [
+        device
+        for device in devices
+        if search_term in device.name.lower()
+        or search_term in device.ip_address.lower()
+        or (device.description and search_term in device.description.lower())
+    ]
+
+
+def toggle_device_favorite(
+    devices: List[Device], device_index: int, is_local: bool = False
+) -> bool:
+    """
+    Toggle the favorite status of a device.
+
+    Args:
+        devices: List of devices
+        device_index: Index of the device to toggle
+        is_local: Whether this is a local device
+
+    Returns:
+        True if the operation was successful, False otherwise
+    """
+    if 0 <= device_index < len(devices):
+        devices[device_index].favorite = not devices[device_index].favorite
+        return True
+    return False
 
 
 # ----------------------------------------------------------------
@@ -582,6 +709,9 @@ def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
 
     except (subprocess.SubprocessError, subprocess.TimeoutExpired):
         return False, None
+    except Exception:
+        # Catch any other exceptions to ensure the ping doesn't crash the app
+        return False, None
 
 
 def check_device_statuses(
@@ -605,9 +735,7 @@ def check_device_statuses(
         if progress_callback:
             progress_callback(index)
 
-    with ThreadPoolExecutor(
-        max_workers=min(MAX_PARALLEL_PINGS, os.cpu_count() or 4)
-    ) as executor:
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_PINGS) as executor:
         # Submit all ping tasks to the executor
         futures = [
             executor.submit(check_single_device, device, i)
@@ -616,7 +744,10 @@ def check_device_statuses(
 
         # Wait for all futures to complete
         for future in futures:
-            future.result()  # This will re-raise any exceptions that occurred
+            try:
+                future.result()  # This will re-raise any exceptions that occurred
+            except Exception as e:
+                print_error(f"Error checking device status: {e}")
 
 
 # ----------------------------------------------------------------
@@ -650,13 +781,17 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
     table.add_column("Status", justify="center")
     table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
 
-    # Count online devices
+    # Count online devices and favorites
     online_count = sum(1 for d in devices if d.status is True)
+    favorite_count = sum(1 for d in devices if d.favorite)
 
     for idx, device in enumerate(devices, 1):
+        # Add favorite indicator to name if device is a favorite
+        name_display = f"{device.get_favorite_indicator()}{device.name}"
+
         table.add_row(
             f"{prefix}{idx}",
-            device.name,
+            name_display,
             device.ip_address,
             device.get_status_indicator(),
             device.description or "",
@@ -665,7 +800,7 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
     # Add a footer with summary information
     if devices:
         footer = Text.from_markup(
-            f"[{NordColors.FROST_3}]{online_count}/{len(devices)} devices online[/]"
+            f"[{NordColors.FROST_3}]{online_count}/{len(devices)} devices online • {favorite_count} favorites[/]"
         )
         table.caption = footer
 
@@ -710,6 +845,13 @@ def connect_to_device(device: Device, username: str) -> None:
                 if device.description
                 else ""
             )
+            + (
+                f"[bold {NordColors.FROST_2}]Status:[/] [bold {NordColors.GREEN}]ONLINE ({device.response_time:.0f}ms)[/]\n"
+                if device.status is True and device.response_time is not None
+                else f"[bold {NordColors.FROST_2}]Status:[/] [bold {NordColors.RED}]OFFLINE[/]\n"
+                if device.status is False
+                else f"[bold {NordColors.FROST_2}]Status:[/] [dim {NordColors.POLAR_NIGHT_4}]UNKNOWN[/]\n"
+            )
         ),
         title=f"[bold {NordColors.FROST_3}]SSH Connection[/]",
         border_style=Style(color=NordColors.FROST_3),
@@ -731,28 +873,28 @@ def connect_to_device(device: Device, username: str) -> None:
                 message="Initializing secure channel...",
                 message_color=NordColors.FROST_2,
             )
-            time.sleep(0.5)
+            time.sleep(0.4)
 
             progress.update(
                 task,
                 message="Negotiating encryption parameters...",
                 message_color=NordColors.FROST_2,
             )
-            time.sleep(0.5)
+            time.sleep(0.4)
 
             progress.update(
                 task,
                 message=f"Establishing SSH tunnel to {device.ip_address}...",
                 message_color=NordColors.FROST_2,
             )
-            time.sleep(0.5)
+            time.sleep(0.4)
 
             progress.update(
                 task,
                 message="Connection established. Launching secure shell...",
                 message_color=NordColors.GREEN,
             )
-            time.sleep(0.5)
+            time.sleep(0.4)
 
         console.print()
 
@@ -760,7 +902,7 @@ def connect_to_device(device: Device, username: str) -> None:
         ssh_args = [SSH_COMMAND]
 
         # Add SSH options
-        for option, value in SSH_OPTIONS.items():
+        for option, (value, _) in SSH_OPTIONS.items():
             ssh_args.extend(["-o", f"{option}={value}"])
 
         # Add target info
@@ -783,13 +925,19 @@ def connect_to_device(device: Device, username: str) -> None:
                 padding=(1, 2),
             )
         )
-        print_step("Check that the device is online and SSH is properly configured")
-        print_step("You may need to manually add this host to your known_hosts file")
 
-        console.print(
-            f"[{NordColors.SNOW_STORM_1}]Press Enter to return to selection screen...[/]"
+        # Show troubleshooting tips
+        print_section("Troubleshooting Tips")
+        print_step("Check that the device is online and SSH is properly configured")
+        print_step("Verify that SSH is installed and running on the target device")
+        print_step("Ensure the correct username and IP address were used")
+        print_step("You may need to manually add this host to your known_hosts file")
+        print_step("Try connecting manually with 'ssh -v' for verbose output")
+
+        console.print()
+        Prompt.ask(
+            f"[{NordColors.SNOW_STORM_1}]Press Enter to return to selection screen[/]"
         )
-        input()
 
 
 # ----------------------------------------------------------------
@@ -851,21 +999,14 @@ def configure_ssh_options() -> None:
     table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
     table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
 
-    # Option descriptions
-    descriptions = {
-        "ServerAliveInterval": "Time interval (seconds) to send keepalive packets",
-        "ServerAliveCountMax": "Number of keepalive packets without response before disconnecting",
-        "ConnectTimeout": "Timeout (seconds) for establishing connection",
-        "StrictHostKeyChecking": "Host key verification behavior",
-    }
-
-    for option, value in SSH_OPTIONS.items():
-        table.add_row(option, value, descriptions.get(option, ""))
+    # Display all SSH options
+    for option, (value, description) in SSH_OPTIONS.items():
+        table.add_row(option, value, description)
 
     console.print(table)
     console.print()
 
-    # Note: In a real application, this would allow changing the options
+    # In a full implementation, you would allow changes to these options
     print_message(
         "These options will be applied to all SSH connections", NordColors.FROST_2
     )
@@ -875,19 +1016,69 @@ def configure_ssh_options() -> None:
     )
     console.print()
 
-    Prompt.ask(
-        "[bold {frost}]Press Enter to return to the main menu[/]".format(
-            frost=NordColors.FROST_2
-        )
+    Prompt.ask(f"[bold {NordColors.FROST_2}]Press Enter to return to the main menu[/]")
+
+
+def search_for_devices(all_devices: List[Device]) -> None:
+    """
+    Search for devices by name, IP, or description.
+
+    Args:
+        all_devices: List of all devices to search through
+    """
+    console.clear()
+    console.print(create_header())
+
+    search_term = Prompt.ask(
+        f"[bold {NordColors.FROST_2}]Enter search term (name, IP, or description)[/]"
     )
 
+    if not search_term:
+        return
 
-def print_section(title: str) -> None:
-    """Print a formatted section header."""
+    matching_devices = search_devices(all_devices, search_term)
+
+    print_section(f"Search Results for '{search_term}'")
+
+    if not matching_devices:
+        display_panel(
+            f"No devices found matching '{search_term}'",
+            style=NordColors.YELLOW,
+            title="No Results",
+        )
+    else:
+        # Create a combined table of matching devices
+        table = Table(
+            show_header=True,
+            header_style=f"bold {NordColors.FROST_1}",
+            expand=True,
+            title=f"[bold {NordColors.FROST_2}]Matching Devices ({len(matching_devices)})[/]",
+            border_style=NordColors.FROST_3,
+        )
+
+        table.add_column("Type", style=f"bold {NordColors.FROST_4}")
+        table.add_column("Name", style=f"bold {NordColors.FROST_1}")
+        table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}")
+        table.add_column("Status", justify="center")
+        table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
+
+        for device in matching_devices:
+            device_type = (
+                "Tailscale" if device.ip_address.startswith("100.") else "Local"
+            )
+
+            table.add_row(
+                device_type,
+                f"{device.get_favorite_indicator()}{device.name}",
+                device.ip_address,
+                device.get_status_indicator(),
+                device.description or "",
+            )
+
+        console.print(table)
+
     console.print()
-    console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
-    console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
-    console.print()
+    Prompt.ask(f"[bold {NordColors.FROST_2}]Press Enter to return to the main menu[/]")
 
 
 # ----------------------------------------------------------------
@@ -973,9 +1164,10 @@ def main() -> None:
         console.print()
         console.print(
             Align.center(
-                f"[{NordColors.FROST_3}]Commands: [bold]1-N[/] Connect to Tailscale | "
-                f"[bold]L1-LN[/] Connect to Local | "
-                f"[bold]r[/] Refresh | [bold]h[/] Help | [bold]q[/] Quit[/]"
+                f"[{NordColors.FROST_3}]Commands: [bold]1-N[/] Connect Tailscale | "
+                f"[bold]L1-LN[/] Connect Local | "
+                f"[bold]r[/] Refresh | [bold]f[/] Favorite | "
+                f"[bold]s[/] Search | [bold]h[/] Help | [bold]q[/] Quit[/]"
             )
         )
         console.print()
@@ -1013,6 +1205,40 @@ def main() -> None:
         elif choice == "c":
             # Configure SSH options
             configure_ssh_options()
+
+        elif choice == "s":
+            # Search for devices
+            search_for_devices(all_devices)
+
+        elif choice.startswith("f"):
+            # Toggle favorite status
+            remaining = choice[1:].strip()
+
+            try:
+                if remaining.startswith("l"):
+                    # Local device
+                    idx = int(remaining[1:]) - 1
+                    if toggle_device_favorite(local_devices, idx, is_local=True):
+                        print_success(
+                            f"Toggled favorite status for local device L{idx + 1}"
+                        )
+                    else:
+                        print_error(f"Invalid local device number: {remaining[1:]}")
+                else:
+                    # Tailscale device
+                    idx = int(remaining) - 1
+                    if toggle_device_favorite(tailscale_devices, idx):
+                        print_success(
+                            f"Toggled favorite status for Tailscale device {idx + 1}"
+                        )
+                    else:
+                        print_error(f"Invalid Tailscale device number: {remaining}")
+
+                # Pause to show the message
+                time.sleep(1)
+            except ValueError:
+                print_error(f"Invalid format for favorite command: {choice}")
+                Prompt.ask(f"[{NordColors.SNOW_STORM_1}]Press Enter to continue[/]")
 
         elif not choice:
             # Empty input, just refresh the display

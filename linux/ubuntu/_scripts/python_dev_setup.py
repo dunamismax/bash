@@ -20,7 +20,7 @@ Usage:
   - Select Python version (latest stable or specific version)
   - Customize the development tools to install
 
-Version: 2.1.0
+Version: 2.2.0
 """
 
 import atexit
@@ -37,7 +37,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Tuple, Callable, Set
+from typing import List, Dict, Optional, Any, Tuple, Callable, Set, Union
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -78,6 +78,47 @@ except ImportError:
 # Install rich traceback handler for better error reporting
 install_rich_traceback(show_locals=True)
 
+# ----------------------------------------------------------------
+# Configuration & Constants
+# ----------------------------------------------------------------
+VERSION: str = "2.2.0"
+APP_NAME: str = "PyDev Setup"
+APP_SUBTITLE: str = "Development Environment Installer"
+
+# Extra long timeouts for slow machines (in seconds)
+DEFAULT_TIMEOUT: int = 3600  # 1 hour for most operations
+PYTHON_BUILD_TIMEOUT: int = 7200  # 2 hours for Python compilation
+
+# Determine the original (non-root) user when using sudo
+ORIGINAL_USER: str = os.environ.get("SUDO_USER", getpass.getuser())
+try:
+    ORIGINAL_UID: int = int(
+        subprocess.check_output(["id", "-u", ORIGINAL_USER]).decode().strip()
+    )
+    ORIGINAL_GID: int = int(
+        subprocess.check_output(["id", "-g", ORIGINAL_USER]).decode().strip()
+    )
+except Exception:
+    ORIGINAL_UID: int = os.getuid()
+    ORIGINAL_GID: int = os.getgid()
+
+# Determine home directory of the original user
+if ORIGINAL_USER != "root":
+    try:
+        HOME_DIR: str = (
+            subprocess.check_output(["getent", "passwd", ORIGINAL_USER])
+            .decode()
+            .split(":")[5]
+        )
+    except Exception:
+        HOME_DIR: str = os.path.expanduser("~" + ORIGINAL_USER)
+else:
+    HOME_DIR: str = os.path.expanduser("~")
+
+# Paths and configurations
+PYENV_DIR: str = os.path.join(HOME_DIR, ".pyenv")
+PYENV_BIN: str = os.path.join(PYENV_DIR, "bin", "pyenv")
+
 
 # ----------------------------------------------------------------
 # Nord-Themed Colors
@@ -86,72 +127,38 @@ class NordColors:
     """Nord color palette for consistent theming throughout the application."""
 
     # Polar Night (dark) shades
-    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_4 = "#4C566A"  # Light background shade
+    POLAR_NIGHT_1: str = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_2: str = "#3B4252"  # Darker background shade
+    POLAR_NIGHT_3: str = "#434C5E"  # Dark background shade
+    POLAR_NIGHT_4: str = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
-    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
-    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
+    SNOW_STORM_1: str = "#D8DEE9"  # Darkest text color
+    SNOW_STORM_2: str = "#E5E9F0"  # Medium text color
+    SNOW_STORM_3: str = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
-    FROST_1 = "#8FBCBB"  # Light cyan
-    FROST_2 = "#88C0D0"  # Light blue
-    FROST_3 = "#81A1C1"  # Medium blue
-    FROST_4 = "#5E81AC"  # Dark blue
+    FROST_1: str = "#8FBCBB"  # Light cyan
+    FROST_2: str = "#88C0D0"  # Light blue
+    FROST_3: str = "#81A1C1"  # Medium blue
+    FROST_4: str = "#5E81AC"  # Dark blue
 
     # Aurora (accent) shades
-    RED = "#BF616A"  # Red
-    ORANGE = "#D08770"  # Orange
-    YELLOW = "#EBCB8B"  # Yellow
-    GREEN = "#A3BE8C"  # Green
+    RED: str = "#BF616A"  # Red
+    ORANGE: str = "#D08770"  # Orange
+    YELLOW: str = "#EBCB8B"  # Yellow
+    GREEN: str = "#A3BE8C"  # Green
+    PURPLE: str = "#B48EAD"  # Purple
 
 
 # Create a Rich Console
 console: Console = Console(theme=None, highlight=False)
 
 # ----------------------------------------------------------------
-# Configuration & Constants
+# Package Lists
 # ----------------------------------------------------------------
-VERSION = "2.1.0"
-APP_NAME = "PyDev Setup"
-APP_SUBTITLE = "Development Environment Installer"
-
-# Extra long timeouts for slow machines (in seconds)
-DEFAULT_TIMEOUT = 3600  # 1 hour for most operations
-PYTHON_BUILD_TIMEOUT = 7200  # 2 hours for Python compilation
-
-# Determine the original (non-root) user when using sudo
-ORIGINAL_USER = os.environ.get("SUDO_USER", getpass.getuser())
-try:
-    ORIGINAL_UID = int(
-        subprocess.check_output(["id", "-u", ORIGINAL_USER]).decode().strip()
-    )
-    ORIGINAL_GID = int(
-        subprocess.check_output(["id", "-g", ORIGINAL_USER]).decode().strip()
-    )
-except Exception:
-    ORIGINAL_UID = os.getuid()
-    ORIGINAL_GID = os.getgid()
-
-# Determine home directory of the original user
-if ORIGINAL_USER != "root":
-    try:
-        HOME_DIR = (
-            subprocess.check_output(["getent", "passwd", ORIGINAL_USER])
-            .decode()
-            .split(":")[5]
-        )
-    except Exception:
-        HOME_DIR = os.path.expanduser("~" + ORIGINAL_USER)
-else:
-    HOME_DIR = os.path.expanduser("~")
-
-# Paths and configurations
-PYENV_DIR = os.path.join(HOME_DIR, ".pyenv")
-PYENV_BIN = os.path.join(PYENV_DIR, "bin", "pyenv")
-
 # Lists of packages to install
-SYSTEM_DEPENDENCIES = [
+SYSTEM_DEPENDENCIES: List[str] = [
     "build-essential",
     "libssl-dev",
     "zlib1g-dev",
@@ -170,7 +177,7 @@ SYSTEM_DEPENDENCIES = [
     "wget",
 ]
 
-PIPX_TOOLS = [
+PIPX_TOOLS: List[str] = [
     "black",
     "isort",
     "flake8",
@@ -185,7 +192,6 @@ PIPX_TOOLS = [
     "poetry",
     "httpie",
     "yt-dlp",
-    "ffmpeg",
     "bandit",
     "vulture",
     "pydocstyle",
@@ -194,8 +200,6 @@ PIPX_TOOLS = [
     "ruff",
     "pyupgrade",
     "codespell",
-    "shellcheck",
-    "prettier",
 ]
 
 
@@ -250,17 +254,17 @@ def create_header() -> Panel:
     # Custom ASCII art fallback if all else fails
     if not ascii_art or len(ascii_art.strip()) == 0:
         ascii_art = """
-             _   _                       _            
- _ __  _   _| |_| |__   ___  _ __     __| | _____   __
-| '_ \| | | | __| '_ \ / _ \| '_ \   / _` |/ _ \ \ / /
-| |_) | |_| | |_| | | | (_) | | | | | (_| |  __/\ V / 
-| .__/ \__, |\__|_| |_|\___/|_| |_|  \__,_|\___| \_/  
-|_|    |___/                                          
- ___  ___| |_ _   _ _ __                              
-/ __|/ _ \ __| | | | '_ \                             
-\__ \  __/ |_| |_| | |_) |                            
-|___/\___|\__|\__,_| .__/                             
-                   |_|                                
+             _   _                                   
+ _ __  _   _| |_| |__   ___  _ __     ___ _ ____   __
+| '_ \| | | | __| '_ \ / _ \| '_ \   / _ \ '_ \ \ / /
+| |_) | |_| | |_| | | | (_) | | | | |  __/ | | \ V / 
+| .__/ \__, |\__|_| |_|\___/|_| |_|  \___|_| |_|\_/  
+|_|    |___/                                         
+ ___  ___| |_ _   _ _ __                             
+/ __|/ _ \ __| | | | '_ \                            
+\__ \  __/ |_| |_| | |_) |                           
+|___/\___|\__|\__,_| .__/                            
+                   |_|                               
         """
 
     # Clean up extra whitespace that might cause display issues
@@ -343,7 +347,7 @@ def display_panel(
         title: Optional panel title
     """
     panel = Panel(
-        Text.from_markup(f"[bold {style}]{message}[/]"),
+        Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
         padding=(1, 2),
         title=f"[bold {style}]{title}[/]" if title else None,
@@ -355,19 +359,19 @@ def display_panel(
 # Command Execution Helper
 # ----------------------------------------------------------------
 def run_command(
-    cmd,
-    shell=False,
-    check=True,
-    capture_output=True,
-    timeout=DEFAULT_TIMEOUT,
-    as_user=False,
-    env=None,
-):
+    cmd: Union[List[str], str],
+    shell: bool = False,
+    check: bool = True,
+    capture_output: bool = True,
+    timeout: int = DEFAULT_TIMEOUT,
+    as_user: bool = False,
+    env: Optional[Dict[str, str]] = None,
+) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
 
     Args:
-        cmd: Command and arguments as a list
+        cmd: Command and arguments as a list or string
         shell: Whether to run as a shell command
         check: Whether to check the return code
         capture_output: Whether to capture stdout/stderr
@@ -420,8 +424,14 @@ def run_command(
         raise
 
 
-def fix_ownership(path, recursive=True):
-    """Fix ownership of a given path to the original (non-root) user."""
+def fix_ownership(path: str, recursive: bool = True) -> None:
+    """
+    Fix ownership of a given path to the original (non-root) user.
+
+    Args:
+        path: The file or directory path to fix ownership for
+        recursive: Whether to recursively fix ownership for directories
+    """
     if ORIGINAL_USER == "root":
         return
 
@@ -438,16 +448,29 @@ def fix_ownership(path, recursive=True):
         print_warning(f"Failed to fix ownership of {path}: {e}")
 
 
-def check_command_available(command):
-    """Return True if the command is available in the PATH."""
+def check_command_available(command: str) -> bool:
+    """
+    Return True if the command is available in the PATH.
+
+    Args:
+        command: The command to check for availability
+
+    Returns:
+        True if command is available, False otherwise
+    """
     return shutil.which(command) is not None
 
 
 # ----------------------------------------------------------------
 # Core Setup Functions
 # ----------------------------------------------------------------
-def check_system():
-    """Check system compatibility and basic required tools."""
+def check_system() -> bool:
+    """
+    Check system compatibility and basic required tools.
+
+    Returns:
+        True if system check passes, False otherwise
+    """
     with console.status("[bold blue]Checking system compatibility...", spinner="dots"):
         if os.geteuid() != 0:
             print_error("This script must be run with root privileges (sudo).")
@@ -495,8 +518,13 @@ def check_system():
         return True
 
 
-def install_system_dependencies():
-    """Install required system packages using apt-get."""
+def install_system_dependencies() -> bool:
+    """
+    Install required system packages using apt-get.
+
+    Returns:
+        True if installation succeeds, False otherwise
+    """
     try:
         with console.status("[bold blue]Updating package lists...", spinner="dots"):
             run_command(["apt-get", "update"])
@@ -532,8 +560,13 @@ def install_system_dependencies():
         return False
 
 
-def install_pyenv():
-    """Install pyenv for managing Python versions."""
+def install_pyenv() -> bool:
+    """
+    Install pyenv for managing Python versions.
+
+    Returns:
+        True if installation succeeds, False otherwise
+    """
     if os.path.exists(PYENV_DIR) and os.path.isfile(PYENV_BIN):
         print_success("pyenv is already installed.")
         return True
@@ -607,8 +640,13 @@ def install_pyenv():
         return False
 
 
-def install_latest_python_with_pyenv():
-    """Install the latest Python version using pyenv."""
+def install_latest_python_with_pyenv() -> bool:
+    """
+    Install the latest Python version using pyenv.
+
+    Returns:
+        True if installation succeeds, False otherwise
+    """
     if not os.path.exists(PYENV_BIN):
         print_error("pyenv is not installed. Please install it first.")
         return False
@@ -734,8 +772,13 @@ def install_latest_python_with_pyenv():
         return False
 
 
-def install_pipx():
-    """Ensure pipx is installed for the target user."""
+def install_pipx() -> bool:
+    """
+    Ensure pipx is installed for the target user.
+
+    Returns:
+        True if installation succeeds, False otherwise
+    """
     if check_command_available("pipx"):
         print_success("pipx is already installed.")
         return True
@@ -795,8 +838,13 @@ def install_pipx():
         return False
 
 
-def install_pipx_tools():
-    """Install essential Python tools via pipx."""
+def install_pipx_tools() -> bool:
+    """
+    Install essential Python tools via pipx.
+
+    Returns:
+        True if installation succeeds, False otherwise
+    """
     if not check_command_available("pipx"):
         print_step("Installing pipx via apt-get...")
         try:
@@ -812,20 +860,7 @@ def install_pipx_tools():
         print_error("Could not find pipx executable.")
         return False
 
-    # Let the user select tools to install
-    tools_table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        border_style=NordColors.FROST_3,
-        title=f"[bold {NordColors.FROST_2}]Python Development Tools[/]",
-        title_justify="center",
-    )
-    tools_table.add_column(
-        "#", style=f"bold {NordColors.FROST_4}", justify="right", width=4
-    )
-    tools_table.add_column("Tool", style=f"bold {NordColors.FROST_2}")
-    tools_table.add_column("Description", style=NordColors.SNOW_STORM_1)
-
+    # Descriptions for common Python development tools
     tools_info = {
         "black": "Code formatter that adheres to PEP 8",
         "isort": "Import statement organizer",
@@ -840,7 +875,30 @@ def install_pipx_tools():
         "twine": "Package upload utility",
         "poetry": "Dependency management and packaging",
         "httpie": "Command-line HTTP client",
+        "yt-dlp": "YouTube and video site downloader",
+        "bandit": "Security vulnerability scanner",
+        "vulture": "Dead code detector",
+        "pydocstyle": "Docstring style checker",
+        "radon": "Code metrics tool",
+        "tox": "Test automation tool",
+        "ruff": "Fast Python linter",
+        "pyupgrade": "Python syntax upgrader",
+        "codespell": "Code spell checker",
     }
+
+    # Create tools selection table
+    tools_table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        border_style=NordColors.FROST_3,
+        title=f"[bold {NordColors.FROST_2}]Python Development Tools[/]",
+        title_justify="center",
+    )
+    tools_table.add_column(
+        "#", style=f"bold {NordColors.FROST_4}", justify="right", width=4
+    )
+    tools_table.add_column("Tool", style=f"bold {NordColors.FROST_2}")
+    tools_table.add_column("Description", style=NordColors.SNOW_STORM_1)
 
     for i, tool in enumerate(PIPX_TOOLS, 1):
         description = tools_info.get(tool, "")
@@ -921,8 +979,13 @@ def install_pipx_tools():
 # ----------------------------------------------------------------
 # Interactive Menu
 # ----------------------------------------------------------------
-def show_interactive_menu():
-    """Display an interactive menu for component selection."""
+def show_interactive_menu() -> List[str]:
+    """
+    Display an interactive menu for component selection.
+
+    Returns:
+        List of names of successfully installed components
+    """
     components = [
         SetupComponent(
             name="System Dependencies",
@@ -1084,7 +1147,7 @@ atexit.register(cleanup)
 # ----------------------------------------------------------------
 # Main Setup Process
 # ----------------------------------------------------------------
-def run_full_setup():
+def run_full_setup() -> None:
     """Run the full setup process with interactive menus."""
     console.print("\n")
     console.print(create_header())
@@ -1166,7 +1229,7 @@ def run_full_setup():
 # ----------------------------------------------------------------
 # Main Entry Point
 # ----------------------------------------------------------------
-def main():
+def main() -> None:
     """Main application entry point with error handling."""
     try:
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
