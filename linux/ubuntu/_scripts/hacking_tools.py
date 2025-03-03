@@ -1,10 +1,3 @@
-Errors to fix:
-
- ╰────────────────────────────────────────────────────────────────────────────────────────╯                     
-                             LiveError: Only one live display may be active at once                                                         
-✗ Installation failed: Only one live display may be active at once
-
-
 #!/usr/bin/env python3
 """
 Fully Automated Security Tools Installer
@@ -29,8 +22,6 @@ import glob
 import signal
 import atexit
 import json
-
-# No command line argument parsing needed
 import platform
 import shutil
 from pathlib import Path
@@ -832,13 +823,14 @@ class SystemSetup:
             return False
 
     def install_packages(
-        self, packages: List[str], skip_failed: bool = False
+        self, packages: List[str], progress_callback=None, skip_failed: bool = False
     ) -> Tuple[bool, List[str]]:
         """
         Install packages using nala or apt.
 
         Args:
             packages: List of package names to install
+            progress_callback: Callback function to update progress
             skip_failed: Whether to continue even if some packages fail
 
         Returns:
@@ -867,64 +859,51 @@ class SystemSetup:
             # Install in chunks to avoid command line length limits
             chunk_size = 15  # Smaller chunks for better error handling
 
-            with Progress(
-                SpinnerColumn(style=f"{NordColors.FROST_1}"),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(
-                    bar_width=40,
-                    style=NordColors.FROST_4,
-                    complete_style=NordColors.FROST_2,
-                ),
-                TextColumn("[bold {task.percentage:>3.0f}%]"),
-                TimeRemainingColumn(),
-                console=console,
-            ) as progress:
-                install_task = progress.add_task(
-                    f"[{NordColors.FROST_2}]Installing packages...", total=len(packages)
-                )
+            # Process packages in chunks
+            for i in range(0, len(packages), chunk_size):
+                chunk = packages[i : i + chunk_size]
+                chunk_desc = f"Installing packages {i + 1}-{min(i + chunk_size, len(packages))} of {len(packages)}"
 
-                for i in range(0, len(packages), chunk_size):
-                    chunk = packages[i : i + chunk_size]
-                    try:
-                        progress.update(
-                            install_task,
-                            description=f"[{NordColors.FROST_2}]Installing packages {i + 1}-{min(i + chunk_size, len(packages))} of {len(packages)}...",
+                if progress_callback:
+                    progress_callback(chunk_desc, i, len(packages))
+                else:
+                    self.log_operation(chunk_desc)
+
+                try:
+                    run_command(install_cmd + chunk, env=env, logger=self.logger)
+                    self.successful_packages.extend(chunk)
+
+                except subprocess.CalledProcessError as e:
+                    # Chunk failed, try individual packages
+                    if self.logger:
+                        self.logger.error(f"Failed to install chunk: {e}")
+
+                    if progress_callback:
+                        progress_callback(
+                            f"Retrying failed packages individually...",
+                            i,
+                            len(packages),
+                        )
+                    else:
+                        self.log_operation(
+                            "Retrying failed packages individually...", "warning"
                         )
 
-                        run_command(install_cmd + chunk, env=env, logger=self.logger)
-                        self.successful_packages.extend(chunk)
-                        progress.advance(install_task, len(chunk))
-
-                    except subprocess.CalledProcessError as e:
-                        # Chunk failed, try individual packages
-                        if self.logger:
-                            self.logger.error(f"Failed to install chunk: {e}")
-
-                        progress.update(
-                            install_task,
-                            description=f"[{NordColors.YELLOW}]Retrying failed packages individually...",
-                        )
-
-                        for package in chunk:
-                            if package not in self.successful_packages:
-                                try:
-                                    run_command(
-                                        install_cmd + [package],
-                                        env=env,
-                                        logger=self.logger,
+                    for package in chunk:
+                        if package not in self.successful_packages:
+                            try:
+                                run_command(
+                                    install_cmd + [package],
+                                    env=env,
+                                    logger=self.logger,
+                                )
+                                self.successful_packages.append(package)
+                            except subprocess.CalledProcessError:
+                                failed_packages.append(package)
+                                if self.logger:
+                                    self.logger.error(
+                                        f"Failed to install individual package: {package}"
                                     )
-                                    self.successful_packages.append(package)
-                                    progress.advance(install_task, 1)
-
-                                except subprocess.CalledProcessError:
-                                    failed_packages.append(package)
-                                    if self.logger:
-                                        self.logger.error(
-                                            f"Failed to install individual package: {package}"
-                                        )
-
-                                    # Still advance the progress bar
-                                    progress.advance(install_task, 1)
 
             if failed_packages:
                 if skip_failed:
@@ -1160,13 +1139,16 @@ class SystemSetup:
 # ----------------------------------------------------------------
 # UI Components
 # ----------------------------------------------------------------
-def show_installation_plan(selected_categories: Optional[List[str]] = None) -> None:
+def show_installation_plan(selected_categories: Optional[List[str]] = None) -> Table:
     """
-    Display installation plan with all categories in a table.
+    Create a table showing the installation plan with all categories.
     Since the script is fully automated, this is just informational.
 
     Args:
         selected_categories: List of categories to install, or None for all
+
+    Returns:
+        Rich Table object with installation plan
     """
     table = Table(
         show_header=True,
@@ -1204,29 +1186,7 @@ def show_installation_plan(selected_categories: Optional[List[str]] = None) -> N
         table.add_row(f"{prefix}{category}", str(len(tools)), tool_list)
         total += len(tools)
 
-    # Get unique package count (some packages may appear in multiple categories)
-    unique_packages = set()
-    for category, tools in categories_to_show:
-        unique_packages.update(tools)
-
-    console.print(
-        Panel(
-            table,
-            title="[bold]Installation Plan[/]",
-            border_style=f"{NordColors.FROST_2}",
-        )
-    )
-
-    if selected_categories:
-        console.print(
-            f"Installing [bold {NordColors.FROST_1}]{len(unique_packages)}[/] unique packages "
-            f"from [bold {NordColors.FROST_1}]{len(selected_categories)}[/] selected categories"
-        )
-    else:
-        console.print(
-            f"Installing [bold {NordColors.FROST_1}]{len(unique_packages)}[/] unique packages "
-            f"from all {len(SECURITY_TOOLS)} categories"
-        )
+    return table
 
 
 # ----------------------------------------------------------------
@@ -1234,14 +1194,14 @@ def show_installation_plan(selected_categories: Optional[List[str]] = None) -> N
 # ----------------------------------------------------------------
 def main() -> None:
     """Main execution function with fully automated operation."""
-    # Set default configuration
+    # Set default configuration - these would normally be command-line arguments
+    # but we're making this fully automated with no CLI parsing
     simulate = False  # Actually perform installation
     verbose = False  # Normal output level
     skip_failed = True  # Continue despite package failures
-    selected_categories = None  # Install all categories
+    selected_categories = None  # Install all categories by default
     report_dir = DEFAULT_REPORT_DIR
     log_dir = DEFAULT_LOG_DIR
-    show_header = True  # Display the ASCII art header
 
     # Setup logging
     logger = setup_logging(log_dir, verbose)
@@ -1271,9 +1231,8 @@ def main() -> None:
             sys.exit(1)
 
         # Clear console and show header
-        if show_header:
-            console.clear()
-            console.print(create_header())
+        console.clear()
+        console.print(create_header())
 
         # Initialize system setup
         setup = SystemSetup(
@@ -1283,11 +1242,49 @@ def main() -> None:
             selected_categories=selected_categories,
         )
 
-        # Display installation plan
-        show_installation_plan(selected_categories)
+        # Display installation plan with timing information
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        console.print(
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
+                f"[{NordColors.SNOW_STORM_1}]Host: {platform.node()}[/]"
+            )
+        )
         console.print()
 
-        # Start main installation process
+        plan_table = show_installation_plan(selected_categories)
+        console.print(
+            Panel(
+                plan_table,
+                title="[bold]Installation Plan[/]",
+                border_style=f"{NordColors.FROST_2}",
+            )
+        )
+
+        # Get unique package count (some packages may appear in multiple categories)
+        unique_packages = set()
+        if selected_categories:
+            for category, tools in {
+                k: v for k, v in SECURITY_TOOLS.items() if k in selected_categories
+            }.items():
+                unique_packages.update(tools)
+        else:
+            for tools in SECURITY_TOOLS.values():
+                unique_packages.update(tools)
+
+        if selected_categories:
+            console.print(
+                f"Installing [bold {NordColors.FROST_1}]{len(unique_packages)}[/] unique packages "
+                f"from [bold {NordColors.FROST_1}]{len(selected_categories)}[/] selected categories"
+            )
+        else:
+            console.print(
+                f"Installing [bold {NordColors.FROST_1}]{len(unique_packages)}[/] unique packages "
+                f"from all {len(SECURITY_TOOLS)} categories"
+            )
+        console.print()
+
+        # Create a single Progress instance for all operations
         with Progress(
             SpinnerColumn(style=f"{NordColors.FROST_1}"),
             TextColumn("[progress.description]{task.description}"),
@@ -1301,14 +1298,25 @@ def main() -> None:
             console=console,
         ) as progress:
             # Create main task
-            main_task = progress.add_task("[cyan]Setting up system...", total=100)
+            main_task = progress.add_task("[cyan]Overall Progress", total=100)
+            current_task = progress.add_task(
+                "Initializing...", total=100, visible=False
+            )
 
             # Step 1: Clean up package system
             progress.update(
                 main_task,
-                description=f"[{NordColors.FROST_2}]Cleaning up package system...",
+                description=f"[{NordColors.FROST_2}]Overall Progress - Cleaning package system",
                 completed=0,
             )
+
+            progress.update(
+                current_task,
+                visible=True,
+                completed=0,
+                description=f"[{NordColors.FROST_2}]Cleaning package system",
+            )
+
             if not setup.cleanup_package_system():
                 if not skip_failed:
                     display_panel(
@@ -1326,13 +1334,21 @@ def main() -> None:
                         logger,
                     )
             progress.update(main_task, completed=20)
+            progress.update(current_task, completed=100)
 
             # Step 2: Setup package manager
             progress.update(
                 main_task,
-                description=f"[{NordColors.FROST_2}]Setting up package manager...",
+                description=f"[{NordColors.FROST_2}]Overall Progress - Setting up package manager",
                 completed=20,
             )
+
+            progress.update(
+                current_task,
+                completed=0,
+                description=f"[{NordColors.FROST_2}]Setting up package manager",
+            )
+
             if not setup.setup_package_manager():
                 if not skip_failed:
                     display_panel(
@@ -1350,19 +1366,37 @@ def main() -> None:
                         logger,
                     )
             progress.update(main_task, completed=40)
+            progress.update(current_task, completed=100)
 
             # Step 3: Install selected packages
             progress.update(
                 main_task,
-                description=f"[{NordColors.FROST_2}]Installing security tools...",
+                description=f"[{NordColors.FROST_2}]Overall Progress - Installing security tools",
                 completed=40,
+            )
+
+            progress.update(
+                current_task,
+                completed=0,
+                description=f"[{NordColors.FROST_2}]Installing security tools",
             )
 
             # Get list of packages to install
             target_packages = setup.get_target_packages()
 
+            # Create a callback for updating the progress inside install_packages
+            def update_install_progress(description, current, total):
+                percent = min(100, int((current / total) * 100))
+                progress.update(
+                    current_task,
+                    description=f"[{NordColors.FROST_2}]{description}",
+                    completed=percent,
+                )
+
             success, failed_packages = setup.install_packages(
-                target_packages, skip_failed=skip_failed
+                target_packages,
+                progress_callback=update_install_progress,
+                skip_failed=skip_failed,
             )
 
             if failed_packages and not skip_failed and not simulate:
@@ -1376,31 +1410,43 @@ def main() -> None:
             elif failed_packages:
                 progress.update(
                     main_task,
-                    description=f"[{NordColors.YELLOW}]Some packages failed to install...",
+                    description=f"[{NordColors.YELLOW}]Overall Progress - Some packages failed",
                     completed=80,
                 )
             else:
                 progress.update(
                     main_task,
-                    description=f"[{NordColors.GREEN}]Package installation completed successfully!",
+                    description=f"[{NordColors.GREEN}]Overall Progress - Packages installed successfully",
                     completed=80,
                 )
+
+            progress.update(current_task, completed=100)
 
             # Step 4: Configure installed services
             progress.update(
                 main_task,
-                description=f"[{NordColors.FROST_2}]Configuring services...",
+                description=f"[{NordColors.FROST_2}]Overall Progress - Configuring services",
                 completed=80,
             )
 
+            progress.update(
+                current_task,
+                completed=0,
+                description=f"[{NordColors.FROST_2}]Configuring installed services",
+            )
+
             setup.configure_installed_services()
+            progress.update(current_task, completed=100)
 
             # Complete the progress
             progress.update(
                 main_task,
-                description=f"[{NordColors.GREEN}]Installation completed!",
+                description=f"[{NordColors.GREEN}]Overall Progress - Installation completed",
                 completed=100,
             )
+
+            # Hide the current task now that we're done
+            progress.update(current_task, visible=False)
 
         # Save installation report
         report_file = setup.save_installation_report(report_dir)

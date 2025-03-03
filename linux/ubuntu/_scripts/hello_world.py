@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """
-Nord-Themed Hello World App
+Automated Nord-Themed Hello World
 --------------------------------------------------
 
-An interactive terminal application that displays stylish 'Hello, World!'
+A streamlined terminal application that automatically displays stylish 'Hello, World!'
 messages with a sophisticated Nord dark theme, dynamic ASCII art headers,
 and animated terminal effects.
 
-Usage:
-  Run the script and follow the on-screen prompts to interact with the application.
-  - Enter text to see it displayed as ASCII art
-  - Press Enter with no input to use default text
-  - Type 'q' or 'quit' to exit the application
+This version runs completely unattended with no user interaction required.
+It sequentially demonstrates various text effects using the Nord color palette.
 
-Version: 1.0.0
+Version: 2.0.0
 """
 
 import atexit
@@ -23,7 +20,7 @@ import signal
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Callable
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -55,11 +52,12 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration
 # ----------------------------------------------------------------
-VERSION: str = "1.0.0"
+VERSION: str = "2.0.0"
 APP_NAME: str = "Hello World"
 APP_SUBTITLE: str = "Nord-Themed Terminal Art"
 DEFAULT_TEXT: str = "Hello, World!"
 ANIMATION_DURATION: float = 2.0
+EFFECT_DURATION: float = 3.0  # How long to show each effect
 
 
 # ----------------------------------------------------------------
@@ -109,11 +107,13 @@ class TextEffect:
         name: The name of the effect
         description: A brief description of what the effect does
         color: The Nord color to use for this effect
+        apply_func: The function that applies this effect
     """
 
     name: str
     description: str
     color: str
+    apply_func: Callable[[str], None]
 
 
 # ----------------------------------------------------------------
@@ -129,13 +129,13 @@ def create_header(text: str = APP_NAME) -> Panel:
     Returns:
         Panel containing the styled header
     """
-    # Try different fonts for the best aesthetics
-    fonts = ["slant", "small", "standard", "big", "doom"]
+    # Use smaller, more compact but still tech-looking fonts
+    compact_fonts = ["slant", "small", "standard", "big", "doom"]
 
     # Try each font until we find one that works well
-    for font_name in fonts:
+    for font_name in compact_fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name)
+            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
             ascii_art = fig.renderText(text)
 
             # If we got a reasonable result, use it
@@ -144,7 +144,17 @@ def create_header(text: str = APP_NAME) -> Panel:
         except Exception:
             continue
 
-    # Create gradient effects with Nord colors
+    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
+    if not ascii_art or len(ascii_art.strip()) == 0:
+        ascii_art = """
+ _   _      _ _         __        __         _     _ _ 
+| | | | ___| | | ___    \ \      / /__  _ __| | __| | |
+| |_| |/ _ \ | |/ _ \    \ \ /\ / / _ \| '__| |/ _` | |
+|  _  |  __/ | | (_) |    \ V  V / (_) | |  | | (_| |_|
+|_| |_|\___|_|_|\___/      \_/\_/ \___/|_|  |_|\__,_(_)
+        """
+
+    # Create a high-tech gradient effect with Nord colors
     colors = [
         NordColors.FROST_1,
         NordColors.FROST_2,
@@ -157,11 +167,11 @@ def create_header(text: str = APP_NAME) -> Panel:
         color = colors[i % len(colors)]
         styled_text += f"[bold {color}]{line}[/]\n"
 
-    # Create a decorative tech border
+    # Add decorative tech elements
     tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
-    styled_text = tech_border + "\n" + styled_text.strip() + "\n" + tech_border
+    styled_text = tech_border + "\n" + styled_text + tech_border
 
-    # Create a panel with good padding
+    # Create a panel with sufficient padding
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
@@ -190,7 +200,7 @@ def display_spinner_art(
     text_style = NordColors.SNOW_STORM_1
 
     with Progress(
-        SpinnerColumn(style=spinner_style),
+        SpinnerColumn("dots", style=f"bold {spinner_style}"),
         TextColumn(f"[{text_style}]{message}[/]"),
         transient=True,
         console=console,
@@ -338,12 +348,78 @@ def typewriter_effect(text: str, delay: float = 0.05) -> None:
     console.print()
 
 
-# ----------------------------------------------------------------
-# Main Application Functions
-# ----------------------------------------------------------------
-def get_available_effects() -> List[TextEffect]:
+def glitch_effect(text: str) -> None:
     """
-    Get a list of available text effects.
+    Display text with a glitch effect.
+
+    Args:
+        text: The text to apply the glitch effect to
+    """
+    # Simulate digital glitches
+    glitch_chars = "!@#$%^&*()_+-=[]\\{}|;':\",./<>?"
+    for i in range(6):  # More glitch iterations
+        glitched_text = "".join(
+            random.choice(glitch_chars) if random.random() < 0.3 else char
+            for char in text
+        )
+        console.print(f"[bold {NordColors.RED}]{glitched_text}[/]", end="\r")
+        time.sleep(0.15)
+    console.print(f"[bold {NordColors.RED}]{text}[/]")
+
+
+def pulsing_effect(text: str) -> None:
+    """
+    Display text with a pulsing effect.
+
+    Args:
+        text: The text to apply the pulsing effect to
+    """
+    # Improved pulsing effect with more variation
+    opacities = [100, 80, 60, 40, 20, 40, 60, 80, 100, 80, 60, 80, 100]
+    for opacity in opacities:
+        console.print(
+            Align.center(f"[bold {NordColors.PURPLE} opacity({opacity})]{text}[/]"),
+            end="\r",
+        )
+        time.sleep(0.15)
+    console.print(Align.center(f"[bold {NordColors.PURPLE}]{text}[/]"))
+
+
+def matrix_effect(text: str) -> None:
+    """
+    Display text with a matrix-like falling effect.
+
+    Args:
+        text: The text to apply the matrix effect to
+    """
+    lines = []
+    for i in range(5):  # Number of animation frames
+        line = ""
+        for j, char in enumerate(text):
+            if char.strip():
+                # Gradually reveal characters
+                if j <= i * 2:
+                    line += f"[bold {NordColors.GREEN}]{char}[/]"
+                else:
+                    line += " "
+            else:
+                line += " "
+        lines.append(line)
+
+    for line in lines:
+        console.print(Align.center(line), end="\r")
+        time.sleep(0.2)
+
+    # Final reveal
+    console.print(Align.center(f"[bold {NordColors.GREEN}]{text}[/]"))
+
+
+# ----------------------------------------------------------------
+# Effect Registry
+# ----------------------------------------------------------------
+def get_text_effects() -> List[TextEffect]:
+    """
+    Get the list of available text effects.
 
     Returns:
         List of TextEffect objects
@@ -353,84 +429,76 @@ def get_available_effects() -> List[TextEffect]:
             name="Standard",
             description="Classic Hello World display",
             color=NordColors.FROST_2,
+            apply_func=lambda text: display_message(text, NordColors.FROST_2),
         ),
         TextEffect(
             name="Rainbow",
             description="Colorful text using Nord Aurora colors",
             color=NordColors.YELLOW,
+            apply_func=display_rainbow_text,
         ),
         TextEffect(
             name="Typewriter",
             description="Character-by-character animation",
             color=NordColors.GREEN,
+            apply_func=typewriter_effect,
         ),
         TextEffect(
             name="Glitch",
             description="Text with simulated digital glitches",
             color=NordColors.RED,
+            apply_func=glitch_effect,
         ),
         TextEffect(
             name="Pulsing",
             description="Text that pulses with changing intensity",
             color=NordColors.PURPLE,
+            apply_func=pulsing_effect,
+        ),
+        TextEffect(
+            name="Matrix",
+            description="Matrix-inspired falling character effect",
+            color=NordColors.GREEN,
+            apply_func=matrix_effect,
         ),
     ]
     return effects
 
 
-def apply_effect(text: str, effect: TextEffect) -> None:
+# ----------------------------------------------------------------
+# Main Application Functions
+# ----------------------------------------------------------------
+def demonstrate_effects(text: str) -> None:
     """
-    Apply a text effect to the given text.
+    Automatically demonstrate all available text effects.
 
     Args:
-        text: The text to apply the effect to
-        effect: The TextEffect to apply
+        text: The text to display with various effects
     """
-    console.print(f"\n[bold {effect.color}]Applying {effect.name} effect:[/]")
-    time.sleep(0.5)
-
-    if effect.name == "Standard":
-        display_message(text, effect.color)
-    elif effect.name == "Rainbow":
-        display_rainbow_text(text)
-    elif effect.name == "Typewriter":
-        typewriter_effect(text)
-    elif effect.name == "Glitch":
-        # Simulate digital glitches
-        glitch_chars = "!@#$%^&*()_+-=[]\\{}|;':\",./<>?"
-        for _ in range(3):
-            glitched_text = "".join(
-                random.choice(glitch_chars) if random.random() < 0.2 else char
-                for char in text
-            )
-            console.print(f"[bold {NordColors.RED}]{glitched_text}[/]", end="\r")
-            time.sleep(0.2)
-        console.print(f"[bold {effect.color}]{text}[/]")
-    elif effect.name == "Pulsing":
-        # Simulate pulsing effect
-        for opacity in [100, 70, 40, 70, 100, 70, 40, 70, 100]:
-            console.print(
-                f"[bold {effect.color} opacity({opacity})]{text}[/]", end="\r"
-            )
-            time.sleep(0.2)
-        console.print(f"[bold {effect.color}]{text}[/]")
-
-
-def run_demo_mode(text: str) -> None:
-    """
-    Run a demo mode showing various text effects.
-
-    Args:
-        text: The text to use for the demo
-    """
-    console.print(Align.center(f"[bold {NordColors.FROST_1}]Demo Mode[/]"))
-    console.print()
-
-    effects = get_available_effects()
+    effects = get_text_effects()
 
     for effect in effects:
-        apply_effect(text, effect)
-        time.sleep(1)
+        # Display effect info
+        console.print(f"\n[bold {effect.color}]Demonstrating: {effect.name}[/]")
+        console.print(f"[{NordColors.SNOW_STORM_1}]{effect.description}[/]")
+
+        # Apply the effect
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {effect.color}"),
+            TextColumn(
+                f"[{NordColors.SNOW_STORM_1}]Applying {effect.name} effect...[/]"
+            ),
+            console=console,
+            transient=True,
+        ) as progress:
+            progress.add_task("", total=None)
+            time.sleep(0.7)  # Brief delay before showing effect
+
+        # Show the effect
+        effect.apply_func(text)
+
+        # Pause between effects
+        time.sleep(EFFECT_DURATION)
 
 
 # ----------------------------------------------------------------
@@ -438,82 +506,81 @@ def run_demo_mode(text: str) -> None:
 # ----------------------------------------------------------------
 def main() -> None:
     """
-    Main application function that handles the UI flow and user interaction.
+    Main application function that handles the automated flow.
     """
     try:
         console.clear()
 
-        # Display loading animation
+        # Initial loading animation
         loading_animation(1.5)
 
-        # Display header
+        # Display header with app name
         console.print(create_header())
 
-        # Display welcome message
-        welcome_text = "Welcome to the Nord-Themed Hello World App!"
-        display_spinner_art("Initializing terminal art...", 1.0)
-        console.print(Align.center(f"[bold {NordColors.FROST_1}]{welcome_text}[/]"))
+        # Display welcome message with spinner
+        display_spinner_art(
+            "Initializing terminal art presentation...", 1.5, NordColors.FROST_1
+        )
+
+        # Welcome panel
+        welcome_panel = Panel(
+            Text.from_markup(
+                f"[bold {NordColors.SNOW_STORM_1}]Welcome to the Automated Nord-Themed Hello World App![/]"
+            ),
+            border_style=Style(color=NordColors.FROST_2),
+            padding=(1, 2),
+        )
+        console.print(welcome_panel)
+
+        # Display sequence progress
+        with Progress(
+            TextColumn(f"[bold {NordColors.FROST_3}]Preparing demonstration sequence"),
+            BarColumn(
+                bar_width=40,
+                style=NordColors.POLAR_NIGHT_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[bold {NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+            console=console,
+        ) as progress:
+            demo_task = progress.add_task("Preparing", total=100)
+            for i in range(100):
+                time.sleep(0.01)
+                progress.update(demo_task, completed=i + 1)
+
         console.print()
-
-        while True:
-            # Get user input
-            console.print(
-                f"[{NordColors.SNOW_STORM_1}]Enter text to display (or press Enter for default, 'd' for demo, 'q' to quit):[/] ",
-                end="",
-            )
-            user_input = input().strip()
-
-            # Handle exit command
-            if user_input.lower() in ("q", "quit", "exit"):
-                break
-
-            # Handle demo mode
-            if user_input.lower() == "d":
-                run_demo_mode(DEFAULT_TEXT)
-                continue
-
-            # Use default text if no input
-            display_text = user_input if user_input else DEFAULT_TEXT
-
-            # Create header with user text
-            console.print(create_header(display_text))
-
-            # Show effects options
-            effects = get_available_effects()
-            console.print(f"\n[bold {NordColors.FROST_3}]Choose an effect:[/]")
-
-            for i, effect in enumerate(effects, 1):
-                console.print(
-                    f"[{NordColors.FROST_2}]{i}.[/] [{effect.color}]{effect.name}[/] - {effect.description}"
-                )
-
-            console.print(
-                f"\n[{NordColors.SNOW_STORM_1}]Enter effect number (1-{len(effects)}):[/] ",
-                end="",
-            )
-            effect_choice = input().strip()
-
-            try:
-                effect_index = int(effect_choice) - 1
-                if 0 <= effect_index < len(effects):
-                    apply_effect(display_text, effects[effect_index])
-                else:
-                    print_message(
-                        "Invalid effect number. Please try again.", NordColors.RED, "!"
-                    )
-            except ValueError:
-                # Default to standard effect if invalid input
-                apply_effect(display_text, effects[0])
-
-            console.print()
-
-        # Display exit message
-        display_spinner_art("Preparing to exit...", 1.0, NordColors.FROST_4)
         console.print(
             Align.center(
-                f"[bold {NordColors.GREEN}]Thank you for using the Nord-Themed Hello World App![/]"
+                f"[bold {NordColors.FROST_2}]Automatic demonstration of text effects[/]"
             )
         )
+        console.print(
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]Each effect will be shown for {EFFECT_DURATION} seconds[/]"
+            )
+        )
+        console.print()
+
+        # Demonstrate the header with custom text
+        console.print(f"[bold {NordColors.FROST_3}]Custom Header Demonstration:[/]")
+        console.print(create_header(DEFAULT_TEXT))
+        time.sleep(EFFECT_DURATION)
+
+        # Run the effect demonstrations
+        demonstrate_effects(DEFAULT_TEXT)
+
+        # Final loading and exit
+        display_spinner_art("Finalizing demonstration...", 1.0, NordColors.FROST_4)
+
+        # Exit message
+        farewell_panel = Panel(
+            Text.from_markup(
+                f"[bold {NordColors.GREEN}]Thank you for using the Automated Nord-Themed Hello World App![/]"
+            ),
+            border_style=Style(color=NordColors.GREEN),
+            padding=(1, 2),
+        )
+        console.print(farewell_panel)
 
     except KeyboardInterrupt:
         print_message("\nOperation cancelled by user", NordColors.YELLOW, "⚠")

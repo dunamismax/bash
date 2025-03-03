@@ -5,11 +5,12 @@ Script Deployment Tool
 
 A tool for deploying scripts from a source directory to a destination directory.
 The tool checks for file changes and copies only what has been modified.
+Makes .py and .sh files executable after copying.
 
 Usage:
   python3 deploy.py
 
-Version: 1.0.0
+Version: 1.1.0
 """
 
 import os
@@ -62,13 +63,16 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-VERSION: str = "1.0.0"
+VERSION: str = "1.1.0"
 APP_NAME: str = "Script Deployer"
 APP_SUBTITLE: str = "File Deployment Utility"
 
 # Deployment configuration
 SOURCE_DIR: str = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
 DEST_DIR: str = "/home/sawyer/bin"
+
+# Executable file extensions
+EXECUTABLE_EXTENSIONS: List[str] = [".py", ".sh"]
 
 
 # ----------------------------------------------------------------
@@ -119,12 +123,12 @@ def create_header() -> Panel:
     except Exception:
         # Fallback ASCII art if pyfiglet fails
         ascii_art = """
- ____            _       _     ____             _                       
-/ ___|  ___ _ __(_)_ __ | |_  |  _ \  ___ _ __ | | ___  _   _  ___ _ __ 
-\___ \ / __| '__| | '_ \| __| | | | |/ _ \ '_ \| |/ _ \| | | |/ _ \ '__|
- ___) | (__| |  | | |_) | |_  | |_| |  __/ |_) | | (_) | |_| |  __/ |   
-|____/ \___|_|  |_| .__/ \__| |____/ \___| .__/|_|\___/ \__, |\___|_|   
-                  |_|                    |_|            |___/           
+               _       _         _            _                       
+ ___  ___ _ __(_)_ __ | |_    __| | ___ _ __ | | ___  _   _  ___ _ __ 
+/ __|/ __| '__| | '_ \| __|  / _` |/ _ \ '_ \| |/ _ \| | | |/ _ \ '__|
+\__ \ (__| |  | | |_) | |_  | (_| |  __/ |_) | | (_) | |_| |  __/ |   
+|___/\___|_|  |_| .__/ \__|  \__,_|\___| .__/|_|\___/ \__, |\___|_|   
+                |_|                    |_|            |___/           
         """
 
     # Clean up extra whitespace
@@ -240,6 +244,39 @@ def list_files(directory: str) -> List[str]:
     ]
 
 
+def is_executable_file(filename: str) -> bool:
+    """
+    Check if a file should be made executable based on its extension.
+
+    Args:
+        filename: The name of the file to check
+
+    Returns:
+        True if file should be made executable, False otherwise
+    """
+    _, ext = os.path.splitext(filename)
+    return ext.lower() in EXECUTABLE_EXTENSIONS
+
+
+def make_executable(file_path: str) -> bool:
+    """
+    Make a file executable by setting the appropriate permissions.
+
+    Args:
+        file_path: Path to the file to make executable
+
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Set permissions to: Owner: rwx, Group: rx, Others: rx
+        os.chmod(file_path, 0o755)
+        return True
+    except Exception as e:
+        print_warning(f"Failed to set executable permissions on {file_path}: {e}")
+        return False
+
+
 def verify_paths() -> bool:
     """
     Verify that source and destination directories exist or can be created.
@@ -272,16 +309,17 @@ def verify_paths() -> bool:
     return True
 
 
-def deploy_files() -> Tuple[int, int, int]:
+def deploy_files() -> Tuple[int, int, int, int]:
     """
     Deploy files from source to destination directory.
 
     Returns:
-        Tuple containing (new_files, updated_files, same_files)
+        Tuple containing (new_files, updated_files, same_files, executable_files)
     """
     new_files = 0
     updated_files = 0
     same_files = 0
+    executable_files = 0
 
     source_files = list_files(SOURCE_DIR)
     dest_files = list_files(DEST_DIR)
@@ -330,20 +368,35 @@ def deploy_files() -> Tuple[int, int, int]:
                 try:
                     shutil.copy2(source_path, dest_path)
                     new_files += 1
+
+                    # Set executable permissions if needed
+                    if is_executable_file(filename) and make_executable(dest_path):
+                        executable_files += 1
+
                 except Exception as e:
                     print_warning(f"Failed to copy new file {filename}: {e}")
             elif status == "update":
                 try:
                     shutil.copy2(source_path, dest_path)
                     updated_files += 1
+
+                    # Set executable permissions if needed
+                    if is_executable_file(filename) and make_executable(dest_path):
+                        executable_files += 1
+
                 except Exception as e:
                     print_warning(f"Failed to update file {filename}: {e}")
             else:  # status == "same"
                 same_files += 1
 
+                # Check if it's executable file and make sure it has executable permissions
+                if is_executable_file(filename) and not os.access(dest_path, os.X_OK):
+                    if make_executable(dest_path):
+                        executable_files += 1
+
             progress.advance(task)
 
-    return new_files, updated_files, same_files
+    return new_files, updated_files, same_files, executable_files
 
 
 # ----------------------------------------------------------------
@@ -356,6 +409,7 @@ def display_deployment_details() -> None:
 Source: {SOURCE_DIR}
 Target: {DEST_DIR}
 Owner: {os.path.basename(os.path.expanduser("~"))}
+Executable Extensions: {", ".join(EXECUTABLE_EXTENSIONS)}
 
 """
 
@@ -411,7 +465,11 @@ def create_status_table(steps: List[Tuple[str, str, str]]) -> Table:
 
 
 def create_stats_table(
-    new_files: int, updated_files: int, same_files: int, elapsed_time: float
+    new_files: int,
+    updated_files: int,
+    same_files: int,
+    executable_files: int,
+    elapsed_time: float,
 ) -> Table:
     """
     Create a table displaying deployment statistics.
@@ -420,6 +478,7 @@ def create_stats_table(
         new_files: Number of new files copied
         updated_files: Number of files updated
         same_files: Number of files unchanged
+        executable_files: Number of files made executable
         elapsed_time: Time taken for deployment
 
     Returns:
@@ -441,6 +500,7 @@ def create_stats_table(
     table.add_row("Updated Files", str(updated_files))
     table.add_row("Unchanged Files", str(same_files))
     table.add_row("Total Files", str(new_files + updated_files + same_files))
+    table.add_row("Executable Files", str(executable_files))
     table.add_row("Elapsed Time", f"{elapsed_time:.2f} seconds")
 
     return table
@@ -457,6 +517,7 @@ def run_deployment() -> None:
     steps = [
         ("Path Verification", "PENDING", ""),
         ("File Deployment", "PENDING", ""),
+        ("Set Executable Permissions", "PENDING", ""),
     ]
 
     # Step 1: Verify paths
@@ -480,10 +541,10 @@ def run_deployment() -> None:
         )
         return
 
-    # Step 2: Deploy files
+    # Step 2: Deploy files and set executable permissions
     start_time = time.time()
     try:
-        new_files, updated_files, same_files = deploy_files()
+        new_files, updated_files, same_files, executable_files = deploy_files()
         elapsed_time = time.time() - start_time
 
         steps[1] = (
@@ -492,16 +553,25 @@ def run_deployment() -> None:
             f"Copied {new_files} new files, updated {updated_files} files",
         )
 
+        steps[2] = (
+            "Set Executable Permissions",
+            "SUCCESS",
+            f"Made {executable_files} files executable",
+        )
+
         # Display results
         console.print(create_status_table(steps))
         console.print(
-            create_stats_table(new_files, updated_files, same_files, elapsed_time)
+            create_stats_table(
+                new_files, updated_files, same_files, executable_files, elapsed_time
+            )
         )
 
         # Final message
         if new_files > 0 or updated_files > 0:
             display_panel(
-                f"Successfully deployed {new_files + updated_files} files from source to destination.",
+                f"Successfully deployed {new_files + updated_files} files from source to destination.\n"
+                f"Made {executable_files} files executable.",
                 style=NordColors.GREEN,
                 title="Success",
             )
@@ -515,6 +585,7 @@ def run_deployment() -> None:
     except Exception as e:
         elapsed_time = time.time() - start_time
         steps[1] = ("File Deployment", "FAILED", str(e))
+        steps[2] = ("Set Executable Permissions", "SKIPPED", "Deployment failed")
 
         # Display results
         console.print(create_status_table(steps))
