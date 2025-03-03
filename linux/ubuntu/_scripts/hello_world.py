@@ -48,8 +48,8 @@ def create_header(text: str) -> Panel:
     header_panel = Panel(
         Align.center(ascii_art),
         border_style=NordColors.PANEL_BORDER,
-        title=f"[bold {NordColors.ACCENT}]Nord Hello World App[/bold]",
-        subtitle=f"[bold {NordColors.TEXT}]Hello, World![/bold]",
+        title=f"[bold {NordColors.ACCENT}]Nord Hello World App[/]",
+        subtitle=f"[bold {NordColors.TEXT}]Hello, World![/]",
         padding=(1, 2),
     )
     return header_panel
@@ -62,7 +62,7 @@ def display_spinner_art(duration: float = 2.0) -> None:
     Args:
         duration: Duration in seconds to display the spinner art.
     """
-    spinner_message = f"[bold {NordColors.ACCENT}]Loading Nord Art...[/bold]"
+    spinner_message = f"[bold {NordColors.ACCENT}]Loading Nord Art...[/]"
     with Progress(
         SpinnerColumn(style=NordColors.ACCENT),
         TextColumn(spinner_message, style=NordColors.TEXT),
@@ -77,7 +77,7 @@ def display_spinner_art(duration: float = 2.0) -> None:
 
 def main() -> None:
     """
-    Main function to display the Nord themed hello world message with enhanced rich spinners art.
+    Main function to display the Nord themed hello world message with enhanced rich spinner art.
     """
     console.clear()
 
@@ -93,13 +93,13 @@ def main() -> None:
 
     # Show a welcoming message with Nord styling
     console.print(
-        f"\n[bold {NordColors.SUCCESS}]Welcome to the Nord Themed Python Hello World App![/bold]\n"
+        f"\n[bold {NordColors.SUCCESS}]Welcome to the Nord Themed Python Hello World App![/]\n"
     )
 
     # Use a spinner to simulate a final processing effect before exit
     with Progress(
         SpinnerColumn(style=NordColors.ACCENT),
-        TextColumn(f"[dim {NordColors.TEXT}]Preparing to exit...[/dim]"),
+        TextColumn(f"[dim {NordColors.TEXT}]Preparing to exit...[/]"),
         transient=True,
         console=console,
     ) as progress:
@@ -107,7 +107,7 @@ def main() -> None:
         time.sleep(2)
 
     # Prompt user to exit
-    console.print(f"[dim {NordColors.TEXT}]Press Enter to exit...[/dim]")
+    console.print(f"[dim {NordColors.TEXT}]Press Enter to exit...[/]")
     input()
 
 
