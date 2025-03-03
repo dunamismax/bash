@@ -423,62 +423,62 @@ def load_tailscale_devices() -> List[Device]:
         Device(
             name="ubuntu-server",
             ip_address="100.109.43.88",
-            description="Primary server",
+            description="Primary Server",
         ),
         Device(
             name="ubuntu-lenovo",
             ip_address="100.66.213.7",
-            description="Development laptop",
+            description="Development Laptop",
         ),
         Device(
             name="raspberrypi-5",
             ip_address="100.105.117.18",
-            description="Media server",
+            description="Raspberry Pi 5",
         ),
         Device(
             name="raspberrypi-3",
             ip_address="100.116.191.42",
-            description="IoT controller",
+            description="Raspberry Pi 3",
         ),
         Device(
             name="ubuntu-server-vm-01",
             ip_address="100.84.119.114",
-            description="Web server VM",
+            description="Ubuntu Server VM 1",
         ),
         Device(
             name="ubuntu-server-vm-02",
             ip_address="100.122.237.56",
-            description="Database VM",
+            description="Ubuntu Server VM 2",
         ),
         Device(
             name="ubuntu-server-vm-03",
             ip_address="100.97.229.120",
-            description="Test environment",
+            description="Ubuntu Server VM 3",
         ),
         Device(
             name="ubuntu-server-vm-04",
             ip_address="100.73.171.7",
-            description="CI/CD runner",
+            description="Ubuntu Server VM 4",
         ),
         Device(
             name="ubuntu-lenovo-vm-01",
             ip_address="100.107.79.81",
-            description="Windows VM",
+            description="Ubuntu Lenovo VM 1",
         ),
         Device(
             name="ubuntu-lenovo-vm-02",
             ip_address="100.78.101.2",
-            description="macOS VM",
+            description="Ubuntu Lenovo VM 2",
         ),
         Device(
             name="ubuntu-lenovo-vm-03",
             ip_address="100.95.115.62",
-            description="Linux VM",
+            description="Ubuntu Lenovo VM 3",
         ),
         Device(
             name="ubuntu-lenovo-vm-04",
             ip_address="100.92.31.94",
-            description="Docker host",
+            description="Ubuntu Lenovo VM 4",
         ),
     ]
 
