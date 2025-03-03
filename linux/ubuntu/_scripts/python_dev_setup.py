@@ -134,7 +134,7 @@ PIPX_TOOLS = [
 # ----------------------------------------------------------------------
 # Helper Functions
 # ----------------------------------------------------------------------
-def run_command(cmd, shell=False, check=True, capture_output=True, timeout=300, as_user=False):
+def run_command(cmd, shell=False, check=True, capture_output=True, timeout=30000, as_user=False):
     """
     Run a shell command and handle errors.
     
