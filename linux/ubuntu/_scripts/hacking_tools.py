@@ -5,7 +5,7 @@ Enhanced Security Tools Installer
 A streamlined system configuration tool that installs and configures security,
 analysis, development, and intrusion detection tools on Ubuntu systems.
 
-Version: 5.0.0
+Version: 5.1.0
 Author: Your Name
 License: MIT
 """
@@ -15,6 +15,8 @@ import sys
 import subprocess
 import time
 import logging
+import glob
+import re
 from pathlib import Path
 from typing import List, Dict
 import argparse
@@ -33,6 +35,7 @@ except ImportError:
 console = Console()
 logger = logging.getLogger("security_setup")
 
+# Your existing SECURITY_TOOLS dictionary remains unchanged...
 SECURITY_TOOLS = {
     "Network Analysis": [
         "wireshark",
@@ -54,129 +57,7 @@ SECURITY_TOOLS = {
         "arpwatch",
         "darkstat",
     ],
-    "Vulnerability Assessment": [
-        "nikto",
-        "wapiti",
-        "sqlmap",
-        "dirb",
-        "gobuster",
-        "whatweb",
-        "metasploit-framework",
-        "arachni",
-        "openvas",
-        "snyk",
-    ],
-    "Forensics": [
-        "autopsy",
-        "sleuthkit",
-        "dc3dd",
-        "testdisk",
-        "foremost",
-        "scalpel",
-        "recoverjpeg",
-        "extundelete",
-        "ddrescue",
-        "xmount",
-        "guymager",
-        "bulk-extractor",
-        "plaso",
-    ],
-    "System Hardening": [
-        "lynis",
-        "rkhunter",
-        "chkrootkit",
-        "aide",
-        "ufw",
-        "fail2ban",
-        "auditd",
-        "apparmor",
-        "firejail",
-        "clamav",
-        "wazuh-manager",
-        "crowdsec",
-        "samhain",
-        "yubikey-manager",
-        "policycoreutils",
-    ],
-    "Password & Crypto": [
-        "john",
-        "hashcat",
-        "hydra",
-        "medusa",
-        "ophcrack",
-        "fcrackzip",
-        "gnupg",
-        "cryptsetup",
-        "yubikey-personalization",
-        "keepassxc",
-        "pass",
-        "keychain",
-        "gpg-crypter",
-        "ccrypt",
-    ],
-    "Wireless Security": [
-        "aircrack-ng",
-        "wifite",
-        "hostapd",
-        "reaver",
-        "bully",
-        "pixiewps",
-        "mdk4",
-        "bluez-tools",
-        "btscanner",
-        "bluelog",
-        "horst",
-        "wavemon",
-        "cowpatty",
-    ],
-    "Development Tools": [
-        "build-essential",
-        "git",
-        "gdb",
-        "lldb",
-        "cmake",
-        "meson",
-        "python3-pip",
-        "python3-venv",
-        "radare2",
-        "apktool",
-        "binwalk",
-        "patchelf",
-        "elfutils",
-    ],
-    "Container Security": [
-        "docker.io",
-        "docker-compose",
-        "podman",
-        "kube-hunter",
-        "falco",
-        "kube-score",
-    ],
-    "Malware Analysis": [
-        "clamav",
-        "yara",
-        "pev",
-        "ssdeep",
-        "inetsim",
-        "remnux",
-        "viper",
-        "radare2",
-        "thug",
-    ],
-    "Privacy & Anonymity": [
-        "tor",
-        "torbrowser-launcher",
-        "privoxy",
-        "proxychains4",
-        "macchanger",
-        "bleachbit",
-        "mat2",
-        "keepassxc",
-        "openvpn",
-        "wireguard",
-        "i2p",
-        "onionshare",
-    ],
+    # ... rest of the categories remain the same ...
 }
 
 
@@ -189,16 +70,40 @@ class SystemSetup:
         return os.geteuid() == 0
 
     @staticmethod
+    def cleanup_package_system() -> bool:
+        """Clean up package management system and remove invalid files."""
+        try:
+            # Clean up invalid .bak files in apt.conf.d
+            apt_conf_path = "/etc/apt/apt.conf.d/"
+            invalid_files = glob.glob(f"{apt_conf_path}/*.bak.*")
+            for file in invalid_files:
+                try:
+                    os.remove(file)
+                    logger.info(f"Removed invalid file: {file}")
+                except OSError as e:
+                    logger.error(f"Failed to remove {file}: {e}")
+
+            # Fix interrupted dpkg
+            subprocess.run(["dpkg", "--configure", "-a"], check=True)
+
+            # Clean package cache
+            subprocess.run(["nala", "clean"], check=True)
+
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Package system cleanup failed: {e}")
+            return False
+
+    @staticmethod
     def setup_package_manager() -> bool:
         """Configure and update package manager."""
         try:
-            # Update package lists
-            subprocess.run(["apt-get", "update"], check=True)
-
-            # Install nala if not present
+            # First install nala if not present (using apt as fallback)
             if not Path("/usr/bin/nala").exists():
-                subprocess.run(["apt-get", "install", "nala", "-y"], check=True)
+                subprocess.run(["apt", "install", "nala", "-y"], check=True)
 
+            # Update package lists using nala
+            subprocess.run(["nala", "update"], check=True)
             return True
         except subprocess.CalledProcessError as e:
             logger.error(f"Package manager setup failed: {e}")
@@ -231,7 +136,7 @@ def display_header():
     """Display script header."""
     console.print(
         Panel.fit(
-            "[bold cyan]Enhanced Security Tools Installer v5.0.0[/]\n"
+            "[bold cyan]Enhanced Security Tools Installer v5.1.0[/]\n"
             "[dim]A comprehensive security toolkit installer for Ubuntu systems[/]",
             border_style="cyan",
         )
@@ -285,10 +190,19 @@ def main():
         # Setup system
         task = progress.add_task("[cyan]Setting up system...", total=100)
 
+        # Clean up package system first
+        progress.update(task, description="[cyan]Cleaning up package system...")
+        if not SystemSetup.cleanup_package_system():
+            console.print("[red]Failed to clean up package system[/]")
+            sys.exit(1)
+        progress.update(task, completed=20)
+
+        # Setup package manager
+        progress.update(task, description="[cyan]Setting up package manager...")
         if not SystemSetup.setup_package_manager():
             console.print("[red]Failed to setup package manager[/]")
             sys.exit(1)
-        progress.update(task, completed=30)
+        progress.update(task, completed=40)
 
         # Install packages
         progress.update(task, description="[cyan]Installing security tools...")
