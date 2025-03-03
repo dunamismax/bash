@@ -47,8 +47,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         RichHandler(console=console, rich_tracebacks=True),
-        logging.FileHandler(LOG_FILE),
-    ],
+        logging.FileHandler(LOG_FILE)
+    ]
 )
 logger = logging.getLogger("security_setup")
 
@@ -109,6 +109,7 @@ SECURITY_TOOLS = {
         "crowdsec",
         "yubikey-manager",
         "policycoreutils",
+        # samhain removed due to known installation issues
     ],
     "Password & Crypto": [
         "john",
@@ -182,12 +183,9 @@ SECURITY_TOOLS = {
     ],
 }
 
-
 class InstallationError(Exception):
     """Custom exception for installation errors."""
-
     pass
-
 
 class SystemSetup:
     """Handles system setup and package management operations."""
@@ -217,8 +215,24 @@ class SystemSetup:
                     logger.error(f"Failed to remove {file}: {e}")
 
             if not self.simulate:
+                # Try to remove problematic samhain package first
+                try:
+                    logger.info("Attempting to remove samhain package...")
+                    subprocess.run(["systemctl", "stop", "samhain.service"], check=False)
+                    subprocess.run(["apt-get", "remove", "-y", "samhain"], check=False)
+                    subprocess.run(["apt-get", "purge", "-y", "samhain"], check=False)
+                except Exception as e:
+                    logger.warning(f"Non-critical error while removing samhain: {e}")
+
                 # Fix interrupted dpkg
                 subprocess.run(["dpkg", "--configure", "-a"], check=True)
+                
+                # Force remove any remaining samhain configuration
+                try:
+                    subprocess.run(["dpkg", "--remove", "--force-remove-reinstreq", "samhain"], check=False)
+                except Exception as e:
+                    logger.warning(f"Non-critical error while force removing samhain: {e}")
+                
                 # Clean package cache
                 subprocess.run(["nala", "clean"], check=True)
 
@@ -279,17 +293,13 @@ class SystemSetup:
             "timestamp": datetime.now().isoformat(),
             "successful_packages": sorted(self.successful_packages),
             "failed_packages": sorted(self.failed_packages),
-            "simulation_mode": self.simulate,
+            "simulation_mode": self.simulate
         }
-
-        report_file = (
-            LOG_DIR
-            / f"installation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        )
-        with open(report_file, "w") as f:
+        
+        report_file = LOG_DIR / f"installation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(report_file, 'w') as f:
             json.dump(report, f, indent=2)
         logger.info(f"Installation report saved to {report_file}")
-
 
 def display_header():
     """Display script header."""
@@ -300,7 +310,6 @@ def display_header():
             border_style="cyan",
         )
     )
-
 
 def show_installation_plan():
     """Display installation plan with category table."""
@@ -316,15 +325,12 @@ def show_installation_plan():
     console.print(Panel(table, title="Installation Plan", border_style="cyan"))
     console.print(f"\nTotal packages: [bold cyan]{total}[/]")
 
-
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(description="Security Tools Installer")
     parser.add_argument("--simulate", action="store_true", help="Simulate installation")
     parser.add_argument("--skip-confirm", action="store_true", help="Skip confirmation")
-    parser.add_argument(
-        "--skip-failed", action="store_true", help="Continue on package failures"
-    )
+    parser.add_argument("--skip-failed", action="store_true", help="Continue on package failures")
     args = parser.parse_args()
 
     try:
@@ -396,7 +402,7 @@ def main():
             console.print(f"Successfully installed: {len(setup.successful_packages)}")
         else:
             console.print("\n[bold green]🎉 Installation completed successfully![/]")
-
+        
         console.print(f"\nDetailed logs available at: {LOG_FILE}")
 
     except KeyboardInterrupt:
@@ -406,7 +412,6 @@ def main():
         logger.exception("Unexpected error occurred")
         console.print(f"[red]An unexpected error occurred: {str(e)}[/]")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
