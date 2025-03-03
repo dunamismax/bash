@@ -20,7 +20,7 @@ Usage:
 
 Run this script with root privileges on Linux/Ubuntu.
 
-Version: 1.0.0
+Version: 2.0.0
 """
 
 import atexit
@@ -33,9 +33,10 @@ import socket
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple, Callable, Union
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -55,12 +56,14 @@ try:
         TextColumn,
         BarColumn,
         TimeRemainingColumn,
+        TaskProgressColumn,
     )
     from rich.align import Align
     from rich.style import Style
     from rich.traceback import install as install_rich_traceback
+    from rich.prompt import Prompt, Confirm
 except ImportError:
-    print("This script requires the 'rich', 'pyfiglet', and other libraries.")
+    print("This script requires several Python libraries.")
     print("Please install them using: pip install rich pyfiglet")
     sys.exit(1)
 
@@ -71,26 +74,26 @@ install_rich_traceback(show_locals=True)
 # Configuration & Constants
 # ----------------------------------------------------------------
 HOSTNAME: str = socket.gethostname()
-VERSION: str = "1.0.0"
+VERSION: str = "2.0.0"
 APP_NAME: str = "Restic Backup Manager"
 APP_SUBTITLE: str = "Secure Backup Solution"
 
-# Backblaze B2 credentials and bucket name (used by Restic's B2 backend)
-B2_ACCOUNT_ID: str = "12345678"
-B2_ACCOUNT_KEY: str = "12345678"
-B2_BUCKET: str = "sawyer-backups"
+# Configuration that should be customized per installation
+# In a production environment, these should be loaded from a config file
+# or environment variables rather than hardcoded
+B2_ACCOUNT_ID: str = "YOUR_B2_ACCOUNT_ID"
+B2_ACCOUNT_KEY: str = "YOUR_B2_ACCOUNT_KEY"
+B2_BUCKET: str = "your-backup-bucket"
+RESTIC_PASSWORD: str = "YOUR_RESTIC_PASSWORD"
 
-# RESTIC_PASSWORD is now baked into the script.
-RESTIC_PASSWORD: str = "12345678"
-
-# Restic repository configuration per service – the repository URL uses the b2 backend.
+# Restic repository configuration per service
 REPOSITORIES: Dict[str, str] = {
     "system": f"b2:{B2_BUCKET}:{HOSTNAME}/ubuntu-system-backup",
     "vm": f"b2:{B2_BUCKET}:{HOSTNAME}/vm-backups",
     "plex": f"b2:{B2_BUCKET}:{HOSTNAME}/plex-media-server-backup",
 }
 
-# Backup configurations per service:
+# Backup configurations per service
 BACKUP_CONFIGS: Dict[str, Dict] = {
     "system": {
         "paths": ["/"],
@@ -147,6 +150,10 @@ RETENTION_POLICY: str = "7d"
 LOG_DIR: str = "/var/log/backup"
 LOG_FILE: str = f"{LOG_DIR}/backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
+# Command execution defaults
+OPERATION_TIMEOUT: int = 300  # 5 minutes default timeout for long operations
+COMMAND_TIMEOUT: int = 30  # 30 seconds for standard commands
+
 
 # ----------------------------------------------------------------
 # Nord-Themed Colors
@@ -156,11 +163,14 @@ class NordColors:
 
     # Polar Night (dark) shades
     POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_2 = "#3B4252"  # Dark background shade
+    POLAR_NIGHT_3 = "#434C5E"  # Medium background shade
     POLAR_NIGHT_4 = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
     SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
     SNOW_STORM_2 = "#E5E9F0"  # Medium text color
+    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
     FROST_1 = "#8FBCBB"  # Light cyan
@@ -173,26 +183,28 @@ class NordColors:
     ORANGE = "#D08770"  # Orange
     YELLOW = "#EBCB8B"  # Yellow
     GREEN = "#A3BE8C"  # Green
+    PURPLE = "#B48EAD"  # Purple
 
 
-# Create a Rich Console
+# Create a Rich Console with Nord theme
 console: Console = Console(theme=None, highlight=False)
 
 
 # ----------------------------------------------------------------
-# Console and Logging Helpers
+# Console and UI Helpers
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a high-tech ASCII art header with impressive styling.
+    Create a high-tech ASCII art header with Nord theme styling.
 
     Returns:
         Panel containing the styled header
     """
     # Use smaller, more compact but still tech-looking fonts
-    compact_fonts = ["slant", "small", "smslant", "mini", "digital"]
+    compact_fonts = ["slant", "small", "smslant", "mini", "digital", "banner3"]
 
     # Try each font until we find one that works well
+    ascii_art = None
     for font_name in compact_fonts:
         try:
             fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
@@ -204,7 +216,7 @@ def create_header() -> Panel:
         except Exception:
             continue
 
-    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
+    # Custom ASCII art fallback if all else fails
     if not ascii_art or len(ascii_art.strip()) == 0:
         ascii_art = """
                _   _        _                _                
@@ -212,7 +224,7 @@ def create_header() -> Panel:
 | '__/ _ \/ __| __| |/ __| | '_ \ / _` |/ __| |/ / | | | '_ \ 
 | | |  __/\__ \ |_| | (__  | |_) | (_| | (__|   <| |_| | |_) |
 |_|  \___||___/\__|_|\___| |_.__/ \__,_|\___|_|\_\\__,_| .__/ 
-                                                       |_|     
+                                                       |_|    
         """
 
     # Clean up extra whitespace that might cause display issues
@@ -223,6 +235,8 @@ def create_header() -> Panel:
         NordColors.FROST_1,
         NordColors.FROST_2,
         NordColors.FROST_3,
+        NordColors.FROST_4,
+        NordColors.FROST_3,
         NordColors.FROST_2,
     ]
 
@@ -232,14 +246,15 @@ def create_header() -> Panel:
         styled_text += f"[bold {color}]{line}[/]\n"
 
     # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
-    styled_text = tech_border + "\n" + styled_text + tech_border
+    tech_border_top = f"[{NordColors.FROST_3}]╭" + "─" * 58 + "╮[/]"
+    tech_border_bottom = f"[{NordColors.FROST_3}]╰" + "─" * 58 + "╯[/]"
+    styled_text = tech_border_top + "\n" + styled_text + tech_border_bottom
 
     # Create a panel with sufficient padding to avoid cutoff
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 1),
+        padding=(1, 2),
         title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
         title_align="right",
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
@@ -250,47 +265,59 @@ def create_header() -> Panel:
 
 
 def print_message(
-    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+    text: str, style: str = NordColors.FROST_2, prefix: str = "•", log: bool = True
 ) -> None:
     """
-    Print a styled message.
+    Print a styled message and optionally log it.
 
     Args:
         text: The message to display
         style: The color style to use
         prefix: The prefix symbol
+        log: Whether to also log this message
     """
-    console.print(f"[{style}]{prefix} {text}[/{style}]")
+    message = f"{prefix} {text}"
+    console.print(f"[{style}]{message}[/{style}]")
+
+    if log:
+        log_message(text)
 
 
-def print_success(text: str) -> None:
+def print_success(text: str, log: bool = True) -> None:
     """
     Print a success message.
 
     Args:
         text: The success message to display
+        log: Whether to also log this message
     """
-    print_message(text, NordColors.GREEN, "✓")
+    print_message(text, NordColors.GREEN, "✓", log)
 
 
-def print_warning(text: str) -> None:
+def print_warning(text: str, log: bool = True) -> None:
     """
     Print a warning message.
 
     Args:
         text: The warning message to display
+        log: Whether to also log this message
     """
-    print_message(text, NordColors.YELLOW, "⚠")
+    print_message(text, NordColors.YELLOW, "⚠", log)
+    if log:
+        log_message(text, "WARNING")
 
 
-def print_error(text: str) -> None:
+def print_error(text: str, log: bool = True) -> None:
     """
     Print an error message.
 
     Args:
         text: The error message to display
+        log: Whether to also log this message
     """
-    print_message(text, NordColors.RED, "✗")
+    print_message(text, NordColors.RED, "✗", log)
+    if log:
+        log_message(text, "ERROR")
 
 
 def display_panel(
@@ -321,9 +348,9 @@ def setup_logging() -> None:
             log_file.write(
                 f"\n--- Backup session started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
             )
-        print_success(f"Logging to {LOG_FILE}")
+        print_success(f"Logging to {LOG_FILE}", log=False)
     except Exception as e:
-        print_warning(f"Could not set up logging: {e}")
+        print_warning(f"Could not set up logging: {e}", log=False)
 
 
 def log_message(message: str, level: str = "INFO") -> None:
@@ -339,7 +366,52 @@ def log_message(message: str, level: str = "INFO") -> None:
         with open(LOG_FILE, "a") as log_file:
             log_file.write(f"{timestamp} - {level} - {message}\n")
     except Exception:
-        pass
+        pass  # Silent failure if logging is not possible
+
+
+def get_user_input(prompt: str, default: Optional[str] = None) -> str:
+    """
+    Get input from the user with a styled prompt.
+
+    Args:
+        prompt: The prompt to display
+        default: Optional default value
+
+    Returns:
+        User input as string
+    """
+    return Prompt.ask(
+        f"[bold {NordColors.FROST_2}]{prompt}[/]",
+        default=default,
+        console=console,
+    )
+
+
+def get_user_confirmation(prompt: str, default: bool = True) -> bool:
+    """
+    Get confirmation from the user with a styled prompt.
+
+    Args:
+        prompt: The prompt to display
+        default: Default value (True/False)
+
+    Returns:
+        User confirmation as boolean
+    """
+    return Confirm.ask(
+        f"[bold {NordColors.FROST_2}]{prompt}[/]",
+        default=default,
+        console=console,
+    )
+
+
+def wait_for_enter() -> None:
+    """Wait for the user to press Enter."""
+    console.print(
+        f"[{NordColors.SNOW_STORM_1}]Press Enter to continue...[/]",
+        end="",
+    )
+    input()
 
 
 # ----------------------------------------------------------------
@@ -350,7 +422,8 @@ def run_command(
     env: Optional[Dict[str, str]] = None,
     check: bool = True,
     capture_output: bool = True,
-    timeout: Optional[int] = None,
+    timeout: Optional[int] = COMMAND_TIMEOUT,
+    silent: bool = False,
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command with robust error handling.
@@ -361,15 +434,21 @@ def run_command(
         check: Whether to check the return code
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
+        silent: Whether to suppress command output
 
     Returns:
         CompletedProcess instance with command results
     """
     try:
-        print_message(f"Running: {' '.join(cmd)}")
+        if not silent:
+            print_message(f"Running: {' '.join(cmd)}", log=False)
+
+        # Create a clean environment if not provided
+        command_env = env if env is not None else os.environ.copy()
+
         result = subprocess.run(
             cmd,
-            env=env or os.environ.copy(),
+            env=command_env,
             check=check,
             text=True,
             capture_output=capture_output,
@@ -377,19 +456,31 @@ def run_command(
         )
         return result
     except subprocess.CalledProcessError as e:
-        print_error(f"Command failed: {' '.join(cmd)}")
+        if not silent:
+            print_error(f"Command failed: {' '.join(cmd)}", log=False)
+            if e.stdout and len(e.stdout.strip()) > 0:
+                console.print(f"[dim]{e.stdout.strip()}[/dim]")
+            if e.stderr and len(e.stderr.strip()) > 0:
+                console.print(f"[bold {NordColors.RED}]{e.stderr.strip()}[/]")
+
+        log_message(f"Command failed: {' '.join(cmd)}", "ERROR")
         if e.stdout:
-            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
+            log_message(f"Command stdout: {e.stdout.strip()}", "ERROR")
         if e.stderr:
-            console.print(
-                f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/bold {NordColors.RED}]"
-            )
+            log_message(f"Command stderr: {e.stderr.strip()}", "ERROR")
+
         raise
     except subprocess.TimeoutExpired:
-        print_error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        error_msg = f"Command timed out after {timeout} seconds: {' '.join(cmd)}"
+        if not silent:
+            print_error(error_msg, log=False)
+        log_message(error_msg, "ERROR")
         raise
     except Exception as e:
-        print_error(f"Error executing command: {' '.join(cmd)}\nDetails: {e}")
+        error_msg = f"Error executing command: {' '.join(cmd)}\nDetails: {str(e)}"
+        if not silent:
+            print_error(error_msg, log=False)
+        log_message(error_msg, "ERROR")
         raise
 
 
@@ -398,7 +489,7 @@ def run_command(
 # ----------------------------------------------------------------
 def cleanup() -> None:
     """Perform any cleanup tasks before exit."""
-    print_message("Cleaning up...", NordColors.FROST_3)
+    print_message("Cleaning up...", NordColors.FROST_3, log=False)
     log_message("Cleanup performed")
 
 
@@ -410,8 +501,12 @@ def signal_handler(sig: int, frame: Any) -> None:
         sig: Signal number
         frame: Current stack frame
     """
-    sig_name: str = "SIGINT" if sig == signal.SIGINT else "SIGTERM"
-    print_warning(f"Process interrupted by {sig_name}")
+    try:
+        sig_name = signal.Signals(sig).name
+    except (ValueError, AttributeError):
+        sig_name = f"Signal {sig}"
+
+    print_warning(f"Process interrupted by {sig_name}", log=False)
     log_message(f"Process interrupted by {sig_name}", "WARNING")
     cleanup()
     sys.exit(128 + sig)
@@ -426,6 +521,28 @@ atexit.register(cleanup)
 # ----------------------------------------------------------------
 # B2 CLI Functions (Bucket Management)
 # ----------------------------------------------------------------
+def check_root_privileges() -> bool:
+    """
+    Check if the script is running with root privileges.
+
+    Returns:
+        True if running as root, False otherwise
+    """
+    if os.name == "posix":  # Linux/macOS
+        return os.geteuid() == 0
+    elif os.name == "nt":  # Windows
+        try:
+            # This will raise an error if not admin
+            subprocess.check_output(
+                "net session", shell=True, stderr=subprocess.DEVNULL
+            )
+            return True
+        except:
+            return False
+
+    return False
+
+
 def install_b2_cli() -> bool:
     """
     Ensure the B2 CLI tool is installed.
@@ -452,7 +569,49 @@ def install_b2_cli() -> bool:
             )
             return False
     except Exception as e:
-        print_error(f"B2 CLI installation failed: {e}")
+        print_error(f"B2 CLI installation failed: {str(e)}")
+        return False
+
+
+def install_restic() -> bool:
+    """
+    Ensure Restic is installed.
+    This function checks for Restic and attempts to install it if not found.
+
+    Returns:
+        True if installation successful or already installed, False otherwise
+    """
+    if shutil.which("restic"):
+        print_success("Restic already installed")
+        return True
+
+    print_warning("Restic not found. Attempting to install...")
+
+    try:
+        # For Debian/Ubuntu based systems
+        if shutil.which("apt"):
+            run_command(["apt", "update"])
+            run_command(["apt", "install", "-y", "restic"])
+        # For Red Hat based systems
+        elif shutil.which("dnf"):
+            run_command(["dnf", "install", "-y", "restic"])
+        # For macOS with Homebrew
+        elif shutil.which("brew"):
+            run_command(["brew", "install", "restic"])
+        else:
+            print_error("No supported package manager found to install Restic")
+            return False
+
+        if shutil.which("restic"):
+            print_success("Restic installed successfully")
+            return True
+        else:
+            print_error(
+                "Restic installation failed: command not found after installation"
+            )
+            return False
+    except Exception as e:
+        print_error(f"Restic installation failed: {str(e)}")
         return False
 
 
@@ -464,13 +623,21 @@ def authorize_b2() -> bool:
         True if authorization successful, False otherwise
     """
     try:
+        # Check if credentials are valid
+        if (
+            B2_ACCOUNT_ID == "YOUR_B2_ACCOUNT_ID"
+            or B2_ACCOUNT_KEY == "YOUR_B2_ACCOUNT_KEY"
+        ):
+            print_error(
+                "B2 credentials are not configured. Please update the script with your actual credentials."
+            )
+            return False
+
         run_command(["b2", "authorize-account", B2_ACCOUNT_ID, B2_ACCOUNT_KEY])
         print_success("B2 CLI tool authorized successfully")
-        log_message("B2 CLI tool authorized successfully")
         return True
     except Exception as e:
-        print_error(f"B2 authorization failed: {e}")
-        log_message(f"B2 authorization failed: {e}", "ERROR")
+        print_error(f"B2 authorization failed: {str(e)}")
         return False
 
 
@@ -488,23 +655,35 @@ def ensure_bucket_exists(bucket: str) -> bool:
         result = run_command(["b2", "list-buckets"])
         if bucket in result.stdout:
             print_success(f"Bucket '{bucket}' exists")
-            log_message(f"Bucket '{bucket}' exists")
             return True
         else:
             print_warning(f"Bucket '{bucket}' not found. Creating it...")
             run_command(["b2", "create-bucket", bucket, "allPrivate"])
             print_success(f"Bucket '{bucket}' created")
-            log_message(f"Bucket '{bucket}' created")
             return True
     except Exception as e:
-        print_error(f"Error ensuring bucket exists: {e}")
-        log_message(f"Error ensuring bucket exists: {e}", "ERROR")
+        print_error(f"Error ensuring bucket exists: {str(e)}")
         return False
 
 
 # ----------------------------------------------------------------
 # Restic Backup Functions
 # ----------------------------------------------------------------
+def check_restic_password() -> bool:
+    """
+    Check if the Restic password is properly configured.
+
+    Returns:
+        True if password is configured, False otherwise
+    """
+    if RESTIC_PASSWORD == "YOUR_RESTIC_PASSWORD":
+        print_error(
+            "Restic password is not configured. Please update the script with your actual password."
+        )
+        return False
+    return True
+
+
 def initialize_repository(service: str) -> bool:
     """
     Initialize the Restic repository for the given service if not already initialized.
@@ -515,6 +694,9 @@ def initialize_repository(service: str) -> bool:
     Returns:
         True if repository is ready, False on error
     """
+    if not check_restic_password():
+        return False
+
     repo = REPOSITORIES[service]
     env = os.environ.copy()
     env.update({"RESTIC_PASSWORD": RESTIC_PASSWORD})
@@ -524,31 +706,23 @@ def initialize_repository(service: str) -> bool:
     )
 
     print_message(f"Checking repository: {repo}")
-    log_message(f"Checking repository for {service}: {repo}")
 
     try:
         # Try listing snapshots to check if repository exists
-        run_command(["restic", "--repo", repo, "snapshots"], env=env)
+        run_command(["restic", "--repo", repo, "snapshots"], env=env, silent=True)
         print_success("Repository already initialized")
-        log_message(f"Repository for {service} already initialized")
         return True
     except subprocess.CalledProcessError:
         print_warning("Repository not found. Initializing...")
-        log_message(f"Repository for {service} not found, initializing")
         try:
             run_command(["restic", "--repo", repo, "init"], env=env)
             print_success("Repository initialized successfully")
-            log_message(f"Repository for {service} initialized successfully")
             return True
         except Exception as e:
-            print_error(f"Failed to initialize repository: {e}")
-            log_message(f"Failed to initialize repository for {service}: {e}", "ERROR")
+            print_error(f"Failed to initialize repository: {str(e)}")
             return False
     except Exception as e:
-        print_error(f"Error during repository initialization: {e}")
-        log_message(
-            f"Error during repository initialization for {service}: {e}", "ERROR"
-        )
+        print_error(f"Error during repository initialization: {str(e)}")
         return False
 
 
@@ -564,7 +738,6 @@ def perform_backup(service: str) -> bool:
     """
     if service not in BACKUP_CONFIGS:
         print_error(f"Unknown service '{service}'")
-        log_message(f"Unknown service '{service}'", "ERROR")
         return False
 
     config = BACKUP_CONFIGS[service]
@@ -575,19 +748,16 @@ def perform_backup(service: str) -> bool:
     )
     log_message(f"Starting backup for {config['name']}")
 
-    # Check service-specific paths (for vm and plex)
-    if service == "vm":
-        for path in ["/etc/libvirt", "/var/lib/libvirt"]:
-            if not Path(path).exists():
-                print_error(f"Required path {path} not found. Is libvirt installed?")
-                log_message(f"Path {path} not found for VM backup", "ERROR")
-                return False
-    elif service == "plex":
-        for path in ["/var/lib/plexmediaserver", "/etc/default/plexmediaserver"]:
-            if not Path(path).exists():
-                print_error(f"Required path {path} not found. Is Plex installed?")
-                log_message(f"Path {path} not found for Plex backup", "ERROR")
-                return False
+    # Check service-specific paths
+    all_paths_exist = True
+    for path in config["paths"]:
+        if not Path(path).exists():
+            print_error(f"Required path {path} not found for {config['name']} backup.")
+            log_message(f"Path {path} not found for {config['name']} backup", "ERROR")
+            all_paths_exist = False
+
+    if not all_paths_exist:
+        return False
 
     # Initialize repository if needed
     if not initialize_repository(service):
@@ -603,10 +773,10 @@ def perform_backup(service: str) -> bool:
     backup_cmd.append("--verbose")
 
     print_message(f"Starting backup for {config['name']}...")
-    log_message(f"Executing backup command for {service}: {' '.join(backup_cmd)}")
+    log_message(f"Executing backup command for {service}")
 
     try:
-        # Run backup command with progress animation
+        # Run backup command with enhanced progress display
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
@@ -615,9 +785,10 @@ def perform_backup(service: str) -> bool:
                 style=NordColors.FROST_4,
                 complete_style=NordColors.FROST_2,
             ),
-            TextColumn(f"[bold {NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+            TaskProgressColumn(),
             TimeRemainingColumn(),
             console=console,
+            expand=True,
         ) as progress:
             backup_task = progress.add_task(
                 f"Backing up {config['name']}...", total=100
@@ -630,34 +801,54 @@ def perform_backup(service: str) -> bool:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
+                universal_newlines=True,
             )
+
+            # Create a buffer to store the last few lines for debugging
+            output_buffer = []
+            max_buffer_size = 10
 
             # Update progress bar based on output
             progress_pattern = re.compile(r"(\d+\.\d+)% done")
-            for line in process.stdout:
+            files_pattern = re.compile(r"Files:\s+(\d+) new,\s+(\d+) changed")
+
+            for line in iter(process.stdout.readline, ""):
+                # Keep the output buffer updated
+                output_buffer.append(line.strip())
+                if len(output_buffer) > max_buffer_size:
+                    output_buffer.pop(0)
+
                 # Try to extract progress percentage from Restic output
                 match = progress_pattern.search(line)
                 if match:
                     percent = float(match.group(1))
                     progress.update(backup_task, completed=percent)
 
-                console.print(line.strip(), style=f"{NordColors.SNOW_STORM_1}")
+                # Update the task description with file stats if available
+                files_match = files_pattern.search(line)
+                if files_match:
+                    new_files = files_match.group(1)
+                    changed_files = files_match.group(2)
+                    progress.update(
+                        backup_task,
+                        description=f"Backing up {config['name']}... ({new_files} new, {changed_files} changed files)",
+                    )
 
-            process.wait()
-            if process.returncode != 0:
-                print_error(f"Backup failed with return code {process.returncode}")
-                log_message(
-                    f"Backup failed for {service} with return code {process.returncode}",
-                    "ERROR",
-                )
+            # Wait for process to complete
+            exit_code = process.wait()
+
+            if exit_code != 0:
+                print_error(f"Backup failed with exit code {exit_code}")
+                log_message(f"Backup failed with exit code {exit_code}", "ERROR")
+                log_message(f"Last output: {' | '.join(output_buffer)}", "ERROR")
                 return False
 
         print_success(f"{config['name']} backup completed successfully")
         log_message(f"{config['name']} backup completed successfully")
         return True
     except Exception as e:
-        print_error(f"Backup error: {e}")
-        log_message(f"Backup error for {service}: {e}", "ERROR")
+        print_error(f"Backup error: {str(e)}")
+        log_message(f"Backup error for {service}: {str(e)}", "ERROR")
         return False
 
 
@@ -696,14 +887,12 @@ def apply_retention(service: str) -> bool:
     ]
 
     try:
-        result = run_command(retention_cmd, env=env)
+        result = run_command(retention_cmd, env=env, timeout=OPERATION_TIMEOUT)
         console.print(result.stdout.strip(), style=f"{NordColors.SNOW_STORM_1}")
         print_success("Retention policy applied successfully")
-        log_message("Retention policy applied successfully")
         return True
     except Exception as e:
-        print_error(f"Retention policy application failed: {e}")
-        log_message(f"Retention policy application failed for {service}: {e}", "ERROR")
+        print_error(f"Retention policy application failed: {str(e)}")
         return False
 
 
@@ -730,6 +919,18 @@ def list_snapshots(service: str) -> bool:
     env.update({"RESTIC_PASSWORD": RESTIC_PASSWORD})
 
     try:
+        # First check if repository exists
+        try:
+            run_command(
+                ["restic", "--repo", repo, "snapshots", "--compact"],
+                env=env,
+                silent=True,
+            )
+        except subprocess.CalledProcessError:
+            print_warning(f"No repository found for {BACKUP_CONFIGS[service]['name']}")
+            return False
+
+        # Get the snapshots in JSON format for detailed processing
         result = run_command(["restic", "--repo", repo, "snapshots", "--json"], env=env)
         snapshots = json.loads(result.stdout)
 
@@ -745,6 +946,7 @@ def list_snapshots(service: str) -> bool:
 
             table.add_column("ID", style=f"bold {NordColors.FROST_4}", no_wrap=True)
             table.add_column("Date", style=f"{NordColors.SNOW_STORM_1}")
+            table.add_column("Size", style=f"{NordColors.SNOW_STORM_1}")
             table.add_column("Paths", style=f"{NordColors.SNOW_STORM_1}")
 
             for snap in snapshots:
@@ -755,8 +957,22 @@ def list_snapshots(service: str) -> bool:
                     time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
                     pass
+
+                # Format size if available
+                size_str = "N/A"
+                if "summary" in snap and "total_size" in snap["summary"]:
+                    size_bytes = snap["summary"]["total_size"]
+                    if size_bytes < 1024:
+                        size_str = f"{size_bytes} B"
+                    elif size_bytes < 1024 * 1024:
+                        size_str = f"{size_bytes / 1024:.2f} KB"
+                    elif size_bytes < 1024 * 1024 * 1024:
+                        size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+                    else:
+                        size_str = f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
                 paths = ", ".join(snap.get("paths", []))
-                table.add_row(sid, time_str, paths)
+                table.add_row(sid, time_str, size_str, paths)
 
             console.print(table)
             log_message(f"Found {len(snapshots)} snapshots for {service}")
@@ -766,8 +982,7 @@ def list_snapshots(service: str) -> bool:
 
         return True
     except Exception as e:
-        print_error(f"Failed to list snapshots: {e}")
-        log_message(f"Failed to list snapshots for {service}: {e}", "ERROR")
+        print_error(f"Failed to list snapshots: {str(e)}")
         return False
 
 
@@ -781,6 +996,14 @@ def backup_service(service: str) -> bool:
     Returns:
         True if all operations completed successfully, False otherwise
     """
+    config = BACKUP_CONFIGS.get(service)
+    if not config:
+        print_error(f"Unknown service: {service}")
+        return False
+
+    print_message(f"Starting {config['name']} backup workflow...")
+    log_message(f"Starting {service} backup workflow")
+
     # Perform backup
     if not perform_backup(service):
         return False
@@ -791,7 +1014,11 @@ def backup_service(service: str) -> bool:
         return False
 
     # List snapshots after backup
-    list_snapshots(service)
+    if not list_snapshots(service):
+        print_warning(
+            "Backup and retention were successful but listing snapshots failed"
+        )
+
     return True
 
 
@@ -816,6 +1043,7 @@ def backup_all_services() -> Dict[str, bool]:
     log_message("Starting backup for all services")
 
     for svc in BACKUP_CONFIGS.keys():
+        print_message(f"Processing {BACKUP_CONFIGS[svc]['name']}...")
         results[svc] = backup_service(svc)
 
     # Show summary
@@ -847,6 +1075,13 @@ def backup_all_services() -> Dict[str, bool]:
 
     console.print(table)
 
+    # Log summary
+    success_count = sum(1 for success in results.values() if success)
+    total_count = len(results)
+    log_message(
+        f"Completed backup of all services: {success_count}/{total_count} successful"
+    )
+
     return results
 
 
@@ -871,8 +1106,10 @@ def show_system_info() -> None:
     table.add_row("Hostname", HOSTNAME)
     table.add_row("Platform", platform.platform())
     table.add_row("Python Version", platform.python_version())
+    table.add_row("Restic Version", get_restic_version())
     table.add_row("B2 Bucket", B2_BUCKET)
     table.add_row("Retention Policy", RETENTION_POLICY)
+    table.add_row("Log File", LOG_FILE)
 
     console.print(table)
 
@@ -897,6 +1134,25 @@ def show_system_info() -> None:
     console.print(service_table)
 
 
+def get_restic_version() -> str:
+    """
+    Get the installed Restic version.
+
+    Returns:
+        Version string or "Not installed"
+    """
+    try:
+        result = run_command(["restic", "version"], silent=True)
+        version_line = result.stdout.strip()
+        # Extract version from output like "restic 0.12.1 compiled with go1.16.3 on darwin/amd64"
+        match = re.search(r"restic (\d+\.\d+\.\d+)", version_line)
+        if match:
+            return match.group(1)
+        return version_line
+    except Exception:
+        return "Not installed"
+
+
 def create_menu_panel() -> Panel:
     """
     Create a styled panel containing the menu options.
@@ -905,28 +1161,61 @@ def create_menu_panel() -> Panel:
         Panel containing formatted menu options
     """
     menu_text = Text()
-    menu_text.append("1. ", style=f"bold {NordColors.FROST_1}")
+
+    # Main operations
+    menu_text.append("┌── ", style=f"{NordColors.FROST_3}")
+    menu_text.append("Backup Operations", style=f"bold {NordColors.FROST_2}")
+    menu_text.append(" ───────────────┐\n", style=f"{NordColors.FROST_3}")
+
+    menu_text.append("  1. ", style=f"bold {NordColors.FROST_1}")
     menu_text.append("Backup System\n", style=f"{NordColors.SNOW_STORM_1}")
 
-    menu_text.append("2. ", style=f"bold {NordColors.FROST_1}")
+    menu_text.append("  2. ", style=f"bold {NordColors.FROST_1}")
     menu_text.append("Backup Virtual Machines\n", style=f"{NordColors.SNOW_STORM_1}")
 
-    menu_text.append("3. ", style=f"bold {NordColors.FROST_1}")
+    menu_text.append("  3. ", style=f"bold {NordColors.FROST_1}")
     menu_text.append("Backup Plex Media Server\n", style=f"{NordColors.SNOW_STORM_1}")
 
-    menu_text.append("4. ", style=f"bold {NordColors.FROST_1}")
+    menu_text.append("  4. ", style=f"bold {NordColors.FROST_1}")
     menu_text.append("Backup All Services\n", style=f"{NordColors.SNOW_STORM_1}")
 
-    menu_text.append("5. ", style=f"bold {NordColors.FROST_1}")
+    menu_text.append(
+        "└─────────────────────────────────────┘\n", style=f"{NordColors.FROST_3}"
+    )
+    menu_text.append("\n")
+
+    # Snapshot operations
+    menu_text.append("┌── ", style=f"{NordColors.FROST_3}")
+    menu_text.append("Snapshot Operations", style=f"bold {NordColors.FROST_2}")
+    menu_text.append(" ─────────────────┐\n", style=f"{NordColors.FROST_3}")
+
+    menu_text.append("  5. ", style=f"bold {NordColors.FROST_1}")
     menu_text.append(
         "List Snapshots (per service)\n", style=f"{NordColors.SNOW_STORM_1}"
     )
 
-    menu_text.append("6. ", style=f"bold {NordColors.FROST_1}")
+    menu_text.append("  6. ", style=f"bold {NordColors.FROST_1}")
     menu_text.append("List All Snapshots\n", style=f"{NordColors.SNOW_STORM_1}")
 
-    menu_text.append("7. ", style=f"bold {NordColors.FROST_1}")
-    menu_text.append("Exit", style=f"{NordColors.SNOW_STORM_1}")
+    menu_text.append(
+        "└─────────────────────────────────────┘\n", style=f"{NordColors.FROST_3}"
+    )
+    menu_text.append("\n")
+
+    # System operations
+    menu_text.append("┌── ", style=f"{NordColors.FROST_3}")
+    menu_text.append("System Operations", style=f"bold {NordColors.FROST_2}")
+    menu_text.append(" ──────────────────┐\n", style=f"{NordColors.FROST_3}")
+
+    menu_text.append("  7. ", style=f"bold {NordColors.FROST_1}")
+    menu_text.append("Show System Information\n", style=f"{NordColors.SNOW_STORM_1}")
+
+    menu_text.append("  8. ", style=f"bold {NordColors.FROST_1}")
+    menu_text.append("Exit\n", style=f"{NordColors.SNOW_STORM_1}")
+
+    menu_text.append(
+        "└─────────────────────────────────────┘", style=f"{NordColors.FROST_3}"
+    )
 
     return Panel(
         menu_text,
@@ -955,8 +1244,8 @@ def interactive_menu() -> None:
 
         console.print(create_menu_panel())
         console.print()
-        console.print(f"[bold {NordColors.FROST_2}]Select an option (1-7):[/]", end=" ")
-        choice = input().strip()
+
+        choice = get_user_input("Select an option (1-8)", "8")
 
         if choice == "1":
             backup_service("system")
@@ -967,45 +1256,7 @@ def interactive_menu() -> None:
         elif choice == "4":
             backup_all_services()
         elif choice == "5":
-            console.clear()
-            console.print(create_header())
-            display_panel(
-                "Select Service", style=NordColors.FROST_2, title="Service Selection"
-            )
-
-            # Create service selection table
-            service_table = Table(
-                show_header=True,
-                header_style=f"bold {NordColors.FROST_1}",
-                expand=False,
-                border_style=NordColors.FROST_3,
-            )
-
-            service_table.add_column(
-                "Option", style=f"bold {NordColors.FROST_4}", justify="center"
-            )
-            service_table.add_column("Service", style=f"bold {NordColors.FROST_2}")
-
-            for i, (svc, config) in enumerate(BACKUP_CONFIGS.items(), 1):
-                service_table.add_row(str(i), config["name"])
-
-            console.print(service_table)
-            console.print()
-            console.print(
-                f"[bold {NordColors.FROST_2}]Enter service number (1-{len(BACKUP_CONFIGS)}):[/]",
-                end=" ",
-            )
-
-            svc_choice = input().strip()
-            try:
-                svc_idx = int(svc_choice) - 1
-                if 0 <= svc_idx < len(BACKUP_CONFIGS):
-                    service = list(BACKUP_CONFIGS.keys())[svc_idx]
-                    list_snapshots(service)
-                else:
-                    print_error(f"Invalid selection: {svc_choice}")
-            except ValueError:
-                print_error(f"Invalid input: {svc_choice}")
+            select_service_for_snapshots()
         elif choice == "6":
             console.clear()
             console.print(create_header())
@@ -1018,6 +1269,10 @@ def interactive_menu() -> None:
         elif choice == "7":
             console.clear()
             console.print(create_header())
+            show_system_info()
+        elif choice == "8":
+            console.clear()
+            console.print(create_header())
             display_panel(
                 "Thank you for using Restic Backup Manager!",
                 style=NordColors.FROST_2,
@@ -1027,11 +1282,46 @@ def interactive_menu() -> None:
         else:
             print_warning("Invalid selection, please try again")
 
-        console.print()
-        console.print(
-            f"[{NordColors.SNOW_STORM_1}]Press Enter to return to the menu...[/]"
-        )
-        input()
+        wait_for_enter()
+
+
+def select_service_for_snapshots() -> None:
+    """Display a menu to select a service for listing snapshots."""
+    console.clear()
+    console.print(create_header())
+    display_panel("Select Service", style=NordColors.FROST_2, title="Service Selection")
+
+    # Create service selection table
+    service_table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        expand=False,
+        border_style=NordColors.FROST_3,
+    )
+
+    service_table.add_column(
+        "Option", style=f"bold {NordColors.FROST_4}", justify="center"
+    )
+    service_table.add_column("Service", style=f"bold {NordColors.FROST_2}")
+    service_table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
+
+    for i, (svc, config) in enumerate(BACKUP_CONFIGS.items(), 1):
+        service_table.add_row(str(i), config["name"], config["description"])
+
+    console.print(service_table)
+    console.print()
+
+    svc_choice = get_user_input(f"Enter service number (1-{len(BACKUP_CONFIGS)})", "1")
+
+    try:
+        svc_idx = int(svc_choice) - 1
+        if 0 <= svc_idx < len(BACKUP_CONFIGS):
+            service = list(BACKUP_CONFIGS.keys())[svc_idx]
+            list_snapshots(service)
+        else:
+            print_error(f"Invalid selection: {svc_choice}")
+    except ValueError:
+        print_error(f"Invalid input: {svc_choice}")
 
 
 # ----------------------------------------------------------------
@@ -1042,6 +1332,22 @@ def main() -> None:
     console.clear()
     console.print(create_header())
 
+    # Check if running as root (required for system backups)
+    if not check_root_privileges():
+        display_panel(
+            "Warning: This script is not running with administrator privileges.\n"
+            "Some backup operations, especially system backups, may fail due to permission issues.",
+            style=NordColors.YELLOW,
+            title="Permission Warning",
+        )
+        if not get_user_confirmation("Continue anyway?", True):
+            display_panel(
+                "Exiting as requested. Please restart with appropriate privileges.",
+                style=NordColors.FROST_2,
+                title="Exit",
+            )
+            sys.exit(0)
+
     display_panel(
         f"Starting Unified Restic Backup Manager\nTimestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         style=NordColors.FROST_2,
@@ -1050,25 +1356,59 @@ def main() -> None:
 
     setup_logging()
 
+    # Check configuration
+    if (
+        B2_ACCOUNT_ID == "YOUR_B2_ACCOUNT_ID"
+        or B2_ACCOUNT_KEY == "YOUR_B2_ACCOUNT_KEY"
+        or RESTIC_PASSWORD == "YOUR_RESTIC_PASSWORD"
+    ):
+        display_panel(
+            "The script is using default placeholder values for credentials.\n"
+            "Please update the script with your actual B2 and Restic credentials before running backups.",
+            style=NordColors.YELLOW,
+            title="Configuration Warning",
+        )
+        wait_for_enter()
+
     # Install and authorize B2 CLI, and ensure the bucket exists
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Setting up B2 integration...", total=3)
+        task = progress.add_task("Setting up backup environment...", total=4)
 
+        # Install Restic
+        if not install_restic():
+            print_error(
+                "Failed to install or locate Restic. Some functions may not work."
+            )
+        progress.advance(task)
+
+        # Install B2 CLI
         if not install_b2_cli():
-            sys.exit(1)
+            print_error(
+                "Failed to install or locate B2 CLI. Some functions may not work."
+            )
         progress.advance(task)
 
-        if not authorize_b2():
-            sys.exit(1)
-        progress.advance(task)
+        # Only proceed with B2 setup if credentials are configured
+        if (
+            B2_ACCOUNT_ID != "YOUR_B2_ACCOUNT_ID"
+            and B2_ACCOUNT_KEY != "YOUR_B2_ACCOUNT_KEY"
+        ):
+            if not authorize_b2():
+                print_error("B2 authorization failed. Cloud backups may not work.")
+            progress.advance(task)
 
-        if not ensure_bucket_exists(B2_BUCKET):
-            sys.exit(1)
-        progress.advance(task)
+            if not ensure_bucket_exists(B2_BUCKET):
+                print_error(
+                    "Failed to ensure B2 bucket exists. Cloud backups may not work."
+                )
+            progress.advance(task)
+        else:
+            print_warning("Skipping B2 setup due to missing credentials")
+            progress.advance(task, 2)  # Skip 2 steps
 
     show_system_info()
     interactive_menu()

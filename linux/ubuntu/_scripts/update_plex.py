@@ -1,131 +1,289 @@
 #!/usr/bin/env python3
 """
 Enhanced Plex Updater
-----------------------
+--------------------------------------------------
 
-Downloads and installs the latest Plex Media Server package,
-resolves dependency issues, cleans up temporary files, and restarts
-the Plex service via system commands.
+A streamlined terminal interface for updating Plex Media Server on Linux systems.
+Features interactive menus, download progress tracking, and automatic dependency resolution.
+The script prompts for the latest Plex download URL and handles the entire update process.
 
-Note: Run this script with root privileges.
-Version: 1.0.0 | License: MIT
+Usage:
+  Run the script with root privileges (sudo) and follow the on-screen prompts.
+  - Enter the Plex download URL when prompted
+  - The script will handle downloading, installation, and restarting the Plex service
+  - You can also use the interactive menu to perform specific actions
+
+Version: 2.0.0
 """
 
 import atexit
 import argparse
-import json
-import logging
 import os
 import signal
 import subprocess
 import sys
 import time
 import urllib.request
+import platform
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Dict, Optional, Any, Tuple, Callable
 
-from rich.console import Console
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    BarColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
-import pyfiglet
+# ----------------------------------------------------------------
+# Dependency Check and Imports
+# ----------------------------------------------------------------
+try:
+    import pyfiglet
+    from rich.console import Console
+    from rich.text import Text
+    from rich.table import Table
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.progress import (
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        BarColumn,
+        TimeRemainingColumn,
+    )
+    from rich.align import Align
+    from rich.style import Style
+    from rich.traceback import install as install_rich_traceback
+except ImportError:
+    print("This script requires the 'rich' and 'pyfiglet' libraries.")
+    print("Please install them using: pip install rich pyfiglet")
+    sys.exit(1)
 
-# ------------------------------
-# Configuration & Constants
-# ------------------------------
-DEFAULT_PLEX_URL: str = (
-    "https://downloads.plex.tv/plex-media-server-new/"
-    "1.41.4.9463-630c9f557/debian/plexmediaserver_1.41.4.9463-630c9f557_amd64.deb"
-)
+# Install rich traceback handler for better error reporting
+install_rich_traceback(show_locals=True)
+
+# ----------------------------------------------------------------
+# Configuration
+# ----------------------------------------------------------------
+APP_NAME: str = "Plex Updater"
+APP_SUBTITLE: str = "Automated Plex Media Server Update Tool"
+VERSION: str = "2.0.0"
 TEMP_DEB: str = "/tmp/plexmediaserver.deb"
-LOG_FILE: str = "/var/log/update_plex.log"
-DEFAULT_LOG_LEVEL = logging.INFO
-TERM_WIDTH = 100  # Adjust based on terminal size
-
-# ------------------------------
-# Nord-Themed Console Setup
-# ------------------------------
-console = Console()
-
-# Nord Color Palette
-NORD_COLORS = {
-    "dark1": "#2E3440",
-    "dark2": "#3B4252",
-    "dark3": "#434C5E",
-    "dark4": "#4C566A",
-    "light1": "#D8DEE9",
-    "light2": "#E5E9F0",
-    "light3": "#ECEFF4",
-    "frost1": "#8FBCBB",
-    "frost2": "#88C0D0",
-    "frost3": "#81A1C1",
-    "frost4": "#5E81AC",
-    "aurora_red": "#BF616A",
-    "aurora_orange": "#D08770",
-    "aurora_yellow": "#EBCB8B",
-    "aurora_green": "#A3BE8C",
-    "aurora_purple": "#B48EAD",
+LOG_FILE: str = "/var/log/plex_updater.log"
+SYSTEM_INFO: Dict[str, str] = {
+    "host": platform.node(),
+    "os": platform.system(),
+    "dist": " ".join(platform.dist())
+    if hasattr(platform, "dist")
+    else platform.platform(),
+    "kernel": platform.release(),
 }
+OPERATION_TIMEOUT: int = 300  # seconds
 
 
-def print_header(text: str) -> None:
-    """Display a large header using pyfiglet."""
-    ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style=f"bold {NORD_COLORS['frost2']}")
+# ----------------------------------------------------------------
+# Nord-Themed Colors
+# ----------------------------------------------------------------
+class NordColors:
+    """Nord color palette for consistent theming throughout the application."""
+
+    # Polar Night (dark) shades
+    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_2 = "#3B4252"  # Dark background shade
+    POLAR_NIGHT_3 = "#434C5E"  # Medium background shade
+    POLAR_NIGHT_4 = "#4C566A"  # Light background shade
+
+    # Snow Storm (light) shades
+    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
+    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
+    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
+
+    # Frost (blues/cyans) shades
+    FROST_1 = "#8FBCBB"  # Light cyan
+    FROST_2 = "#88C0D0"  # Light blue
+    FROST_3 = "#81A1C1"  # Medium blue
+    FROST_4 = "#5E81AC"  # Dark blue
+
+    # Aurora (accent) shades
+    RED = "#BF616A"  # Red
+    ORANGE = "#D08770"  # Orange
+    YELLOW = "#EBCB8B"  # Yellow
+    GREEN = "#A3BE8C"  # Green
+    PURPLE = "#B48EAD"  # Purple
 
 
-def print_section(title: str) -> None:
-    """Print a formatted section header."""
-    border = "═" * TERM_WIDTH
-    console.print(
-        f"\n[bold {NORD_COLORS['frost2']}]{border}[/bold {NORD_COLORS['frost2']}]"
+# Create a Rich Console
+console: Console = Console(theme=None, highlight=False)
+
+
+# ----------------------------------------------------------------
+# Data Structures
+# ----------------------------------------------------------------
+@dataclass
+class PlexServerInfo:
+    """
+    Contains information about the Plex Media Server installation.
+
+    Attributes:
+        version: Current installed version
+        status: Service status (running/stopped)
+        install_path: Path to the Plex installation
+        url: URL for the update package
+    """
+
+    version: Optional[str] = None
+    status: Optional[bool] = None
+    install_path: Optional[str] = None
+    url: Optional[str] = None
+
+
+# ----------------------------------------------------------------
+# Console and Logging Helpers
+# ----------------------------------------------------------------
+def create_header() -> Panel:
+    """
+    Create a high-tech ASCII art header with Nord styling.
+
+    Returns:
+        Panel containing the styled header
+    """
+    # Use smaller, more compact but still tech-looking fonts
+    compact_fonts = ["slant", "small", "smslant", "mini", "digital"]
+
+    # Try each font until we find one that works well
+    for font_name in compact_fonts:
+        try:
+            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
+            ascii_art = fig.renderText(APP_NAME)
+
+            # If we got a reasonable result, use it
+            if ascii_art and len(ascii_art.strip()) > 0:
+                break
+        except Exception:
+            continue
+
+    # Custom ASCII art fallback if all else fails
+    if not ascii_art or len(ascii_art.strip()) == 0:
+        ascii_art = """
+       _                             _       _            
+ _ __ | | _____  __  _   _ _ __   __| | __ _| |_ ___ _ __ 
+| '_ \| |/ _ \ \/ / | | | | '_ \ / _` |/ _` | __/ _ \ '__|
+| |_) | |  __/>  <  | |_| | |_) | (_| | (_| | ||  __/ |   
+| .__/|_|\___/_/\_\  \__,_| .__/ \__,_|\__,_|\__\___|_|   
+|_|                       |_|                             
+        """
+
+    # Clean up extra whitespace that might cause display issues
+    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
+
+    # Create a high-tech gradient effect with Nord colors
+    colors = [
+        NordColors.FROST_1,
+        NordColors.FROST_2,
+        NordColors.FROST_3,
+        NordColors.FROST_2,
+    ]
+
+    styled_text = ""
+    for i, line in enumerate(ascii_lines):
+        color = colors[i % len(colors)]
+        styled_text += f"[bold {color}]{line}[/]\n"
+
+    # Add decorative tech elements (shorter than before)
+    tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
+    styled_text = tech_border + "\n" + styled_text + tech_border
+
+    # Create a panel with sufficient padding to avoid cutoff
+    header_panel = Panel(
+        Text.from_markup(styled_text),
+        border_style=Style(color=NordColors.FROST_1),
+        padding=(1, 1),  # Reduced padding
+        title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
+        title_align="right",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
+        subtitle_align="center",
     )
-    console.print(
-        f"[bold {NORD_COLORS['frost2']}]  {title.center(TERM_WIDTH - 4)}[/bold {NORD_COLORS['frost2']}]"
-    )
-    console.print(
-        f"[bold {NORD_COLORS['frost2']}]{border}[/bold {NORD_COLORS['frost2']}]\n"
-    )
+
+    return header_panel
 
 
-def print_info(message: str) -> None:
+def print_message(
+    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+) -> None:
+    """
+    Print a styled message.
+
+    Args:
+        text: The message to display
+        style: The color style to use
+        prefix: The prefix symbol
+    """
+    console.print(f"[{style}]{prefix} {text}[/{style}]")
+
+
+def print_info(text: str) -> None:
     """Print an informational message."""
-    console.print(f"[{NORD_COLORS['frost3']}]{message}[/{NORD_COLORS['frost3']}]")
+    print_message(text, NordColors.FROST_3, "ℹ")
 
 
-def print_success(message: str) -> None:
+def print_success(text: str) -> None:
     """Print a success message."""
-    console.print(
-        f"[bold {NORD_COLORS['aurora_green']}]✓ {message}[/bold {NORD_COLORS['aurora_green']}]"
-    )
+    print_message(text, NordColors.GREEN, "✓")
 
 
-def print_warning(message: str) -> None:
+def print_warning(text: str) -> None:
     """Print a warning message."""
-    console.print(
-        f"[bold {NORD_COLORS['aurora_yellow']}]⚠ {message}[/bold {NORD_COLORS['aurora_yellow']}]"
-    )
+    print_message(text, NordColors.YELLOW, "⚠")
 
 
-def print_error(message: str) -> None:
+def print_error(text: str) -> None:
     """Print an error message."""
-    console.print(
-        f"[bold {NORD_COLORS['aurora_red']}]✗ {message}[/bold {NORD_COLORS['aurora_red']}]"
+    print_message(text, NordColors.RED, "✗")
+
+
+def display_panel(
+    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
+) -> None:
+    """
+    Display a message in a styled panel.
+
+    Args:
+        message: The message to display
+        style: The color style to use
+        title: Optional panel title
+    """
+    panel = Panel(
+        Text.from_markup(f"[bold {style}]{message}[/]"),
+        border_style=Style(color=style),
+        padding=(1, 2),
+        title=f"[bold {style}]{title}[/]" if title else None,
     )
+    console.print(panel)
 
 
-def print_step(text: str) -> None:
-    """Print a step description."""
-    console.print(f"[{NORD_COLORS['frost2']}]• {text}[/{NORD_COLORS['frost2']}]")
+def display_section_title(title: str) -> None:
+    """
+    Display a section title with decorative elements.
+
+    Args:
+        title: The section title to display
+    """
+    width = console.width or 80
+    border = "═" * width
+
+    console.print(f"[bold {NordColors.FROST_1}]{border}[/]")
+    console.print(Align.center(f"[bold {NordColors.FROST_2}]{title.upper()}[/]"))
+    console.print(f"[bold {NordColors.FROST_1}]{border}[/]")
+    console.print()  # Add an empty line after the title
 
 
 def format_size(num_bytes: float) -> str:
-    """Convert bytes to a human-readable string."""
+    """
+    Convert bytes to a human-readable string.
+
+    Args:
+        num_bytes: Size in bytes
+
+    Returns:
+        Formatted string (e.g., "5.2 MB")
+    """
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if num_bytes < 1024:
             return f"{num_bytes:.1f} {unit}"
@@ -133,178 +291,262 @@ def format_size(num_bytes: float) -> str:
     return f"{num_bytes:.1f} PB"
 
 
-# ------------------------------
-# Logging Setup
-# ------------------------------
-def setup_logging(log_file: str = LOG_FILE) -> None:
-    """Configure logging to console and file."""
-    log_dir = os.path.dirname(log_file)
-    os.makedirs(log_dir, exist_ok=True)
-    logger = logging.getLogger()
-    logger.setLevel(DEFAULT_LOG_LEVEL)
-    # Remove existing handlers
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
-    formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
+# ----------------------------------------------------------------
+# Command Execution Helper
+# ----------------------------------------------------------------
+def run_command(
+    cmd: List[str],
+    env: Optional[Dict[str, str]] = None,
+    check: bool = True,
+    capture_output: bool = True,
+    timeout: int = OPERATION_TIMEOUT,
+) -> subprocess.CompletedProcess:
+    """
+    Executes a system command and returns the CompletedProcess.
+
+    Args:
+        cmd: Command and arguments as a list
+        env: Environment variables for the command
+        check: Whether to check the return code
+        capture_output: Whether to capture stdout/stderr
+        timeout: Command timeout in seconds
+
+    Returns:
+        CompletedProcess instance with command results
+    """
     try:
-        file_handler = logging.FileHandler(log_file, mode="a")
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-        os.chmod(log_file, 0o600)
-        print_info(f"Logging to {log_file}")
+        result = subprocess.run(
+            cmd,
+            env=env or os.environ.copy(),
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        print_error(f"Command failed: {' '.join(cmd)}")
+        if e.stdout:
+            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
+        if e.stderr:
+            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
+        raise
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout} seconds")
+        raise
     except Exception as e:
-        print_warning(f"Failed to set up log file {log_file}: {e}")
-        print_info("Continuing with console logging only")
+        print_error(f"Error executing command: {e}")
+        raise
 
 
-# ------------------------------
-# Signal Handling & Cleanup
-# ------------------------------
+# ----------------------------------------------------------------
+# Signal Handling and Cleanup
+# ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform cleanup tasks before exiting."""
-    print_step("Performing cleanup tasks...")
+    """Perform any cleanup tasks before exit."""
     if os.path.exists(TEMP_DEB):
         try:
+            print_info(f"Removing temporary file: {TEMP_DEB}")
             os.remove(TEMP_DEB)
-            print_info(f"Removed temporary file: {TEMP_DEB}")
-            logging.info(f"Removed temporary file: {TEMP_DEB}")
+            print_success("Cleanup completed successfully")
         except Exception as e:
-            print_warning(f"Failed to remove temporary file {TEMP_DEB}: {e}")
-            logging.warning(f"Failed to remove temporary file {TEMP_DEB}: {e}")
+            print_warning(f"Failed to clean up temporary file: {e}")
 
 
+def signal_handler(sig: int, frame: Any) -> None:
+    """
+    Handle process termination signals gracefully.
+
+    Args:
+        sig: Signal number
+        frame: Current stack frame
+    """
+    sig_name: str = (
+        signal.Signals(sig).name if hasattr(signal, "Signals") else f"signal {sig}"
+    )
+    print_warning(f"Process interrupted by {sig_name}")
+    cleanup()
+    sys.exit(128 + sig)
+
+
+# Register signal handlers
+for sig in (signal.SIGINT, signal.SIGTERM):
+    signal.signal(sig, signal_handler)
 atexit.register(cleanup)
 
 
-def signal_handler(signum, frame) -> None:
-    """Handle termination signals gracefully."""
-    sig_name = (
-        signal.Signals(signum).name
-        if hasattr(signal, "Signals")
-        else f"signal {signum}"
-    )
-    print_warning(f"Script interrupted by {sig_name}.")
-    logging.warning(f"Script interrupted by {sig_name}.")
-    cleanup()
-    sys.exit(128 + signum)
-
-
-for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-    signal.signal(sig, signal_handler)
-
-
-# ------------------------------
-# Dependency & Privilege Checks
-# ------------------------------
-def check_dependencies() -> None:
+# ----------------------------------------------------------------
+# System and Dependency Checks
+# ----------------------------------------------------------------
+def check_root() -> bool:
     """
-    Ensure required system commands are available.
-    Required: dpkg, apt-get, systemctl.
+    Check if the script is running with root privileges.
+
+    Returns:
+        True if running as root, False otherwise
     """
-    required_commands: List[str] = ["dpkg", "apt-get", "systemctl"]
-    missing: List[str] = []
+    if os.geteuid() != 0:
+        print_error("This script must be run with root privileges")
+        print_info("Please run with: sudo python3 plex_updater.py")
+        return False
+
+    print_success("Running with root privileges")
+    return True
+
+
+def check_dependencies() -> bool:
+    """
+    Verify that all required system commands are available.
+
+    Returns:
+        True if all dependencies are met, False otherwise
+    """
+    required_commands = ["dpkg", "apt-get", "systemctl"]
+    missing_commands = []
+
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]Checking dependencies..."),
+        SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+        TextColumn(f"[bold {NordColors.FROST_2}]Checking dependencies..."),
+        console=console,
         transient=True,
     ) as progress:
         task = progress.add_task("Checking", total=len(required_commands))
+
         for cmd in required_commands:
             try:
-                subprocess.run(
-                    ["which", cmd],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True,
-                )
-            except subprocess.CalledProcessError:
-                missing.append(cmd)
-            progress.update(task, advance=1)
-    if missing:
-        print_error(f"Missing required commands: {', '.join(missing)}")
-        logging.error(f"Missing required commands: {', '.join(missing)}")
-        sys.exit(1)
-    else:
-        print_success("All dependencies found.")
+                run_command(["which", cmd], check=True, capture_output=True)
+                progress.update(task, advance=1)
+            except Exception:
+                missing_commands.append(cmd)
+                progress.update(task, advance=1)
+
+    if missing_commands:
+        print_error(f"Missing required commands: {', '.join(missing_commands)}")
+        return False
+
+    print_success("All required dependencies are available")
+    return True
 
 
-def check_root() -> None:
-    """Ensure the script is run as root."""
-    if os.geteuid() != 0:
-        print_error("This script must be run as root.")
-        logging.error("This script must be run as root.")
-        print_info("Please run with: sudo python3 plex_updater.py")
-        sys.exit(1)
-    else:
-        print_success("Running with root privileges.")
+def get_plex_status() -> PlexServerInfo:
+    """
+    Get current Plex server information.
 
+    Returns:
+        PlexServerInfo object with current Plex server status
+    """
+    server_info = PlexServerInfo()
 
-# ------------------------------
-# Helper Functions
-# ------------------------------
-def run_command(
-    cmd: List[str], check: bool = True, capture_output: bool = False
-) -> subprocess.CompletedProcess:
-    """Execute a command and log its output."""
-    logging.info(f"Executing: {' '.join(cmd)}")
+    # Check if Plex service is running
     try:
-        result = subprocess.run(
-            cmd, check=check, capture_output=capture_output, text=True
+        result = run_command(
+            ["systemctl", "is-active", "plexmediaserver"],
+            check=False,
+            capture_output=True,
         )
-        if capture_output and result.stdout:
-            logging.info(result.stdout.strip())
-        return result
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Command failed: {' '.join(cmd)}")
-        if e.stderr:
-            logging.error(e.stderr.strip())
-        if check:
-            raise
-        return e
+        server_info.status = result.stdout.strip() == "active"
+    except Exception:
+        server_info.status = False
+
+    # Try to get version information
+    try:
+        # This command might vary depending on the system
+        result = run_command(
+            ["dpkg-query", "-W", "-f=${Version}", "plexmediaserver"],
+            check=False,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            server_info.version = result.stdout.strip()
+    except Exception:
+        server_info.version = None
+
+    # Try to get install path
+    try:
+        server_info.install_path = "/usr/lib/plexmediaserver"
+    except Exception:
+        server_info.install_path = None
+
+    return server_info
 
 
-def confirm_action(message: str = "Continue with this action?") -> bool:
-    """Prompt the user for confirmation."""
+# ----------------------------------------------------------------
+# Core Update Functions
+# ----------------------------------------------------------------
+def get_plex_download_url() -> str:
+    """
+    Prompt the user to enter the Plex download URL.
+
+    Returns:
+        The URL entered by the user
+    """
+    console.print()
+    display_panel(
+        "Please visit https://www.plex.tv/media-server-downloads/ to get the latest download link",
+        style=NordColors.FROST_3,
+        title="Download Information",
+    )
+
+    console.print(f"[bold {NordColors.FROST_2}]Enter the Plex download URL:[/]")
+
+    # Keep asking until we get a valid URL
     while True:
-        console.print(
-            f"[bold {NORD_COLORS['aurora_purple']}] {message} (y/n): [/bold {NORD_COLORS['aurora_purple']}]",
-            end="",
-        )
-        response = input().strip().lower()
-        if response in ["y", "yes"]:
-            return True
-        elif response in ["n", "no"]:
-            return False
-        print_warning("Please enter 'y' or 'n'.")
+        url = input("> ").strip()
+
+        if not url:
+            print_error("URL cannot be empty. Please enter a valid Plex download URL.")
+            continue
+
+        if not (url.startswith("http://") or url.startswith("https://")):
+            print_error("URL must start with http:// or https://")
+            continue
+
+        if not url.endswith(".deb"):
+            print_warning(
+                "URL does not end with .deb - is this a Debian/Ubuntu package?"
+            )
+            if not confirm_action("Continue with this URL anyway?"):
+                continue
+
+        return url
 
 
-# ------------------------------
-# Plex Update Functions
-# ------------------------------
-def download_plex(plex_url: str) -> None:
+def download_plex(url: str) -> bool:
     """
     Download the Plex Media Server package.
-    Displays a progress bar and saves the package to a temporary location.
+
+    Args:
+        url: The URL to download from
+
+    Returns:
+        True if download was successful, False otherwise
     """
-    print_section("Downloading Plex Package")
-    print_info(f"Downloading Plex from {plex_url}")
-    print_info(f"Saving package to {TEMP_DEB}")
-    logging.info(f"Downloading Plex from {plex_url}")
-    os.makedirs(os.path.dirname(TEMP_DEB), exist_ok=True)
+    display_section_title("Downloading Plex Media Server")
+
+    print_info(f"Download URL: {url}")
+    print_info(f"Saving to: {TEMP_DEB}")
+
     try:
-        with urllib.request.urlopen(plex_url) as response:
+        # Create temporary directory if it doesn't exist
+        os.makedirs(os.path.dirname(TEMP_DEB), exist_ok=True)
+
+        # Get file size if possible
+        with urllib.request.urlopen(url) as response:
             file_size = int(response.info().get("Content-Length", 0))
+
+        # Download with progress bar
         with Progress(
-            SpinnerColumn(),
-            BarColumn(),
-            TextColumn("[progress.percentage]{task.percentage:.0f}%"),
+            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Downloading"),
+            BarColumn(
+                bar_width=40,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+            TextColumn(f"[{NordColors.FROST_3}]{{task.fields[size]}}"),
             TimeRemainingColumn(),
-            TextColumn("[bold blue]{task.fields[size]}"),
+            console=console,
         ) as progress:
             task = progress.add_task("Downloading", total=file_size, size="0 B")
 
@@ -318,257 +560,325 @@ def download_plex(plex_url: str) -> None:
                     size=format_size(downloaded),
                 )
 
+            # Start download with progress reporting
             start_time = time.time()
-            urllib.request.urlretrieve(plex_url, TEMP_DEB, reporthook=update_progress)
+            urllib.request.urlretrieve(url, TEMP_DEB, reporthook=update_progress)
             elapsed = time.time() - start_time
+
+        # Get final file size and report success
         final_size = os.path.getsize(TEMP_DEB)
-        print_success(
-            f"Downloaded in {elapsed:.2f} seconds, size: {format_size(final_size)}"
-        )
-        logging.info(
-            f"Downloaded in {elapsed:.2f} seconds, size: {format_size(final_size)}"
-        )
+        print_success(f"Download completed in {elapsed:.2f} seconds")
+        print_success(f"Package size: {format_size(final_size)}")
+        return True
+
     except Exception as e:
-        print_error(f"Failed to download Plex package: {e}")
-        logging.error(f"Failed to download Plex package: {e}")
-        sys.exit(1)
+        print_error(f"Download failed: {str(e)}")
+        return False
 
 
-def install_plex() -> None:
+def install_plex() -> bool:
     """
-    Install the Plex Media Server package.
-    Attempts to fix dependency issues if detected.
+    Install the downloaded Plex Media Server package.
+
+    Returns:
+        True if installation was successful, False otherwise
     """
-    print_section("Installing Plex Media Server")
-    print_step("Installing Plex package...")
-    logging.info("Installing Plex package...")
+    display_section_title("Installing Plex Media Server")
+
+    if not os.path.exists(TEMP_DEB):
+        print_error(f"Package file not found: {TEMP_DEB}")
+        return False
+
+    print_info("Installing Plex Media Server package...")
+
     try:
+        # First attempt: Try direct installation
         with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]Installing package..."),
+            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Installing package..."),
+            console=console,
             transient=True,
         ) as progress:
             task = progress.add_task("Installing", total=None)
             run_command(["dpkg", "-i", TEMP_DEB])
             progress.update(task, completed=1)
-        print_success("Plex package installed successfully.")
+
+        print_success("Package installed successfully")
+        return True
+
     except subprocess.CalledProcessError:
-        print_warning("Dependency issues detected; attempting to fix...")
-        logging.warning("Dependency issues detected; attempting to fix...")
+        # Second attempt: Fix dependencies and retry
+        print_warning("Dependency issues detected, attempting to resolve...")
+
         try:
             with Progress(
-                SpinnerColumn(),
-                TextColumn("[bold blue]Resolving dependencies..."),
+                SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+                TextColumn(f"[bold {NordColors.FROST_2}]Resolving dependencies..."),
+                console=console,
                 transient=True,
             ) as progress:
                 task = progress.add_task("Fixing", total=None)
                 run_command(["apt-get", "install", "-f", "-y"])
                 progress.update(task, completed=1)
+
             with Progress(
-                SpinnerColumn(),
-                TextColumn("[bold blue]Reinstalling Plex..."),
+                SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+                TextColumn(f"[bold {NordColors.FROST_2}]Reinstalling package..."),
+                console=console,
                 transient=True,
             ) as progress:
                 task = progress.add_task("Reinstalling", total=None)
                 run_command(["dpkg", "-i", TEMP_DEB])
                 progress.update(task, completed=1)
-            print_success("Dependencies resolved and Plex installed successfully.")
-            logging.info("Dependencies resolved and Plex installed successfully.")
-        except subprocess.CalledProcessError:
-            print_error("Failed to resolve dependencies for Plex.")
-            logging.error("Failed to resolve dependencies for Plex.")
-            sys.exit(1)
+
+            print_success("Dependencies resolved and package installed successfully")
+            return True
+
+        except Exception as e:
+            print_error(f"Installation failed: {str(e)}")
+            return False
+
+    except Exception as e:
+        print_error(f"Installation failed: {str(e)}")
+        return False
 
 
-def restart_plex() -> None:
+def restart_plex_service() -> bool:
     """
     Restart the Plex Media Server service.
+
+    Returns:
+        True if service was restarted successfully, False otherwise
     """
-    print_section("Restarting Plex Service")
-    print_step("Restarting Plex service...")
-    logging.info("Restarting Plex service...")
+    display_section_title("Restarting Plex Media Server")
+
+    print_info("Restarting Plex Media Server service...")
+
     try:
         with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]Restarting service..."),
+            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Restarting service..."),
+            console=console,
             transient=True,
         ) as progress:
             task = progress.add_task("Restarting", total=None)
             run_command(["systemctl", "restart", "plexmediaserver"])
             progress.update(task, completed=1)
-        print_success("Plex service restarted successfully.")
-        logging.info("Plex service restarted successfully.")
-    except subprocess.CalledProcessError:
-        print_error("Failed to restart Plex service.")
-        logging.error("Failed to restart Plex service.")
-        sys.exit(1)
 
+        # Add a short delay to allow the service to start
+        time.sleep(2)
 
-def check_running_plex() -> bool:
-    """Return True if Plex service is active."""
-    try:
+        # Verify the service is now running
         result = run_command(
             ["systemctl", "is-active", "plexmediaserver"],
             check=False,
             capture_output=True,
         )
-        return result.stdout.strip() == "active"
-    except Exception:
+
+        if result.stdout.strip() == "active":
+            print_success("Plex Media Server service restarted successfully")
+            return True
+        else:
+            print_error("Plex Media Server service failed to start")
+            return False
+
+    except Exception as e:
+        print_error(f"Failed to restart service: {str(e)}")
         return False
 
 
-def update_plex(plex_url: str) -> None:
-    """Run the complete Plex update process."""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logging.info("=" * 80)
-    logging.info(f"PLEX UPDATE STARTED AT {now}")
-    logging.info("=" * 80)
-    download_plex(plex_url)
-    install_plex()
-    restart_plex()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    logging.info("=" * 80)
-    logging.info(f"PLEX UPDATE COMPLETED SUCCESSFULLY AT {now}")
-    logging.info("=" * 80)
-    print_success("Plex update completed successfully!")
+def update_plex() -> bool:
+    """
+    Run the complete Plex update process.
+
+    Returns:
+        True if the update was successful, False otherwise
+    """
+    # Get the download URL from user
+    url = get_plex_download_url()
+
+    # Confirm before proceeding
+    console.print()
+    if not confirm_action(
+        f"Ready to download and install Plex from:\n{url}\n\nContinue?"
+    ):
+        print_info("Update cancelled by user")
+        return False
+
+    # Download the package
+    if not download_plex(url):
+        return False
+
+    # Install the package
+    if not install_plex():
+        return False
+
+    # Restart the service
+    if not restart_plex_service():
+        return False
+
+    # Update completed successfully
+    display_panel(
+        "Plex Media Server has been successfully updated!",
+        style=NordColors.GREEN,
+        title="Update Complete",
+    )
+    return True
 
 
-# ------------------------------
-# Interactive Menu Functions
-# ------------------------------
-def get_custom_url() -> str:
-    """Prompt the user to enter a custom Plex download URL."""
-    console.print(
-        f"\n[{NORD_COLORS['light1']}]Enter the URL to download the Plex package:[/{NORD_COLORS['light1']}]"
-    )
-    console.print(
-        f"[{NORD_COLORS['frost4']}] (Press ENTER to use default: {DEFAULT_PLEX_URL})[/{NORD_COLORS['frost4']}]"
-    )
-    url = input("> ").strip()
-    return url if url else DEFAULT_PLEX_URL
+# ----------------------------------------------------------------
+# User Interaction Helpers
+# ----------------------------------------------------------------
+def confirm_action(message: str = "Continue with this action?") -> bool:
+    """
+    Prompt the user for confirmation.
 
+    Args:
+        message: The confirmation message to display
 
-def plex_version_menu() -> str:
-    """Display a version selection menu and return the selected URL."""
-    print_section("Plex Media Server Versions")
-    console.print(
-        f"[{NORD_COLORS['light1']}]1. Latest Stable (v1.41.4.9463)[/{NORD_COLORS['light1']}]"
-    )
-    console.print(
-        f"[{NORD_COLORS['light1']}]2. Previous Stable (v1.40.1.8227)[/{NORD_COLORS['light1']}]"
-    )
-    console.print(
-        f"[{NORD_COLORS['light1']}]3. Beta Version (v1.42.0.9599)[/{NORD_COLORS['light1']}]"
-    )
-    console.print(
-        f"[{NORD_COLORS['light1']}]4. Specify Custom URL[/{NORD_COLORS['light1']}]"
-    )
-    versions = {
-        "1": "https://downloads.plex.tv/plex-media-server-new/1.41.4.9463-630c9f557/debian/plexmediaserver_1.41.4.9463-630c9f557_amd64.deb",
-        "2": "https://downloads.plex.tv/plex-media-server-new/1.40.1.8227-c0dd5a73e/debian/plexmediaserver_1.40.1.8227-c0dd5a73e_amd64.deb",
-        "3": "https://downloads.plex.tv/plex-media-server-new/1.42.0.9599-2f5a2e231/debian/plexmediaserver_1.42.0.9599-2f5a2e231_amd64.deb",
-    }
+    Returns:
+        True if the user confirms, False otherwise
+    """
     while True:
-        console.print(
-            f"\n[bold {NORD_COLORS['aurora_purple']}]Enter your choice (1-4): [/bold {NORD_COLORS['aurora_purple']}]",
-            end="",
-        )
-        choice = input().strip()
-        if choice in ["1", "2", "3"]:
-            return versions[choice]
-        elif choice == "4":
-            return get_custom_url()
+        console.print(f"[bold {NordColors.PURPLE}]{message} (y/n):[/] ", end="")
+        choice = input().strip().lower()
+
+        if choice in ["y", "yes"]:
+            return True
+        elif choice in ["n", "no"]:
+            return False
         else:
-            print_error("Invalid choice. Please try again.")
+            print_warning("Please enter 'y' or 'n'")
 
 
-def interactive_menu() -> None:
-    """Display the interactive menu for the Plex updater."""
+def press_enter_to_continue() -> None:
+    """Prompt user to press Enter to continue."""
+    console.print(f"[{NordColors.SNOW_STORM_1}]Press Enter to continue...[/]", end="")
+    input()
+
+
+# ----------------------------------------------------------------
+# Menu System
+# ----------------------------------------------------------------
+def display_status_panel() -> None:
+    """Display the current Plex server status."""
+    server_info = get_plex_status()
+
+    # Determine status color
+    status_text = "RUNNING" if server_info.status else "STOPPED"
+    status_color = NordColors.GREEN if server_info.status else NordColors.RED
+
+    # Create message
+    message = f"Status: [bold {status_color}]{status_text}[/]\n"
+
+    if server_info.version:
+        message += (
+            f"Version: [bold {NordColors.SNOW_STORM_1}]{server_info.version}[/]\n"
+        )
+    else:
+        message += f"Version: [dim {NordColors.POLAR_NIGHT_4}]Unknown[/]\n"
+
+    if server_info.install_path:
+        message += f"Install Path: [bold {NordColors.SNOW_STORM_1}]{server_info.install_path}[/]"
+
+    panel = Panel(
+        Text.from_markup(message),
+        title=f"[bold {NordColors.FROST_3}]Plex Server Information[/]",
+        border_style=Style(color=NordColors.FROST_3),
+        padding=(1, 2),
+    )
+
+    console.print(panel)
+
+
+def show_main_menu() -> None:
+    """Display the main menu and handle user selection."""
     while True:
-        print_header("Plex Updater")
+        console.clear()
+        console.print(create_header())
+
+        # Display current date/time and system info
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         console.print(
-            f"Date: [bold {NORD_COLORS['frost3']}]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold {NORD_COLORS['frost3']}]"
-        )
-        plex_status = "Running" if check_running_plex() else "Not Running"
-        status_color = (
-            NORD_COLORS["aurora_green"]
-            if plex_status == "Running"
-            else NORD_COLORS["aurora_red"]
-        )
-        console.print(
-            f"Plex Status: [bold {status_color}]{plex_status}[/bold {status_color}]"
-        )
-        console.print(
-            f"\n[{NORD_COLORS['light1']}]1. Update Plex (Default Version)[/{NORD_COLORS['light1']}]"
-        )
-        console.print(
-            f"[{NORD_COLORS['light1']}]2. Select Version to Install[/{NORD_COLORS['light1']}]"
-        )
-        console.print(
-            f"[{NORD_COLORS['light1']}]3. Restart Plex Service[/{NORD_COLORS['light1']}]"
-        )
-        console.print(f"[{NORD_COLORS['light1']}]4. Exit[/{NORD_COLORS['light1']}]")
-        console.print(
-            f"\n[bold {NORD_COLORS['aurora_purple']}]Enter your choice: [/bold {NORD_COLORS['aurora_purple']}]",
-            end="",
-        )
-        choice = input().strip()
-        if choice == "1":
-            if confirm_action("Update Plex to the default version?"):
-                update_plex(DEFAULT_PLEX_URL)
-        elif choice == "2":
-            url = plex_version_menu()
-            if confirm_action(f"Install Plex from {url}?"):
-                update_plex(url)
-        elif choice == "3":
-            if confirm_action("Restart Plex service?"):
-                restart_plex()
-        elif choice == "4":
-            print_info("Exiting. Goodbye!")
-            break
-        else:
-            print_error("Invalid choice. Please try again.")
-        if choice in ["1", "2", "3"]:
-            console.print(
-                f"\n[bold {NORD_COLORS['aurora_purple']}]Press Enter to continue...[/bold {NORD_COLORS['aurora_purple']}]"
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
+                f"[{NordColors.SNOW_STORM_1}]Host: {SYSTEM_INFO['host']}[/]"
             )
-            input()
+        )
+        console.print()
+
+        # Display current Plex status
+        display_status_panel()
+        console.print()
+
+        # Display menu options
+        console.print(f"[bold {NordColors.FROST_2}]Main Menu[/]")
+        console.print(f"[{NordColors.SNOW_STORM_1}]1. Update Plex Media Server[/]")
+        console.print(f"[{NordColors.SNOW_STORM_1}]2. Restart Plex Service[/]")
+        console.print(f"[{NordColors.SNOW_STORM_1}]3. Exit[/]")
+
+        console.print()
+        console.print(f"[bold {NordColors.PURPLE}]Enter your choice (1-3):[/] ", end="")
+        choice = input().strip()
+
+        if choice == "1":
+            update_plex()
+            press_enter_to_continue()
+        elif choice == "2":
+            if confirm_action("Are you sure you want to restart the Plex service?"):
+                restart_plex_service()
+            press_enter_to_continue()
+        elif choice == "3":
+            console.clear()
+            display_panel(
+                "Thank you for using the Plex Updater!",
+                style=NordColors.FROST_2,
+                title="Goodbye",
+            )
+            return
+        else:
+            print_error("Invalid choice. Please enter a number between 1 and 3.")
+            press_enter_to_continue()
 
 
-# ------------------------------
-# Main Entry Point
-# ------------------------------
+# ----------------------------------------------------------------
+# Main Program Entry Point
+# ----------------------------------------------------------------
 def main() -> None:
-    """Main function: set up logging, check dependencies, and run updater."""
+    """Main program entry point."""
     try:
-        print_header("Plex Updater v1.0.0")
-        setup_logging()
-        check_dependencies()
-        check_root()
-        # Parse command-line arguments
+        console.clear()
+        console.print(create_header())
+
+        # Check root and dependencies
+        if not check_root() or not check_dependencies():
+            display_panel(
+                "Please address the issues above and try again.",
+                style=NordColors.RED,
+                title="Setup Failed",
+            )
+            sys.exit(1)
+
+        # Parse command line arguments
         parser = argparse.ArgumentParser(description="Plex Media Server Updater")
         parser.add_argument(
-            "--non-interactive",
+            "--update-only",
             action="store_true",
-            help="Run in non-interactive mode with default settings",
-        )
-        parser.add_argument(
-            "--url",
-            type=str,
-            default=DEFAULT_PLEX_URL,
-            help="URL to download the Plex package (non-interactive mode only)",
+            help="Skip the menu and directly update Plex",
         )
         args = parser.parse_args()
-        if args.non_interactive:
-            update_plex(args.url)
+
+        if args.update_only:
+            update_plex()
         else:
-            interactive_menu()
+            show_main_menu()
+
     except KeyboardInterrupt:
         print_warning("\nOperation cancelled by user")
         sys.exit(130)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
-        logging.exception("Unhandled exception")
+        console.print_exception()
         sys.exit(1)
 
 
