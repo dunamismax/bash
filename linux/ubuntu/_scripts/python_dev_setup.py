@@ -140,10 +140,7 @@ class NordColors:
 # Create a Rich Console
 console: Console = Console(theme=None, highlight=False)
 
-# ----------------------------------------------------------------
-# Package Lists
-# ----------------------------------------------------------------
-# Lists of packages to install
+
 SYSTEM_DEPENDENCIES: List[str] = [
     "build-essential",
     "libssl-dev",
@@ -161,6 +158,8 @@ SYSTEM_DEPENDENCIES: List[str] = [
     "git",
     "curl",
     "wget",
+    "python3-rich",
+    "python3-pyfiglet",
 ]
 
 PIPX_TOOLS: List[str] = [
@@ -178,6 +177,18 @@ PIPX_TOOLS: List[str] = [
     "poetry",
     "httpie",
     "ruff",
+    "yt-dlp",
+    "bandit",
+    "pipenv",
+    "pip-audit",
+    "nox",
+    "awscli",
+    "dvc",
+    "uv",
+    "thefuck",
+    "pyupgrade",
+    "watchfiles",
+    "bump2version",
 ]
 
 # Tool descriptions for display
@@ -196,6 +207,46 @@ TOOL_DESCRIPTIONS: Dict[str, str] = {
     "poetry": "Dependency management and packaging",
     "httpie": "Command-line HTTP client",
     "ruff": "Fast Python linter",
+    "yt-dlp": "Advanced video downloader with support for many sites",
+    "bandit": "Security linter for detecting vulnerabilities in Python code",
+    "pipenv": "Dependency management and virtual environment tool",
+    "pip-audit": "Scans Python environments for vulnerable dependencies",
+    "nox": "Automation tool for running tests in multiple Python environments",
+    "awscli": "Official AWS command-line interface",
+    "dvc": "Data version control tool for ML and data projects",
+    "uv": "An extremely fast and unified Python package manager written in Rust, replacing pip, pip-tools, pipx, and more",
+    "thefuck": "Corrects mistyped commands in your shell",
+    "pyupgrade": "Automatically upgrades your Python code to newer syntax",
+    "watchfiles": "Monitors file changes and can trigger actions",
+    "bump2version": "Automates version bumping for your projects",
+}
+
+
+# Tool descriptions for display
+TOOL_DESCRIPTIONS: Dict[str, str] = {
+    "black": "Code formatter that adheres to PEP 8",
+    "isort": "Import statement organizer",
+    "flake8": "Style guide enforcement tool",
+    "mypy": "Static type checker",
+    "pytest": "Testing framework",
+    "pre-commit": "Git hook manager",
+    "ipython": "Enhanced interactive Python shell",
+    "cookiecutter": "Project template renderer",
+    "pylint": "Code analysis tool",
+    "sphinx": "Documentation generator",
+    "twine": "Package upload utility",
+    "poetry": "Dependency management and packaging",
+    "httpie": "Command-line HTTP client",
+    "ruff": "Fast Python linter",
+    "yt-dlp": "Advanced video downloader with support for various websites",
+    "ffmpeg": "Comprehensive multimedia framework for processing audio and video",
+    "bandit": "Security linter for detecting vulnerabilities in Python code",
+    "pipenv": "Dependency management and virtual environment tool",
+    "pip-audit": "Utility to scan for vulnerabilities in Python packages",
+    "nox": "Automation tool for running tests in multiple Python environments",
+    "jupyter": "Interactive computing environment for notebooks",
+    "awscli": "Official AWS command-line interface",
+    "dvc": "Data version control tool for managing data and ML pipelines",
 }
 
 

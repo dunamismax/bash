@@ -1,3 +1,10 @@
+Errors to fix:
+
+ ╰────────────────────────────────────────────────────────────────────────────────────────╯                     
+                             LiveError: Only one live display may be active at once                                                         
+✗ Installation failed: Only one live display may be active at once
+
+
 #!/usr/bin/env python3
 """
 Fully Automated Security Tools Installer
