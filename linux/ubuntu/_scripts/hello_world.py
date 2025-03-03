@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
- Hello World App
----------------------
-A simple interactive terminal application that displays a  'Hello, World!' message using Rich and Pyfiglet.
+Nord Themed Hello World App
+---------------------------
+An interactive terminal application that displays a 'Hello, World!' message with a Nord dark theme, dynamic ASCII art, and rich spinners as artistic accents.
 """
 
 import sys
@@ -13,10 +13,22 @@ try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.align import Align
+    from rich.progress import Progress, SpinnerColumn, TextColumn
 except ImportError:
     print("This script requires the 'rich' and 'pyfiglet' libraries.")
     print("Please install them using: pip install rich pyfiglet")
     sys.exit(1)
+
+
+# Define Nord dark theme colors
+class NordColors:
+    BACKGROUND = "#2E3440"  # Dark background
+    PANEL_BORDER = "#81A1C1"  # Accent blue
+    ACCENT = "#88C0D0"  # Lighter blue for accents
+    TEXT = "#D8DEE9"  # Light text
+    SUCCESS = "#A3BE8C"  # Greenish for success
+    WARNING = "#EBCB8B"  # Warm accent
+
 
 # Create a Rich Console
 console = Console()
@@ -24,7 +36,7 @@ console = Console()
 
 def create_header(text: str) -> Panel:
     """
-    Create a dynamic ASCII art header using Pyfiglet and wrap it in a Rich Panel.
+    Create a dynamic ASCII art header using Pyfiglet and wrap it in a Rich Panel with Nord styling.
 
     Args:
         text: The text to render as ASCII art.
@@ -32,36 +44,70 @@ def create_header(text: str) -> Panel:
     Returns:
         A Rich Panel containing the rendered ASCII art.
     """
-    # Generate ASCII art using Pyfiglet
     ascii_art = pyfiglet.figlet_format(text, font="slant")
-    # Create a panel with centered ASCII art and a border
     header_panel = Panel(
         Align.center(ascii_art),
-        border_style="cyan",
-        title=" App",
-        subtitle="Hello, World!",
+        border_style=NordColors.PANEL_BORDER,
+        title=f"[bold {NordColors.ACCENT}]Nord Hello World App[/bold]",
+        subtitle=f"[bold {NordColors.TEXT}]Hello, World![/bold]",
+        padding=(1, 2),
     )
     return header_panel
 
 
+def display_spinner_art(duration: float = 2.0) -> None:
+    """
+    Display spinners as dynamic art across the screen using Rich spinners.
+
+    Args:
+        duration: Duration in seconds to display the spinner art.
+    """
+    spinner_message = f"[bold {NordColors.ACCENT}]Loading Nord Art...[/bold]"
+    with Progress(
+        SpinnerColumn(style=NordColors.ACCENT),
+        TextColumn(spinner_message, style=NordColors.TEXT),
+        transient=True,
+        console=console,
+    ) as progress:
+        task = progress.add_task("", total=None)
+        start_time = time.time()
+        while time.time() - start_time < duration:
+            time.sleep(0.1)
+
+
 def main() -> None:
     """
-    Main function to display the  hello world message.
+    Main function to display the Nord themed hello world message with enhanced rich spinners art.
     """
     console.clear()
 
-    # Display the header
+    # Display introductory spinner art
+    display_spinner_art(2.5)
+
+    # Display the header with dynamic ASCII art
     header = create_header("Hello World")
     console.print(header)
 
-    # Add a welcoming message below the header
-    console.print("\n[bold green]Welcome to the  Hello World App![/bold green]\n")
+    # Display additional spinner art below the header
+    display_spinner_art(1.5)
 
-    # Pause for a moment to let the user enjoy the view
-    time.sleep(2)
+    # Show a welcoming message with Nord styling
+    console.print(
+        f"\n[bold {NordColors.SUCCESS}]Welcome to the Nord Themed Python Hello World App![/bold]\n"
+    )
+
+    # Use a spinner to simulate a final processing effect before exit
+    with Progress(
+        SpinnerColumn(style=NordColors.ACCENT),
+        TextColumn(f"[dim {NordColors.TEXT}]Preparing to exit...[/dim]"),
+        transient=True,
+        console=console,
+    ) as progress:
+        progress.add_task("", total=None)
+        time.sleep(2)
 
     # Prompt user to exit
-    console.print("[dim]Press Enter to exit...[/dim]")
+    console.print(f"[dim {NordColors.TEXT}]Press Enter to exit...[/dim]")
     input()
 
 
