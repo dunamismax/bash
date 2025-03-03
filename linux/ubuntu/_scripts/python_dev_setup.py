@@ -33,11 +33,9 @@ import subprocess
 import sys
 import time
 import getpass
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Tuple, Callable, Set, Union
+from typing import List, Dict, Optional, Any, Union
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -58,8 +56,6 @@ try:
     from rich.align import Align
     from rich.style import Style
     from rich.prompt import Prompt, Confirm
-    from rich.live import Live
-    from rich.columns import Columns
     from rich.traceback import install as install_rich_traceback
 except ImportError:
     print("This script requires the 'rich' and 'pyfiglet' libraries.")
@@ -85,7 +81,7 @@ VERSION: str = "2.2.0"
 APP_NAME: str = "PyDev Setup"
 APP_SUBTITLE: str = "Development Environment Installer"
 
-# Extra long timeouts for slow machines (in seconds)
+# Timeouts for operations (in seconds)
 DEFAULT_TIMEOUT: int = 3600  # 1 hour for most operations
 PYTHON_BUILD_TIMEOUT: int = 7200  # 2 hours for Python compilation
 
@@ -128,14 +124,11 @@ class NordColors:
 
     # Polar Night (dark) shades
     POLAR_NIGHT_1: str = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_2: str = "#3B4252"  # Darker background shade
-    POLAR_NIGHT_3: str = "#434C5E"  # Dark background shade
     POLAR_NIGHT_4: str = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
     SNOW_STORM_1: str = "#D8DEE9"  # Darkest text color
     SNOW_STORM_2: str = "#E5E9F0"  # Medium text color
-    SNOW_STORM_3: str = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
     FROST_1: str = "#8FBCBB"  # Light cyan
@@ -148,7 +141,6 @@ class NordColors:
     ORANGE: str = "#D08770"  # Orange
     YELLOW: str = "#EBCB8B"  # Yellow
     GREEN: str = "#A3BE8C"  # Green
-    PURPLE: str = "#B48EAD"  # Purple
 
 
 # Create a Rich Console
@@ -191,39 +183,26 @@ PIPX_TOOLS: List[str] = [
     "twine",
     "poetry",
     "httpie",
-    "yt-dlp",
-    "bandit",
-    "vulture",
-    "pydocstyle",
-    "radon",
-    "tox",
     "ruff",
-    "pyupgrade",
-    "codespell",
 ]
 
-
-# ----------------------------------------------------------------
-# Data Structures
-# ----------------------------------------------------------------
-@dataclass
-class SetupComponent:
-    """
-    Represents a component to be installed as part of the setup process.
-
-    Attributes:
-        name: The name of the component
-        description: A short description of what the component does
-        installed: Whether the component is already installed
-        function: The function to call to install this component
-        prerequisite: Optional function that must succeed before this component can be installed
-    """
-
-    name: str
-    description: str
-    installed: bool = False
-    function: Callable[[], bool] = None
-    prerequisite: Optional[Callable[[], bool]] = None
+# Tool descriptions for display
+TOOL_DESCRIPTIONS: Dict[str, str] = {
+    "black": "Code formatter that adheres to PEP 8",
+    "isort": "Import statement organizer",
+    "flake8": "Style guide enforcement tool",
+    "mypy": "Static type checker",
+    "pytest": "Testing framework",
+    "pre-commit": "Git hook manager",
+    "ipython": "Enhanced interactive Python shell",
+    "cookiecutter": "Project template renderer",
+    "pylint": "Code analysis tool",
+    "sphinx": "Documentation generator",
+    "twine": "Package upload utility",
+    "poetry": "Dependency management and packaging",
+    "httpie": "Command-line HTTP client",
+    "ruff": "Fast Python linter",
+}
 
 
 # ----------------------------------------------------------------
@@ -231,28 +210,17 @@ class SetupComponent:
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a high-tech ASCII art header with impressive styling.
+    Create a styled ASCII art header for the application.
 
     Returns:
         Panel containing the styled header
     """
-    # Use smaller, more compact but still tech-looking fonts
-    compact_fonts = ["slant", "small", "standard", "digital", "big"]
-
-    # Try each font until we find one that works well
-    for font_name in compact_fonts:
-        try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
-            ascii_art = fig.renderText(APP_NAME)
-
-            # If we got a reasonable result, use it
-            if ascii_art and len(ascii_art.strip()) > 0:
-                break
-        except Exception:
-            continue
-
-    # Custom ASCII art fallback if all else fails
-    if not ascii_art or len(ascii_art.strip()) == 0:
+    try:
+        # Try to create ASCII art with pyfiglet
+        fig = pyfiglet.Figlet(font="slant", width=60)
+        ascii_art = fig.renderText(APP_NAME)
+    except Exception:
+        # Fallback ASCII art if pyfiglet fails
         ascii_art = """
              _   _                                   
  _ __  _   _| |_| |__   ___  _ __     ___ _ ____   __
@@ -267,10 +235,10 @@ def create_header() -> Panel:
                    |_|                               
         """
 
-    # Clean up extra whitespace that might cause display issues
+    # Clean up extra whitespace
     ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
 
-    # Create a high-tech gradient effect with Nord colors
+    # Apply styling with Nord colors
     colors = [
         NordColors.FROST_1,
         NordColors.FROST_2,
@@ -283,11 +251,11 @@ def create_header() -> Panel:
         color = colors[i % len(colors)]
         styled_text += f"[bold {color}]{line}[/]\n"
 
-    # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
-    styled_text = tech_border + "\n" + styled_text + tech_border
+    # Add decorative border
+    border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
+    styled_text = border + "\n" + styled_text + border
 
-    # Create a panel with sufficient padding to avoid cutoff
+    # Create a panel
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
@@ -304,14 +272,7 @@ def create_header() -> Panel:
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """
-    Print a styled message.
-
-    Args:
-        text: The message to display
-        style: The color style to use
-        prefix: The prefix symbol
-    """
+    """Print a styled message."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
@@ -338,14 +299,7 @@ def print_error(message: str) -> None:
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """
-    Display a message in a styled panel.
-
-    Args:
-        message: The message to display
-        style: The color style to use
-        title: Optional panel title
-    """
+    """Display a message in a styled panel."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
@@ -367,21 +321,7 @@ def run_command(
     as_user: bool = False,
     env: Optional[Dict[str, str]] = None,
 ) -> subprocess.CompletedProcess:
-    """
-    Executes a system command and returns the CompletedProcess.
-
-    Args:
-        cmd: Command and arguments as a list or string
-        shell: Whether to run as a shell command
-        check: Whether to check the return code
-        capture_output: Whether to capture stdout/stderr
-        timeout: Command timeout in seconds
-        as_user: Whether to run as the original user
-        env: Environment variables for the command
-
-    Returns:
-        CompletedProcess instance with command results
-    """
+    """Execute a system command and return the result."""
     if (
         as_user
         and ORIGINAL_USER != "root"
@@ -425,13 +365,7 @@ def run_command(
 
 
 def fix_ownership(path: str, recursive: bool = True) -> None:
-    """
-    Fix ownership of a given path to the original (non-root) user.
-
-    Args:
-        path: The file or directory path to fix ownership for
-        recursive: Whether to recursively fix ownership for directories
-    """
+    """Fix ownership of a given path to the original (non-root) user."""
     if ORIGINAL_USER == "root":
         return
 
@@ -449,15 +383,7 @@ def fix_ownership(path: str, recursive: bool = True) -> None:
 
 
 def check_command_available(command: str) -> bool:
-    """
-    Return True if the command is available in the PATH.
-
-    Args:
-        command: The command to check for availability
-
-    Returns:
-        True if command is available, False otherwise
-    """
+    """Return True if the command is available in the PATH."""
     return shutil.which(command) is not None
 
 
@@ -465,12 +391,7 @@ def check_command_available(command: str) -> bool:
 # Core Setup Functions
 # ----------------------------------------------------------------
 def check_system() -> bool:
-    """
-    Check system compatibility and basic required tools.
-
-    Returns:
-        True if system check passes, False otherwise
-    """
+    """Check system compatibility and basic required tools."""
     with console.status("[bold blue]Checking system compatibility...", spinner="dots"):
         if os.geteuid() != 0:
             print_error("This script must be run with root privileges (sudo).")
@@ -519,12 +440,7 @@ def check_system() -> bool:
 
 
 def install_system_dependencies() -> bool:
-    """
-    Install required system packages using apt-get.
-
-    Returns:
-        True if installation succeeds, False otherwise
-    """
+    """Install required system packages using apt-get."""
     try:
         with console.status("[bold blue]Updating package lists...", spinner="dots"):
             run_command(["apt-get", "update"])
@@ -561,12 +477,7 @@ def install_system_dependencies() -> bool:
 
 
 def install_pyenv() -> bool:
-    """
-    Install pyenv for managing Python versions.
-
-    Returns:
-        True if installation succeeds, False otherwise
-    """
+    """Install pyenv for managing Python versions."""
     if os.path.exists(PYENV_DIR) and os.path.isfile(PYENV_BIN):
         print_success("pyenv is already installed.")
         return True
@@ -641,12 +552,7 @@ def install_pyenv() -> bool:
 
 
 def install_latest_python_with_pyenv() -> bool:
-    """
-    Install the latest Python version using pyenv.
-
-    Returns:
-        True if installation succeeds, False otherwise
-    """
+    """Install the latest Python version using pyenv."""
     if not os.path.exists(PYENV_BIN):
         print_error("pyenv is not installed. Please install it first.")
         return False
@@ -773,18 +679,23 @@ def install_latest_python_with_pyenv() -> bool:
 
 
 def install_pipx() -> bool:
-    """
-    Ensure pipx is installed for the target user.
-
-    Returns:
-        True if installation succeeds, False otherwise
-    """
+    """Ensure pipx is installed for the target user."""
     if check_command_available("pipx"):
         print_success("pipx is already installed.")
         return True
 
     try:
         with console.status("[bold blue]Installing pipx...", spinner="dots"):
+            # First try to install via apt
+            try:
+                run_command(["apt-get", "install", "-y", "pipx"], check=False)
+                if check_command_available("pipx"):
+                    print_success("pipx installed via apt.")
+                    return True
+            except Exception:
+                print_warning("Failed to install pipx via apt, trying pip...")
+
+            # If apt fails, use pip
             if ORIGINAL_USER != "root":
                 python_cmd = os.path.join(PYENV_DIR, "shims", "python")
                 if not os.path.exists(python_cmd):
@@ -827,64 +738,49 @@ def install_pipx() -> bool:
 
         user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
         pipx_path = os.path.join(user_bin_dir, "pipx")
+
+        # Make sure pipx is in PATH
+        if ORIGINAL_USER != "root":
+            new_path = f"{user_bin_dir}:$PATH"
+            run_command(
+                [
+                    "sudo",
+                    "-u",
+                    ORIGINAL_USER,
+                    "bash",
+                    "-c",
+                    f'export PATH="{new_path}" && pipx --version',
+                ],
+                as_user=True,
+                check=False,
+            )
+
         if os.path.exists(pipx_path) or check_command_available("pipx"):
             print_success("pipx installed successfully.")
             return True
         else:
-            print_error("pipx installation could not be verified.")
-            return False
+            # It might be installed but not in PATH yet
+            print_warning(
+                "pipx installation completed but may not be in PATH until shell is restarted."
+            )
+            return True
     except Exception as e:
         print_error(f"Error installing pipx: {e}")
         return False
 
 
 def install_pipx_tools() -> bool:
-    """
-    Install essential Python tools via pipx.
-
-    Returns:
-        True if installation succeeds, False otherwise
-    """
-    if not check_command_available("pipx"):
-        print_step("Installing pipx via apt-get...")
-        try:
-            run_command(["apt-get", "install", "-y", "pipx"])
-        except Exception as e:
-            print_warning(f"Could not install pipx via apt: {e}")
-            if not install_pipx():
-                print_error("Failed to ensure pipx installation.")
-                return False
-
+    """Install essential Python tools via pipx."""
+    # Locate pipx executable
     pipx_cmd = shutil.which("pipx")
     if not pipx_cmd:
-        print_error("Could not find pipx executable.")
-        return False
-
-    # Descriptions for common Python development tools
-    tools_info = {
-        "black": "Code formatter that adheres to PEP 8",
-        "isort": "Import statement organizer",
-        "flake8": "Style guide enforcement tool",
-        "mypy": "Static type checker",
-        "pytest": "Testing framework",
-        "pre-commit": "Git hook manager",
-        "ipython": "Enhanced interactive Python shell",
-        "cookiecutter": "Project template renderer",
-        "pylint": "Code analysis tool",
-        "sphinx": "Documentation generator",
-        "twine": "Package upload utility",
-        "poetry": "Dependency management and packaging",
-        "httpie": "Command-line HTTP client",
-        "yt-dlp": "YouTube and video site downloader",
-        "bandit": "Security vulnerability scanner",
-        "vulture": "Dead code detector",
-        "pydocstyle": "Docstring style checker",
-        "radon": "Code metrics tool",
-        "tox": "Test automation tool",
-        "ruff": "Fast Python linter",
-        "pyupgrade": "Python syntax upgrader",
-        "codespell": "Code spell checker",
-    }
+        user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
+        pipx_path = os.path.join(user_bin_dir, "pipx")
+        if os.path.exists(pipx_path):
+            pipx_cmd = pipx_path
+        else:
+            print_error("Could not find pipx executable.")
+            return False
 
     # Create tools selection table
     tools_table = Table(
@@ -901,7 +797,7 @@ def install_pipx_tools() -> bool:
     tools_table.add_column("Description", style=NordColors.SNOW_STORM_1)
 
     for i, tool in enumerate(PIPX_TOOLS, 1):
-        description = tools_info.get(tool, "")
+        description = TOOL_DESCRIPTIONS.get(tool, "")
         tools_table.add_row(str(i), tool, description)
 
     console.print(tools_table)
@@ -930,6 +826,13 @@ def install_pipx_tools() -> bool:
             except ValueError:
                 print_warning("Invalid selection. Installing all tools.")
 
+    # Set up environment with pipx in PATH
+    env = os.environ.copy()
+    if ORIGINAL_USER != "root":
+        user_bin_dir = os.path.join(HOME_DIR, ".local", "bin")
+        env["PATH"] = f"{user_bin_dir}:{env.get('PATH', '')}"
+
+    # Install tools with progress bar
     with Progress(
         SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
         TextColumn(f"[bold {NordColors.FROST_2}]Installing Python tools"),
@@ -942,244 +845,84 @@ def install_pipx_tools() -> bool:
     ) as progress:
         tools_task = progress.add_task("Installing", total=len(selected_tools))
 
+        installed_tools = []
         failed_tools = []
+
         for tool in selected_tools:
             try:
-                # Try installing with apt first
-                apt_pkg = f"python3-{tool.lower()}"
-                try:
-                    apt_check = run_command(["apt-cache", "show", apt_pkg], check=False)
-                    if apt_check.returncode == 0:
-                        run_command(["apt-get", "install", "-y", apt_pkg])
-                        progress.advance(tools_task)
-                        continue
-                except Exception:
-                    pass
+                if ORIGINAL_USER != "root":
+                    # For non-root users, run pipx as the user
+                    result = run_command(
+                        [
+                            "sudo",
+                            "-u",
+                            ORIGINAL_USER,
+                            pipx_cmd,
+                            "install",
+                            tool,
+                            "--force",
+                        ],
+                        as_user=True,
+                        check=False,
+                        env=env,
+                    )
+                else:
+                    # For root user, run pipx directly
+                    result = run_command(
+                        [pipx_cmd, "install", tool, "--force"], check=False, env=env
+                    )
 
-                # Fall back to pipx
-                run_command(
-                    [pipx_cmd, "install", tool, "--force"], timeout=DEFAULT_TIMEOUT
-                )
-                progress.advance(tools_task)
+                if result.returncode == 0:
+                    installed_tools.append(tool)
+                else:
+                    failed_tools.append(tool)
             except Exception as e:
                 print_warning(f"Failed to install {tool}: {e}")
                 failed_tools.append(tool)
+            finally:
                 progress.advance(tools_task)
 
+    # Report results
+    if installed_tools:
+        print_success(f"Successfully installed: {', '.join(installed_tools)}")
+
     if failed_tools:
-        print_warning(
-            f"Failed to install the following tools: {', '.join(failed_tools)}"
-        )
-        return len(failed_tools) < len(selected_tools) / 2
+        print_warning(f"Failed to install: {', '.join(failed_tools)}")
 
-    print_success("Python tools installation completed.")
-    return True
+    return len(installed_tools) > 0
 
 
 # ----------------------------------------------------------------
-# Interactive Menu
+# Main Setup Functions
 # ----------------------------------------------------------------
-def show_interactive_menu() -> List[str]:
-    """
-    Display an interactive menu for component selection.
-
-    Returns:
-        List of names of successfully installed components
-    """
+def run_setup_components() -> List[str]:
+    """Run all setup components and return list of successful installations."""
     components = [
-        SetupComponent(
-            name="System Dependencies",
-            description="Essential libraries and build tools",
-            function=install_system_dependencies,
-        ),
-        SetupComponent(
-            name="pyenv",
-            description="Python version manager",
-            function=install_pyenv,
-            prerequisite=lambda: check_command_available("git"),
-        ),
-        SetupComponent(
-            name="Latest Python",
-            description="Install latest Python version via pyenv",
-            function=install_latest_python_with_pyenv,
-            prerequisite=lambda: os.path.exists(PYENV_BIN),
-        ),
-        SetupComponent(
-            name="pipx",
-            description="Tool for installing Python apps in isolated environments",
-            function=install_pipx,
-        ),
-        SetupComponent(
-            name="Python Tools",
-            description="Essential development tools (black, pytest, etc.)",
-            function=install_pipx_tools,
-            prerequisite=lambda: check_command_available("pipx"),
-        ),
+        ("System Dependencies", install_system_dependencies),
+        ("pyenv", install_pyenv),
+        ("Latest Python", install_latest_python_with_pyenv),
+        ("pipx", install_pipx),
+        ("Python Tools", install_pipx_tools),
     ]
 
-    # Check which components are already installed
-    for comp in components:
-        if comp.name == "System Dependencies":
-            comp.installed = all(
-                check_command_available(c) for c in ["gcc", "git", "curl"]
-            )
-        elif comp.name == "pyenv":
-            comp.installed = os.path.exists(PYENV_BIN)
-        elif comp.name == "Latest Python":
-            comp.installed = os.path.exists(os.path.join(PYENV_DIR, "shims", "python"))
-        elif comp.name == "pipx":
-            comp.installed = check_command_available("pipx")
-        elif comp.name == "Python Tools":
-            # Check if at least some tools are installed
-            sample_tools = ["black", "pytest", "ipython"]
-            comp.installed = any(check_command_available(t) for t in sample_tools)
-
-    # Create component selection table
-    components_table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        border_style=NordColors.FROST_3,
-        title=f"[bold {NordColors.FROST_2}]Setup Components[/]",
-        title_justify="center",
-    )
-    components_table.add_column(
-        "#", style=f"bold {NordColors.FROST_4}", justify="right", width=4
-    )
-    components_table.add_column("Component", style=f"bold {NordColors.FROST_2}")
-    components_table.add_column("Description", style=NordColors.SNOW_STORM_1)
-    components_table.add_column("Status", style=f"bold {NordColors.GREEN}")
-
-    for i, comp in enumerate(components, 1):
-        status = "✓ Installed" if comp.installed else ""
-        components_table.add_row(str(i), comp.name, comp.description, status)
-
-    console.print(components_table)
-
-    # Ask which components to install
-    install_all = Confirm.ask(
-        f"[bold {NordColors.FROST_2}]Install all components?[/]", default=True
-    )
-
-    if install_all:
-        selected_indices = list(range(len(components)))
-    else:
-        selection = Prompt.ask(
-            f"[bold {NordColors.FROST_2}]Enter numbers of components to install (comma-separated, or 'all')[/]",
-            default="all",
-        )
-
-        if selection.lower() == "all":
-            selected_indices = list(range(len(components)))
-        else:
-            try:
-                selected_indices = [
-                    int(idx.strip()) - 1 for idx in selection.split(",")
-                ]
-                selected_indices = [
-                    idx for idx in selected_indices if 0 <= idx < len(components)
-                ]
-                if not selected_indices:
-                    print_warning(
-                        "No valid components selected. Installing all components."
-                    )
-                    selected_indices = list(range(len(components)))
-            except ValueError:
-                print_warning("Invalid selection. Installing all components.")
-                selected_indices = list(range(len(components)))
-
-    # Install selected components
     successes = []
-    for idx in selected_indices:
-        comp = components[idx]
 
-        # Skip already installed components unless explicitly selected
-        if comp.installed and install_all:
-            print_success(f"{comp.name} is already installed. Skipping.")
-            successes.append(comp.name)
-            continue
-
-        # Check prerequisite
-        if comp.prerequisite and not comp.prerequisite():
-            print_warning(f"Prerequisite for {comp.name} not met. Skipping.")
-            continue
-
-        print_step(f"Installing {comp.name}...")
+    for name, func in components:
+        print_step(f"Installing {name}...")
         try:
-            if comp.function():
-                print_success(f"{comp.name} installed successfully.")
-                successes.append(comp.name)
+            if func():
+                print_success(f"{name} installed successfully.")
+                successes.append(name)
             else:
-                print_error(f"Failed to install {comp.name}.")
+                print_error(f"Failed to install {name}.")
         except Exception as e:
-            print_error(f"Error installing {comp.name}: {e}")
+            print_error(f"Error installing {name}: {e}")
 
     return successes
 
 
-# ----------------------------------------------------------------
-# Signal Handling and Cleanup
-# ----------------------------------------------------------------
-def cleanup() -> None:
-    """Perform any cleanup tasks before exit."""
-    print_message("Cleaning up...", NordColors.FROST_3)
-
-
-def signal_handler(sig: int, frame: Any) -> None:
-    """
-    Handle process termination signals gracefully.
-
-    Args:
-        sig: Signal number
-        frame: Current stack frame
-    """
-    sig_name = signal.Signals(sig).name
-    print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
-    cleanup()
-    sys.exit(128 + sig)
-
-
-# Register signal handlers
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-atexit.register(cleanup)
-
-
-# ----------------------------------------------------------------
-# Main Setup Process
-# ----------------------------------------------------------------
-def run_full_setup() -> None:
-    """Run the full setup process with interactive menus."""
-    console.print("\n")
-    console.print(create_header())
-
-    # Display current datetime and hostname
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    hostname = platform.node()
-    console.print(
-        Align.center(
-            f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
-            f"[{NordColors.SNOW_STORM_1}]Host: {hostname}[/]"
-        )
-    )
-    console.print("\n")
-
-    if not check_system():
-        print_error("System check failed. Aborting setup.")
-        sys.exit(1)
-
-    # Start interactive component selection
-    display_panel(
-        "Welcome to Python Development Environment Setup!\n\n"
-        "This tool will help you set up a complete Python development environment "
-        "including essential build tools, pyenv for Python version management, "
-        "and development tools.",
-        style=NordColors.FROST_3,
-        title="Welcome",
-    )
-
-    # Show interactive menu and get installed components
-    successes = show_interactive_menu()
-
+def display_summary(successes: List[str]) -> None:
+    """Display a summary of installed components."""
     # Create a summary table
     table = Table(
         show_header=True,
@@ -1194,23 +937,17 @@ def run_full_setup() -> None:
     table.add_column("Component", style=f"bold {NordColors.FROST_2}")
     table.add_column("Status", style=NordColors.SNOW_STORM_1)
 
-    sys_deps_status = "✓ Installed" if check_command_available("gcc") else "× Failed"
-    pyenv_status = "✓ Installed" if os.path.exists(PYENV_BIN) else "× Failed"
-    python_installed = os.path.exists(os.path.join(PYENV_DIR, "shims", "python"))
-    python_status = "✓ Installed" if python_installed else "× Failed"
-    pipx_installed = check_command_available("pipx") or os.path.exists(
-        os.path.join(HOME_DIR, ".local/bin/pipx")
-    )
-    pipx_status = "✓ Installed" if pipx_installed else "× Failed"
-    tools_status = (
-        "✓ Some tools installed" if "Python Tools" in successes else "× Not installed"
-    )
+    components = [
+        "System Dependencies",
+        "pyenv",
+        "Latest Python",
+        "pipx",
+        "Python Tools",
+    ]
 
-    table.add_row("System Dependencies", sys_deps_status)
-    table.add_row("pyenv", pyenv_status)
-    table.add_row("Python (via pyenv)", python_status)
-    table.add_row("pipx", pipx_status)
-    table.add_row("Python Development Tools", tools_status)
+    for component in components:
+        status = "✓ Installed" if component in successes else "× Failed"
+        table.add_row(component, status)
 
     console.print("\n")
     console.print(Panel(table, border_style=NordColors.FROST_1, padding=(1, 2)))
@@ -1227,13 +964,46 @@ def run_full_setup() -> None:
 
 
 # ----------------------------------------------------------------
+# Signal Handling and Cleanup
+# ----------------------------------------------------------------
+def cleanup() -> None:
+    """Perform any cleanup tasks before exit."""
+    print_message("Cleaning up...", NordColors.FROST_3)
+
+
+def signal_handler(sig: int, frame: Any) -> None:
+    """Handle process termination signals gracefully."""
+    sig_name = signal.Signals(sig).name
+    print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
+    cleanup()
+    sys.exit(128 + sig)
+
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(cleanup)
+
+
+# ----------------------------------------------------------------
 # Main Entry Point
 # ----------------------------------------------------------------
 def main() -> None:
     """Main application entry point with error handling."""
     try:
-        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-            signal.signal(sig, lambda signum, frame: sys.exit(128 + signum))
+        console.print("\n")
+        console.print(create_header())
+
+        # Display current datetime and hostname
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        hostname = platform.node()
+        console.print(
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
+                f"[{NordColors.SNOW_STORM_1}]Host: {hostname}[/]"
+            )
+        )
+        console.print("\n")
 
         if os.geteuid() != 0:
             print_error(
@@ -1241,7 +1011,26 @@ def main() -> None:
             )
             sys.exit(1)
 
-        run_full_setup()
+        if not check_system():
+            print_error("System check failed. Aborting setup.")
+            sys.exit(1)
+
+        # Display welcome message
+        display_panel(
+            "Welcome to Python Development Environment Setup!\n\n"
+            "This tool will help you set up a complete Python development environment "
+            "including essential build tools, pyenv for Python version management, "
+            "and development tools.",
+            style=NordColors.FROST_3,
+            title="Welcome",
+        )
+
+        # Run all setup components
+        successes = run_setup_components()
+
+        # Display summary
+        display_summary(successes)
+
     except KeyboardInterrupt:
         print_warning("\nProcess interrupted by user.")
         sys.exit(130)
