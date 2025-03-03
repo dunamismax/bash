@@ -8,28 +8,31 @@ with real-time progress tracking, Nord-themed UI, and intelligent handling of
 various content types.
 
 Features:
-  • Supports downloading files via wget
+  • Supports downloading files via wget or curl
   • Downloads YouTube videos/playlists via yt-dlp with browser cookies
-  • Real-time progress tracking with ETA and speed
-  • Automatic dependency management
+  • Real-time progress tracking with ETA and speed metrics
+  • Cross-platform support (Windows, macOS, Linux)
+  • Automatic dependency detection and installation
   • Beautiful Nord-themed terminal interface
   • Interactive and command-line modes
 
 Usage:
   Run without arguments for interactive menu
-  Or specify command: ./universal_downloader.py wget <url> [options]
-  Or for YouTube: ./universal_downloader.py ytdlp <url> [options]
+  Or specify command: ./universal_downloader.py file <url> [options]
+  Or for YouTube: ./universal_downloader.py youtube <url> [options]
 
   Options:
-    -o, --output-dir <dir>   Set download directory (default: ~/Downloads)
+    -o, --output-dir <dir>   Set download directory
     -v, --verbose            Enable verbose output
+    -h, --help               Show help information
 
-Note: For full functionality (especially dependencies installation), run with root privileges.
-Version: 3.4.0
+Version: 4.0.0
 """
 
+import argparse
 import atexit
 import datetime
+import json
 import os
 import platform
 import re
@@ -38,17 +41,58 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
-from dataclasses import dataclass
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Callable, Union
+from typing import Any, Dict, List, Optional, Tuple, Callable, Union, Set
+
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
 # ----------------------------------------------------------------
+def install_missing_packages():
+    """Install required Python packages if they're missing."""
+    required_packages = ["rich", "pyfiglet", "requests"]
+    missing_packages = []
+
+    for package in required_packages:
+        try:
+            __import__(package)
+        except ImportError:
+            missing_packages.append(package)
+
+    if missing_packages:
+        print(f"Installing missing packages: {', '.join(missing_packages)}")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install"] + missing_packages,
+                check=True,
+                capture_output=True,
+            )
+            print("Successfully installed required packages. Restarting script...")
+            # Restart the script to ensure imports work
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"Failed to install required packages: {e}")
+            print(
+                "Please install them manually: pip install "
+                + " ".join(missing_packages)
+            )
+            sys.exit(1)
+
+
+# Try installing missing packages
+install_missing_packages()
+
+# Now import the installed packages
 try:
+    import requests
     import pyfiglet
     from rich.console import Console
     from rich.text import Text
@@ -60,62 +104,102 @@ try:
         TextColumn,
         BarColumn,
         TimeRemainingColumn,
+        TaskProgressColumn,
+        DownloadColumn,
     )
     from rich.align import Align
     from rich.style import Style
-    from rich.prompt import Prompt, Confirm
+    from rich.prompt import Prompt, Confirm, IntPrompt
     from rich.live import Live
     from rich.columns import Columns
+    from rich.rule import Rule
     from rich.traceback import install as install_rich_traceback
-except ImportError:
-    print("This script requires the 'rich' and 'pyfiglet' libraries.")
-    print("Installing them now...")
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "rich", "pyfiglet"], check=True
-        )
-        print("Successfully installed required libraries. Restarting script...")
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        print(f"Failed to install required libraries: {e}")
-        print("Please install them manually: pip install rich pyfiglet")
-        sys.exit(1)
+    from rich.highlighter import RegexHighlighter
+    from rich.theme import Theme
+except ImportError as e:
+    print(f"Error importing required libraries: {e}")
+    print("Please install them manually: pip install rich pyfiglet requests")
+    sys.exit(1)
 
 # Install rich traceback handler for better error reporting
 install_rich_traceback(show_locals=True)
 
+
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-VERSION = "3.4.0"
-APP_NAME = "Universal Downloader"
-APP_SUBTITLE = "Files & Media Download Tool"
+class AppConfig:
+    """Application configuration settings."""
 
-HOSTNAME = socket.gethostname()
-LOG_FILE = "/var/log/universal_downloader.log"
-DEFAULT_DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
-DEFAULT_USER_HOME = os.path.expanduser("~")
+    VERSION = "4.0.0"
+    APP_NAME = "Universal Downloader"
+    APP_SUBTITLE = "Cross-Platform Download Tool"
 
-# Define dependency groups
-DEPENDENCIES = {
-    "common": ["curl"],
-    "wget": ["wget"],
-    "yt-dlp": ["yt-dlp", "ffmpeg"],
-}
+    # Identify OS and set platform-specific settings
+    PLATFORM = platform.system().lower()
+    IS_WINDOWS = PLATFORM == "windows"
+    IS_MACOS = PLATFORM == "darwin"
+    IS_LINUX = PLATFORM == "linux"
 
-# Progress display settings
-SPINNER_INTERVAL = 0.1  # seconds between spinner updates
-TERM_WIDTH = min(shutil.get_terminal_size().columns, 100)
-PROGRESS_WIDTH = min(50, TERM_WIDTH - 30)  # Adaptive progress bar width
+    # Default download locations based on platform
+    if IS_WINDOWS:
+        DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
+        TEMP_DIR = os.path.join(tempfile.gettempdir(), "universal_downloader")
+        LOG_FILE = os.path.join(TEMP_DIR, "universal_downloader.log")
+    elif IS_MACOS:
+        DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
+        TEMP_DIR = os.path.join(tempfile.gettempdir(), "universal_downloader")
+        LOG_FILE = os.path.join(
+            os.path.expanduser("~"), "Library", "Logs", "universal_downloader.log"
+        )
+    else:  # Linux and others
+        DEFAULT_DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
+        TEMP_DIR = "/tmp/universal_downloader"
+        LOG_FILE = (
+            "/var/log/universal_downloader.log"
+            if os.access("/var/log", os.W_OK)
+            else os.path.join(os.path.expanduser("~"), ".universal_downloader.log")
+        )
 
-# Command timeouts
-DEFAULT_TIMEOUT = 300  # 5 minutes default timeout for commands
-DOWNLOAD_TIMEOUT = 7200  # 2 hours timeout for downloads
+    # Host info
+    try:
+        HOSTNAME = socket.gethostname()
+    except:
+        HOSTNAME = "Unknown"
 
-# YouTube download settings
-YTDLP_OUTPUT_TEMPLATE = "%(title)s.%(ext)s"
-YTDLP_FORMAT_SELECTION = "ext:mp4:m4a"
-BROWSER_SOURCE = "brave"  # Browser to extract cookies from
+    # Progress display settings
+    try:
+        TERM_WIDTH = shutil.get_terminal_size().columns
+    except:
+        TERM_WIDTH = 80
+    PROGRESS_WIDTH = min(50, TERM_WIDTH - 30)
+
+    # Command timeouts
+    DEFAULT_TIMEOUT = 300  # 5 minutes default timeout for commands
+    DOWNLOAD_TIMEOUT = 7200  # 2 hours timeout for downloads
+
+    # YouTube download settings
+    YTDLP_OUTPUT_TEMPLATE = "%(title)s.%(ext)s"
+    YTDLP_FORMAT_SELECTION = "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"
+
+    # Browsers for cookie extraction, ordered by preference
+    BROWSER_PRIORITIES = {
+        "windows": ["chrome", "firefox", "edge", "brave", "opera"],
+        "darwin": ["chrome", "firefox", "safari", "brave", "edge"],
+        "linux": ["chrome", "firefox", "brave", "chromium", "edge"],
+    }
+
+    @classmethod
+    def get_browser_list(cls) -> List[str]:
+        """Get a list of browsers for the current platform, ordered by preference."""
+        return cls.BROWSER_PRIORITIES.get(cls.PLATFORM, ["chrome", "firefox"])
+
+    @classmethod
+    def get_default_browser(cls) -> str:
+        """Get the default browser for cookie extraction based on platform."""
+        browsers = cls.get_browser_list()
+        # Return the first one from the list
+        return browsers[0] if browsers else "chrome"
 
 
 # ----------------------------------------------------------------
@@ -126,11 +210,14 @@ class NordColors:
 
     # Polar Night (dark) shades
     POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_2 = "#3B4252"  # Dark background shade
+    POLAR_NIGHT_3 = "#434C5E"  # Medium background shade
     POLAR_NIGHT_4 = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
     SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
     SNOW_STORM_2 = "#E5E9F0"  # Medium text color
+    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
     FROST_1 = "#8FBCBB"  # Light cyan
@@ -146,13 +233,53 @@ class NordColors:
     PURPLE = "#B48EAD"  # Purple
 
 
-# Create a Rich Console
-console: Console = Console(theme=None, highlight=False)
+# Create a Rich Console with Nord theme
+console = Console(
+    theme=Theme(
+        {
+            "info": f"bold {NordColors.FROST_2}",
+            "warning": f"bold {NordColors.YELLOW}",
+            "error": f"bold {NordColors.RED}",
+            "success": f"bold {NordColors.GREEN}",
+            "url": f"underline {NordColors.FROST_3}",
+            "filename": f"italic {NordColors.FROST_1}",
+        }
+    )
+)
+
+
+# ----------------------------------------------------------------
+# Custom Exception Classes
+# ----------------------------------------------------------------
+class DownloaderError(Exception):
+    """Base exception for Universal Downloader errors."""
+
+    pass
+
+
+class DependencyError(DownloaderError):
+    """Raised when a required dependency is missing and cannot be installed."""
+
+    pass
+
+
+class DownloadError(DownloaderError):
+    """Raised when a download fails."""
+
+    pass
 
 
 # ----------------------------------------------------------------
 # Data Structures
 # ----------------------------------------------------------------
+class DownloadType(Enum):
+    """Enum representing different types of downloads."""
+
+    FILE = "file"
+    YOUTUBE = "youtube"
+    TORRENT = "torrent"  # Future expansion
+
+
 @dataclass
 class DownloadSource:
     """
@@ -160,17 +287,21 @@ class DownloadSource:
 
     Attributes:
         url: The URL to download from
+        download_type: The type of download (file, YouTube, etc.)
         name: A friendly name for display (filename or title)
         size: Size in bytes if known, otherwise 0
         is_video: Whether this is a video source
         is_playlist: Whether this is a playlist
+        metadata: Additional metadata about the source
     """
 
     url: str
+    download_type: DownloadType = DownloadType.FILE
     name: str = ""
     size: int = 0
     is_video: bool = False
     is_playlist: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         if not self.name:
@@ -205,13 +336,11 @@ class DownloadStats:
     total_size: int = 0
     start_time: float = 0.0
     end_time: Optional[float] = None
-    rate_history: List[float] = None
+    rate_history: List[float] = field(default_factory=list)
 
     def __post_init__(self):
         if self.start_time == 0.0:
             self.start_time = time.time()
-        if self.rate_history is None:
-            self.rate_history = []
 
     @property
     def is_complete(self) -> bool:
@@ -271,6 +400,90 @@ class DownloadStats:
             self.bytes_downloaded = self.total_size  # Cap at total
 
 
+@dataclass
+class Dependency:
+    """
+    Represents a system dependency required by the application.
+
+    Attributes:
+        name: The name of the dependency
+        display_name: A user-friendly display name
+        command: The command to check if installed
+        install_commands: Platform-specific install commands
+        installed: Whether the dependency is installed
+    """
+
+    name: str
+    display_name: str
+    command: str  # Command to check if installed
+    install_commands: Dict[str, List[str]] = field(default_factory=dict)
+    installed: bool = False
+
+    def check_installed(self) -> bool:
+        """Check if the dependency is installed."""
+        self.installed = bool(shutil.which(self.command))
+        return self.installed
+
+    def get_install_command(self) -> List[str]:
+        """Get the appropriate install command for the current platform."""
+        platform_key = AppConfig.PLATFORM
+        if platform_key in self.install_commands:
+            return self.install_commands[platform_key]
+        return []
+
+
+# Dictionary of supported dependencies with platform-specific install commands
+DEPENDENCY_DEFINITIONS = {
+    "wget": Dependency(
+        name="wget",
+        display_name="wget",
+        command="wget",
+        install_commands={
+            "windows": ["winget", "install", "GnuWin32.Wget"],
+            "darwin": ["brew", "install", "wget"],
+            "linux": ["apt-get", "install", "-y", "wget"],
+        },
+    ),
+    "curl": Dependency(
+        name="curl",
+        display_name="curl",
+        command="curl",
+        install_commands={
+            "windows": ["winget", "install", "cURL.cURL"],
+            "darwin": ["brew", "install", "curl"],
+            "linux": ["apt-get", "install", "-y", "curl"],
+        },
+    ),
+    "yt-dlp": Dependency(
+        name="yt-dlp",
+        display_name="yt-dlp",
+        command="yt-dlp",
+        install_commands={
+            "windows": ["pip", "install", "yt-dlp"],
+            "darwin": ["brew", "install", "yt-dlp"],
+            "linux": ["pip", "install", "yt-dlp"],
+        },
+    ),
+    "ffmpeg": Dependency(
+        name="ffmpeg",
+        display_name="FFmpeg",
+        command="ffmpeg",
+        install_commands={
+            "windows": ["winget", "install", "Gyan.FFmpeg"],
+            "darwin": ["brew", "install", "ffmpeg"],
+            "linux": ["apt-get", "install", "-y", "ffmpeg"],
+        },
+    ),
+}
+
+# Define dependency groups
+DEPENDENCY_GROUPS = {
+    "common": ["curl"],
+    "file": ["curl", "wget"],
+    "youtube": ["yt-dlp", "ffmpeg"],
+}
+
+
 # ----------------------------------------------------------------
 # Console and Logging Helpers
 # ----------------------------------------------------------------
@@ -288,7 +501,7 @@ def create_header() -> Panel:
     for font_name in compact_fonts:
         try:
             fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
-            ascii_art = fig.renderText(APP_NAME)
+            ascii_art = fig.renderText(AppConfig.APP_NAME)
 
             # If we got a reasonable result, use it
             if ascii_art and len(ascii_art.strip()) > 0:
@@ -335,9 +548,9 @@ def create_header() -> Panel:
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
         padding=(1, 2),
-        title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
+        title=f"[bold {NordColors.SNOW_STORM_2}]v{AppConfig.VERSION}[/]",
         title_align="right",
-        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{AppConfig.APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
 
@@ -417,7 +630,7 @@ def format_time(seconds: float) -> str:
         return f"{seconds / 3600:.1f}h"
 
 
-def setup_logging(log_file: str = LOG_FILE) -> None:
+def setup_logging(log_file: str = AppConfig.LOG_FILE) -> None:
     """Configure logging to file."""
     import logging
 
@@ -445,7 +658,7 @@ def run_command(
     env: Optional[Dict[str, str]] = None,
     check: bool = True,
     capture_output: bool = True,
-    timeout: int = DEFAULT_TIMEOUT,
+    timeout: int = AppConfig.DEFAULT_TIMEOUT,
     verbose: bool = False,
 ) -> subprocess.CompletedProcess:
     """
@@ -467,14 +680,27 @@ def run_command(
         if verbose:
             print_step(f"Executing: {cmd_str[:80]}{'...' if len(cmd_str) > 80 else ''}")
 
-        result = subprocess.run(
-            cmd,
-            env=env or os.environ.copy(),
-            check=check,
-            text=True,
-            capture_output=capture_output,
-            timeout=timeout,
-        )
+        # On Windows, handle command execution differently
+        if AppConfig.IS_WINDOWS and cmd[0] not in ["pip", "python"]:
+            # For Windows, ensure the command is executed in a shell
+            result = subprocess.run(
+                cmd,
+                env=env or os.environ.copy(),
+                check=check,
+                text=True,
+                capture_output=capture_output,
+                timeout=timeout,
+                shell=True,
+            )
+        else:
+            result = subprocess.run(
+                cmd,
+                env=env or os.environ.copy(),
+                check=check,
+                text=True,
+                capture_output=capture_output,
+                timeout=timeout,
+            )
         return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
@@ -507,42 +733,138 @@ def signal_handler(sig: int, frame: Any) -> None:
         sig: Signal number
         frame: Current stack frame
     """
-    sig_name = (
-        signal.Signals(sig).name if hasattr(signal, "Signals") else f"signal {sig}"
-    )
-    print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
+    sig_name = str(sig)
+    if hasattr(signal, "Signals"):
+        try:
+            sig_name = signal.Signals(sig).name
+        except ValueError:
+            pass
+
+    print_message(f"Process interrupted by signal {sig_name}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
 
-# Register signal handlers
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+# Register signal handlers (if supported by platform)
+try:
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+except (AttributeError, ValueError):
+    # Some signals might not be available on all platforms
+    pass
 atexit.register(cleanup)
 
 
 # ----------------------------------------------------------------
-# Network and File Helpers
+# System and Dependency Management
 # ----------------------------------------------------------------
-def check_root_privileges() -> bool:
-    """Return True if running as root, otherwise warn the user."""
-    if os.geteuid() != 0:
-        print_warning("Not running with root privileges. Some features may be limited.")
+def is_admin_or_root() -> bool:
+    """
+    Check if the script is running with administrator/root privileges.
+
+    Returns:
+        True if running with elevated privileges, False otherwise
+    """
+    try:
+        if AppConfig.IS_WINDOWS:
+            import ctypes
+
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        else:
+            return os.geteuid() == 0
+    except:
         return False
-    return True
 
 
-def check_dependencies(required: List[str]) -> bool:
-    """Check that all required commands are available."""
-    missing = [cmd for cmd in required if not shutil.which(cmd)]
-    if missing:
-        print_warning(f"Missing dependencies: {', '.join(missing)}")
+def check_dependencies(required_deps: List[str]) -> Dict[str, bool]:
+    """
+    Check if required dependencies are installed.
+
+    Args:
+        required_deps: List of dependency names to check
+
+    Returns:
+        Dictionary mapping dependency names to their installation status
+    """
+    results = {}
+    for dep_name in required_deps:
+        if dep_name in DEPENDENCY_DEFINITIONS:
+            dep = DEPENDENCY_DEFINITIONS[dep_name]
+            results[dep_name] = dep.check_installed()
+        else:
+            results[dep_name] = False
+    return results
+
+
+def install_dependency(dependency: Dependency, verbose: bool = False) -> bool:
+    """
+    Install a single dependency.
+
+    Args:
+        dependency: The Dependency object to install
+        verbose: Whether to show verbose output
+
+    Returns:
+        True if installation succeeded, False otherwise
+    """
+    install_cmd = dependency.get_install_command()
+    if not install_cmd:
+        print_error(
+            f"No installation method available for {dependency.display_name} on {AppConfig.PLATFORM}"
+        )
         return False
-    return True
+
+    try:
+        # For Windows, check if we need to use an alternative installation method
+        if AppConfig.IS_WINDOWS:
+            # If winget is not available, try alternative methods
+            if install_cmd[0] == "winget" and not shutil.which("winget"):
+                if dependency.name == "wget":
+                    # Use pip for wget on Windows as alternative
+                    install_cmd = ["pip", "install", "wget"]
+                elif dependency.name == "curl":
+                    # Curl is usually included in Windows 10+
+                    print_warning(
+                        "curl should be available on Windows 10+. If it's not working, please install it manually."
+                    )
+                    return False
+
+        # For package managers that need sudo, prepend sudo if not root
+        if (
+            not is_admin_or_root()
+            and AppConfig.IS_LINUX
+            and install_cmd[0] in ["apt-get", "apt", "yum", "dnf"]
+        ):
+            install_cmd = ["sudo"] + install_cmd
+
+        print_step(f"Installing {dependency.display_name}...")
+        result = run_command(install_cmd, verbose=verbose, check=False)
+
+        # Verify installation
+        if dependency.check_installed():
+            print_success(f"Successfully installed {dependency.display_name}")
+            return True
+        else:
+            print_error(
+                f"Installation command completed but {dependency.display_name} is still not available"
+            )
+            return False
+    except Exception as e:
+        print_error(f"Failed to install {dependency.display_name}: {e}")
+        return False
 
 
 def install_dependencies(deps: List[str], verbose: bool = False) -> bool:
-    """Attempt to install missing dependencies using apt."""
+    """
+    Attempt to install missing dependencies using platform-specific methods.
+
+    Args:
+        deps: List of dependency names to install
+        verbose: Whether to show verbose output
+
+    Returns:
+        True if all dependencies were installed successfully, False otherwise
+    """
     print_step(f"Installing dependencies: {', '.join(deps)}")
 
     with Progress(
@@ -557,58 +879,72 @@ def install_dependencies(deps: List[str], verbose: bool = False) -> bool:
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        # First update package lists
-        update_task = progress.add_task("Updating package lists", total=1)
-        try:
-            run_command(["apt", "update"], verbose=verbose, capture_output=not verbose)
-            progress.update(update_task, completed=1)
-        except Exception as e:
-            print_error(f"Failed to update package lists: {e}")
-            return False
-
-        # Then install each dependency
+        # Create a task for overall progress
         install_task = progress.add_task("Installing packages", total=len(deps))
-        missing_after = []
+        success_count = 0
 
-        for dep in deps:
-            try:
-                run_command(
-                    ["apt", "install", "-y", dep],
-                    verbose=verbose,
-                    capture_output=not verbose,
-                )
+        for dep_name in deps:
+            if dep_name not in DEPENDENCY_DEFINITIONS:
+                print_warning(f"Unknown dependency: {dep_name}")
                 progress.advance(install_task)
+                continue
 
-                # Verify installation
-                if not shutil.which(dep):
-                    missing_after.append(dep)
-            except Exception as e:
-                print_error(f"Failed to install {dep}: {e}")
-                missing_after.append(dep)
+            dep = DEPENDENCY_DEFINITIONS[dep_name]
+            if dep.check_installed():
+                print_success(f"{dep.display_name} is already installed")
+                success_count += 1
                 progress.advance(install_task)
+                continue
 
-    if missing_after:
-        print_error(f"Failed to install: {', '.join(missing_after)}")
+            if install_dependency(dep, verbose):
+                success_count += 1
+
+            progress.advance(install_task)
+
+    if success_count == len(deps):
+        print_success(f"All dependencies installed successfully")
+        return True
+    else:
+        print_warning(f"Installed {success_count}/{len(deps)} dependencies")
         return False
-
-    print_success(f"Successfully installed: {', '.join(deps)}")
-    return True
 
 
 def check_internet_connectivity() -> bool:
-    """Check for internet connectivity by pinging a well-known host."""
-    try:
-        print_step("Checking internet connectivity...")
-        result = run_command(
-            ["ping", "-c", "1", "-W", "2", "8.8.8.8"], check=False, capture_output=True
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
+    """
+    Check for internet connectivity by attempting to connect to well-known hosts.
+
+    Returns:
+        True if internet is available, False otherwise
+    """
+    print_step("Checking internet connectivity...")
+    test_urls = [
+        "https://www.google.com",
+        "https://www.cloudflare.com",
+        "https://www.microsoft.com",
+    ]
+
+    for url in test_urls:
+        try:
+            response = requests.head(url, timeout=5)
+            if response.status_code == 200:
+                print_success(f"Internet connection available")
+                return True
+        except:
+            continue
+
+    print_warning(
+        "No internet connection detected. Some features may not work properly."
+    )
+    return False
 
 
 def ensure_directory(path: str) -> None:
-    """Ensure that a directory exists, creating it if necessary."""
+    """
+    Ensure that a directory exists, creating it if necessary.
+
+    Args:
+        path: Directory path to ensure exists
+    """
     try:
         os.makedirs(path, exist_ok=True)
         print_step(f"Directory ensured: {path}")
@@ -617,123 +953,153 @@ def ensure_directory(path: str) -> None:
         sys.exit(1)
 
 
+# ----------------------------------------------------------------
+# Download Information Functions
+# ----------------------------------------------------------------
 def get_file_size(url: str) -> int:
     """
-    Retrieve the file size in bytes using a HEAD request with curl.
-    Returns 0 if the size cannot be determined.
+    Retrieve the file size in bytes using a HEAD request.
+
+    Args:
+        url: URL to check
+
+    Returns:
+        File size in bytes, or 0 if size cannot be determined
     """
     try:
-        result = run_command(["curl", "--silent", "--head", url], capture_output=True)
-        for line in result.stdout.splitlines():
-            if "content-length:" in line.lower():
-                return int(line.split(":", 1)[1].strip())
+        response = requests.head(url, timeout=10, allow_redirects=True)
+        content_length = response.headers.get("content-length")
+        if content_length and content_length.isdigit():
+            return int(content_length)
         return 0
     except Exception as e:
         print_warning(f"Could not determine file size for {url}: {e}")
         return 0
 
 
-def estimate_youtube_size(url: str) -> int:
-    """
-    Estimate the file size of a YouTube video using yt-dlp.
-    Falls back to a default size if estimation fails.
-    """
-    try:
-        cmd = [
-            "yt-dlp",
-            "--cookies-from-browser",
-            BROWSER_SOURCE,
-            "--print",
-            "filesize",
-            url,
-        ]
-        result = run_command(cmd, capture_output=True, check=False)
-        if result.stdout.strip().isdigit():
-            return int(result.stdout.strip())
-
-        # Try estimating based on video duration
-        cmd = [
-            "yt-dlp",
-            "--cookies-from-browser",
-            BROWSER_SOURCE,
-            "--print",
-            "duration",
-            url,
-        ]
-        result = run_command(cmd, capture_output=True, check=False)
-        if result.stdout.strip().replace(".", "", 1).isdigit():
-            duration = float(result.stdout.strip())
-            # Rough estimate: Assume 10 MB per minute of video
-            return int(duration * 60 * 10 * 1024)
-
-        return 100 * 1024 * 1024  # Default 100MB
-    except Exception as e:
-        print_warning(f"Could not estimate video size: {e}")
-        return 100 * 1024 * 1024
-
-
-def get_youtube_info(url: str) -> Tuple[str, bool]:
+def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
     """
     Get basic info about a YouTube URL.
 
+    Args:
+        url: YouTube URL
+        browser: Browser to use for cookie extraction (optional)
+
     Returns:
-        Tuple of (title, is_playlist)
+        Tuple of (title, is_playlist, estimated_size)
     """
+    if not browser:
+        browser = AppConfig.get_default_browser()
+
     title = "Unknown video"
     is_playlist = False
+    estimated_size = 0
+
+    if not check_dependencies(["yt-dlp"])["yt-dlp"]:
+        print_warning("yt-dlp is not installed. Cannot get YouTube info.")
+        return title, is_playlist, estimated_size
 
     try:
         # First check if it's a playlist
         cmd = [
             "yt-dlp",
-            "--cookies-from-browser",
-            BROWSER_SOURCE,
+            "--no-warnings",
             "--flat-playlist",
             "--print",
             "playlist_id",
             url,
         ]
+        try:
+            # Add cookies if we have the browser available
+            if browser:
+                cmd = ["yt-dlp", "--cookies-from-browser", browser] + cmd[1:]
+        except:
+            pass
+
         result = run_command(cmd, capture_output=True, check=False)
         is_playlist = bool(result.stdout.strip())
 
-        # Then get the title
+        # Get the title
         if is_playlist:
             cmd = [
                 "yt-dlp",
-                "--cookies-from-browser",
-                BROWSER_SOURCE,
+                "--no-warnings",
                 "--flat-playlist",
                 "--print",
                 "playlist_title",
                 url,
             ]
+            # Add cookies if available
+            if browser:
+                cmd[1:1] = ["--cookies-from-browser", browser]
+
             result = run_command(cmd, capture_output=True, check=False)
             if result.stdout.strip():
                 title = result.stdout.strip()
         else:
             cmd = [
                 "yt-dlp",
-                "--cookies-from-browser",
-                BROWSER_SOURCE,
+                "--no-warnings",
                 "--print",
                 "title",
                 url,
             ]
+            # Add cookies if available
+            if browser:
+                cmd[1:1] = ["--cookies-from-browser", browser]
+
             result = run_command(cmd, capture_output=True, check=False)
             if result.stdout.strip():
                 title = result.stdout.strip()
+
+            # Try to estimate size
+            if not is_playlist:
+                cmd = [
+                    "yt-dlp",
+                    "--no-warnings",
+                    "--print",
+                    "filesize",
+                    url,
+                ]
+                if browser:
+                    cmd[1:1] = ["--cookies-from-browser", browser]
+
+                result = run_command(cmd, capture_output=True, check=False)
+                if result.stdout.strip().isdigit():
+                    estimated_size = int(result.stdout.strip())
+
+                # If size estimation fails, try using duration
+                if estimated_size == 0:
+                    cmd = [
+                        "yt-dlp",
+                        "--no-warnings",
+                        "--print",
+                        "duration",
+                        url,
+                    ]
+                    if browser:
+                        cmd[1:1] = ["--cookies-from-browser", browser]
+
+                    result = run_command(cmd, capture_output=True, check=False)
+                    if (
+                        result.stdout.strip()
+                        and result.stdout.strip().replace(".", "", 1).isdigit()
+                    ):
+                        duration = float(result.stdout.strip())
+                        # Rough estimate: ~10 MB per minute of video at high quality
+                        estimated_size = int(duration * 60 * 10 * 1024)
     except Exception as e:
         print_warning(f"Could not get YouTube info: {e}")
 
-    return title, is_playlist
+    return title, is_playlist, estimated_size
 
 
 # ----------------------------------------------------------------
 # Download Functions
 # ----------------------------------------------------------------
-def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool:
+def download_file(url: str, output_dir: str, verbose: bool = False) -> bool:
     """
-    Download a file using wget or urllib.
+    Download a file using requests or curl/wget.
 
     Args:
         url: The URL to download from
@@ -745,9 +1111,12 @@ def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool
     """
     try:
         # Create a DownloadSource object
-        source = DownloadSource(url=url)
+        source = DownloadSource(url=url, download_type=DownloadType.FILE)
         source.size = get_file_size(url)
         filename = source.name
+
+        # Make sure the URL is safely encoded
+        safe_url = urllib.parse.quote(url, safe=":/?&=")
 
         # Ensure output directory exists
         ensure_directory(output_dir)
@@ -759,54 +1128,85 @@ def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool
         if source.size:
             print_step(f"File size: {format_size(source.size)}")
         else:
-            print_warning("File size unknown; progress will be indeterminate.")
+            print_warning("File size unknown; progress will be indeterminate")
 
         # Download stats to track progress
         stats = DownloadStats(total_size=source.size)
 
+        # Determine if we should use Python's requests, curl, or wget
+        use_requests = True
+        if not source.size:
+            # For unknown size, prefer curl or wget for better progress reporting
+            if check_dependencies(["curl"])["curl"]:
+                use_requests = False
+                downloader = "curl"
+            elif check_dependencies(["wget"])["wget"]:
+                use_requests = False
+                downloader = "wget"
+            else:
+                use_requests = True
+
         # Use Progress from rich for a nicer display
-        if source.size > 0:
+        if use_requests and source.size > 0:
+            # Use requests with progress bar for known size
             with Progress(
                 SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
                 TextColumn(f"[bold {NordColors.FROST_2}]Downloading"),
                 BarColumn(
-                    bar_width=PROGRESS_WIDTH,
+                    bar_width=AppConfig.PROGRESS_WIDTH,
                     style=NordColors.FROST_4,
                     complete_style=NordColors.FROST_2,
                 ),
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TextColumn(
-                    f"[{NordColors.SNOW_STORM_1}]{{task.completed:.2f}}/{{task.total:.2f}} MB"
-                ),
+                DownloadColumn(),
                 TextColumn(f"[{NordColors.GREEN}]{{task.fields[rate]}}"),
                 TimeRemainingColumn(),
                 console=console,
             ) as progress:
                 download_task = progress.add_task(
                     "Downloading",
-                    total=source.size / 1024 / 1024,  # Convert to MB
+                    total=source.size,
                     completed=0,
                     rate="0 KB/s",
                 )
 
-                def progress_callback(block_count, block_size, total_size):
-                    current = block_count * block_size
-                    # Only advance if we downloaded more data
-                    if current > stats.bytes_downloaded:
-                        new_bytes = current - stats.bytes_downloaded
-                        stats.update_progress(new_bytes)
-                        progress.update(
-                            download_task,
-                            completed=stats.bytes_downloaded / 1024 / 1024,  # MB
-                            rate=f"{format_size(stats.average_rate)}/s",
-                        )
+                # Stream the download with requests
+                with requests.get(
+                    safe_url, stream=True, timeout=AppConfig.DOWNLOAD_TIMEOUT
+                ) as response:
+                    response.raise_for_status()
+                    with open(output_path, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                # Update progress
+                                stats.update_progress(len(chunk))
+                                progress.update(
+                                    download_task,
+                                    completed=stats.bytes_downloaded,
+                                    rate=f"{format_size(stats.average_rate)}/s",
+                                )
 
-                # Use urllib.request.urlretrieve with progress callback
-                urllib.request.urlretrieve(
-                    url, output_path, reporthook=progress_callback
-                )
-        else:
-            # For unknown size, use a spinner with wget
+        elif not use_requests:
+            # Use curl or wget with their own progress reporting
+            if downloader == "curl":
+                cmd = [
+                    "curl",
+                    "--progress-bar",
+                    "--location",  # Follow redirects
+                    "--output",
+                    output_path,
+                    safe_url,
+                ]
+            else:  # wget
+                cmd = [
+                    "wget",
+                    "--progress=bar:force",
+                    "--output-document",
+                    output_path,
+                    safe_url,
+                ]
+
             with Progress(
                 SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
                 TextColumn(f"[bold {NordColors.FROST_2}]Downloading {filename}"),
@@ -814,11 +1214,25 @@ def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool
                 console=console,
             ) as progress:
                 task = progress.add_task("Downloading")
-                run_command(["wget", "-q", "-O", output_path, url], verbose=verbose)
+                run_command(cmd, verbose=verbose)
+
+        else:
+            # Use requests for unknown size (no progress bar)
+            with Progress(
+                SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+                TextColumn(f"[bold {NordColors.FROST_2}]Downloading {filename}"),
+                TextColumn(f"[{NordColors.SNOW_STORM_1}]Time: {{task.elapsed:.1f}}s"),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Downloading")
+                response = requests.get(safe_url, timeout=AppConfig.DOWNLOAD_TIMEOUT)
+                response.raise_for_status()
+                with open(output_path, "wb") as f:
+                    f.write(response.content)
 
         # Check if download was successful
         if not os.path.exists(output_path):
-            print_error("Download failed: Output file not found.")
+            print_error("Download failed: Output file not found")
             return False
 
         # Show final stats
@@ -841,29 +1255,35 @@ def download_with_wget(url: str, output_dir: str, verbose: bool = False) -> bool
         return False
 
 
-def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bool:
+def download_youtube(
+    url: str, output_dir: str, browser: str = None, verbose: bool = False
+) -> bool:
     """
     Download a YouTube video using yt-dlp with browser cookies.
 
     Args:
         url: YouTube URL to download from
         output_dir: Directory to save the video in
+        browser: Browser to use for cookie extraction (optional)
         verbose: Whether to show verbose output
 
     Returns:
         True if download was successful, False otherwise
     """
+    if not browser:
+        browser = AppConfig.get_default_browser()
+
     try:
         # Ensure output directory exists
         ensure_directory(output_dir)
 
         # Get YouTube video information
-        title, is_playlist = get_youtube_info(url)
-        estimated_size = estimate_youtube_size(url) if not is_playlist else 0
+        title, is_playlist, estimated_size = get_youtube_info(url, browser)
 
         # Create DownloadSource
         source = DownloadSource(
             url=url,
+            download_type=DownloadType.YOUTUBE,
             name=title,
             size=estimated_size,
             is_video=True,
@@ -882,21 +1302,24 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
         display_panel(info_text, style=NordColors.FROST_3, title="YouTube Download")
 
         # Prepare output template and full path
-        output_template = os.path.join(output_dir, YTDLP_OUTPUT_TEMPLATE)
+        output_template = os.path.join(output_dir, AppConfig.YTDLP_OUTPUT_TEMPLATE)
 
         # Prepare command with browser cookies and format selection
         cmd = [
             "yt-dlp",
             "--cookies-from-browser",
-            BROWSER_SOURCE,  # Use browser cookies
+            browser,  # Use browser cookies
             "-S",
-            YTDLP_FORMAT_SELECTION,  # Format selection
+            AppConfig.YTDLP_FORMAT_SELECTION,  # Format selection
             "-o",
             output_template,  # Output template
         ]
 
         if verbose:
             cmd.append("--verbose")
+        else:
+            cmd.append("--progress")
+
         cmd.append(url)
 
         # For playlist or verbose mode, use simpler progress display
@@ -908,7 +1331,7 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
                 console=console,
             ) as progress:
                 task = progress.add_task("Downloading")
-                run_command(cmd, verbose=verbose, timeout=DOWNLOAD_TIMEOUT)
+                run_command(cmd, verbose=verbose, timeout=AppConfig.DOWNLOAD_TIMEOUT)
         else:
             # For single videos, parse output for progress information
             process = subprocess.Popen(
@@ -924,7 +1347,7 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
                 SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
                 TextColumn(f"[bold {NordColors.FROST_2}]Downloading"),
                 BarColumn(
-                    bar_width=PROGRESS_WIDTH,
+                    bar_width=AppConfig.PROGRESS_WIDTH,
                     style=NordColors.FROST_4,
                     complete_style=NordColors.FROST_2,
                 ),
@@ -964,7 +1387,7 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
 
                 process.wait()
                 if process.returncode != 0:
-                    print_error("Download failed.")
+                    print_error("Download failed with non-zero exit code")
                     return False
 
         display_panel(
@@ -981,49 +1404,129 @@ def download_with_yt_dlp(url: str, output_dir: str, verbose: bool = False) -> bo
 # ----------------------------------------------------------------
 # Command Functions
 # ----------------------------------------------------------------
-def cmd_wget(url: str, output_dir: str, verbose: bool) -> None:
-    """Execute the wget download command after ensuring dependencies."""
-    required = DEPENDENCIES["common"] + DEPENDENCIES["wget"]
+def cmd_file_download(url: str, output_dir: str, verbose: bool) -> int:
+    """
+    Execute the file download command after ensuring dependencies.
 
-    # Check and install dependencies if needed
-    if not check_dependencies(required):
-        if os.geteuid() == 0:
-            if not install_dependencies(required, verbose):
-                print_error("Failed to install dependencies.")
-                sys.exit(1)
+    Args:
+        url: URL to download
+        output_dir: Directory to save to
+        verbose: Whether to show verbose output
+
+    Returns:
+        Exit code (0 for success, non-zero for failure)
+    """
+    required = DEPENDENCY_GROUPS["file"]
+
+    # Check dependencies
+    dep_status = check_dependencies(required)
+    missing_deps = [dep for dep, installed in dep_status.items() if not installed]
+
+    if missing_deps:
+        print_warning(f"Missing dependencies: {', '.join(missing_deps)}")
+
+        if Confirm.ask("Would you like to install missing dependencies?", default=True):
+            if not install_dependencies(missing_deps, verbose):
+                print_error("Failed to install all required dependencies")
+                return 1
         else:
-            print_error("Missing dependencies and not running as root to install them.")
-            sys.exit(1)
+            print_warning("Continuing with limited functionality...")
 
     # Execute download
-    success = download_with_wget(url, output_dir, verbose)
-    sys.exit(0 if success else 1)
+    success = download_file(url, output_dir, verbose)
+    return 0 if success else 1
 
 
-def cmd_ytdlp(url: str, output_dir: str, verbose: bool) -> None:
-    """Execute the yt-dlp download command after ensuring dependencies."""
-    required = DEPENDENCIES["common"] + DEPENDENCIES["yt-dlp"]
+def cmd_youtube_download(
+    url: str, output_dir: str, browser: str = None, verbose: bool = False
+) -> int:
+    """
+    Execute the YouTube download command after ensuring dependencies.
 
-    # Check and install dependencies if needed
-    if not check_dependencies(required):
-        if os.geteuid() == 0:
-            if not install_dependencies(required, verbose):
-                print_error("Failed to install dependencies.")
-                sys.exit(1)
+    Args:
+        url: YouTube URL to download
+        output_dir: Directory to save to
+        browser: Browser to use for cookie extraction
+        verbose: Whether to show verbose output
+
+    Returns:
+        Exit code (0 for success, non-zero for failure)
+    """
+    required = DEPENDENCY_GROUPS["youtube"]
+
+    # Check dependencies
+    dep_status = check_dependencies(required)
+    missing_deps = [dep for dep, installed in dep_status.items() if not installed]
+
+    if missing_deps:
+        print_warning(f"Missing dependencies: {', '.join(missing_deps)}")
+
+        if Confirm.ask("Would you like to install missing dependencies?", default=True):
+            if not install_dependencies(missing_deps, verbose):
+                print_error("Failed to install all required dependencies")
+                return 1
         else:
-            print_error("Missing dependencies and not running as root to install them.")
-            sys.exit(1)
+            print_error("Cannot continue without required dependencies")
+            return 1
+
+    # Get browser for cookie extraction if not provided
+    if not browser:
+        available_browsers = []
+        for browser_option in AppConfig.get_browser_list():
+            browser_path = None
+            if AppConfig.IS_LINUX:
+                # Check if the browser exists in common Linux paths
+                paths = [
+                    f"/usr/bin/{browser_option}",
+                    f"/usr/local/bin/{browser_option}",
+                    f"/snap/bin/{browser_option}",
+                ]
+                for path in paths:
+                    if os.path.exists(path):
+                        browser_path = path
+                        break
+            else:
+                # For Windows and macOS, use the browser name as yt-dlp will find it
+                browser_path = browser_option
+
+            if browser_path:
+                available_browsers.append(browser_option)
+
+        if available_browsers:
+            if len(available_browsers) == 1:
+                browser = available_browsers[0]
+            else:
+                console.print(
+                    f"\n[bold {NordColors.FROST_2}]Select browser for cookie extraction:[/]"
+                )
+                for i, b in enumerate(available_browsers, 1):
+                    console.print(f"  {i}. {b}")
+
+                choice = IntPrompt.ask(
+                    "Enter browser number",
+                    default=1,
+                    choices=[str(i) for i in range(1, len(available_browsers) + 1)],
+                )
+                browser = available_browsers[choice - 1]
+        else:
+            print_warning("No browsers detected for cookie extraction")
+            browser = AppConfig.get_default_browser()
 
     # Execute download
-    success = download_with_yt_dlp(url, output_dir, verbose)
-    sys.exit(0 if success else 1)
+    success = download_youtube(url, output_dir, browser, verbose)
+    return 0 if success else 1
 
 
 # ----------------------------------------------------------------
-# Interactive Menu Functions
+# Menu Functions
 # ----------------------------------------------------------------
 def create_download_options_table() -> Table:
-    """Create a table showing download options."""
+    """
+    Create a table showing download options.
+
+    Returns:
+        Rich Table object with download options
+    """
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -1039,165 +1542,279 @@ def create_download_options_table() -> Table:
     table.add_column("Status", style=f"bold {NordColors.GREEN}")
 
     # Check dependency status
-    wget_status = (
-        "✓ Available"
-        if check_dependencies(DEPENDENCIES["wget"])
-        else "× Missing dependencies"
-    )
-    ytdlp_status = (
-        "✓ Available"
-        if check_dependencies(DEPENDENCIES["yt-dlp"])
-        else "× Missing dependencies"
+    file_deps = check_dependencies(DEPENDENCY_GROUPS["file"])
+    file_status = (
+        "✓ Available" if all(file_deps.values()) else "⚠ Missing some dependencies"
     )
 
-    table.add_row("1", "Standard File", "Download any file using wget", wget_status)
-    table.add_row(
-        "2",
-        "YouTube",
-        f"Download videos/playlists with yt-dlp ({BROWSER_SOURCE} cookies)",
-        ytdlp_status,
+    youtube_deps = check_dependencies(DEPENDENCY_GROUPS["youtube"])
+    youtube_status = (
+        "✓ Available" if all(youtube_deps.values()) else "⚠ Missing dependencies"
     )
-    table.add_row("3", "Exit", "Quit the application", "")
+
+    table.add_row("1", "File Download", "Download any file from the web", file_status)
+    table.add_row(
+        "2", "YouTube", "Download videos or playlists from YouTube", youtube_status
+    )
+    table.add_row("3", "Settings", "Configure application settings", "")
+    table.add_row("4", "Exit", "Quit the application", "")
+
+    return table
+
+
+def create_system_info_table() -> Table:
+    """
+    Create a table with system information.
+
+    Returns:
+        Rich Table object with system information
+    """
+    table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        expand=True,
+        title=f"[bold {NordColors.FROST_2}]System Information[/]",
+        border_style=NordColors.FROST_3,
+        title_justify="center",
+    )
+
+    table.add_column("Property", style=f"bold {NordColors.FROST_2}")
+    table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
+
+    table.add_row("OS", f"{platform.system()} {platform.release()}")
+    table.add_row("Python", f"{platform.python_version()}")
+    table.add_row("User", os.environ.get("USER", os.environ.get("USERNAME", "unknown")))
+    table.add_row("Hostname", AppConfig.HOSTNAME)
+    table.add_row("Default Download Dir", AppConfig.DEFAULT_DOWNLOAD_DIR)
+    table.add_row("Admin/Root", "Yes" if is_admin_or_root() else "No")
+
+    return table
+
+
+def create_dependencies_table() -> Table:
+    """
+    Create a table with dependency status.
+
+    Returns:
+        Rich Table object with dependency status
+    """
+    table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        expand=True,
+        title=f"[bold {NordColors.FROST_2}]Dependencies[/]",
+        border_style=NordColors.FROST_3,
+        title_justify="center",
+    )
+
+    table.add_column("Name", style=f"bold {NordColors.FROST_2}")
+    table.add_column("Status", style=f"{NordColors.SNOW_STORM_1}")
+    table.add_column("Required For", style=f"{NordColors.FROST_4}")
+
+    # All unique dependencies
+    all_deps = set()
+    for group in DEPENDENCY_GROUPS.values():
+        all_deps.update(group)
+
+    # Map each dependency to the features that require it
+    dep_features = {}
+    for dep in all_deps:
+        features = []
+        for feature, deps in DEPENDENCY_GROUPS.items():
+            if dep in deps:
+                features.append(feature)
+        dep_features[dep] = features
+
+    # Check status of each dependency
+    dep_status = check_dependencies(list(all_deps))
+
+    # Add rows to the table
+    for dep_name in sorted(all_deps):
+        status_text = (
+            "✓ Installed" if dep_status.get(dep_name, False) else "✗ Not Installed"
+        )
+        status_style = (
+            NordColors.GREEN if dep_status.get(dep_name, False) else NordColors.RED
+        )
+        features_text = ", ".join(dep_features.get(dep_name, []))
+
+        table.add_row(
+            DEPENDENCY_DEFINITIONS[dep_name].display_name,
+            f"[{status_style}]{status_text}[/]",
+            features_text,
+        )
 
     return table
 
 
 def download_menu() -> None:
-    """Interactive download menu for the Universal Downloader."""
-    console.print(create_header())
-
-    # Display system info
-    console.print(
-        Align.center(
-            f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
-            f"[{NordColors.SNOW_STORM_1}]User: {os.environ.get('USER', 'unknown')}[/] | "
-            f"[{NordColors.SNOW_STORM_1}]Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]"
-        )
-    )
-    console.print()
-
-    # Display download options
-    console.print(create_download_options_table())
-
+    """
+    Interactive download menu for the Universal Downloader.
+    """
     while True:
+        console.clear()
+        console.print(create_header())
+
+        # Display current time and system info
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        console.print(
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
+                f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/]"
+            )
+        )
+        console.print()
+
+        # Display download options
+        console.print(create_download_options_table())
+        console.print()
+
+        # Get user choice
         choice = Prompt.ask(
-            f"\n[bold {NordColors.PURPLE}]Enter your choice",
-            choices=["1", "2", "3"],
+            f"[bold {NordColors.PURPLE}]Enter your choice",
+            choices=["1", "2", "3", "4"],
             default="1",
         )
 
-        if choice == "1":  # Standard file download
-            required = DEPENDENCIES["common"] + DEPENDENCIES["wget"]
-            if not check_dependencies(required):
-                if os.geteuid() == 0:
-                    if not install_dependencies(required):
-                        print_error("Failed to install dependencies.")
-                        return
-                else:
-                    print_error(
-                        "Missing dependencies and not running as root to install them."
-                    )
-                    return
+        if choice == "1":  # File download
+            console.clear()
+            console.print(create_header())
+            display_panel("File Download", style=NordColors.FROST_3, title="Mode")
 
             url = Prompt.ask(f"[bold {NordColors.PURPLE}]Enter URL to download")
             if not url:
-                print_error("URL cannot be empty.")
-                return
+                print_error("URL cannot be empty")
+                input("Press Enter to continue...")
+                continue
 
             output_dir = Prompt.ask(
                 f"[bold {NordColors.PURPLE}]Enter output directory",
-                default=DEFAULT_DOWNLOAD_DIR,
+                default=AppConfig.DEFAULT_DOWNLOAD_DIR,
             )
 
             verbose = Confirm.ask(
                 f"[bold {NordColors.PURPLE}]Enable verbose output?", default=False
             )
 
-            download_with_wget(url, output_dir, verbose)
-            break
+            cmd_file_download(url, output_dir, verbose)
+            input("\nPress Enter to return to the main menu...")
 
         elif choice == "2":  # YouTube download
-            required = DEPENDENCIES["common"] + DEPENDENCIES["yt-dlp"]
-            if not check_dependencies(required):
-                if os.geteuid() == 0:
-                    if not install_dependencies(required):
-                        print_error("Failed to install dependencies.")
-                        return
-                else:
-                    print_error(
-                        "Missing dependencies and not running as root to install them."
-                    )
-                    return
+            console.clear()
+            console.print(create_header())
+            display_panel("YouTube Download", style=NordColors.FROST_3, title="Mode")
 
             url = Prompt.ask(f"[bold {NordColors.PURPLE}]Enter YouTube URL")
             if not url:
-                print_error("URL cannot be empty.")
-                return
+                print_error("URL cannot be empty")
+                input("Press Enter to continue...")
+                continue
 
             output_dir = Prompt.ask(
                 f"[bold {NordColors.PURPLE}]Enter output directory",
-                default=DEFAULT_DOWNLOAD_DIR,
+                default=AppConfig.DEFAULT_DOWNLOAD_DIR,
             )
+
+            # Browser selection
+            browsers = AppConfig.get_browser_list()
+            console.print(f"\n[bold {NordColors.FROST_2}]Available browsers:[/]")
+            for i, browser in enumerate(browsers, 1):
+                console.print(f"  {i}. {browser}")
+
+            browser_choice = IntPrompt.ask(
+                f"[bold {NordColors.PURPLE}]Select browser for cookies",
+                default=1,
+                choices=[str(i) for i in range(1, len(browsers) + 1)],
+            )
+            selected_browser = browsers[browser_choice - 1]
 
             verbose = Confirm.ask(
                 f"[bold {NordColors.PURPLE}]Enable verbose output?", default=False
             )
 
-            download_with_yt_dlp(url, output_dir, verbose)
+            cmd_youtube_download(url, output_dir, selected_browser, verbose)
+            input("\nPress Enter to return to the main menu...")
+
+        elif choice == "3":  # Settings
+            console.clear()
+            console.print(create_header())
+            display_panel(
+                "Settings & Information",
+                style=NordColors.FROST_3,
+                title="Configuration",
+            )
+
+            # Display system information
+            console.print(create_system_info_table())
+            console.print()
+
+            # Display dependency status
+            console.print(create_dependencies_table())
+            console.print()
+
+            # Options for settings
+            console.print(f"[bold {NordColors.FROST_2}]Settings Options:[/]")
+            console.print(f"  1. Install missing dependencies")
+            console.print(f"  2. Return to main menu")
+            console.print()
+
+            settings_choice = Prompt.ask(
+                f"[bold {NordColors.PURPLE}]Select option",
+                choices=["1", "2"],
+                default="2",
+            )
+
+            if settings_choice == "1":
+                # Collect all unique dependencies
+                all_deps = set()
+                for deps in DEPENDENCY_GROUPS.values():
+                    all_deps.update(deps)
+
+                dep_status = check_dependencies(list(all_deps))
+                missing_deps = [
+                    dep for dep, installed in dep_status.items() if not installed
+                ]
+
+                if missing_deps:
+                    print_step(f"Found {len(missing_deps)} missing dependencies:")
+                    for dep in missing_deps:
+                        print_message(
+                            f"{DEPENDENCY_DEFINITIONS[dep].display_name}",
+                            NordColors.YELLOW,
+                        )
+
+                    if Confirm.ask("Install missing dependencies?", default=True):
+                        install_dependencies(missing_deps, verbose=True)
+                    else:
+                        print_message("Installation cancelled", NordColors.YELLOW)
+                else:
+                    print_success("All dependencies are installed!")
+
+                input("\nPress Enter to continue...")
+
+        elif choice == "4":  # Exit
+            console.clear()
+            console.print(
+                Panel(
+                    Text(
+                        "Thank you for using Universal Downloader!",
+                        style=f"bold {NordColors.FROST_2}",
+                    ),
+                    border_style=Style(color=NordColors.FROST_1),
+                    padding=(1, 2),
+                )
+            )
             break
 
-        elif choice == "3":  # Exit
-            print_step("Exiting...")
-            return
-
         else:
-            print_error("Invalid selection. Please choose 1-3.")
-
-
-# ----------------------------------------------------------------
-# Command-line Argument Parsing
-# ----------------------------------------------------------------
-def parse_args() -> Dict[str, Any]:
-    """Parse command-line arguments into a dictionary."""
-    args: Dict[str, Any] = {}
-    argv = sys.argv[1:]
-
-    if not argv:
-        return {"command": "menu"}
-
-    command = argv[0]
-    args["command"] = command
-
-    if command in ["wget", "ytdlp"]:
-        url = None
-        output_dir = DEFAULT_DOWNLOAD_DIR
-        verbose = False
-        i = 1
-
-        while i < len(argv):
-            if argv[i] in ["-o", "--output-dir"] and i + 1 < len(argv):
-                output_dir = argv[i + 1]
-                i += 2
-            elif argv[i] in ["-v", "--verbose"]:
-                verbose = True
-                i += 1
-            elif argv[i].startswith("-"):
-                i += 1
-                if i < len(argv) and not argv[i].startswith("-"):
-                    i += 1
-            else:
-                url = argv[i]
-                i += 1
-
-        args["url"] = url
-        args["output_dir"] = output_dir
-        args["verbose"] = verbose
-
-    return args
+            print_error("Invalid selection. Please choose 1-4.")
+            input("Press Enter to continue...")
 
 
 def show_usage() -> None:
-    """Display usage information for the script."""
+    """
+    Display usage information for the script.
+    """
     console.print(create_header())
 
     # Create a usage table
@@ -1215,11 +1832,11 @@ def show_usage() -> None:
 
     table.add_row("./universal_downloader.py", "Start the interactive download menu")
     table.add_row(
-        "./universal_downloader.py wget <url> [options]", "Download a file using wget"
+        "./universal_downloader.py file <url> [options]", "Download a file from the web"
     )
     table.add_row(
-        "./universal_downloader.py ytdlp <url> [options]",
-        f"Download YouTube with {BROWSER_SOURCE} cookies",
+        "./universal_downloader.py youtube <url> [options]",
+        "Download YouTube video/playlist",
     )
     table.add_row("./universal_downloader.py help", "Show this help information")
 
@@ -1240,35 +1857,14 @@ def show_usage() -> None:
 
     options_table.add_row(
         "-o, --output-dir <dir>",
-        f"Set the output directory (default: {DEFAULT_DOWNLOAD_DIR})",
+        f"Set the output directory (default: {AppConfig.DEFAULT_DOWNLOAD_DIR})",
     )
     options_table.add_row("-v, --verbose", "Enable verbose output")
+    options_table.add_row(
+        "-b, --browser <browser>", "Browser to use for YouTube cookies"
+    )
 
     console.print(options_table)
-
-    # YouTube information table
-    youtube_table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]YouTube Download Configuration[/]",
-        border_style=NordColors.FROST_3,
-        title_justify="center",
-    )
-
-    youtube_table.add_column("Setting", style=f"bold {NordColors.FROST_2}")
-    youtube_table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
-    youtube_table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    youtube_table.add_row("Browser", BROWSER_SOURCE, "Browser to extract cookies from")
-    youtube_table.add_row(
-        "Format Selection", YTDLP_FORMAT_SELECTION, "Format selection strategy"
-    )
-    youtube_table.add_row(
-        "Output Template", YTDLP_OUTPUT_TEMPLATE, "Filename template for downloads"
-    )
-
-    console.print(youtube_table)
 
     # Examples
     examples_table = Table(
@@ -1287,73 +1883,136 @@ def show_usage() -> None:
 
     examples_table.add_row("./universal_downloader.py", "Start the interactive menu")
     examples_table.add_row(
-        "./universal_downloader.py wget https://example.com/file.zip -o /tmp",
+        "./universal_downloader.py file https://example.com/file.zip -o /tmp",
         "Download a zip file to /tmp directory",
     )
     examples_table.add_row(
-        "./universal_downloader.py ytdlp https://youtube.com/watch?v=abcdef -v",
-        "Download a YouTube video with verbose output",
+        "./universal_downloader.py youtube https://youtube.com/watch?v=abcdef -b chrome",
+        "Download a YouTube video using Chrome cookies",
     )
 
     console.print(examples_table)
 
 
 # ----------------------------------------------------------------
+# Command Line Argument Parsing
+# ----------------------------------------------------------------
+def parse_args() -> Dict[str, Any]:
+    """
+    Parse command-line arguments.
+
+    Returns:
+        Dictionary with parsed arguments
+    """
+    parser = argparse.ArgumentParser(
+        description="Universal Downloader - Download files and media with style",
+        add_help=False,  # We'll handle help manually for better styling
+    )
+
+    # Basic commands
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["file", "youtube", "help"],
+        default="menu",
+        help="Command to execute",
+    )
+
+    # URL argument
+    parser.add_argument("url", nargs="?", help="URL to download")
+
+    # Common options
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        default=AppConfig.DEFAULT_DOWNLOAD_DIR,
+        help=f"Output directory (default: {AppConfig.DEFAULT_DOWNLOAD_DIR})",
+    )
+
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
+    )
+
+    parser.add_argument("-b", "--browser", help="Browser to use for YouTube cookies")
+
+    parser.add_argument(
+        "-h", "--help", action="store_true", help="Show help information"
+    )
+
+    # Parse the arguments
+    args = vars(parser.parse_args())
+
+    # Check if help was requested
+    if args.get("help", False):
+        args["command"] = "help"
+
+    # Validate command-specific arguments
+    if args["command"] in ["file", "youtube"] and not args["url"]:
+        print_error(f"URL is required for '{args['command']}' command")
+        args["command"] = "help"
+
+    return args
+
+
+# ----------------------------------------------------------------
 # Main Entry Point
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main function: parses arguments, checks connectivity, and dispatches commands."""
+    """
+    Main function: parses arguments, checks dependencies, and dispatches commands.
+    """
     try:
+        # Setup logging
+        setup_logging()
+
+        # Parse command-line arguments
+        args = parse_args()
+        command = args.get("command", "menu")
+
+        if command == "help":
+            show_usage()
+            sys.exit(0)
+
+        # Display the header
         console.print(create_header())
 
-        # Display system info
+        # System information
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         console.print(
             Align.center(
                 f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
-                f"[{NordColors.SNOW_STORM_1}]User: {os.environ.get('USER', 'unknown')}[/] | "
-                f"[{NordColors.SNOW_STORM_1}]Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]"
+                f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/]"
             )
         )
         console.print()
 
-        setup_logging()
+        # Check internet connectivity
+        check_internet_connectivity()
 
-        if not check_internet_connectivity():
-            print_error(
-                "No internet connectivity detected. Please check your connection."
-            )
-            sys.exit(1)
-
-        check_root_privileges()
-
-        args = parse_args()
-        command = args.get("command")
-
-        if command == "menu" or command is None:
+        # Dispatch command
+        if command == "menu":
             download_menu()
-        elif command == "wget":
-            if not args.get("url"):
-                print_error("URL is required for wget command.")
-                show_usage()
-                sys.exit(1)
-            cmd_wget(args["url"], args["output_dir"], args.get("verbose", False))
-        elif command == "ytdlp":
-            if not args.get("url"):
-                print_error("URL is required for ytdlp command.")
-                show_usage()
-                sys.exit(1)
-            cmd_ytdlp(args["url"], args["output_dir"], args.get("verbose", False))
-        elif command in ["help", "--help", "-h"]:
-            show_usage()
+        elif command == "file":
+            exit_code = cmd_file_download(
+                args["url"], args["output_dir"], args["verbose"]
+            )
+            sys.exit(exit_code)
+        elif command == "youtube":
+            exit_code = cmd_youtube_download(
+                args["url"], args["output_dir"], args["browser"], args["verbose"]
+            )
+            sys.exit(exit_code)
         else:
             print_error(f"Unknown command: {command}")
             show_usage()
             sys.exit(1)
+
     except KeyboardInterrupt:
-        print_warning("\nProcess interrupted by user.")
+        print_warning("\nProcess interrupted by user")
         sys.exit(130)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
+        console.print_exception()
         sys.exit(1)
 
 
