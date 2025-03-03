@@ -88,8 +88,8 @@ def launch_msfconsole():
         "Once started, you can run [bold]db_status[/bold] to verify the database connection."
     )
     time.sleep(2)  # Pause briefly before launching
-    # Replace the current process with msfconsole
-    os.execvp("./msfconsole", ["./msfconsole"])
+    # Replace the current process with msfconsole (searches PATH)
+    os.execvp("msfconsole", ["msfconsole"])
 
 
 def main():
