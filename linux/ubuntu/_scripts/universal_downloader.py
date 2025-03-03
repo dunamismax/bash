@@ -14,17 +14,6 @@ Features:
   • Cross-platform support (Windows, macOS, Linux)
   • Automatic dependency detection and installation
   • Beautiful Nord-themed terminal interface
-  • Interactive and command-line modes
-
-Usage:
-  Run without arguments for interactive menu
-  Or specify command: ./universal_downloader.py file <url> [options]
-  Or for YouTube: ./universal_downloader.py youtube <url> [options]
-
-  Options:
-    -o, --output-dir <dir>   Set download directory
-    -v, --verbose            Enable verbose output
-    -h, --help               Show help information
 
 Version: 4.0.0
 """
@@ -45,7 +34,6 @@ import threading
 import time
 import urllib.request
 import urllib.parse
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -113,7 +101,6 @@ try:
     from rich.columns import Columns
     from rich.rule import Rule
     from rich.traceback import install as install_rich_traceback
-    from rich.highlighter import RegexHighlighter
     from rich.theme import Theme
 except ImportError as e:
     print(f"Error importing required libraries: {e}")
@@ -716,6 +703,36 @@ def run_command(
         raise
 
 
+def run_direct_command(
+    cmd: List[str], verbose: bool = False
+) -> subprocess.CompletedProcess:
+    """
+    Run a command directly, capturing all output and properly handling errors.
+
+    Args:
+        cmd: Command and arguments as a list
+        verbose: Whether to show verbose output
+
+    Returns:
+        CompletedProcess instance with command results
+    """
+    try:
+        if verbose:
+            print_step(f"Running command: {' '.join(cmd)}")
+
+        result = subprocess.run(cmd, text=True, capture_output=True, check=False)
+
+        if result.returncode != 0 and verbose:
+            print_error(f"Command failed with exit code {result.returncode}")
+            if result.stderr:
+                print_error(f"Error output: {result.stderr}")
+
+        return result
+    except Exception as e:
+        print_error(f"Failed to execute command: {e}")
+        raise
+
+
 # ----------------------------------------------------------------
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
@@ -949,7 +966,34 @@ def ensure_directory(path: str) -> None:
         print_step(f"Directory ensured: {path}")
     except Exception as e:
         print_error(f"Failed to create directory '{path}': {e}")
-        sys.exit(1)
+        raise
+
+
+# ----------------------------------------------------------------
+# Test Functions
+# ----------------------------------------------------------------
+def test_yt_dlp_command(browser: str, verbose: bool = False) -> Tuple[bool, str]:
+    """
+    Test if yt-dlp is working correctly with the specified browser.
+
+    Args:
+        browser: Browser to use for cookie extraction
+        verbose: Whether to show verbose output
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    try:
+        # Simple test to verify yt-dlp works with the browser
+        test_cmd = ["yt-dlp", "--cookies-from-browser", browser, "--version"]
+        result = run_direct_command(test_cmd, verbose)
+
+        if result.returncode == 0:
+            return True, f"yt-dlp version: {result.stdout.strip()}"
+        else:
+            return False, f"yt-dlp test failed: {result.stderr}"
+    except Exception as e:
+        return False, f"Error testing yt-dlp: {str(e)}"
 
 
 # ----------------------------------------------------------------
@@ -994,13 +1038,38 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
     is_playlist = False
     estimated_size = 0
 
-    if not check_dependencies(["yt-dlp"])["yt-dlp"]:
-        print_warning("yt-dlp is not installed. Cannot get YouTube info.")
+    # Check if yt-dlp is installed
+    if not shutil.which("yt-dlp"):
+        print_error("yt-dlp is not installed or not in PATH")
+        print_step("Run 'pip install yt-dlp' to install it")
         return title, is_playlist, estimated_size
 
     try:
+        # First, check if the URL is valid with a simple test
+        test_cmd = [
+            "yt-dlp",
+            "--cookies-from-browser",
+            browser,
+            "--skip-download",
+            "--print",
+            "title",
+            url,
+        ]
+        print_step(f"Validating YouTube URL: {url}")
+        test_result = run_direct_command(test_cmd, False)
+
+        if test_result.returncode != 0:
+            error_msg = (
+                test_result.stderr.strip() if test_result.stderr else "Unknown error"
+            )
+            print_error(f"Invalid YouTube URL: {error_msg}")
+            return title, is_playlist, estimated_size
+
+        if test_result.stdout.strip():
+            title = test_result.stdout.strip()
+
         # Check if it's a playlist
-        cmd = [
+        playlist_cmd = [
             "yt-dlp",
             "--cookies-from-browser",
             browser,
@@ -1009,13 +1078,13 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
             "playlist_id",
             url,
         ]
+        playlist_result = run_direct_command(playlist_cmd, False)
 
-        result = run_command(cmd, capture_output=True, check=False)
-        is_playlist = bool(result.stdout.strip())
+        is_playlist = bool(playlist_result.stdout.strip())
 
-        # Get the title
+        # If it's a playlist, get the playlist title
         if is_playlist:
-            cmd = [
+            playlist_title_cmd = [
                 "yt-dlp",
                 "--cookies-from-browser",
                 browser,
@@ -1024,55 +1093,54 @@ def get_youtube_info(url: str, browser: str = None) -> Tuple[str, bool, int]:
                 "playlist_title",
                 url,
             ]
+            playlist_title_result = run_direct_command(playlist_title_cmd, False)
 
-            result = run_command(cmd, capture_output=True, check=False)
-            if result.stdout.strip():
-                title = result.stdout.strip()
+            if playlist_title_result.stdout.strip():
+                title = playlist_title_result.stdout.strip()
+        # If it's a single video, try to estimate size
         else:
-            cmd = ["yt-dlp", "--cookies-from-browser", browser, "--print", "title", url]
+            # Try to get file size
+            size_cmd = [
+                "yt-dlp",
+                "--cookies-from-browser",
+                browser,
+                "--print",
+                "filesize",
+                url,
+            ]
+            size_result = run_direct_command(size_cmd, False)
 
-            result = run_command(cmd, capture_output=True, check=False)
-            if result.stdout.strip():
-                title = result.stdout.strip()
+            if size_result.stdout.strip() and size_result.stdout.strip().isdigit():
+                estimated_size = int(size_result.stdout.strip())
 
-            # Try to estimate size
-            if not is_playlist:
-                cmd = [
+            # If size estimation fails, try using duration
+            if estimated_size == 0:
+                duration_cmd = [
                     "yt-dlp",
                     "--cookies-from-browser",
                     browser,
                     "--print",
-                    "filesize",
+                    "duration",
                     url,
                 ]
+                duration_result = run_direct_command(duration_cmd, False)
 
-                result = run_command(cmd, capture_output=True, check=False)
-                if result.stdout.strip().isdigit():
-                    estimated_size = int(result.stdout.strip())
+                if (
+                    duration_result.stdout.strip()
+                    and duration_result.stdout.strip().replace(".", "", 1).isdigit()
+                ):
+                    duration = float(duration_result.stdout.strip())
+                    # Rough estimate: ~10 MB per minute of video at high quality
+                    estimated_size = int(duration * 60 * 10 * 1024)
 
-                # If size estimation fails, try using duration
-                if estimated_size == 0:
-                    cmd = [
-                        "yt-dlp",
-                        "--cookies-from-browser",
-                        browser,
-                        "--print",
-                        "duration",
-                        url,
-                    ]
-
-                    result = run_command(cmd, capture_output=True, check=False)
-                    if (
-                        result.stdout.strip()
-                        and result.stdout.strip().replace(".", "", 1).isdigit()
-                    ):
-                        duration = float(result.stdout.strip())
-                        # Rough estimate: ~10 MB per minute of video at high quality
-                        estimated_size = int(duration * 60 * 10 * 1024)
+        print_success(
+            f"Retrieved YouTube info: {title} ({'Playlist' if is_playlist else 'Video'})"
+        )
+        return title, is_playlist, estimated_size
     except Exception as e:
-        print_warning(f"Could not get YouTube info: {e}")
-
-    return title, is_playlist, estimated_size
+        print_error(f"Error getting YouTube info: {str(e)}")
+        console.print_exception(show_locals=True)
+        return title, is_playlist, estimated_size
 
 
 # ----------------------------------------------------------------
@@ -1255,8 +1323,22 @@ def download_youtube(
         browser = AppConfig.get_default_browser()
 
     try:
-        # Ensure output directory exists
-        ensure_directory(output_dir)
+        # Ensure output directory exists and is writable
+        try:
+            ensure_directory(output_dir)
+            test_file = os.path.join(output_dir, ".write_test")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+        except Exception as e:
+            print_error(f"Output directory is not writable: {e}")
+            return False
+
+        # Verify yt-dlp is installed and executable
+        if not shutil.which("yt-dlp"):
+            print_error("yt-dlp is not installed or not in PATH")
+            print_step("Run 'pip install yt-dlp' to install it")
+            return False
 
         # Get YouTube video information
         title, is_playlist, estimated_size = get_youtube_info(url, browser)
@@ -1285,11 +1367,7 @@ def download_youtube(
         # Prepare output template and full path
         output_path = os.path.join(output_dir, AppConfig.YTDLP_OUTPUT_TEMPLATE)
 
-        # Escape single quotes in the path and URL for shell safety
-        safe_output_path = output_path.replace("'", "'\\''")
-        safe_url = url.replace("'", "'\\''")
-
-        # Prepare command with browser cookies and format selection - exact format as specified
+        # Build command - use list form without extra quotes to avoid shell interpretation issues
         cmd = [
             "yt-dlp",
             "--cookies-from-browser",
@@ -1297,12 +1375,15 @@ def download_youtube(
             "-S",
             AppConfig.YTDLP_FORMAT_SELECTION,
             "-o",
-            f"'{safe_output_path}'",
-            f"'{safe_url}'",
+            output_path,
+            url,
         ]
 
         if verbose:
             cmd.insert(1, "--verbose")
+
+        # Log the command we're about to run
+        print_step(f"Running command: {' '.join(cmd)}")
 
         # For playlist or verbose mode, use simpler progress display
         if is_playlist or verbose:
@@ -1313,25 +1394,26 @@ def download_youtube(
                 console=console,
             ) as progress:
                 task = progress.add_task("Downloading")
-                # Use a shell=True approach since we're using quotes in the command
-                cmd_str = " ".join(cmd)
-                result = subprocess.run(
-                    cmd_str,
-                    shell=True,
-                    text=True,
-                    capture_output=not verbose,
-                    check=False,
-                )
 
-                if result.returncode != 0:
-                    print_error(f"Download failed with return code {result.returncode}")
-                    if result.stderr:
-                        print_error(f"Error: {result.stderr}")
+                # Use subprocess.run with shell=False (safer)
+                process = subprocess.run(cmd, text=True, capture_output=True)
+
+                if process.returncode != 0:
+                    print_error(
+                        f"Download failed with return code {process.returncode}"
+                    )
+                    # Display detailed error information
+                    if process.stderr:
+                        error_panel = Panel(
+                            Text(process.stderr),
+                            title="[bold red]yt-dlp Error Output[/]",
+                            border_style=Style(color=NordColors.RED),
+                            padding=(1, 2),
+                        )
+                        console.print(error_panel)
                     return False
         else:
-            # For single videos, use a simpler approach with shell=True
-            cmd_str = " ".join(cmd)
-
+            # For single videos, capture and display progress
             with Progress(
                 SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
                 TextColumn(f"[bold {NordColors.FROST_2}]Downloading"),
@@ -1346,24 +1428,65 @@ def download_youtube(
             ) as progress:
                 task = progress.add_task("Downloading Video", total=100)
 
-                # Run the command with shell=True
+                # Run the command with shell=False and capture output
                 process = subprocess.Popen(
-                    cmd_str,
-                    shell=True,
+                    cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
+                    stderr=subprocess.PIPE,
                     text=True,
                     bufsize=1,
                     universal_newlines=True,
                 )
 
+                # For storing partial stderr lines
+                stderr_buffer = []
+
                 # Parse yt-dlp output for progress
                 while True:
-                    line = process.stdout.readline()
-                    if not line:
+                    # Read from stdout if available
+                    line = None
+                    try:
+                        line = process.stdout.readline()
+                    except:
+                        pass
+
+                    if not line and process.poll() is not None:
                         break
 
-                    # Update progress based on output
+                    if line:
+                        # Update progress based on output
+                        if "[download]" in line and "%" in line:
+                            try:
+                                parts = line.split()
+                                for part in parts:
+                                    if "%" in part:
+                                        pct_str = part.rstrip("%").rstrip(",")
+                                        progress.update(task, completed=float(pct_str))
+                                        break
+                            except Exception:
+                                pass
+                        elif "Downloading video" in line:
+                            progress.update(task, description="Downloading video")
+                        elif "Downloading audio" in line:
+                            progress.update(task, description="Downloading audio")
+                        elif "Merging formats" in line:
+                            progress.update(
+                                task, completed=99, description="Merging formats"
+                            )
+
+                    # Check stderr
+                    try:
+                        err_line = process.stderr.readline()
+                        if err_line:
+                            stderr_buffer.append(err_line)
+                    except:
+                        pass
+
+                    # Small delay to prevent CPU hogging
+                    time.sleep(0.01)
+
+                # Process has finished - read any remaining output
+                for line in process.stdout:
                     if "[download]" in line and "%" in line:
                         try:
                             parts = line.split()
@@ -1374,20 +1497,55 @@ def download_youtube(
                                     break
                         except Exception:
                             pass
-                    elif "Downloading video" in line:
-                        progress.update(task, description="Downloading video")
-                    elif "Downloading audio" in line:
-                        progress.update(task, description="Downloading audio")
-                    elif "Merging formats" in line:
-                        progress.update(
-                            task, completed=99, description="Merging formats"
+
+                # Read any remaining stderr
+                for line in process.stderr:
+                    stderr_buffer.append(line)
+
+                returncode = process.poll()
+                if returncode != 0:
+                    print_error(f"Download failed with return code {returncode}")
+
+                    # Display detailed error information
+                    if stderr_buffer:
+                        error_text = "".join(stderr_buffer)
+                        error_panel = Panel(
+                            Text(error_text),
+                            title="[bold red]yt-dlp Error Output[/]",
+                            border_style=Style(color=NordColors.RED),
+                            padding=(1, 2),
+                        )
+                        console.print(error_panel)
+
+                    # Common error debugging guidance
+                    print_step("Troubleshooting steps:")
+                    print_message(
+                        "1. Check if the URL is valid and accessible in your browser",
+                        NordColors.YELLOW,
+                    )
+                    print_message(
+                        "2. Verify that your browser cookies are working correctly",
+                        NordColors.YELLOW,
+                    )
+                    print_message(
+                        "3. Try running with --verbose option for more information",
+                        NordColors.YELLOW,
+                    )
+                    if stderr_buffer and any(
+                        "Unable to extract" in line for line in stderr_buffer
+                    ):
+                        print_message(
+                            "4. This video may be region-restricted or private",
+                            NordColors.YELLOW,
+                        )
+                    if stderr_buffer and any(
+                        "Cookies from" in line for line in stderr_buffer
+                    ):
+                        print_message(
+                            "4. There might be an issue with browser cookie extraction",
+                            NordColors.YELLOW,
                         )
 
-                process.wait()
-                if process.returncode != 0:
-                    print_error(
-                        f"Download failed with return code {process.returncode}"
-                    )
                     return False
 
         display_panel(
@@ -1398,6 +1556,8 @@ def download_youtube(
         return True
     except Exception as e:
         print_error(f"Download failed: {e}")
+        # Print full exception details for better debugging
+        console.print_exception(show_locals=True)
         return False
 
 
@@ -1503,7 +1663,7 @@ def cmd_youtube_download(
                     console.print(f"  {i}. {b}")
 
                 choice = IntPrompt.ask(
-                    "Enter browser number",
+                    "Select browser for cookies",
                     default=1,
                     choices=[str(i) for i in range(1, len(available_browsers) + 1)],
                 )
@@ -1809,95 +1969,6 @@ def download_menu() -> None:
         else:
             print_error("Invalid selection. Please choose 1-4.")
             input("Press Enter to continue...")
-
-
-def show_usage() -> None:
-    """
-    Display usage information for the script.
-    """
-    console.print(create_header())
-
-    # Create a usage table
-    table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]Usage Information[/]",
-        border_style=NordColors.FROST_3,
-        title_justify="center",
-    )
-
-    table.add_column("Command", style=f"bold {NordColors.FROST_2}")
-    table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    table.add_row("./universal_downloader.py", "Start the interactive download menu")
-    table.add_row(
-        "./universal_downloader.py file <url> [options]", "Download a file from the web"
-    )
-    table.add_row(
-        "./universal_downloader.py youtube <url> [options]",
-        "Download YouTube video/playlist",
-    )
-    table.add_row("./universal_downloader.py help", "Show this help information")
-
-    console.print(table)
-
-    # Options table
-    options_table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]Options[/]",
-        border_style=NordColors.FROST_3,
-        title_justify="center",
-    )
-
-    options_table.add_column("Option", style=f"bold {NordColors.FROST_2}")
-    options_table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    options_table.add_row(
-        "-o, --output-dir <dir>",
-        f"Set the output directory (default: {AppConfig.DEFAULT_DOWNLOAD_DIR})",
-    )
-    options_table.add_row("-v, --verbose", "Enable verbose output")
-    options_table.add_row(
-        "-b, --browser <browser>", "Browser to use for YouTube cookies"
-    )
-
-    console.print(options_table)
-
-    # Examples
-    examples_table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]Examples[/]",
-        border_style=NordColors.FROST_3,
-        title_justify="center",
-    )
-
-    examples_table.add_column(
-        "Example", style=f"bold {NordColors.FROST_2}", no_wrap=True
-    )
-    examples_table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-
-    examples_table.add_row("./universal_downloader.py", "Start the interactive menu")
-    examples_table.add_row(
-        "./universal_downloader.py file https://example.com/file.zip -o /tmp",
-        "Download a zip file to /tmp directory",
-    )
-    examples_table.add_row(
-        "./universal_downloader.py youtube https://youtube.com/watch?v=abcdef -b chrome",
-        "Download a YouTube video using Chrome cookies",
-    )
-
-    console.print(examples_table)
-
-
-# ----------------------------------------------------------------
-# No Command Line Argument Parsing
-# ----------------------------------------------------------------
-# Command line parsing was removed to simplify the application
 
 
 # ----------------------------------------------------------------
