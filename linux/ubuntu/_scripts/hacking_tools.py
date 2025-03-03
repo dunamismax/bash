@@ -47,10 +47,19 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         RichHandler(console=console, rich_tracebacks=True),
-        logging.FileHandler(LOG_FILE)
-    ]
+        logging.FileHandler(LOG_FILE),
+    ],
 )
 logger = logging.getLogger("security_setup")
+
+# Define problematic packages that need special handling
+PROBLEMATIC_PACKAGES = {
+    "samhain": {
+        "service": "samhain.service",
+        "config_dirs": ["/etc/samhain", "/var/lib/samhain"],
+        "force_remove": True,
+    }
+}
 
 SECURITY_TOOLS = {
     "Network Analysis": [
@@ -109,7 +118,6 @@ SECURITY_TOOLS = {
         "crowdsec",
         "yubikey-manager",
         "policycoreutils",
-        # samhain removed due to known installation issues
     ],
     "Password & Crypto": [
         "john",
@@ -183,9 +191,12 @@ SECURITY_TOOLS = {
     ],
 }
 
-class InstallationError(Exception):
-    """Custom exception for installation errors."""
+
+class PackageError(Exception):
+    """Custom exception for package-related errors."""
+
     pass
+
 
 class SystemSetup:
     """Handles system setup and package management operations."""
@@ -199,6 +210,77 @@ class SystemSetup:
     def check_root() -> bool:
         """Check if script is running with root privileges."""
         return os.geteuid() == 0
+
+    def remove_problematic_package(self, package_name: str) -> bool:
+        """Thoroughly remove a problematic package."""
+        if self.simulate:
+            return True
+
+        pkg_info = PROBLEMATIC_PACKAGES.get(package_name)
+        if not pkg_info:
+            return True
+
+        try:
+            # Stop the service if it exists
+            if pkg_info.get("service"):
+                subprocess.run(
+                    ["systemctl", "stop", pkg_info["service"]],
+                    check=False,
+                    stderr=subprocess.DEVNULL,
+                )
+
+            # Kill any running processes
+            subprocess.run(
+                ["killall", "-9", package_name], check=False, stderr=subprocess.DEVNULL
+            )
+
+            # Remove package using different methods
+            commands = [
+                ["apt-get", "remove", "-y", package_name],
+                ["apt-get", "purge", "-y", package_name],
+                ["dpkg", "--remove", "--force-all", package_name],
+                ["dpkg", "--purge", "--force-all", package_name],
+            ]
+
+            for cmd in commands:
+                try:
+                    subprocess.run(cmd, check=False, stderr=subprocess.PIPE)
+                except subprocess.SubprocessError:
+                    continue
+
+            # Remove configuration directories
+            if pkg_info.get("config_dirs"):
+                for directory in pkg_info["config_dirs"]:
+                    try:
+                        if Path(directory).exists():
+                            subprocess.run(["rm", "-rf", directory], check=False)
+                    except Exception as e:
+                        logger.warning(f"Failed to remove directory {directory}: {e}")
+
+            # Final cleanup of package status
+            status_file = "/var/lib/dpkg/status"
+            temp_file = "/var/lib/dpkg/status.tmp"
+            try:
+                if pkg_info.get("force_remove"):
+                    with open(status_file, "r") as f_in, open(temp_file, "w") as f_out:
+                        skip_block = False
+                        for line in f_in:
+                            if line.startswith(f"Package: {package_name}"):
+                                skip_block = True
+                                continue
+                            if skip_block and line.startswith("Package:"):
+                                skip_block = False
+                            if not skip_block:
+                                f_out.write(line)
+                    os.rename(temp_file, status_file)
+            except Exception as e:
+                logger.warning(f"Failed to clean package status: {e}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to remove problematic package {package_name}: {e}")
+            return False
 
     def cleanup_package_system(self) -> bool:
         """Clean up package management system and remove invalid files."""
@@ -215,26 +297,17 @@ class SystemSetup:
                     logger.error(f"Failed to remove {file}: {e}")
 
             if not self.simulate:
-                # Try to remove problematic samhain package first
-                try:
-                    logger.info("Attempting to remove samhain package...")
-                    subprocess.run(["systemctl", "stop", "samhain.service"], check=False)
-                    subprocess.run(["apt-get", "remove", "-y", "samhain"], check=False)
-                    subprocess.run(["apt-get", "purge", "-y", "samhain"], check=False)
-                except Exception as e:
-                    logger.warning(f"Non-critical error while removing samhain: {e}")
+                # Remove problematic packages first
+                for package in PROBLEMATIC_PACKAGES:
+                    if not self.remove_problematic_package(package):
+                        logger.warning(f"Failed to completely remove {package}")
 
-                # Fix interrupted dpkg
+                # Fix any interrupted dpkg processes
                 subprocess.run(["dpkg", "--configure", "-a"], check=True)
-                
-                # Force remove any remaining samhain configuration
-                try:
-                    subprocess.run(["dpkg", "--remove", "--force-remove-reinstreq", "samhain"], check=False)
-                except Exception as e:
-                    logger.warning(f"Non-critical error while force removing samhain: {e}")
-                
-                # Clean package cache
+
+                # Additional cleanup steps
                 subprocess.run(["nala", "clean"], check=True)
+                subprocess.run(["nala", "autoremove", "-y"], check=True)
 
             return True
         except subprocess.CalledProcessError as e:
@@ -251,6 +324,7 @@ class SystemSetup:
 
                 # Update package lists using nala
                 subprocess.run(["nala", "update"], check=True)
+                subprocess.run(["nala", "upgrade", "-y"], check=True)
             return True
         except subprocess.CalledProcessError as e:
             logger.error(f"Package manager setup failed: {e}")
@@ -279,6 +353,20 @@ class SystemSetup:
                     logger.error(f"Error: {str(e)}")
                     failed_packages.extend(chunk)
 
+                    # Try to install packages individually if chunk fails
+                    for package in chunk:
+                        if package not in self.successful_packages:
+                            try:
+                                subprocess.run(
+                                    ["nala", "install", "-y", package], check=True
+                                )
+                                self.successful_packages.append(package)
+                                failed_packages.remove(package)
+                            except subprocess.CalledProcessError:
+                                logger.error(
+                                    f"Failed to install individual package: {package}"
+                                )
+
             if failed_packages:
                 return False, failed_packages
             return True, []
@@ -293,13 +381,17 @@ class SystemSetup:
             "timestamp": datetime.now().isoformat(),
             "successful_packages": sorted(self.successful_packages),
             "failed_packages": sorted(self.failed_packages),
-            "simulation_mode": self.simulate
+            "simulation_mode": self.simulate,
         }
-        
-        report_file = LOG_DIR / f"installation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(report_file, 'w') as f:
+
+        report_file = (
+            LOG_DIR
+            / f"installation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
+        with open(report_file, "w") as f:
             json.dump(report, f, indent=2)
         logger.info(f"Installation report saved to {report_file}")
+
 
 def display_header():
     """Display script header."""
@@ -310,6 +402,7 @@ def display_header():
             border_style="cyan",
         )
     )
+
 
 def show_installation_plan():
     """Display installation plan with category table."""
@@ -325,12 +418,15 @@ def show_installation_plan():
     console.print(Panel(table, title="Installation Plan", border_style="cyan"))
     console.print(f"\nTotal packages: [bold cyan]{total}[/]")
 
+
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(description="Security Tools Installer")
     parser.add_argument("--simulate", action="store_true", help="Simulate installation")
     parser.add_argument("--skip-confirm", action="store_true", help="Skip confirmation")
-    parser.add_argument("--skip-failed", action="store_true", help="Continue on package failures")
+    parser.add_argument(
+        "--skip-failed", action="store_true", help="Continue on package failures"
+    )
     args = parser.parse_args()
 
     try:
@@ -402,7 +498,7 @@ def main():
             console.print(f"Successfully installed: {len(setup.successful_packages)}")
         else:
             console.print("\n[bold green]🎉 Installation completed successfully![/]")
-        
+
         console.print(f"\nDetailed logs available at: {LOG_FILE}")
 
     except KeyboardInterrupt:
@@ -412,6 +508,7 @@ def main():
         logger.exception("Unexpected error occurred")
         console.print(f"[red]An unexpected error occurred: {str(e)}[/]")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
