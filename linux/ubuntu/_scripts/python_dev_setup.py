@@ -15,12 +15,7 @@ environment with Nord-themed visual interface. This script handles installation 
 Usage:
   Run with sudo: sudo python3 setup.py
 
-  Interactive options during execution:
-  - Choose components to install
-  - Select Python version (latest stable or specific version)
-  - Customize the development tools to install
-
-Version: 2.2.0
+Version: 2.3.0
 """
 
 import atexit
@@ -55,7 +50,6 @@ try:
     )
     from rich.align import Align
     from rich.style import Style
-    from rich.prompt import Prompt, Confirm
     from rich.traceback import install as install_rich_traceback
 except ImportError:
     print("This script requires the 'rich' and 'pyfiglet' libraries.")
@@ -77,7 +71,7 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-VERSION: str = "2.2.0"
+VERSION: str = "2.3.0"
 APP_NAME: str = "PyDev Setup"
 APP_SUBTITLE: str = "Development Environment Installer"
 
@@ -586,66 +580,23 @@ def install_latest_python_with_pyenv() -> bool:
             print_error("Could not find any Python versions to install.")
             return False
 
-        # Sort versions to get the latest
-        latest_version = sorted(versions, key=lambda v: [int(i) for i in v.split(".")])[
-            -1
-        ]
+        # Sort versions to get the latest (properly sorting by version components)
+        sorted_versions = sorted(versions, key=lambda v: [int(i) for i in v.split(".")])
+        latest_version = sorted_versions[-1]
 
-        # Create a selection of recent Python versions for the user to choose from
-        recent_versions = sorted(
-            versions, key=lambda v: [int(i) for i in v.split(".")]
-        )[-5:]
-
-        version_table = Table(
-            show_header=True,
-            header_style=f"bold {NordColors.FROST_1}",
-            border_style=NordColors.FROST_3,
-            title=f"[bold {NordColors.FROST_2}]Available Python Versions[/]",
-            title_justify="center",
-        )
-        version_table.add_column(
-            "#", style=f"bold {NordColors.FROST_4}", justify="right", width=4
-        )
-        version_table.add_column("Version", style=NordColors.SNOW_STORM_1)
-        version_table.add_column("Status", style=f"bold {NordColors.FROST_2}")
-
-        for i, version in enumerate(recent_versions, 1):
-            status = "Latest" if version == latest_version else ""
-            version_table.add_row(str(i), version, status)
-
-        console.print(version_table)
-
-        # Let user select a version
-        selection = Prompt.ask(
-            f"[bold {NordColors.FROST_2}]Select a Python version to install (1-{len(recent_versions)}, default: latest)[/]",
-            default="1",
-        )
-
-        try:
-            index = int(selection) - 1
-            if 0 <= index < len(recent_versions):
-                selected_version = recent_versions[index]
-            else:
-                print_warning(
-                    f"Invalid selection. Installing latest version {latest_version}."
-                )
-                selected_version = latest_version
-        except ValueError:
-            print_warning(
-                f"Invalid selection. Installing latest version {latest_version}."
-            )
-            selected_version = latest_version
+        # Display information about the selected version
+        print_success(f"Found latest Python version: {latest_version}")
 
         display_panel(
-            f"Installing Python {selected_version}.\nThis process may take a long time (20-60 minutes) depending on your system.",
+            f"Installing Python {latest_version}.\nThis process may take a long time (20-60 minutes) depending on your system.",
             style=NordColors.FROST_3,
             title="Python Installation",
         )
 
         # Install Python with extended timeout for slow machines
-        install_cmd = pyenv_cmd + ["install", "--skip-existing", selected_version]
+        install_cmd = pyenv_cmd + ["install", "--skip-existing", latest_version]
         with console.status(
-            f"[bold blue]Building Python {selected_version} (this will take a while)...",
+            f"[bold blue]Building Python {latest_version} (this will take a while)...",
             spinner="dots",
         ):
             run_command(
@@ -654,9 +605,9 @@ def install_latest_python_with_pyenv() -> bool:
                 timeout=PYTHON_BUILD_TIMEOUT,
             )
 
-        print_step("Setting as global Python version...")
+        print_step(f"Setting Python {latest_version} as global default...")
         run_command(
-            pyenv_cmd + ["global", selected_version], as_user=(ORIGINAL_USER != "root")
+            pyenv_cmd + ["global", latest_version], as_user=(ORIGINAL_USER != "root")
         )
 
         pyenv_python = os.path.join(PYENV_DIR, "shims", "python")
@@ -782,49 +733,12 @@ def install_pipx_tools() -> bool:
             print_error("Could not find pipx executable.")
             return False
 
-    # Create tools selection table
-    tools_table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        border_style=NordColors.FROST_3,
-        title=f"[bold {NordColors.FROST_2}]Python Development Tools[/]",
-        title_justify="center",
+    # Display tools to be installed
+    display_panel(
+        f"Installing {len(PIPX_TOOLS)} Python development tools automatically.",
+        style=NordColors.FROST_3,
+        title="Development Tools",
     )
-    tools_table.add_column(
-        "#", style=f"bold {NordColors.FROST_4}", justify="right", width=4
-    )
-    tools_table.add_column("Tool", style=f"bold {NordColors.FROST_2}")
-    tools_table.add_column("Description", style=NordColors.SNOW_STORM_1)
-
-    for i, tool in enumerate(PIPX_TOOLS, 1):
-        description = TOOL_DESCRIPTIONS.get(tool, "")
-        tools_table.add_row(str(i), tool, description)
-
-    console.print(tools_table)
-
-    # Ask user to select tools
-    install_all = Confirm.ask(
-        f"[bold {NordColors.FROST_2}]Install all tools?[/]", default=True
-    )
-
-    selected_tools = PIPX_TOOLS.copy()
-    if not install_all:
-        selection = Prompt.ask(
-            f"[bold {NordColors.FROST_2}]Enter numbers of tools to install (comma-separated, or 'all')[/]",
-            default="all",
-        )
-
-        if selection.lower() != "all":
-            try:
-                indices = [int(idx.strip()) - 1 for idx in selection.split(",")]
-                selected_tools = [
-                    PIPX_TOOLS[idx] for idx in indices if 0 <= idx < len(PIPX_TOOLS)
-                ]
-                if not selected_tools:
-                    print_warning("No valid tools selected. Installing all tools.")
-                    selected_tools = PIPX_TOOLS.copy()
-            except ValueError:
-                print_warning("Invalid selection. Installing all tools.")
 
     # Set up environment with pipx in PATH
     env = os.environ.copy()
@@ -843,12 +757,12 @@ def install_pipx_tools() -> bool:
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        tools_task = progress.add_task("Installing", total=len(selected_tools))
+        tools_task = progress.add_task("Installing", total=len(PIPX_TOOLS))
 
         installed_tools = []
         failed_tools = []
 
-        for tool in selected_tools:
+        for tool in PIPX_TOOLS:
             try:
                 if ORIGINAL_USER != "root":
                     # For non-root users, run pipx as the user
@@ -884,10 +798,33 @@ def install_pipx_tools() -> bool:
 
     # Report results
     if installed_tools:
-        print_success(f"Successfully installed: {', '.join(installed_tools)}")
+        print_success(f"Successfully installed {len(installed_tools)} tools")
 
     if failed_tools:
-        print_warning(f"Failed to install: {', '.join(failed_tools)}")
+        print_warning(
+            f"Failed to install {len(failed_tools)} tools: {', '.join(failed_tools)}"
+        )
+
+    # Create a table of installed tools
+    tools_table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        border_style=NordColors.FROST_3,
+        title=f"[bold {NordColors.FROST_2}]Installed Python Tools[/]",
+        title_justify="center",
+    )
+    tools_table.add_column("Tool", style=f"bold {NordColors.FROST_2}")
+    tools_table.add_column("Status", style=NordColors.SNOW_STORM_1)
+    tools_table.add_column("Description", style=NordColors.SNOW_STORM_1)
+
+    for tool in PIPX_TOOLS:
+        status = (
+            "[green]✓ Installed[/]" if tool in installed_tools else "[red]× Failed[/]"
+        )
+        description = TOOL_DESCRIPTIONS.get(tool, "")
+        tools_table.add_row(tool, status, description)
+
+    console.print(tools_table)
 
     return len(installed_tools) > 0
 
@@ -946,7 +883,9 @@ def display_summary(successes: List[str]) -> None:
     ]
 
     for component in components:
-        status = "✓ Installed" if component in successes else "× Failed"
+        status = (
+            "[green]✓ Installed[/]" if component in successes else "[red]× Failed[/]"
+        )
         table.add_row(component, status)
 
     console.print("\n")
@@ -1018,9 +957,9 @@ def main() -> None:
         # Display welcome message
         display_panel(
             "Welcome to Python Development Environment Setup!\n\n"
-            "This tool will help you set up a complete Python development environment "
+            "This automated tool will set up a complete Python development environment "
             "including essential build tools, pyenv for Python version management, "
-            "and development tools.",
+            "the latest Python version, and development tools.",
             style=NordColors.FROST_3,
             title="Welcome",
         )

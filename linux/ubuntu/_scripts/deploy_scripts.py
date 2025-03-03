@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """
-Interactive Script Deployment System
+Automated Script Deployment System
 --------------------------------------------------
 
 A robust utility for deploying scripts from a source directory to a target directory
-with comprehensive verification, dry-run analysis, and permission enforcement.
-Features Nord-themed styling, real-time progress tracking, and a fully interactive
-menu-driven interface.
+with comprehensive verification and permission enforcement. This automated version
+runs without interactive prompts, designed for unattended operations.
+
+Features Nord-themed styling, deployment verification, and detailed logging.
 
 Usage:
-  Run the script with root privileges to access the interactive menu.
-  - Option 1: Configure deployment parameters
-  - Option 2: Verify paths and ownership
-  - Option 3: Run a dry deployment (analysis only)
-  - Option 4: Execute a full deployment
-  - Option 5: View deployment status
-  - Option 6: Exit the application
+  Run the script with appropriate arguments, typically with root privileges:
 
-Version: 2.0.0
+  python3 script_deploy.py --source /path/to/source --target /path/to/target
+
+Arguments:
+  --source SOURCE_DIR   Path to source directory containing scripts
+  --target TARGET_DIR   Path to target directory for deployment
+  --owner OWNER         Expected owner of source directory (default: current user)
+  --log LOG_FILE        Path to log file (default: /var/log/script-deploy.log)
+  --force               Skip confirmations and deploy even without changes
+  --quiet               Reduce output verbosity
+  --help                Show help message
+
+Version: 3.0.0
 """
 
+import argparse
 import atexit
 import os
 import pwd
@@ -41,8 +48,6 @@ try:
     from rich.panel import Panel
     from rich.text import Text
     from rich.table import Table
-    from rich.live import Live
-    from rich.columns import Columns
     from rich.progress import (
         Progress,
         SpinnerColumn,
@@ -50,7 +55,6 @@ try:
         TextColumn,
         TimeRemainingColumn,
     )
-    from rich.prompt import Prompt, Confirm
     from rich.align import Align
     from rich.style import Style
     from rich.traceback import install as install_rich_traceback
@@ -65,14 +69,10 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration and Constants
 # ----------------------------------------------------------------
-VERSION: str = "2.0.0"
+VERSION: str = "3.0.0"
 APP_NAME: str = "Script Deployment System"
-APP_SUBTITLE: str = "Secure Script Deployment Manager"
+APP_SUBTITLE: str = "Automated Deployment Manager"
 OPERATION_TIMEOUT: int = 30  # seconds
-DEFAULT_SOURCE_DIR: str = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
-DEFAULT_TARGET_DIR: str = "/home/sawyer/bin"
-DEFAULT_OWNER: str = os.environ.get("SUDO_USER", "user")
-DEFAULT_LOG_FILE: str = "/var/log/script-deploy.log"
 
 
 # ----------------------------------------------------------------
@@ -182,78 +182,76 @@ def create_header() -> Panel:
 
 
 def print_message(
-    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+    text: str, style: str = NordColors.FROST_2, prefix: str = "•", verbose: bool = True
 ) -> None:
     """
-    Print a styled message.
+    Print a styled message if verbosity is enabled.
 
     Args:
         text: The message to display
         style: The color style to use
         prefix: The prefix symbol
+        verbose: Whether to display the message
     """
-    console.print(f"[{style}]{prefix} {text}[/{style}]")
+    if verbose:
+        console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
-def print_success(text: str) -> None:
+def print_success(text: str, verbose: bool = True) -> None:
     """
-    Display a success message.
+    Display a success message if verbosity is enabled.
 
     Args:
         text: The message to display
+        verbose: Whether to display the message
     """
-    print_message(text, NordColors.GREEN, "✓")
+    print_message(text, NordColors.GREEN, "✓", verbose)
 
 
-def print_warning(text: str) -> None:
+def print_warning(text: str, verbose: bool = True) -> None:
     """
-    Display a warning message.
+    Display a warning message if verbosity is enabled.
 
     Args:
         text: The message to display
+        verbose: Whether to display the message
     """
-    print_message(text, NordColors.YELLOW, "⚠")
+    print_message(text, NordColors.YELLOW, "⚠", verbose)
 
 
 def print_error(text: str) -> None:
     """
-    Display an error message.
+    Display an error message (always displayed regardless of verbosity).
 
     Args:
         text: The message to display
     """
-    print_message(text, NordColors.RED, "✗")
+    print_message(text, NordColors.RED, "✗", True)
 
 
 def display_panel(
-    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
+    message: str,
+    style: str = NordColors.FROST_2,
+    title: Optional[str] = None,
+    verbose: bool = True,
 ) -> None:
     """
-    Display a message in a styled panel.
+    Display a message in a styled panel if verbosity is enabled.
 
     Args:
         message: The message to display
         style: The color style to use
         title: Optional panel title
+        verbose: Whether to display the panel
     """
-    panel = Panel(
-        Text.from_markup(f"[bold {style}]{message}[/]"),
-        border_style=Style(color=style),
-        padding=(1, 2),
-        title=f"[bold {style}]{title}[/]" if title else None,
-    )
-    console.print(panel)
-
-
-def wait_for_keypress(message: str = "Press Enter to continue...") -> None:
-    """
-    Display a message and wait for the user to press Enter.
-
-    Args:
-        message: The message to display
-    """
-    console.print(f"[{NordColors.SNOW_STORM_1}]{message}[/]")
-    input()
+    if verbose:
+        panel = Panel(
+            Text.from_markup(f"[bold {style}]{message}[/]"),
+            border_style=Style(color=style),
+            padding=(1, 2),
+            title=f"[bold {style}]{title}[/]" if title else None,
+        )
+        console.print(panel)
 
 
 # ----------------------------------------------------------------
@@ -266,6 +264,7 @@ def run_command(
     capture_output: bool = True,
     timeout: int = OPERATION_TIMEOUT,
     silent: bool = False,
+    verbose: bool = True,
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
@@ -277,12 +276,13 @@ def run_command(
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
         silent: Whether to suppress command output messages
+        verbose: Whether to display command messages
 
     Returns:
         CompletedProcess instance with command results
     """
     try:
-        if not silent:
+        if not silent and verbose:
             print_message(f"Executing: {' '.join(cmd)}")
 
         result = subprocess.run(
@@ -296,7 +296,7 @@ def run_command(
         return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
-        if e.stdout and not silent:
+        if e.stdout and not silent and verbose:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
         if e.stderr and not silent:
             console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
@@ -499,26 +499,33 @@ class DeploymentManager:
     configuration, verification, execution, and reporting.
     """
 
-    def __init__(self) -> None:
-        """Initialize the deployment manager with default settings."""
-        self.script_source: str = DEFAULT_SOURCE_DIR
-        self.script_target: str = DEFAULT_TARGET_DIR
-        self.expected_owner: str = DEFAULT_OWNER
-        self.log_file: str = DEFAULT_LOG_FILE
-        self.status: DeploymentStatus = DeploymentStatus()
+    def __init__(
+        self,
+        script_source: str,
+        script_target: str,
+        expected_owner: str,
+        log_file: str,
+        force: bool = False,
+        verbose: bool = True,
+    ) -> None:
+        """
+        Initialize the deployment manager with provided settings.
 
-        # Try to detect actual values if running as sudo
-        if os.geteuid() == 0 and "SUDO_USER" in os.environ:
-            sudo_user = os.environ["SUDO_USER"]
-            self.expected_owner = sudo_user
-            home_dir = os.path.expanduser(f"~{sudo_user}")
-            if os.path.exists(home_dir):
-                default_source = os.path.join(home_dir, "scripts/source")
-                default_target = os.path.join(home_dir, "bin")
-                if os.path.exists(default_source):
-                    self.script_source = default_source
-                if os.path.exists(default_target):
-                    self.script_target = default_target
+        Args:
+            script_source: Source directory path
+            script_target: Target directory path
+            expected_owner: Expected owner of source files
+            log_file: Path to log file
+            force: Whether to force deployment even without changes
+            verbose: Whether to display detailed output
+        """
+        self.script_source = script_source
+        self.script_target = script_target
+        self.expected_owner = expected_owner
+        self.log_file = log_file
+        self.force = force
+        self.verbose = verbose
+        self.status = DeploymentStatus()
 
     def _handle_interrupt(self, signum: int, frame: Any) -> None:
         """
@@ -542,7 +549,7 @@ class DeploymentManager:
         if os.geteuid() != 0:
             print_error("This script must be run as root.")
             return False
-        print_success("Root privileges verified.")
+        print_success("Root privileges verified.", self.verbose)
         return True
 
     def check_dependencies(self) -> bool:
@@ -557,7 +564,7 @@ class DeploymentManager:
         if missing:
             print_error(f"Missing required commands: {', '.join(missing)}")
             return False
-        print_success("All required dependencies are available.")
+        print_success("All required dependencies are available.", self.verbose)
         return True
 
     def check_ownership(self) -> bool:
@@ -586,7 +593,7 @@ class DeploymentManager:
                 return False
             msg = f"Source ownership verified as '{owner}'."
             self.status.update_step("ownership_check", "success", msg)
-            print_success(msg)
+            print_success(msg, self.verbose)
             return True
         except Exception as e:
             msg = f"Error checking ownership: {e}"
@@ -617,21 +624,20 @@ class DeploymentManager:
             self.status.update_step("path_verification", "failed", msg)
             print_error(msg)
             return False
-        print_success(f"Source directory exists: {self.script_source}")
+        print_success(f"Source directory exists: {self.script_source}", self.verbose)
 
         # Check target path
         target_path = Path(self.script_target)
         if not target_path.exists():
-            print_warning(f"Target directory does not exist: {self.script_target}")
+            print_warning(
+                f"Target directory does not exist: {self.script_target}", self.verbose
+            )
             try:
-                if Confirm.ask("Create target directory?", default=True):
-                    target_path.mkdir(parents=True, exist_ok=True)
-                    print_success(f"Created target directory: {self.script_target}")
-                else:
-                    msg = "Target directory creation skipped."
-                    self.status.update_step("path_verification", "failed", msg)
-                    print_warning(msg)
-                    return False
+                # In unattended mode, always create the target directory
+                target_path.mkdir(parents=True, exist_ok=True)
+                print_success(
+                    f"Created target directory: {self.script_target}", self.verbose
+                )
             except Exception as e:
                 msg = f"Failed to create target directory: {e}"
                 self.status.update_step("path_verification", "failed", msg)
@@ -643,14 +649,21 @@ class DeploymentManager:
             print_error(msg)
             return False
         else:
-            print_success(f"Target directory exists: {self.script_target}")
+            print_success(
+                f"Target directory exists: {self.script_target}", self.verbose
+            )
 
         # Count files in source directory
         file_count = count_files_in_directory(self.script_source)
         if file_count == 0:
-            print_warning(f"Source directory contains no files: {self.script_source}")
+            print_warning(
+                f"Source directory contains no files: {self.script_source}",
+                self.verbose,
+            )
         else:
-            print_success(f"Source directory contains {file_count} files.")
+            print_success(
+                f"Source directory contains {file_count} files.", self.verbose
+            )
 
         msg = "All paths verified successfully."
         self.status.update_step("path_verification", "success", msg)
@@ -692,7 +705,7 @@ class DeploymentManager:
                     complete_style=NordColors.FROST_2,
                 ),
                 TimeRemainingColumn(),
-                console=console,
+                console=console if self.verbose else None,
             ) as progress:
                 task = progress.add_task("Running dry deployment...", total=1)
                 result = run_command(
@@ -706,6 +719,7 @@ class DeploymentManager:
                         self.script_target,
                     ],
                     silent=True,
+                    verbose=self.verbose,
                 )
                 progress.update(task, advance=1)
 
@@ -726,32 +740,37 @@ class DeploymentManager:
             self.status.update_step("dry_run", "success", msg)
 
             # Display detailed panel with changes
-            if new_files > 0 or updated_files > 0 or deleted_files > 0:
-                print_success(msg)
+            total_changes = new_files + updated_files + deleted_files
+            if total_changes > 0:
+                print_success(msg, self.verbose)
 
-                # Create a table to show what will change
-                change_table = Table(
-                    show_header=True,
-                    header_style=f"bold {NordColors.FROST_1}",
-                    expand=True,
-                    title=f"[bold {NordColors.FROST_2}]Deployment Changes[/]",
-                    border_style=NordColors.FROST_3,
-                    box=None,
-                )
+                if self.verbose:
+                    # Create a table to show what will change
+                    change_table = Table(
+                        show_header=True,
+                        header_style=f"bold {NordColors.FROST_1}",
+                        expand=True,
+                        title=f"[bold {NordColors.FROST_2}]Deployment Changes[/]",
+                        border_style=NordColors.FROST_3,
+                        box=None,
+                    )
 
-                change_table.add_column("Type", style=f"bold {NordColors.FROST_4}")
-                change_table.add_column("Count", style=f"{NordColors.FROST_2}")
+                    change_table.add_column("Type", style=f"bold {NordColors.FROST_4}")
+                    change_table.add_column("Count", style=f"{NordColors.FROST_2}")
 
-                change_table.add_row("New Files", f"{new_files}")
-                change_table.add_row("Updated Files", f"{updated_files}")
-                change_table.add_row("Deleted Files", f"{deleted_files}")
-                change_table.add_row(
-                    "Total Changes", f"{new_files + updated_files + deleted_files}"
-                )
+                    change_table.add_row("New Files", f"{new_files}")
+                    change_table.add_row("Updated Files", f"{updated_files}")
+                    change_table.add_row("Deleted Files", f"{deleted_files}")
+                    change_table.add_row("Total Changes", f"{total_changes}")
 
-                console.print(change_table)
+                    console.print(change_table)
             else:
-                print_message("No changes detected in dry run.", NordColors.YELLOW)
+                print_message(
+                    "No changes detected in dry run.",
+                    NordColors.YELLOW,
+                    "•",
+                    self.verbose,
+                )
 
             return True
         except Exception as e:
@@ -778,7 +797,7 @@ class DeploymentManager:
                     complete_style=NordColors.FROST_2,
                 ),
                 TimeRemainingColumn(),
-                console=console,
+                console=console if self.verbose else None,
             ) as progress:
                 task = progress.add_task("Deploying scripts...", total=1)
                 result = run_command(
@@ -791,6 +810,7 @@ class DeploymentManager:
                         self.script_target,
                     ],
                     silent=True,
+                    verbose=self.verbose,
                 )
                 progress.update(task, advance=1)
 
@@ -809,7 +829,7 @@ class DeploymentManager:
             # Generate status message
             msg = f"Deployment: {new_files} new, {updated_files} updated, {deleted_files} deleted."
             self.status.update_step("deployment", "success", msg)
-            print_success(msg)
+            print_success(msg, self.verbose)
 
             return True
         except Exception as e:
@@ -837,7 +857,7 @@ class DeploymentManager:
                     style=NordColors.FROST_4,
                     complete_style=NordColors.FROST_2,
                 ),
-                console=console,
+                console=console if self.verbose else None,
             ) as progress:
                 task = progress.add_task("Setting file permissions...", total=1)
                 run_command(
@@ -853,143 +873,19 @@ class DeploymentManager:
                         ";",
                     ],
                     silent=True,
+                    verbose=self.verbose,
                 )
                 progress.update(task, advance=1)
 
             msg = "Permissions set successfully (files: executable 755)."
             self.status.update_step("permission_set", "success", msg)
-            print_success(msg)
+            print_success(msg, self.verbose)
             return True
         except Exception as e:
             msg = f"Failed to set permissions: {e}"
             self.status.update_step("permission_set", "failed", msg)
             print_error(msg)
             return False
-
-    def configure_deployment(self) -> None:
-        """Configure deployment parameters through interactive prompts."""
-        console.print(
-            Panel(
-                Text(
-                    "Configure the parameters for script deployment",
-                    style=f"bold {NordColors.FROST_2}",
-                ),
-                title="Configuration",
-                border_style=Style(color=NordColors.FROST_1),
-                padding=(1, 2),
-            )
-        )
-
-        # Create a table to display current configuration
-        table = Table(
-            show_header=True,
-            header_style=f"bold {NordColors.FROST_1}",
-            expand=True,
-            title=f"[bold {NordColors.FROST_2}]Current Configuration[/]",
-            border_style=NordColors.FROST_3,
-            box=None,
-        )
-
-        table.add_column("Parameter", style=f"bold {NordColors.FROST_4}")
-        table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
-
-        table.add_row("Source Directory", self.script_source)
-        table.add_row("Target Directory", self.script_target)
-        table.add_row("Expected Owner", self.expected_owner)
-        table.add_row("Log File", self.log_file)
-
-        console.print(table)
-
-        if Confirm.ask("\nWould you like to change these settings?", default=False):
-            # Collect input with validation
-            while True:
-                self.script_source = Prompt.ask(
-                    "Enter source directory path", default=self.script_source
-                )
-                if os.path.exists(self.script_source):
-                    if not os.path.isdir(self.script_source):
-                        print_error(
-                            "Source path exists but is not a directory. Please try again."
-                        )
-                        continue
-                    break
-                else:
-                    if Confirm.ask(
-                        "Source directory doesn't exist. Create it?", default=False
-                    ):
-                        try:
-                            os.makedirs(self.script_source, exist_ok=True)
-                            print_success(
-                                f"Created source directory: {self.script_source}"
-                            )
-                            break
-                        except Exception as e:
-                            print_error(f"Failed to create directory: {e}")
-                            continue
-                    else:
-                        print_warning(
-                            "Using non-existent source directory. You'll need to create it later."
-                        )
-                        break
-
-            self.script_target = Prompt.ask(
-                "Enter target directory path", default=self.script_target
-            )
-
-            self.expected_owner = Prompt.ask(
-                "Enter expected source owner", default=self.expected_owner
-            )
-
-            self.log_file = Prompt.ask("Enter log file path", default=self.log_file)
-
-            # Create updated configuration table
-            updated_table = Table(
-                show_header=True,
-                header_style=f"bold {NordColors.FROST_1}",
-                expand=True,
-                title=f"[bold {NordColors.FROST_2}]Updated Configuration[/]",
-                border_style=NordColors.FROST_3,
-                box=None,
-            )
-
-            updated_table.add_column("Parameter", style=f"bold {NordColors.FROST_4}")
-            updated_table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
-            updated_table.add_column("Status", justify="center")
-
-            # Check and display status of each parameter
-            source_exists = os.path.exists(self.script_source)
-            source_status = (
-                Text("✓ EXISTS", style=f"bold {NordColors.GREEN}")
-                if source_exists
-                else Text("✗ MISSING", style=f"bold {NordColors.RED}")
-            )
-
-            target_exists = os.path.exists(self.script_target)
-            target_status = (
-                Text("✓ EXISTS", style=f"bold {NordColors.GREEN}")
-                if target_exists
-                else Text("✗ MISSING", style=f"bold {NordColors.RED}")
-            )
-
-            log_dir = os.path.dirname(self.log_file)
-            log_writable = (
-                os.access(log_dir, os.W_OK) if os.path.exists(log_dir) else False
-            )
-            log_status = (
-                Text("✓ WRITABLE", style=f"bold {NordColors.GREEN}")
-                if log_writable
-                else Text("✗ NOT WRITABLE", style=f"bold {NordColors.RED}")
-            )
-
-            updated_table.add_row("Source Directory", self.script_source, source_status)
-            updated_table.add_row("Target Directory", self.script_target, target_status)
-            updated_table.add_row("Expected Owner", self.expected_owner, Text(""))
-            updated_table.add_row("Log File", self.log_file, log_status)
-
-            console.print(updated_table)
-            print_success("Deployment parameters updated.")
-        else:
-            print_message("Configuration unchanged.", NordColors.FROST_3)
 
     def deploy(self) -> bool:
         """
@@ -1007,63 +903,59 @@ class DeploymentManager:
         self.status.reset()
         self.status.stats["start_time"] = time.time()
 
-        console.clear()
-        console.print(create_header())
+        if self.verbose:
+            console.clear()
+            console.print(create_header())
 
-        # Display a deployment panel
-        deployment_panel = Panel(
-            Text.from_markup(
-                f"\n[bold {NordColors.FROST_2}]Source:[/] [{NordColors.SNOW_STORM_2}]{self.script_source}[/]\n"
-                f"[bold {NordColors.FROST_2}]Target:[/] [{NordColors.SNOW_STORM_2}]{self.script_target}[/]\n"
-                f"[bold {NordColors.FROST_2}]Owner:[/] [{NordColors.SNOW_STORM_2}]{self.expected_owner}[/]\n"
-            ),
-            title=f"[bold {NordColors.FROST_3}]Deployment Details[/]",
-            border_style=Style(color=NordColors.FROST_3),
-            padding=(1, 2),
-        )
-        console.print(deployment_panel)
+            # Display a deployment panel
+            deployment_panel = Panel(
+                Text.from_markup(
+                    f"\n[bold {NordColors.FROST_2}]Source:[/] [{NordColors.SNOW_STORM_2}]{self.script_source}[/]\n"
+                    f"[bold {NordColors.FROST_2}]Target:[/] [{NordColors.SNOW_STORM_2}]{self.script_target}[/]\n"
+                    f"[bold {NordColors.FROST_2}]Owner:[/] [{NordColors.SNOW_STORM_2}]{self.expected_owner}[/]\n"
+                ),
+                title=f"[bold {NordColors.FROST_3}]Deployment Details[/]",
+                border_style=Style(color=NordColors.FROST_3),
+                padding=(1, 2),
+            )
+            console.print(deployment_panel)
 
         # Perform verification steps
         if not self.verify_paths():
-            # Restore original signal handlers
             signal.signal(signal.SIGINT, original_sigint)
             signal.signal(signal.SIGTERM, original_sigterm)
             return False
 
         if not self.check_ownership():
-            # Restore original signal handlers
             signal.signal(signal.SIGINT, original_sigint)
             signal.signal(signal.SIGTERM, original_sigterm)
             return False
 
         if not self.perform_dry_run():
-            # Restore original signal handlers
             signal.signal(signal.SIGINT, original_sigint)
             signal.signal(signal.SIGTERM, original_sigterm)
             return False
 
-        # If no changes detected, ask if user still wants to proceed
+        # In automated mode, proceed with deployment if:
+        # 1. There are changes to deploy, or
+        # 2. The force flag is set to deploy even without changes
         total_changes = (
             self.status.stats["new_files"]
             + self.status.stats["updated_files"]
             + self.status.stats["deleted_files"]
         )
 
-        proceed = True
-        if total_changes == 0:
-            proceed = Confirm.ask(
-                "\nNo changes detected in dry run. Still proceed with deployment?",
-                default=False,
+        if total_changes == 0 and not self.force:
+            print_message(
+                "No changes detected. Skipping deployment. Use --force to deploy anyway.",
+                NordColors.YELLOW,
+                "•",
+                self.verbose,
             )
-        else:
-            proceed = Confirm.ask("\nProceed with deployment?", default=True)
-
-        if not proceed:
-            print_warning("Deployment cancelled by user.")
-            # Restore original signal handlers
+            self.status.stats["end_time"] = time.time()
             signal.signal(signal.SIGINT, original_sigint)
             signal.signal(signal.SIGTERM, original_sigterm)
-            return False
+            return True  # Consider this a success case
 
         # Execute deployment and set permissions
         deployment_success = self.execute_deployment()
@@ -1082,6 +974,9 @@ class DeploymentManager:
 
     def print_status_report(self) -> None:
         """Display a detailed report of the deployment status."""
+        if not self.verbose:
+            return
+
         status_panel = Panel(
             Text(
                 "Current deployment status and statistics",
@@ -1176,122 +1071,61 @@ class DeploymentManager:
                         )
                         log.write(f"Duration: {self.status.get_formatted_duration()}\n")
                         log.write("-" * 40 + "\n")
-                    print_success(f"Deployment details logged to {self.log_file}")
+                    print_success(
+                        f"Deployment details logged to {self.log_file}", self.verbose
+                    )
             except Exception as e:
-                print_warning(f"Could not write to log file: {e}")
+                print_warning(f"Could not write to log file: {e}", self.verbose)
 
 
 # ----------------------------------------------------------------
-# Interactive Menu
+# Command Line Argument Parsing
 # ----------------------------------------------------------------
-def display_menu() -> str:
+def parse_arguments() -> argparse.Namespace:
     """
-    Display the main menu and return the user's choice.
+    Parse command-line arguments.
 
     Returns:
-        The user's menu selection
+        Parsed arguments
     """
-    menu_panel = Panel(
-        Text.from_markup(
-            "\n"
-            f"[bold {NordColors.FROST_1}]1.[/] [bold {NordColors.FROST_2}]Configure Deployment Parameters[/]\n"
-            f"[bold {NordColors.FROST_1}]2.[/] [bold {NordColors.FROST_2}]Verify Paths and Ownership[/]\n"
-            f"[bold {NordColors.FROST_1}]3.[/] [bold {NordColors.FROST_2}]Run Dry Deployment (Analysis Only)[/]\n"
-            f"[bold {NordColors.FROST_1}]4.[/] [bold {NordColors.FROST_2}]Full Deployment[/]\n"
-            f"[bold {NordColors.FROST_1}]5.[/] [bold {NordColors.FROST_2}]View Deployment Status[/]\n"
-            f"[bold {NordColors.FROST_1}]6.[/] [bold {NordColors.FROST_2}]Exit[/]\n"
-        ),
-        title=f"[bold {NordColors.FROST_3}]Main Menu[/]",
-        border_style=Style(color=NordColors.FROST_3),
-        padding=(1, 2),
-    )
-    console.print(menu_panel)
-
-    return Prompt.ask(
-        "Select an option", choices=["1", "2", "3", "4", "5", "6"], default="1"
+    parser = argparse.ArgumentParser(
+        description=f"Automated Script Deployment System (v{VERSION})",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
+    # Get default values
+    default_owner = os.environ.get("SUDO_USER", os.environ.get("USER", "root"))
+    default_source = os.path.expanduser(f"~/scripts")
+    default_target = os.path.expanduser(f"~/bin")
+    default_log = "/var/log/script-deploy.log"
 
-def interactive_menu() -> None:
-    """Display and process the interactive menu."""
-    manager = DeploymentManager()
+    # Define arguments
+    parser.add_argument(
+        "--source",
+        default=default_source,
+        help=f"Source directory containing scripts (default: {default_source})",
+    )
+    parser.add_argument(
+        "--target",
+        default=default_target,
+        help=f"Target directory for deployment (default: {default_target})",
+    )
+    parser.add_argument(
+        "--owner",
+        default=default_owner,
+        help=f"Expected owner of source directory (default: {default_owner})",
+    )
+    parser.add_argument(
+        "--log", default=default_log, help=f"Path to log file (default: {default_log})"
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force deployment even if no changes are detected",
+    )
+    parser.add_argument("--quiet", action="store_true", help="Reduce output verbosity")
 
-    # Register signal handlers for the menu
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    atexit.register(cleanup)
-
-    # Check root privileges and dependencies
-    if not manager.check_root():
-        print_error("This script must be run as root (e.g., using sudo).")
-        sys.exit(1)
-
-    if not manager.check_dependencies():
-        print_error("Missing required dependencies. Please install them and try again.")
-        sys.exit(1)
-
-    while True:
-        console.clear()
-        console.print(create_header())
-
-        # Display current time and hostname
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        hostname = os.uname().nodename
-        console.print(
-            Align.center(
-                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
-                f"[{NordColors.SNOW_STORM_1}]Host: {hostname}[/]"
-            )
-        )
-        console.print()
-
-        choice = display_menu()
-
-        if choice == "1":
-            manager.configure_deployment()
-        elif choice == "2":
-            if manager.verify_paths():
-                manager.check_ownership()
-        elif choice == "3":
-            if manager.verify_paths() and manager.check_ownership():
-                manager.status.reset()
-                manager.status.stats["start_time"] = time.time()
-                manager.perform_dry_run()
-                manager.status.stats["end_time"] = time.time()
-                manager.print_status_report()
-        elif choice == "4":
-            if manager.deploy():
-                display_panel(
-                    "Deployment completed successfully.",
-                    style=NordColors.GREEN,
-                    title="Success",
-                )
-            else:
-                display_panel(
-                    "Deployment encountered errors.",
-                    style=NordColors.RED,
-                    title="Error",
-                )
-            manager.print_status_report()
-        elif choice == "5":
-            manager.print_status_report()
-        elif choice == "6":
-            console.clear()
-            console.print(create_header())
-            console.print(
-                Panel(
-                    Text(
-                        "Thank you for using the Script Deployment System!",
-                        style=f"bold {NordColors.FROST_2}",
-                    ),
-                    border_style=Style(color=NordColors.FROST_1),
-                    padding=(1, 2),
-                )
-            )
-            break
-
-        if choice != "6":
-            wait_for_keypress()
+    return parser.parse_args()
 
 
 # ----------------------------------------------------------------
@@ -1300,7 +1134,54 @@ def interactive_menu() -> None:
 def main() -> None:
     """Main application function."""
     try:
-        interactive_menu()
+        # Parse command-line arguments
+        args = parse_arguments()
+
+        # Initialize the deployment manager
+        manager = DeploymentManager(
+            script_source=args.source,
+            script_target=args.target,
+            expected_owner=args.owner,
+            log_file=args.log,
+            force=args.force,
+            verbose=not args.quiet,
+        )
+
+        # Check prerequisites
+        if not manager.check_root():
+            print_error("This script must be run as root (e.g., using sudo).")
+            sys.exit(1)
+
+        if not manager.check_dependencies():
+            print_error(
+                "Missing required dependencies. Please install them and try again."
+            )
+            sys.exit(1)
+
+        # Execute automated deployment
+        success = manager.deploy()
+
+        # Display final status
+        manager.print_status_report()
+
+        # Exit with appropriate status code
+        if success:
+            display_panel(
+                "Deployment completed successfully.",
+                style=NordColors.GREEN,
+                title="Success",
+                verbose=not args.quiet,
+            )
+            sys.exit(0)
+        else:
+            display_panel(
+                "Deployment encountered errors.",
+                style=NordColors.RED,
+                title="Error",
+                verbose=not args.quiet,
+            )
+            sys.exit(1)
+
     except KeyboardInterrupt:
         print_warning("\nScript interrupted by user.")
         sys.exit(130)

@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """
-Enhanced Security Tools Installer
+Fully Automated Security Tools Installer
 --------------------------------------------------
 
-A streamlined system configuration tool that installs and configures security,
+A zero-interaction system configuration tool that installs and configures security,
 analysis, development, and intrusion detection tools on Ubuntu systems.
+Runs completely unattended with no user interaction or command line options.
 
 Usage:
-  Run with sudo: sudo python3 security_installer.py
-  Options:
-    --simulate: Simulate installation without making changes
-    --skip-confirm: Skip confirmation prompts
-    --skip-failed: Continue even if some packages fail to install
+  Simply run with sudo: sudo python3 security_installer.py
 
-Version: 5.2.0
+Version: 1.0.0
 """
 
 import os
@@ -25,10 +22,13 @@ import glob
 import signal
 import atexit
 import json
-import argparse
+
+# No command line argument parsing needed
+import platform
+import shutil
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple, Any, Callable
+from typing import List, Dict, Optional, Tuple, Any, Callable, Set
 from concurrent.futures import ThreadPoolExecutor
 
 # ----------------------------------------------------------------
@@ -39,7 +39,6 @@ try:
     from rich.console import Console
     from rich.text import Text
     from rich.table import Table
-    from rich.live import Live
     from rich.columns import Columns
     from rich.panel import Panel
     from rich.progress import (
@@ -74,11 +73,12 @@ install_rich_traceback(show_locals=True)
 # ----------------------------------------------------------------
 # Configuration
 # ----------------------------------------------------------------
-VERSION: str = "5.2.0"
-APP_NAME: str = "Security Tools Installer"
-APP_SUBTITLE: str = "System Security Configuration Tool"
-LOG_DIR = Path("/var/log/security_setup")
-LOG_FILE = LOG_DIR / f"security_setup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+VERSION: str = "1.0.0"
+APP_NAME: str = "Unattended Security Tools Installer"
+APP_SUBTITLE: str = "Automated System Security Configuration"
+DEFAULT_LOG_DIR = Path("/var/log/security_setup")
+DEFAULT_REPORT_DIR = Path("/var/log/security_setup/reports")
+OPERATION_TIMEOUT: int = 600  # 10 minutes for long package installations
 
 
 # ----------------------------------------------------------------
@@ -249,7 +249,17 @@ PROBLEMATIC_PACKAGES = {
         "service": "samhain.service",
         "config_dirs": ["/etc/samhain", "/var/lib/samhain"],
         "force_remove": True,
-    }
+    },
+    "ettercap-graphical": {
+        "service": "ettercap.service",
+        "config_dirs": ["/etc/ettercap"],
+        "force_remove": False,
+    },
+    "openvas": {
+        "service": "openvas.service",
+        "config_dirs": ["/etc/openvas"],
+        "force_remove": False,
+    },
 }
 
 # Create a Rich Console
@@ -259,29 +269,39 @@ console: Console = Console(theme=None, highlight=False)
 # ----------------------------------------------------------------
 # Console and Logging Helpers
 # ----------------------------------------------------------------
-def setup_logging() -> logging.Logger:
+def setup_logging(log_dir: Path, verbose: bool = False) -> logging.Logger:
     """
     Set up logging configuration with RichHandler.
+
+    Args:
+        log_dir: Directory for log files
+        verbose: Whether to show verbose output
 
     Returns:
         Logger instance for the application
     """
     # Create log directory if it doesn't exist
-    LOG_DIR.mkdir(exist_ok=True, parents=True)
+    log_dir.mkdir(exist_ok=True, parents=True)
+    log_file = (
+        log_dir / f"security_setup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    )
 
+    # Set log level based on verbosity
+    log_level = logging.DEBUG if verbose else logging.INFO
+
+    # Configure logging
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
-            RichHandler(console=console, rich_tracebacks=True),
-            logging.FileHandler(LOG_FILE),
+            RichHandler(console=console, rich_tracebacks=True, level=log_level),
+            logging.FileHandler(log_file),
         ],
     )
-    return logging.getLogger("security_setup")
+    logger = logging.getLogger("security_setup")
+    logger.info(f"Logging initialized. Log file: {log_file}")
 
-
-# Initialize logger
-logger = setup_logging()
+    return logger
 
 
 def create_header() -> Panel:
@@ -297,7 +317,7 @@ def create_header() -> Panel:
     # Try each font until we find one that works well
     for font_name in compact_fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)
+            fig = pyfiglet.Figlet(font=font_name, width=80)
             ascii_art = fig.renderText(APP_NAME)
 
             # If we got a reasonable result, use it
@@ -334,7 +354,7 @@ def create_header() -> Panel:
         styled_text += f"[bold {color}]{line}[/]\n"
 
     # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 60 + "[/]"
+    tech_border = f"[{NordColors.FROST_3}]" + "━" * 80 + "[/]"
     styled_text = tech_border + "\n" + styled_text + tech_border
 
     # Create a panel with the header
@@ -352,17 +372,29 @@ def create_header() -> Panel:
 
 
 def print_message(
-    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+    text: str,
+    style: str = NordColors.FROST_2,
+    prefix: str = "•",
+    logger: Optional[logging.Logger] = None,
 ) -> None:
     """
-    Print a styled message.
+    Print a styled message and optionally log it.
 
     Args:
         text: The message to display
         style: The color style to use
         prefix: The prefix symbol
+        logger: Optional logger to also log the message
     """
     console.print(f"[{style}]{prefix} {text}[/{style}]")
+    if logger:
+        log_text = f"{prefix} {text}"
+        if style == NordColors.RED:
+            logger.error(log_text)
+        elif style == NordColors.YELLOW:
+            logger.warning(log_text)
+        else:
+            logger.info(log_text)
 
 
 def display_panel(
@@ -388,30 +420,55 @@ def display_panel(
 # ----------------------------------------------------------------
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
-def cleanup() -> None:
-    """Perform any cleanup tasks before exit."""
-    print_message("Cleaning up...", NordColors.FROST_3)
-    # Additional cleanup tasks can be added here
+def cleanup(logger: Optional[logging.Logger] = None) -> None:
+    """
+    Perform any cleanup tasks before exit.
+
+    Args:
+        logger: Optional logger to log cleanup messages
+    """
+    message = "Cleaning up resources and temporary files..."
+    print_message(message, NordColors.FROST_3)
+    if logger:
+        logger.info(message)
+
+    # Remove any temporary files that might have been created
+    temp_files = glob.glob("/tmp/security_setup_*")
+    for file in temp_files:
+        try:
+            os.remove(file)
+            if logger:
+                logger.debug(f"Removed temporary file: {file}")
+        except OSError:
+            if logger:
+                logger.debug(f"Failed to remove temporary file: {file}")
 
 
-def signal_handler(sig: int, frame: Any) -> None:
+def signal_handler(
+    sig: int, frame: Any, logger: Optional[logging.Logger] = None
+) -> None:
     """
     Handle process termination signals gracefully.
 
     Args:
         sig: Signal number
         frame: Current stack frame
+        logger: Optional logger to log signal information
     """
-    sig_name: str = signal.Signals(sig).name
-    print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
-    cleanup()
+    try:
+        sig_name: str = signal.Signals(sig).name
+        message = f"Process interrupted by {sig_name} signal"
+        print_message(message, NordColors.YELLOW, "⚠")
+        if logger:
+            logger.warning(message)
+    except ValueError:
+        message = f"Process interrupted by signal {sig}"
+        print_message(message, NordColors.YELLOW, "⚠")
+        if logger:
+            logger.warning(message)
+
+    cleanup(logger)
     sys.exit(128 + sig)
-
-
-# Register signal handlers
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-atexit.register(cleanup)
 
 
 # ----------------------------------------------------------------
@@ -422,7 +479,8 @@ def run_command(
     env: Optional[Dict[str, str]] = None,
     check: bool = True,
     capture_output: bool = True,
-    timeout: int = 30,
+    timeout: int = OPERATION_TIMEOUT,
+    logger: Optional[logging.Logger] = None,
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
@@ -433,11 +491,16 @@ def run_command(
         check: Whether to check the return code
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
+        logger: Optional logger to log command information
 
     Returns:
         CompletedProcess instance with command results
     """
+    cmd_str = " ".join(cmd)
     try:
+        if logger:
+            logger.debug(f"Executing command: {cmd_str}")
+
         result = subprocess.run(
             cmd,
             env=env or os.environ.copy(),
@@ -446,19 +509,45 @@ def run_command(
             capture_output=capture_output,
             timeout=timeout,
         )
+
+        if logger and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Command completed: {cmd_str} (return code: {result.returncode})"
+            )
+            if (
+                result.stdout and len(result.stdout) < 1000
+            ):  # Don't log very large outputs
+                logger.debug(f"Command stdout: {result.stdout.strip()}")
+
         return result
     except subprocess.CalledProcessError as e:
-        print_message(f"Command failed: {' '.join(cmd)}", NordColors.RED, "✗")
-        if e.stdout:
+        message = f"Command failed: {cmd_str}"
+        print_message(message, NordColors.RED, "✗")
+
+        if logger:
+            logger.error(message)
+            if e.stdout:
+                logger.error(f"Command stdout: {e.stdout.strip()}")
+            if e.stderr:
+                logger.error(f"Command stderr: {e.stderr.strip()}")
+
+        if e.stdout and capture_output:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if e.stderr:
+        if e.stderr and capture_output:
             console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
+
         raise
     except subprocess.TimeoutExpired:
-        print_message(f"Command timed out after {timeout} seconds", NordColors.RED, "✗")
+        message = f"Command timed out after {timeout} seconds: {cmd_str}"
+        print_message(message, NordColors.RED, "✗")
+        if logger:
+            logger.error(message)
         raise
     except Exception as e:
-        print_message(f"Error executing command: {e}", NordColors.RED, "✗")
+        message = f"Error executing command: {cmd_str} - Error: {e}"
+        print_message(message, NordColors.RED, "✗")
+        if logger:
+            logger.error(message, exc_info=True)
         raise
 
 
@@ -468,15 +557,67 @@ def run_command(
 class SystemSetup:
     """Handles system setup and package management operations."""
 
-    def __init__(self, simulate: bool = False):
+    def __init__(
+        self,
+        simulate: bool = False,
+        verbose: bool = False,
+        logger: Optional[logging.Logger] = None,
+        selected_categories: Optional[List[str]] = None,
+    ):
         self.simulate = simulate
+        self.verbose = verbose
+        self.logger = logger
+        self.selected_categories = selected_categories
         self.failed_packages: List[str] = []
         self.successful_packages: List[str] = []
+        self.skipped_packages: List[str] = []
+        self.start_time = datetime.now()
 
     @staticmethod
     def check_root() -> bool:
         """Check if script is running with root privileges."""
         return os.geteuid() == 0
+
+    def get_target_packages(self) -> List[str]:
+        """
+        Get the list of packages to install based on selected categories.
+
+        Returns:
+            List of package names to install
+        """
+        if not self.selected_categories:
+            # No specific categories selected, install all packages
+            all_packages = [pkg for tools in SECURITY_TOOLS.values() for pkg in tools]
+            return list(set(all_packages))  # Remove duplicates
+
+        # Only install packages from selected categories
+        target_packages = []
+        for category, packages in SECURITY_TOOLS.items():
+            if category in self.selected_categories:
+                target_packages.extend(packages)
+
+        return list(set(target_packages))  # Remove duplicates
+
+    def log_operation(
+        self, message: str, level: str = "info", prefix: str = "•"
+    ) -> None:
+        """
+        Log an operation message with appropriate styling.
+
+        Args:
+            message: Message to log
+            level: Logging level (info, warning, error)
+            prefix: Prefix symbol for the message
+        """
+        style_map = {
+            "info": NordColors.FROST_2,
+            "warning": NordColors.YELLOW,
+            "error": NordColors.RED,
+            "success": NordColors.GREEN,
+        }
+
+        style = style_map.get(level, NordColors.FROST_2)
+        print_message(message, style, prefix, self.logger)
 
     def remove_problematic_package(self, package_name: str) -> bool:
         """
@@ -489,7 +630,9 @@ class SystemSetup:
             True if removal was successful or simulated, False otherwise
         """
         if self.simulate:
-            logger.info(f"Simulating removal of problematic package {package_name}")
+            self.log_operation(
+                f"Simulating removal of problematic package {package_name}"
+            )
             return True
 
         pkg_info = PROBLEMATIC_PACKAGES.get(package_name)
@@ -499,9 +642,7 @@ class SystemSetup:
         try:
             # Stop the service if it exists
             if pkg_info.get("service"):
-                print_message(
-                    f"Stopping service {pkg_info['service']}...", NordColors.FROST_3
-                )
+                self.log_operation(f"Stopping service {pkg_info['service']}...")
                 subprocess.run(
                     ["systemctl", "stop", pkg_info["service"]],
                     check=False,
@@ -509,16 +650,15 @@ class SystemSetup:
                 )
 
             # Kill any running processes
-            print_message(
-                f"Terminating any running processes for {package_name}...",
-                NordColors.FROST_3,
+            self.log_operation(
+                f"Terminating any running processes for {package_name}..."
             )
             subprocess.run(
                 ["killall", "-9", package_name], check=False, stderr=subprocess.DEVNULL
             )
 
             # Remove package using different methods
-            print_message(f"Removing package {package_name}...", NordColors.FROST_3)
+            self.log_operation(f"Removing package {package_name}...")
             commands = [
                 ["apt-get", "remove", "-y", package_name],
                 ["apt-get", "purge", "-y", package_name],
@@ -537,19 +677,20 @@ class SystemSetup:
                 for directory in pkg_info["config_dirs"]:
                     try:
                         if Path(directory).exists():
-                            print_message(
-                                f"Removing directory {directory}...", NordColors.FROST_3
-                            )
+                            self.log_operation(f"Removing directory {directory}...")
                             subprocess.run(["rm", "-rf", directory], check=False)
                     except Exception as e:
-                        logger.warning(f"Failed to remove directory {directory}: {e}")
+                        if self.logger:
+                            self.logger.warning(
+                                f"Failed to remove directory {directory}: {e}"
+                            )
 
             # Final cleanup of package status
             status_file = "/var/lib/dpkg/status"
             temp_file = "/var/lib/dpkg/status.tmp"
             try:
                 if pkg_info.get("force_remove"):
-                    print_message("Cleaning package status file...", NordColors.FROST_3)
+                    self.log_operation("Cleaning package status file...")
                     with open(status_file, "r") as f_in, open(temp_file, "w") as f_out:
                         skip_block = False
                         for line in f_in:
@@ -562,15 +703,19 @@ class SystemSetup:
                                 f_out.write(line)
                     os.rename(temp_file, status_file)
             except Exception as e:
-                logger.warning(f"Failed to clean package status: {e}")
+                if self.logger:
+                    self.logger.warning(f"Failed to clean package status: {e}")
 
-            print_message(
-                f"Package {package_name} removed successfully", NordColors.GREEN, "✓"
+            self.log_operation(
+                f"Package {package_name} removed successfully", "success", "✓"
             )
             return True
 
         except Exception as e:
-            logger.error(f"Failed to remove problematic package {package_name}: {e}")
+            if self.logger:
+                self.logger.error(
+                    f"Failed to remove problematic package {package_name}: {e}"
+                )
             return False
 
     def cleanup_package_system(self) -> bool:
@@ -581,67 +726,59 @@ class SystemSetup:
             True if cleanup was successful or simulated, False otherwise
         """
         try:
-            # Clean up invalid .bak files in apt.conf.d
-            apt_conf_path = "/etc/apt/apt.conf.d/"
-
             if self.simulate:
-                print_message(
-                    "Simulating package system cleanup...", NordColors.FROST_3
-                )
+                self.log_operation("Simulating package system cleanup...")
                 time.sleep(1)
                 return True
 
+            # Clean up invalid .bak files in apt.conf.d
+            apt_conf_path = "/etc/apt/apt.conf.d/"
             invalid_files = glob.glob(f"{apt_conf_path}/*.bak.*")
+
             if invalid_files:
-                print_message(
-                    f"Found {len(invalid_files)} invalid files to remove",
-                    NordColors.FROST_3,
+                self.log_operation(
+                    f"Found {len(invalid_files)} invalid files to remove"
                 )
                 for file in invalid_files:
                     try:
                         os.remove(file)
-                        logger.info(f"Removed invalid file: {file}")
+                        if self.logger:
+                            self.logger.info(f"Removed invalid file: {file}")
                     except OSError as e:
-                        logger.error(f"Failed to remove {file}: {e}")
+                        if self.logger:
+                            self.logger.error(f"Failed to remove {file}: {e}")
             else:
-                print_message("No invalid backup files found", NordColors.FROST_3)
+                self.log_operation("No invalid backup files found")
 
             # Remove problematic packages first
             for package in PROBLEMATIC_PACKAGES:
-                print_message(
-                    f"Checking problematic package: {package}", NordColors.FROST_3
-                )
+                self.log_operation(f"Checking problematic package: {package}")
                 if not self.remove_problematic_package(package):
-                    logger.warning(f"Failed to completely remove {package}")
+                    if self.logger:
+                        self.logger.warning(f"Failed to completely remove {package}")
 
             # Fix any interrupted dpkg processes
-            print_message(
-                "Configuring pending package installations...", NordColors.FROST_3
-            )
-            run_command(["dpkg", "--configure", "-a"])
+            self.log_operation("Configuring pending package installations...")
+            run_command(["dpkg", "--configure", "-a"], logger=self.logger)
 
             # Check if nala is installed, if not, use apt
-            if Path("/usr/bin/nala").exists():
-                print_message("Cleaning package cache with nala...", NordColors.FROST_3)
-                run_command(["nala", "clean"])
-                print_message(
-                    "Removing unused packages with nala...", NordColors.FROST_3
-                )
-                run_command(["nala", "autoremove", "-y"])
-            else:
-                print_message("Cleaning package cache with apt...", NordColors.FROST_3)
-                run_command(["apt", "clean"])
-                print_message(
-                    "Removing unused packages with apt...", NordColors.FROST_3
-                )
-                run_command(["apt", "autoremove", "-y"])
+            use_nala = Path("/usr/bin/nala").exists()
+            pkg_manager = "nala" if use_nala else "apt"
 
-            print_message(
-                "Package system cleanup completed successfully", NordColors.GREEN, "✓"
+            self.log_operation(f"Cleaning package cache with {pkg_manager}...")
+            run_command([pkg_manager, "clean"], logger=self.logger)
+
+            self.log_operation(f"Removing unused packages with {pkg_manager}...")
+            run_command([pkg_manager, "autoremove", "-y"], logger=self.logger)
+
+            self.log_operation(
+                "Package system cleanup completed successfully", "success", "✓"
             )
             return True
+
         except subprocess.CalledProcessError as e:
-            logger.error(f"Package system cleanup failed: {e}")
+            if self.logger:
+                self.logger.error(f"Package system cleanup failed: {e}")
             return False
 
     def setup_package_manager(self) -> bool:
@@ -653,135 +790,377 @@ class SystemSetup:
         """
         try:
             if self.simulate:
-                print_message("Simulating package manager setup...", NordColors.FROST_3)
+                self.log_operation("Simulating package manager setup...")
                 time.sleep(1)
                 return True
 
-            # First install nala if not present
+            # First install nala if not present (for better package management)
             has_nala = Path("/usr/bin/nala").exists()
 
             if not has_nala:
-                print_message("Installing nala package manager...", NordColors.FROST_3)
-                run_command(["apt", "update"])
-                run_command(["apt", "install", "nala", "-y"])
-                print_message(
-                    "Nala package manager installed successfully", NordColors.GREEN, "✓"
+                self.log_operation("Installing nala package manager...")
+                run_command(["apt", "update"], logger=self.logger)
+                run_command(["apt", "install", "nala", "-y"], logger=self.logger)
+                self.log_operation(
+                    "Nala package manager installed successfully", "success", "✓"
                 )
                 has_nala = True
 
             # Update package lists
-            if has_nala:
-                print_message("Updating package lists with nala...", NordColors.FROST_3)
-                run_command(["nala", "update"])
-                print_message("Upgrading packages with nala...", NordColors.FROST_3)
-                run_command(["nala", "upgrade", "-y"])
-            else:
-                print_message("Updating package lists with apt...", NordColors.FROST_3)
-                run_command(["apt", "update"])
-                print_message("Upgrading packages with apt...", NordColors.FROST_3)
-                run_command(["apt", "upgrade", "-y"])
+            pkg_manager = "nala" if has_nala else "apt"
+            self.log_operation(f"Updating package lists with {pkg_manager}...")
+            run_command([pkg_manager, "update"], logger=self.logger)
 
-            print_message(
-                "Package manager setup completed successfully", NordColors.GREEN, "✓"
+            self.log_operation(f"Upgrading packages with {pkg_manager}...")
+            run_command([pkg_manager, "upgrade", "-y"], logger=self.logger)
+
+            self.log_operation(
+                "Package manager setup completed successfully", "success", "✓"
             )
             return True
+
         except subprocess.CalledProcessError as e:
-            logger.error(f"Package manager setup failed: {e}")
+            if self.logger:
+                self.logger.error(f"Package manager setup failed: {e}")
             return False
 
-    def install_packages(self, packages: List[str]) -> Tuple[bool, List[str]]:
+    def install_packages(
+        self, packages: List[str], skip_failed: bool = False
+    ) -> Tuple[bool, List[str]]:
         """
         Install packages using nala or apt.
 
         Args:
             packages: List of package names to install
+            skip_failed: Whether to continue even if some packages fail
 
         Returns:
             Tuple of (success, failed_packages)
         """
         try:
             if self.simulate:
-                print_message(
-                    f"Simulating installation of {len(packages)} packages",
-                    NordColors.YELLOW,
+                self.log_operation(
+                    f"Simulating installation of {len(packages)} packages", "warning"
                 )
                 time.sleep(2)
                 return True, []
 
-            failed_packages = []
+            # Check for presence of nala package manager
             has_nala = Path("/usr/bin/nala").exists()
             pkg_manager = "nala" if has_nala else "apt"
 
-            # Install in chunks to avoid command line length limits
-            chunk_size = 20
-            for i in range(0, len(packages), chunk_size):
-                chunk = packages[i : i + chunk_size]
-                try:
-                    print_message(
-                        f"Installing packages {i + 1}-{min(i + chunk_size, len(packages))} of {len(packages)}...",
-                        NordColors.FROST_3,
-                    )
-                    run_command([pkg_manager, "install", "-y"] + chunk)
-                    self.successful_packages.extend(chunk)
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"Failed to install chunk: {e}")
-                    failed_packages.extend(chunk)
+            # Add --assume-yes for apt to avoid interactive prompts
+            install_cmd = [pkg_manager, "install", "-y", "--no-install-recommends"]
 
-                    # Try to install packages individually if chunk fails
-                    print_message(
-                        "Retrying failed packages individually...",
-                        NordColors.YELLOW,
-                        "⚠",
-                    )
-                    for package in chunk:
-                        if package not in self.successful_packages:
-                            try:
-                                print_message(
-                                    f"Installing {package}...", NordColors.FROST_3
-                                )
-                                run_command([pkg_manager, "install", "-y", package])
-                                self.successful_packages.append(package)
-                                if package in failed_packages:
-                                    failed_packages.remove(package)
-                            except subprocess.CalledProcessError:
-                                logger.error(
-                                    f"Failed to install individual package: {package}"
-                                )
-                                if package not in failed_packages:
+            # Add options to avoid interactive prompts completely
+            env = os.environ.copy()
+            env["DEBIAN_FRONTEND"] = "noninteractive"
+
+            failed_packages = []
+            # Install in chunks to avoid command line length limits
+            chunk_size = 15  # Smaller chunks for better error handling
+
+            with Progress(
+                SpinnerColumn(style=f"{NordColors.FROST_1}"),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(
+                    bar_width=40,
+                    style=NordColors.FROST_4,
+                    complete_style=NordColors.FROST_2,
+                ),
+                TextColumn("[bold {task.percentage:>3.0f}%]"),
+                TimeRemainingColumn(),
+                console=console,
+            ) as progress:
+                install_task = progress.add_task(
+                    f"[{NordColors.FROST_2}]Installing packages...", total=len(packages)
+                )
+
+                for i in range(0, len(packages), chunk_size):
+                    chunk = packages[i : i + chunk_size]
+                    try:
+                        progress.update(
+                            install_task,
+                            description=f"[{NordColors.FROST_2}]Installing packages {i + 1}-{min(i + chunk_size, len(packages))} of {len(packages)}...",
+                        )
+
+                        run_command(install_cmd + chunk, env=env, logger=self.logger)
+                        self.successful_packages.extend(chunk)
+                        progress.advance(install_task, len(chunk))
+
+                    except subprocess.CalledProcessError as e:
+                        # Chunk failed, try individual packages
+                        if self.logger:
+                            self.logger.error(f"Failed to install chunk: {e}")
+
+                        progress.update(
+                            install_task,
+                            description=f"[{NordColors.YELLOW}]Retrying failed packages individually...",
+                        )
+
+                        for package in chunk:
+                            if package not in self.successful_packages:
+                                try:
+                                    run_command(
+                                        install_cmd + [package],
+                                        env=env,
+                                        logger=self.logger,
+                                    )
+                                    self.successful_packages.append(package)
+                                    progress.advance(install_task, 1)
+
+                                except subprocess.CalledProcessError:
                                     failed_packages.append(package)
+                                    if self.logger:
+                                        self.logger.error(
+                                            f"Failed to install individual package: {package}"
+                                        )
+
+                                    # Still advance the progress bar
+                                    progress.advance(install_task, 1)
 
             if failed_packages:
-                return False, failed_packages
+                if skip_failed:
+                    self.log_operation(
+                        f"Completed with {len(failed_packages)} package failures, continuing as requested...",
+                        "warning",
+                        "⚠",
+                    )
+                    self.failed_packages = failed_packages
+                    return True, failed_packages
+                else:
+                    self.log_operation(
+                        f"Installation failed for {len(failed_packages)} packages",
+                        "error",
+                        "✗",
+                    )
+                    self.failed_packages = failed_packages
+                    return False, failed_packages
+
+            self.log_operation(
+                f"Successfully installed all {len(self.successful_packages)} packages",
+                "success",
+                "✓",
+            )
             return True, []
 
         except Exception as e:
-            logger.error(f"Package installation failed: {e}")
+            if self.logger:
+                self.logger.error(f"Package installation failed: {e}", exc_info=True)
+            self.failed_packages = packages
+            self.log_operation(f"Installation failed: {e}", "error", "✗")
             return False, packages
 
-    def save_installation_report(self) -> None:
-        """Save installation report to a JSON file."""
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "successful_packages": sorted(self.successful_packages),
-            "failed_packages": sorted(self.failed_packages),
-            "simulation_mode": self.simulate,
+    def configure_installed_services(self) -> bool:
+        """
+        Configure and enable key services that were installed.
+
+        Returns:
+            True if configuration was successful, False otherwise
+        """
+        try:
+            if self.simulate:
+                self.log_operation("Simulating service configuration...")
+                time.sleep(1)
+                return True
+
+            # Services to enable and start
+            services_to_configure = {
+                "ufw": {
+                    "enable": True,
+                    "commands": [
+                        ["ufw", "default", "deny", "incoming"],
+                        ["ufw", "default", "allow", "outgoing"],
+                        ["ufw", "allow", "ssh"],
+                        ["ufw", "--force", "enable"],
+                    ],
+                },
+                "fail2ban": {"enable": True, "commands": []},
+                "clamav-freshclam": {
+                    "enable": True,
+                    "commands": [
+                        ["systemctl", "stop", "clamav-freshclam"],
+                        ["freshclam"],
+                    ],
+                },
+                "apparmor": {"enable": True, "commands": []},
+                "auditd": {"enable": True, "commands": []},
+            }
+
+            for service, config in services_to_configure.items():
+                # Check if the service package is installed
+                if self._check_if_installed(service):
+                    self.log_operation(f"Configuring {service}...")
+
+                    # Run any specific commands for this service
+                    for cmd in config.get("commands", []):
+                        try:
+                            run_command(cmd, check=False, logger=self.logger)
+                        except Exception as e:
+                            self.log_operation(
+                                f"Command failed for {service}: {e}", "warning", "⚠"
+                            )
+
+                    # Enable and start the service if requested
+                    if config.get("enable", False):
+                        try:
+                            self.log_operation(f"Enabling and starting {service}...")
+                            run_command(
+                                ["systemctl", "enable", service],
+                                check=False,
+                                logger=self.logger,
+                            )
+                            run_command(
+                                ["systemctl", "restart", service],
+                                check=False,
+                                logger=self.logger,
+                            )
+                        except Exception as e:
+                            self.log_operation(
+                                f"Failed to enable/start {service}: {e}", "warning", "⚠"
+                            )
+                else:
+                    if self.logger:
+                        self.logger.debug(
+                            f"Service {service} not installed, skipping configuration"
+                        )
+
+            self.log_operation("Service configuration completed", "success", "✓")
+            return True
+
+        except Exception as e:
+            self.log_operation(f"Service configuration failed: {e}", "error", "✗")
+            if self.logger:
+                self.logger.error(f"Service configuration failed: {e}", exc_info=True)
+            return False
+
+    def _check_if_installed(self, package: str) -> bool:
+        """
+        Check if a package is installed.
+
+        Args:
+            package: Package name to check
+
+        Returns:
+            True if the package is installed, False otherwise
+        """
+        try:
+            result = run_command(
+                ["dpkg", "-l", package],
+                check=False,
+                capture_output=True,
+                logger=self.logger,
+            )
+            return "ii" in result.stdout and package in result.stdout
+        except Exception:
+            return False
+
+    def save_installation_report(self, report_dir: Path) -> str:
+        """
+        Save installation report to a JSON file.
+
+        Args:
+            report_dir: Directory to save report
+
+        Returns:
+            Path to the saved report file
+        """
+        # Create report directory if it doesn't exist
+        report_dir.mkdir(exist_ok=True, parents=True)
+
+        # Calculate elapsed time
+        elapsed_time = (datetime.now() - self.start_time).total_seconds()
+        elapsed_str = f"{int(elapsed_time // 60)}m {int(elapsed_time % 60)}s"
+
+        # Get system information
+        system_info = {
+            "hostname": platform.node(),
+            "system": platform.system(),
+            "release": platform.release(),
+            "version": platform.version(),
+            "processor": platform.processor(),
+            "python_version": platform.python_version(),
         }
 
-        report_file = (
-            LOG_DIR
-            / f"installation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        )
+        # Create the report
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "system_info": system_info,
+            "duration": elapsed_str,
+            "successful_packages": sorted(self.successful_packages),
+            "failed_packages": sorted(self.failed_packages),
+            "skipped_packages": sorted(self.skipped_packages),
+            "simulation_mode": self.simulate,
+            "selected_categories": self.selected_categories,
+            "total_packages_attempted": len(self.successful_packages)
+            + len(self.failed_packages)
+            + len(self.skipped_packages),
+        }
+
+        # Save the report
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_file = report_dir / f"installation_report_{timestamp}.json"
+        report_txt = report_dir / f"installation_report_{timestamp}.txt"
+
+        # Save JSON format
         with open(report_file, "w") as f:
             json.dump(report, f, indent=2)
-        logger.info(f"Installation report saved to {report_file}")
-        print_message(f"Installation report saved to {report_file}", NordColors.FROST_3)
+
+        # Save human-readable format
+        with open(report_txt, "w") as f:
+            f.write(f"Security Tools Installation Report\n")
+            f.write(f"================================\n\n")
+            f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Duration: {elapsed_str}\n")
+            f.write(f"Simulation Mode: {'Yes' if self.simulate else 'No'}\n\n")
+
+            f.write(f"System Information:\n")
+            for key, value in system_info.items():
+                f.write(f"  {key}: {value}\n")
+
+            f.write(f"\nInstallation Summary:\n")
+            f.write(
+                f"  Successfully installed: {len(self.successful_packages)} packages\n"
+            )
+            f.write(f"  Failed to install: {len(self.failed_packages)} packages\n")
+            f.write(f"  Skipped: {len(self.skipped_packages)} packages\n")
+            f.write(
+                f"  Total packages attempted: {report['total_packages_attempted']}\n\n"
+            )
+
+            if self.selected_categories:
+                f.write(f"Selected categories:\n")
+                for category in self.selected_categories:
+                    f.write(f"  - {category}\n")
+                f.write("\n")
+
+            if self.failed_packages:
+                f.write(f"Failed packages:\n")
+                for package in sorted(self.failed_packages):
+                    f.write(f"  - {package}\n")
+                f.write("\n")
+
+        if self.logger:
+            self.logger.info(
+                f"Installation report saved to {report_file} and {report_txt}"
+            )
+
+        self.log_operation(f"Installation report saved to {report_file}", "info")
+
+        return str(report_file)
 
 
 # ----------------------------------------------------------------
 # UI Components
 # ----------------------------------------------------------------
-def show_installation_plan() -> None:
-    """Display installation plan with category table."""
+def show_installation_plan(selected_categories: Optional[List[str]] = None) -> None:
+    """
+    Display installation plan with all categories in a table.
+    Since the script is fully automated, this is just informational.
+
+    Args:
+        selected_categories: List of categories to install, or None for all
+    """
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -794,18 +1173,33 @@ def show_installation_plan() -> None:
     table.add_column("Package List", style=f"dim {NordColors.SNOW_STORM_1}")
 
     total = 0
-    for category, tools in SECURITY_TOOLS.items():
+    categories_to_show = SECURITY_TOOLS.items()
+
+    # If specific categories are selected, only show those
+    if selected_categories:
+        categories_to_show = {
+            category: tools
+            for category, tools in SECURITY_TOOLS.items()
+            if category in selected_categories
+        }.items()
+
+    for category, tools in categories_to_show:
         # Format the list of tools nicely
         tool_list = ", ".join(tools[:4])
         if len(tools) > 4:
             tool_list += f" +{len(tools) - 4} more"
 
-        table.add_row(category, str(len(tools)), tool_list)
+        # Use a checkmark for selected categories
+        prefix = (
+            "✓ " if (not selected_categories or category in selected_categories) else ""
+        )
+
+        table.add_row(f"{prefix}{category}", str(len(tools)), tool_list)
         total += len(tools)
 
     # Get unique package count (some packages may appear in multiple categories)
     unique_packages = set()
-    for tools in SECURITY_TOOLS.values():
+    for category, tools in categories_to_show:
         unique_packages.update(tools)
 
     console.print(
@@ -815,65 +1209,78 @@ def show_installation_plan() -> None:
             border_style=f"{NordColors.FROST_2}",
         )
     )
-    console.print(
-        f"Total packages to install: [bold {NordColors.FROST_1}]{len(unique_packages)}[/] (from {total} category entries)"
-    )
+
+    if selected_categories:
+        console.print(
+            f"Installing [bold {NordColors.FROST_1}]{len(unique_packages)}[/] unique packages "
+            f"from [bold {NordColors.FROST_1}]{len(selected_categories)}[/] selected categories"
+        )
+    else:
+        console.print(
+            f"Installing [bold {NordColors.FROST_1}]{len(unique_packages)}[/] unique packages "
+            f"from all {len(SECURITY_TOOLS)} categories"
+        )
 
 
 # ----------------------------------------------------------------
 # Main Application Function
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main execution function."""
-    parser = argparse.ArgumentParser(description="Security Tools Installer")
-    parser.add_argument("--simulate", action="store_true", help="Simulate installation")
-    parser.add_argument("--skip-confirm", action="store_true", help="Skip confirmation")
-    parser.add_argument(
-        "--skip-failed", action="store_true", help="Continue on package failures"
-    )
-    args = parser.parse_args()
+    """Main execution function with fully automated operation."""
+    # Set default configuration
+    simulate = False  # Actually perform installation
+    verbose = False  # Normal output level
+    skip_failed = True  # Continue despite package failures
+    selected_categories = None  # Install all categories
+    report_dir = DEFAULT_REPORT_DIR
+    log_dir = DEFAULT_LOG_DIR
+    show_header = True  # Display the ASCII art header
+
+    # Setup logging
+    logger = setup_logging(log_dir, verbose)
+
+    # Register signal handlers with logger
+    def handle_signal(sig, frame):
+        signal_handler(sig, frame, logger)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    # Register cleanup with logger
+    def handle_cleanup():
+        cleanup(logger)
+
+    atexit.register(handle_cleanup)
 
     try:
+        # Check for root privileges (required for package management)
         if not SystemSetup.check_root():
-            console.print(
-                Panel(
-                    "[bold]This script requires root privileges.[/]\n"
-                    "Please run with sudo: [bold cyan]sudo python3 security_installer.py[/]",
-                    title="[bold red]Error[/]",
-                    border_style=f"{NordColors.RED}",
-                )
+            display_panel(
+                "[bold]This script requires root privileges.[/]\n"
+                "Please run with sudo: [bold cyan]sudo python3 security_installer.py[/]",
+                style=NordColors.RED,
+                title="Error",
             )
             sys.exit(1)
 
-        setup = SystemSetup(simulate=args.simulate)
+        # Clear console and show header
+        if show_header:
+            console.clear()
+            console.print(create_header())
 
-        console.clear()
-        console.print(create_header())
+        # Initialize system setup
+        setup = SystemSetup(
+            simulate=simulate,
+            verbose=verbose,
+            logger=logger,
+            selected_categories=selected_categories,
+        )
 
-        # Display simulation warning if needed
-        if args.simulate:
-            console.print(
-                Panel(
-                    "[bold]Running in simulation mode[/]\n"
-                    "No actual changes will be made to your system.",
-                    title="[bold yellow]Simulation Mode[/]",
-                    border_style=f"{NordColors.YELLOW}",
-                )
-            )
+        # Display installation plan
+        show_installation_plan(selected_categories)
+        console.print()
 
-        show_installation_plan()
-
-        if not args.skip_confirm:
-            console.print()
-            console.print(
-                f"[bold {NordColors.FROST_2}]Ready to proceed with installation? Press Enter to continue or Ctrl+C to abort...[/]"
-            )
-            try:
-                input()
-            except KeyboardInterrupt:
-                console.print("\n[yellow]Operation cancelled[/]")
-                sys.exit(0)
-
+        # Start main installation process
         with Progress(
             SpinnerColumn(style=f"{NordColors.FROST_1}"),
             TextColumn("[progress.description]{task.description}"),
@@ -882,96 +1289,118 @@ def main() -> None:
                 style=NordColors.FROST_4,
                 complete_style=NordColors.FROST_2,
             ),
-            TextColumn("[bold {task.percentage:>3.0f}%]"),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeRemainingColumn(),
             console=console,
         ) as progress:
-            # Setup system
-            task = progress.add_task("[cyan]Setting up system...", total=100)
+            # Create main task
+            main_task = progress.add_task("[cyan]Setting up system...", total=100)
 
-            # Clean up package system first
+            # Step 1: Clean up package system
             progress.update(
-                task, description=f"[{NordColors.FROST_2}]Cleaning up package system..."
+                main_task,
+                description=f"[{NordColors.FROST_2}]Cleaning up package system...",
+                completed=0,
             )
             if not setup.cleanup_package_system():
-                console.print(
-                    Panel(
+                if not skip_failed:
+                    display_panel(
                         "[bold]Failed to clean up package system[/]\n"
                         "Check the logs for more details.",
-                        title="[bold red]Error[/]",
-                        border_style=f"{NordColors.RED}",
-                    )
-                )
-                sys.exit(1)
-            progress.update(task, completed=20)
-
-            # Setup package manager
-            progress.update(
-                task, description=f"[{NordColors.FROST_2}]Setting up package manager..."
-            )
-            if not setup.setup_package_manager():
-                console.print(
-                    Panel(
-                        "[bold]Failed to setup package manager[/]\n"
-                        "Check the logs for more details.",
-                        title="[bold red]Error[/]",
-                        border_style=f"{NordColors.RED}",
-                    )
-                )
-                sys.exit(1)
-            progress.update(task, completed=40)
-
-            # Install packages
-            progress.update(
-                task, description=f"[{NordColors.FROST_2}]Installing security tools..."
-            )
-            all_packages = [pkg for tools in SECURITY_TOOLS.values() for pkg in tools]
-            unique_packages = list(set(all_packages))
-
-            success, failed_packages = setup.install_packages(unique_packages)
-            if failed_packages:
-                setup.failed_packages = failed_packages
-                if not args.skip_failed and not args.simulate:
-                    console.print(
-                        Panel(
-                            f"[bold]Failed to install {len(failed_packages)} packages[/]\n"
-                            f"Failed packages: {', '.join(failed_packages[:5])}{'...' if len(failed_packages) > 5 else ''}",
-                            title="[bold red]Installation Error[/]",
-                            border_style=f"{NordColors.RED}",
-                        )
-                    )
-                    console.print(
-                        f"Use [bold cyan]--skip-failed[/] to continue despite package failures."
+                        style=NordColors.RED,
+                        title="Error",
                     )
                     sys.exit(1)
                 else:
-                    progress.update(
-                        task,
-                        description=f"[{NordColors.YELLOW}]Some packages failed to install...",
+                    print_message(
+                        "Package system cleanup failed, continuing with installation anyway...",
+                        NordColors.YELLOW,
+                        "⚠",
+                        logger,
                     )
+            progress.update(main_task, completed=20)
+
+            # Step 2: Setup package manager
+            progress.update(
+                main_task,
+                description=f"[{NordColors.FROST_2}]Setting up package manager...",
+                completed=20,
+            )
+            if not setup.setup_package_manager():
+                if not skip_failed:
+                    display_panel(
+                        "[bold]Failed to setup package manager[/]\n"
+                        "Check the logs for more details.",
+                        style=NordColors.RED,
+                        title="Error",
+                    )
+                    sys.exit(1)
+                else:
+                    print_message(
+                        "Package manager setup failed, continuing with installation anyway...",
+                        NordColors.YELLOW,
+                        "⚠",
+                        logger,
+                    )
+            progress.update(main_task, completed=40)
+
+            # Step 3: Install selected packages
+            progress.update(
+                main_task,
+                description=f"[{NordColors.FROST_2}]Installing security tools...",
+                completed=40,
+            )
+
+            # Get list of packages to install
+            target_packages = setup.get_target_packages()
+
+            success, failed_packages = setup.install_packages(
+                target_packages, skip_failed=skip_failed
+            )
+
+            if failed_packages and not skip_failed and not simulate:
+                display_panel(
+                    f"[bold]Failed to install {len(failed_packages)} packages[/]\n"
+                    f"Failed packages: {', '.join(failed_packages[:10])}{'...' if len(failed_packages) > 10 else ''}",
+                    style=NordColors.RED,
+                    title="Installation Error",
+                )
+                sys.exit(1)
+            elif failed_packages:
+                progress.update(
+                    main_task,
+                    description=f"[{NordColors.YELLOW}]Some packages failed to install...",
+                    completed=80,
+                )
             else:
                 progress.update(
-                    task,
-                    description=f"[{NordColors.GREEN}]Installation completed successfully!",
+                    main_task,
+                    description=f"[{NordColors.GREEN}]Package installation completed successfully!",
+                    completed=80,
                 )
 
-            progress.update(task, completed=100)
+            # Step 4: Configure installed services
+            progress.update(
+                main_task,
+                description=f"[{NordColors.FROST_2}]Configuring services...",
+                completed=80,
+            )
+
+            setup.configure_installed_services()
+
+            # Complete the progress
+            progress.update(
+                main_task,
+                description=f"[{NordColors.GREEN}]Installation completed!",
+                completed=100,
+            )
 
         # Save installation report
-        setup.save_installation_report()
+        report_file = setup.save_installation_report(report_dir)
 
         # Display installation summary
         console.print()
-        if args.simulate:
-            console.print(
-                Panel(
-                    "[bold]Simulation completed successfully[/]\n"
-                    "No changes were made to your system.",
-                    title="[bold green]Simulation Complete[/]",
-                    border_style=f"{NordColors.GREEN}",
-                )
-            )
-        elif setup.failed_packages:
+        if setup.failed_packages:
             console.print(
                 Panel(
                     f"[bold]Installation completed with some failures[/]\n\n"
@@ -992,19 +1421,32 @@ def main() -> None:
                 )
             )
 
-        console.print(f"\nDetailed logs available at: [bold]{LOG_FILE}[/]")
+        # Log file location
+        log_files = list(log_dir.glob("security_setup_*.log"))
+        latest_log = (
+            max(log_files, key=lambda p: p.stat().st_mtime) if log_files else None
+        )
+
+        if latest_log:
+            console.print(f"\nDetailed logs available at: [bold]{latest_log}[/]")
+            console.print(f"Installation report saved to: [bold]{report_file}[/]")
+
+        # Final summary message
+        finish_time = datetime.now()
+        elapsed = (finish_time - setup.start_time).total_seconds()
+        console.print(
+            f"\nTotal installation time: [bold]{int(elapsed // 60)} minutes, {int(elapsed % 60)} seconds[/]"
+        )
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Operation cancelled by user[/]")
         sys.exit(130)
     except Exception as e:
         logger.exception("Unexpected error occurred")
-        console.print(
-            Panel(
-                f"[bold]An unexpected error occurred:[/]\n{str(e)}",
-                title="[bold red]Error[/]",
-                border_style=f"{NordColors.RED}",
-            )
+        display_panel(
+            f"[bold]An unexpected error occurred:[/]\n{str(e)}",
+            style=NordColors.RED,
+            title="Error",
         )
         console.print("\nCheck the logs for more details.")
         sys.exit(1)

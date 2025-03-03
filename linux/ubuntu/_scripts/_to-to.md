@@ -9,7 +9,7 @@
     └── hacking_tools.py
     └── hello_world.py
     └── log_monitor.py
-    *└── metasploit.py
+    └── metasploit.py
     └── network_toolkit.py
     *└── python_dev_setup.py
     └── raspberry_pi_5_overclocking_utility.py
