@@ -29,7 +29,6 @@ Usage:
 Version: 4.0.0
 """
 
-import argparse
 import atexit
 import datetime
 import json
@@ -1895,63 +1894,9 @@ def show_usage() -> None:
 
 
 # ----------------------------------------------------------------
-# Command Line Argument Parsing
+# No Command Line Argument Parsing
 # ----------------------------------------------------------------
-def parse_args() -> Dict[str, Any]:
-    """
-    Parse command-line arguments.
-
-    Returns:
-        Dictionary with parsed arguments
-    """
-    parser = argparse.ArgumentParser(
-        description="Universal Downloader - Download files and media with style",
-        add_help=False,  # We'll handle help manually for better styling
-    )
-
-    # Basic commands
-    parser.add_argument(
-        "command",
-        nargs="?",
-        choices=["file", "youtube", "help"],
-        default="menu",
-        help="Command to execute",
-    )
-
-    # URL argument
-    parser.add_argument("url", nargs="?", help="URL to download")
-
-    # Common options
-    parser.add_argument(
-        "-o",
-        "--output-dir",
-        default=AppConfig.DEFAULT_DOWNLOAD_DIR,
-        help=f"Output directory (default: {AppConfig.DEFAULT_DOWNLOAD_DIR})",
-    )
-
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
-    )
-
-    parser.add_argument("-b", "--browser", help="Browser to use for YouTube cookies")
-
-    parser.add_argument(
-        "-h", "--help", action="store_true", help="Show help information"
-    )
-
-    # Parse the arguments
-    args = vars(parser.parse_args())
-
-    # Check if help was requested
-    if args.get("help", False):
-        args["command"] = "help"
-
-    # Validate command-specific arguments
-    if args["command"] in ["file", "youtube"] and not args["url"]:
-        print_error(f"URL is required for '{args['command']}' command")
-        args["command"] = "help"
-
-    return args
+# Command line parsing was removed to simplify the application
 
 
 # ----------------------------------------------------------------
@@ -1959,19 +1904,11 @@ def parse_args() -> Dict[str, Any]:
 # ----------------------------------------------------------------
 def main() -> None:
     """
-    Main function: parses arguments, checks dependencies, and dispatches commands.
+    Main function: sets up the environment and launches the interactive menu.
     """
     try:
         # Setup logging
         setup_logging()
-
-        # Parse command-line arguments
-        args = parse_args()
-        command = args.get("command", "menu")
-
-        if command == "help":
-            show_usage()
-            sys.exit(0)
 
         # Display the header
         console.print(create_header())
@@ -1989,23 +1926,8 @@ def main() -> None:
         # Check internet connectivity
         check_internet_connectivity()
 
-        # Dispatch command
-        if command == "menu":
-            download_menu()
-        elif command == "file":
-            exit_code = cmd_file_download(
-                args["url"], args["output_dir"], args["verbose"]
-            )
-            sys.exit(exit_code)
-        elif command == "youtube":
-            exit_code = cmd_youtube_download(
-                args["url"], args["output_dir"], args["browser"], args["verbose"]
-            )
-            sys.exit(exit_code)
-        else:
-            print_error(f"Unknown command: {command}")
-            show_usage()
-            sys.exit(1)
+        # Launch the interactive menu
+        download_menu()
 
     except KeyboardInterrupt:
         print_warning("\nProcess interrupted by user")
