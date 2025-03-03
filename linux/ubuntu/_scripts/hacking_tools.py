@@ -90,7 +90,6 @@ SECURITY_TOOLS = {
         "firejail",
         "clamav",
         "crowdsec",
-        "samhain",
         "yubikey-manager",
         "policycoreutils",
     ],
