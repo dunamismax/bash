@@ -493,22 +493,24 @@ def load_local_devices() -> List[Device]:
     # In a real application, this could scan the network or read from a hosts file
     return [
         Device(
-            name="ubuntu-server", ip_address="192.168.0.73", description="Local server"
-        ),
-        Device(
-            name="raspberrypi-5",
-            ip_address="192.168.0.40",
-            description="Local media center",
+            name="ubuntu-server",
+            ip_address="192.168.0.73",
+            description="Primary Server",
         ),
         Device(
             name="ubuntu-lenovo",
             ip_address="192.168.0.31",
-            description="Development laptop",
+            description="Development Laptop",
+        ),
+        Device(
+            name="raspberrypi-5",
+            ip_address="192.168.0.40",
+            description="Raspberry Pi 5",
         ),
         Device(
             name="raspberrypi-3",
             ip_address="192.168.0.100",
-            description="Home automation",
+            description="Raspberry Pi 3",
         ),
     ]
 
