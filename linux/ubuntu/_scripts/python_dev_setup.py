@@ -184,6 +184,18 @@ PIPX_TOOLS = [
     "twine",
     "poetry",
     "httpie",
+    "yt-dlp",
+    "ffmpeg",
+    "bandit",
+    "vulture",
+    "pydocstyle",
+    "radon",
+    "tox",
+    "ruff",
+    "pyupgrade",
+    "codespell",
+    "shellcheck",
+    "prettier",
 ]
 
 
