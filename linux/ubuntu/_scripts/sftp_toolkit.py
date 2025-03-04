@@ -50,6 +50,44 @@ transport = None
 
 
 # ----------------------------------------------------------------
+# Helper Functions for User & SSH Key Handling
+# ----------------------------------------------------------------
+def get_default_username() -> str:
+    """
+    Return the default username.
+    If the script is run with sudo, return the original user's username;
+    otherwise, use getpass.getuser().
+    """
+    return os.getenv("SUDO_USER") or getpass.getuser()
+
+
+def load_private_key():
+    """
+    Attempt to load the default SSH private key from ~/.ssh/id_rsa.
+    If the key is encrypted, prompt the user for the passphrase.
+    """
+    key_path = os.path.expanduser("~/.ssh/id_rsa")
+    try:
+        key = paramiko.RSAKey.from_private_key_file(key_path)
+        return key
+    except paramiko.PasswordRequiredException:
+        passphrase = Prompt.ask(
+            "[bold purple]Enter passphrase for SSH key[/]", password=True
+        )
+        try:
+            key = paramiko.RSAKey.from_private_key_file(key_path, password=passphrase)
+            return key
+        except Exception as e:
+            console.print(
+                f"[bold red]Error loading private key with passphrase: {e}[/]"
+            )
+            return None
+    except Exception as e:
+        console.print(f"[bold red]Error loading private key: {e}[/]")
+        return None
+
+
+# ----------------------------------------------------------------
 # Device Data Structures and Functions
 # ----------------------------------------------------------------
 @dataclass
@@ -212,14 +250,16 @@ def connect_sftp():
     port = IntPrompt.ask(
         "[bold purple]Enter Port[/]", default=AppConfig.SFTP_DEFAULT_PORT
     )
-    username = Prompt.ask("[bold purple]Enter Username[/]", default=getpass.getuser())
+    username = Prompt.ask(
+        "[bold purple]Enter Username[/]", default=get_default_username()
+    )
 
-    # Attempt to load the default private key
-    try:
-        key = paramiko.RSAKey.from_private_key_file(os.path.expanduser("~/.ssh/id_rsa"))
-    except Exception as e:
-        console.print(f"[bold red]Error loading private key: {e}[/]")
-        key = None
+    key = load_private_key()
+    if key is None:
+        console.print(
+            "[bold red]Could not load SSH private key. Connection aborted.[/]"
+        )
+        return
 
     try:
         transport = paramiko.Transport((hostname, port))
@@ -249,14 +289,16 @@ def connect_sftp_device(device: Device):
     port = IntPrompt.ask(
         "[bold purple]Enter Port[/]", default=AppConfig.SFTP_DEFAULT_PORT
     )
-    username = Prompt.ask("[bold purple]Enter Username[/]", default=getpass.getuser())
+    username = Prompt.ask(
+        "[bold purple]Enter Username[/]", default=get_default_username()
+    )
 
-    # Attempt to load the default private key
-    try:
-        key = paramiko.RSAKey.from_private_key_file(os.path.expanduser("~/.ssh/id_rsa"))
-    except Exception as e:
-        console.print(f"[bold red]Error loading private key: {e}[/]")
-        key = None
+    key = load_private_key()
+    if key is None:
+        console.print(
+            "[bold red]Could not load SSH private key. Connection aborted.[/]"
+        )
+        return
 
     try:
         transport = paramiko.Transport((device.ip_address, port))
