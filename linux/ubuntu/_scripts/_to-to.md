@@ -29,7 +29,7 @@
     *└── virtualization_setup.py
     *└── vm_manager.py
     *└── vscode_wayland_setup.py
-    └── zfs_setup.py
+    *└── zfs_setup.py
 ```
 
 
