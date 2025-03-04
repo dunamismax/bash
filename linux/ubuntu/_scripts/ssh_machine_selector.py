@@ -57,8 +57,8 @@ try:
     from rich.align import Align
     from rich.style import Style
     from rich.prompt import Prompt, Confirm
-    from rich.traceback import install as install_rich_traceback
     from rich.columns import Columns
+    from rich.traceback import install as install_rich_traceback
 except ImportError:
     print("Required libraries not found. Installing dependencies...")
     try:
@@ -74,7 +74,6 @@ except ImportError:
         )
         sys.exit(1)
 
-# Install Rich’s enhanced traceback handler
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
@@ -92,7 +91,7 @@ APP_SUBTITLE: str = "Advanced Connection Manager"
 DEFAULT_SSH_PORT: int = 22
 MAX_PARALLEL_PINGS: int = min(20, os.cpu_count() or 4)
 
-# Advanced SSH options applied to every connection
+# Advanced SSH options (applied to every connection)
 SSH_OPTIONS: Dict[str, Tuple[str, str]] = {
     "ServerAliveInterval": ("30", "Interval (sec) to send keepalive packets"),
     "ServerAliveCountMax": (
@@ -129,7 +128,7 @@ class NordColors:
 
 
 # ----------------------------------------------------------------
-# Create a Rich Console
+# Initialize Rich Console
 # ----------------------------------------------------------------
 console: Console = Console()
 
@@ -153,11 +152,13 @@ class Device:
     favorite: bool = False
 
     def get_connection_string(self, username: str) -> str:
+        """Return the SSH connection string for the device."""
         if self.port == DEFAULT_SSH_PORT:
             return f"{username}@{self.ip_address}"
         return f"{username}@{self.ip_address} -p {self.port}"
 
     def get_status_indicator(self) -> Text:
+        """Return a Rich Text indicator for the device status."""
         if self.status is True:
             text = "● ONLINE"
             if self.response_time is not None:
@@ -169,11 +170,12 @@ class Device:
             return Text("○ UNKNOWN", style=f"dim {NordColors.POLAR_NIGHT_4}")
 
     def get_favorite_indicator(self) -> str:
+        """Return a star indicator if the device is marked as favorite."""
         return "★ " if self.favorite else ""
 
 
 # ----------------------------------------------------------------
-# Console and Logging Helpers
+# UI Helper Functions
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
@@ -185,18 +187,10 @@ def create_header() -> Panel:
         try:
             fig = pyfiglet.Figlet(font=font, width=60)
             ascii_art = fig.renderText(APP_NAME)
-            if ascii_art and ascii_art.strip():
+            if ascii_art.strip():
                 break
         except Exception:
             continue
-    if not ascii_art or not ascii_art.strip():
-        ascii_art = """
-         _                _           _             
- ___ ___| |__    ___  ___| | ___  ___| |_ ___  _ __ 
-/ __/ __| '_ \  / __|/ _ \ |/ _ \/ __| __/ _ \| '__|
-\__ \__ \ | | | \__ \  __/ |  __/ (__| || (_) | |   
-|___/___/_| |_| |___/\___|_|\___|\___|\__\___/|_|   
-"""
     ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
     colors = [
         NordColors.FROST_1,
@@ -225,6 +219,7 @@ def create_header() -> Panel:
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
+    """Print a styled message with a prefix."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
@@ -247,6 +242,7 @@ def print_step(message: str) -> None:
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
+    """Display a message in a styled Rich panel."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
@@ -257,6 +253,7 @@ def display_panel(
 
 
 def print_section(title: str) -> None:
+    """Print a section header."""
     console.print()
     console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
     console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
@@ -264,6 +261,7 @@ def print_section(title: str) -> None:
 
 
 def show_help() -> None:
+    """Display help information."""
     help_text = f"""
 [bold]Available Commands:[/]
 
@@ -287,9 +285,10 @@ def show_help() -> None:
 
 
 # ----------------------------------------------------------------
-# System Information
+# System Information Helper
 # ----------------------------------------------------------------
 def get_system_info() -> Dict[str, str]:
+    """Collect basic system information."""
     info = {
         "Hostname": HOSTNAME,
         "Platform": platform.system(),
@@ -297,25 +296,6 @@ def get_system_info() -> Dict[str, str]:
         "Python Version": platform.python_version(),
         "Username": DEFAULT_USERNAME,
     }
-    if platform.system() != "Windows":
-        try:
-            import netifaces
-
-            interfaces = netifaces.interfaces()
-            active_interfaces = []
-            for iface in interfaces:
-                if iface == "lo":
-                    continue
-                try:
-                    addr = netifaces.ifaddresses(iface).get(netifaces.AF_INET)
-                    if addr:
-                        active_interfaces.append(f"{iface}: {addr[0]['addr']}")
-                except Exception:
-                    pass
-            if active_interfaces:
-                info["Network Interfaces"] = ", ".join(active_interfaces)
-        except ImportError:
-            pass
     return info
 
 
@@ -329,6 +309,7 @@ def run_command(
     capture_output: bool = True,
     timeout: int = OPERATION_TIMEOUT,
 ) -> subprocess.CompletedProcess:
+    """Run a system command and return its result."""
     try:
         result = subprocess.run(
             cmd,
@@ -358,10 +339,12 @@ def run_command(
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
+    """Perform cleanup tasks before exiting."""
     print_message("Cleaning up session resources...", NordColors.FROST_3)
 
 
 def signal_handler(sig: int, frame: Any) -> None:
+    """Handle termination signals gracefully."""
     try:
         sig_name = signal.Signals(sig).name
         print_warning(f"Process interrupted by {sig_name}")
@@ -380,6 +363,7 @@ atexit.register(cleanup)
 # Device Data Functions
 # ----------------------------------------------------------------
 def load_tailscale_devices() -> List[Device]:
+    """Load preset Tailscale devices."""
     return [
         Device(
             name="ubuntu-server",
@@ -445,6 +429,7 @@ def load_tailscale_devices() -> List[Device]:
 
 
 def load_local_devices() -> List[Device]:
+    """Load preset local network devices."""
     return [
         Device(
             name="ubuntu-server",
@@ -469,24 +454,20 @@ def load_local_devices() -> List[Device]:
     ]
 
 
-def discover_local_devices() -> List[Device]:
-    return load_local_devices()
-
-
 def search_devices(devices: List[Device], search_term: str) -> List[Device]:
-    search_term = search_term.lower()
+    """Return devices matching the search term (in name, IP, or description)."""
+    term = search_term.lower()
     return [
         device
         for device in devices
-        if search_term in device.name.lower()
-        or search_term in device.ip_address.lower()
-        or (device.description and search_term in device.description.lower())
+        if term in device.name.lower()
+        or term in device.ip_address.lower()
+        or (device.description and term in device.description.lower())
     ]
 
 
-def toggle_device_favorite(
-    devices: List[Device], device_index: int, is_local: bool = False
-) -> bool:
+def toggle_device_favorite(devices: List[Device], device_index: int) -> bool:
+    """Toggle the favorite status of a device in the list by index."""
     if 0 <= device_index < len(devices):
         devices[device_index].favorite = not devices[device_index].favorite
         return True
@@ -497,6 +478,9 @@ def toggle_device_favorite(
 # Network Status Functions
 # ----------------------------------------------------------------
 def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
+    """
+    Ping a device and return its status and response time in milliseconds.
+    """
     start_time = time.time()
     try:
         if sys.platform == "win32":
@@ -525,11 +509,9 @@ def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
         )
         end_time = time.time()
         response_time = (end_time - start_time) * 1000  # ms
-        if result.returncode == 0:
-            return True, response_time
-        return False, None
-    except (subprocess.SubprocessError, subprocess.TimeoutExpired):
-        return False, None
+        return (
+            result.returncode == 0
+        ), response_time if result.returncode == 0 else None
     except Exception:
         return False, None
 
@@ -537,7 +519,11 @@ def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
 def check_device_statuses(
     devices: List[Device], progress_callback: Optional[Callable[[int], None]] = None
 ) -> None:
-    def check_single_device(device: Device, index: int) -> None:
+    """
+    Ping all devices concurrently and update their status.
+    """
+
+    def check_single(device: Device, index: int) -> None:
         success, response_time = ping_device(device.ip_address)
         device.status = success
         device.response_time = response_time
@@ -547,8 +533,7 @@ def check_device_statuses(
 
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_PINGS) as executor:
         futures = [
-            executor.submit(check_single_device, device, i)
-            for i, device in enumerate(devices)
+            executor.submit(check_single, device, i) for i, device in enumerate(devices)
         ]
         for future in futures:
             try:
@@ -561,6 +546,9 @@ def check_device_statuses(
 # UI Components
 # ----------------------------------------------------------------
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
+    """
+    Build a Rich table displaying device information.
+    """
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -577,10 +565,10 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
     online_count = sum(1 for d in devices if d.status is True)
     favorite_count = sum(1 for d in devices if d.favorite)
     for idx, device in enumerate(devices, 1):
-        name_display = f"{device.get_favorite_indicator()}{device.name}"
+        name_disp = f"{device.get_favorite_indicator()}{device.name}"
         table.add_row(
             f"{prefix}{idx}",
-            name_display,
+            name_disp,
             device.ip_address,
             device.get_status_indicator(),
             device.description or "",
@@ -597,6 +585,7 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
 # SSH Connection Functions
 # ----------------------------------------------------------------
 def get_username() -> str:
+    """Prompt the user for the SSH username."""
     return Prompt.ask(
         f"[bold {NordColors.FROST_2}]Username for SSH connection[/]",
         default=DEFAULT_USERNAME,
@@ -604,6 +593,10 @@ def get_username() -> str:
 
 
 def connect_to_device(device: Device, username: str) -> None:
+    """
+    Attempt to establish an SSH connection to the specified device.
+    Displays progress messages and builds the SSH command with advanced options.
+    """
     console.clear()
     console.print(create_header())
     connection_info = (
@@ -621,6 +614,7 @@ def connect_to_device(device: Device, username: str) -> None:
         )
     else:
         connection_info += f"[bold {NordColors.FROST_2}]Status:[/] [dim {NordColors.POLAR_NIGHT_4}]UNKNOWN[/]\n"
+
     connection_panel = Panel(
         Text.from_markup(connection_info),
         title=f"[bold {NordColors.FROST_3}]SSH Connection[/]",
@@ -628,8 +622,8 @@ def connect_to_device(device: Device, username: str) -> None:
         padding=(1, 2),
     )
     console.print(connection_panel)
+
     try:
-        console.print()
         with Progress(
             SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
             TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
@@ -659,7 +653,6 @@ def connect_to_device(device: Device, username: str) -> None:
                 message_color=NordColors.GREEN,
             )
             time.sleep(0.4)
-        console.print()
         # Build SSH command with advanced options
         ssh_args = [SSH_COMMAND]
         for option, (value, _) in SSH_OPTIONS.items():
@@ -685,7 +678,6 @@ def connect_to_device(device: Device, username: str) -> None:
         print_step("Ensure the correct username and IP address were used")
         print_step("You may need to manually add this host to your known_hosts file")
         print_step("Try connecting manually with 'ssh -v' for verbose output")
-        console.print()
         Prompt.ask(
             f"[{NordColors.SNOW_STORM_1}]Press Enter to return to selection screen[/]"
         )
@@ -695,6 +687,9 @@ def connect_to_device(device: Device, username: str) -> None:
 # Device Status Refresh and Configuration
 # ----------------------------------------------------------------
 def refresh_device_statuses(devices: List[Device]) -> None:
+    """
+    Refresh the connectivity status of all devices with a progress display.
+    """
     console.clear()
     console.print(create_header())
     display_panel(
@@ -713,15 +708,18 @@ def refresh_device_statuses(devices: List[Device]) -> None:
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        refresh_task = progress.add_task("Refreshing", total=len(devices))
+        scan_task = progress.add_task("Refreshing", total=len(devices))
 
         def update_progress(index: int) -> None:
-            progress.advance(refresh_task)
+            progress.advance(scan_task)
 
         check_device_statuses(devices, update_progress)
 
 
 def configure_ssh_options() -> None:
+    """
+    Display the current SSH options and instruct the user on how to modify them.
+    """
     console.clear()
     console.print(create_header())
     print_section("SSH Configuration Options")
@@ -738,7 +736,6 @@ def configure_ssh_options() -> None:
     for option, (value, description) in SSH_OPTIONS.items():
         table.add_row(option, value, description)
     console.print(table)
-    console.print()
     print_message(
         "These options will be applied to all SSH connections", NordColors.FROST_2
     )
@@ -746,11 +743,13 @@ def configure_ssh_options() -> None:
         "To modify these options, edit the script's SSH_OPTIONS dictionary",
         NordColors.FROST_3,
     )
-    console.print()
     Prompt.ask(f"[bold {NordColors.FROST_2}]Press Enter to return to the main menu[/]")
 
 
 def search_for_devices(all_devices: List[Device]) -> None:
+    """
+    Prompt the user for a search term and display matching devices.
+    """
     console.clear()
     console.print(create_header())
     search_term = Prompt.ask(
@@ -791,19 +790,18 @@ def search_for_devices(all_devices: List[Device]) -> None:
                 device.description or "",
             )
         console.print(table)
-    console.print()
     Prompt.ask(f"[bold {NordColors.FROST_2}]Press Enter to return to the main menu[/]")
 
 
 # ----------------------------------------------------------------
-# Main Application Loop
+# Main Interactive Menu Loop
 # ----------------------------------------------------------------
 def main() -> None:
     tailscale_devices = load_tailscale_devices()
     local_devices = load_local_devices()
     all_devices = tailscale_devices + local_devices
 
-    # Initial scan with progress
+    # Initial network scan
     console.clear()
     console.print(create_header())
     display_panel(
@@ -829,20 +827,19 @@ def main() -> None:
 
         check_device_statuses(all_devices, update_progress)
 
-    # Main interactive menu loop
+    # Main menu loop
     while True:
         console.clear()
         console.print(create_header())
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         console.print(
             Align.center(
-                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
-                f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/]"
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | [{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/]"
             )
         )
         console.print()
 
-        # Build tables for Tailscale and Local devices
+        # Build and display device tables
         tailscale_table = create_device_table(
             tailscale_devices, "", "Tailscale Devices"
         )
@@ -866,9 +863,8 @@ def main() -> None:
         console.print()
         console.print(
             Align.center(
-                f"[{NordColors.FROST_3}]Commands: [bold]1-N[/] Connect Tailscale | "
-                f"[bold]L1-LN[/] Connect Local | [bold]r[/] Refresh | [bold]f[/] Favorite | "
-                f"[bold]s[/] Search | [bold]h[/] Help | [bold]q[/] Quit[/]"
+                f"[{NordColors.FROST_3}]Commands: [bold]1-N[/] Connect Tailscale | [bold]L1-LN[/] Connect Local | "
+                f"[bold]r[/] Refresh | [bold]f[/] Favorite | [bold]s[/] Search | [bold]c[/] Configure SSH | [bold]h[/] Help | [bold]q[/] Quit[/]"
             )
         )
         console.print()
@@ -884,7 +880,7 @@ def main() -> None:
             console.print(
                 Panel(
                     Text(
-                        "Thank you for using SSH Selector!",
+                        f"Thank you for using SSH Selector!",
                         style=f"bold {NordColors.FROST_2}",
                     ),
                     border_style=Style(color=NordColors.FROST_1),
@@ -911,7 +907,7 @@ def main() -> None:
             try:
                 if remaining.startswith("l"):
                     idx = int(remaining[1:]) - 1
-                    if toggle_device_favorite(local_devices, idx, is_local=True):
+                    if toggle_device_favorite(local_devices, idx):
                         print_success(
                             f"Toggled favorite status for local device L{idx + 1}"
                         )
@@ -930,21 +926,15 @@ def main() -> None:
                 print_error(f"Invalid format for favorite command: {choice}")
                 Prompt.ask(f"[{NordColors.SNOW_STORM_1}]Press Enter to continue[/]")
 
-        elif not choice:
-            continue
-
-        # Handle local device selection (input like "L1", "l2", etc.)
         elif choice.startswith("l"):
             try:
                 idx = int(choice[1:]) - 1
                 if 0 <= idx < len(local_devices):
                     device = local_devices[idx]
-                    if device.status is False:
-                        console.print()
-                        if not Confirm.ask(
-                            f"[bold {NordColors.YELLOW}]This device appears to be offline. Try to connect anyway?[/]"
-                        ):
-                            continue
+                    if device.status is False and not Confirm.ask(
+                        f"[bold {NordColors.YELLOW}]This device appears to be offline. Try to connect anyway?[/]"
+                    ):
+                        continue
                     username = get_username()
                     connect_to_device(device, username)
                 else:
@@ -960,18 +950,15 @@ def main() -> None:
                 )
                 Prompt.ask(f"[{NordColors.SNOW_STORM_1}]Press Enter to continue[/]")
 
-        # Handle Tailscale device selection (input like "1", "2", etc.)
         else:
             try:
                 idx = int(choice) - 1
                 if 0 <= idx < len(tailscale_devices):
                     device = tailscale_devices[idx]
-                    if device.status is False:
-                        console.print()
-                        if not Confirm.ask(
-                            f"[bold {NordColors.YELLOW}]This device appears to be offline. Try to connect anyway?[/]"
-                        ):
-                            continue
+                    if device.status is False and not Confirm.ask(
+                        f"[bold {NordColors.YELLOW}]This device appears to be offline. Try to connect anyway?[/]"
+                    ):
+                        continue
                     username = get_username()
                     connect_to_device(device, username)
                 else:

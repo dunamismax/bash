@@ -482,35 +482,18 @@ def create_header() -> Panel:
     """
     # Use smaller, more compact but still tech-looking fonts
     compact_fonts = ["slant", "small", "standard", "digital", "big"]
-
-    # Try each font until we find one that works well
+    ascii_art = ""
     for font_name in compact_fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
+            fig = pyfiglet.Figlet(font=font_name, width=60)
             ascii_art = fig.renderText(AppConfig.APP_NAME)
-
-            # If we got a reasonable result, use it
-            if ascii_art and len(ascii_art.strip()) > 0:
+            if ascii_art.strip():
                 break
         except Exception:
             continue
 
-    # Custom ASCII art fallback if all else fails
-    if not ascii_art or len(ascii_art.strip()) == 0:
-        ascii_art = """
-             _                          _                
- _   _ _ __ (_)_   _____ _ __ ___  __ _| |               
-| | | | '_ \| \ \ / / _ \ '__/ __|/ _` | |               
-| |_| | | | | |\ V /  __/ |  \__ \ (_| | |               
- \__,_|_| |_|_| \_/ \___|_|_ |___/\__,_|_|   _           
-  __| | _____      ___ __ | | ___   __ _  __| | ___ _ __ 
- / _` |/ _ \ \ /\ / / '_ \| |/ _ \ / _` |/ _` |/ _ \ '__|
-| (_| | (_) \ V  V /| | | | | (_) | (_| | (_| |  __/ |   
- \__,_|\___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|\___|_|   
-        """
-
-    # Clean up extra whitespace that might cause display issues
-    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
+    # Clean up extra whitespace and split into lines
+    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
 
     # Create a high-tech gradient effect with Nord colors
     colors = [
@@ -519,17 +502,16 @@ def create_header() -> Panel:
         NordColors.FROST_3,
         NordColors.FROST_4,
     ]
-
     styled_text = ""
     for i, line in enumerate(ascii_lines):
         color = colors[i % len(colors)]
         styled_text += f"[bold {color}]{line}[/]\n"
 
-    # Add decorative tech elements
+    # Add decorative tech border
     tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
     styled_text = tech_border + "\n" + styled_text + tech_border
 
-    # Create a panel with sufficient padding to avoid cutoff
+    # Create the header panel with the styled text
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
@@ -539,7 +521,6 @@ def create_header() -> Panel:
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{AppConfig.APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
-
     return header_panel
 
 

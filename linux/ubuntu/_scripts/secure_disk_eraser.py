@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
-Enhanced Disk Eraser Tool
+Disk Eraser Tool
 --------------------------------------------------
 
 A secure disk wiping utility with multiple erasure methods and an elegant Nord-themed interface.
-Features comprehensive disk detection, detailed progress tracking, and DoD-compliant wiping options.
-
-Usage:
-  Run the script with root privileges:
-  - List available disks with detailed information
-  - Examine disk status including SMART data
-  - Securely erase disks using zeros, random data, or DoD-compliant methods
-  - Monitor real-time progress with estimated completion times
+Features include:
+  • Listing available disks with detailed information.
+  • Examining disk details including SMART data.
+  • Securely erasing disks using zeros, random data, or DoD-compliant (shred) methods.
+  • Real-time progress tracking with spinners and progress bars.
+  • A stylish interactive menu system with a Pyfiglet ASCII banner.
 
 CAUTION: This tool permanently destroys all data on selected disks.
-Must be run with root/sudo privileges.
+It must be run with root/sudo privileges.
 
 Version: 2.1.0
 """
@@ -33,47 +31,41 @@ import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from typing import Any, Dict, List, Optional
 
-# ----------------------------------------------------------------
-# Dependency Check and Imports
-# ----------------------------------------------------------------
-try:
-    import pyfiglet
-    from rich.console import Console
-    from rich.text import Text
-    from rich.panel import Panel
-    from rich.align import Align
-    from rich.style import Style
-    from rich.table import Table
-    from rich.prompt import Prompt, Confirm
-    from rich.live import Live
-    from rich.progress import (
-        Progress,
-        SpinnerColumn,
-        BarColumn,
-        TextColumn,
-        TimeRemainingColumn,
-    )
-    from rich.traceback import install as install_rich_traceback
-except ImportError:
-    print("This script requires the 'rich' and 'pyfiglet' libraries.")
-    print("Please install them using: pip install rich pyfiglet")
-    sys.exit(1)
+import pyfiglet
+from rich import box
+from rich.align import Align
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
+from rich.text import Text
+from rich.traceback import install as install_rich_traceback
+from rich.style import Style
 
-# Install rich traceback handler for better error reporting
+# Install rich traceback handler for better debugging
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
-# Configuration & Constants
+# Global Configuration & Constants
 # ----------------------------------------------------------------
 HOSTNAME: str = socket.gethostname()
 TERM_WIDTH: int = min(shutil.get_terminal_size().columns, 100)
 PROGRESS_WIDTH: int = 40
-CHUNK_SIZE: int = 1024 * 1024  # 1MB for progress updates
+CHUNK_SIZE: int = 1024 * 1024  # 1 MB chunks
 LOG_FILE: str = "/var/log/disk_eraser.log"
 DEFAULT_LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO").upper()
 OPERATION_TIMEOUT: int = 60  # seconds
+
 VERSION: str = "2.1.0"
 APP_NAME: str = "Disk Eraser"
 APP_SUBTITLE: str = "Secure Data Destruction Tool"
@@ -107,31 +99,24 @@ DEFAULT_PASSES: int = 1
 # Nord-Themed Colors
 # ----------------------------------------------------------------
 class NordColors:
-    """Nord theme color palette for consistent UI styling."""
+    """Nord theme color palette for consistent styling."""
 
-    # Polar Night (dark) shades
-    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_4 = "#4C566A"  # Light background shade
-
-    # Snow Storm (light) shades
-    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
-    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
-
-    # Frost (blues/cyans) shades
-    FROST_1 = "#8FBCBB"  # Light cyan
-    FROST_2 = "#88C0D0"  # Light blue
-    FROST_3 = "#81A1C1"  # Medium blue
-    FROST_4 = "#5E81AC"  # Dark blue
-
-    # Aurora (accent) shades
-    RED = "#BF616A"  # Red
-    ORANGE = "#D08770"  # Orange
-    YELLOW = "#EBCB8B"  # Yellow
-    GREEN = "#A3BE8C"  # Green
-    PURPLE = "#B48EAD"  # Purple
+    POLAR_NIGHT_1 = "#2E3440"
+    POLAR_NIGHT_4 = "#4C566A"
+    SNOW_STORM_1 = "#D8DEE9"
+    SNOW_STORM_2 = "#E5E9F0"
+    FROST_1 = "#8FBCBB"
+    FROST_2 = "#88C0D0"
+    FROST_3 = "#81A1C1"
+    FROST_4 = "#5E81AC"
+    RED = "#BF616A"
+    ORANGE = "#D08770"
+    YELLOW = "#EBCB8B"
+    GREEN = "#A3BE8C"
+    PURPLE = "#B48EAD"
 
 
-# Create a Rich Console
+# Create a global Rich console with a simple theme
 console: Console = Console()
 
 
@@ -140,20 +125,20 @@ console: Console = Console()
 # ----------------------------------------------------------------
 class DiskDevice:
     """
-    Represents a physical disk device with its properties and status.
+    Represents a physical disk device with its properties.
 
     Attributes:
-        name: The device name (e.g., sda)
+        name: Device name (e.g., sda)
         path: Full device path (e.g., /dev/sda)
         size: Size in bytes
-        model: Device model or manufacturer
-        size_human: Human-readable size
-        is_system: Whether this appears to be a system disk
-        type: Type of disk (HDD, SSD, NVMe)
-        mounted: Whether any partitions are mounted
+        model: Device model (or manufacturer)
+        size_human: Human-readable size string
+        is_system: True if it appears to be a system disk
+        type: Disk type (e.g., HDD, SSD, NVMe)
+        mounted: True if any partitions are mounted
     """
 
-    def __init__(self, name: str, path: str, size: int, model: str = ""):
+    def __init__(self, name: str, path: str, size: int, model: str = "") -> None:
         self.name: str = name
         self.path: str = path
         self.size: int = size
@@ -168,62 +153,43 @@ class DiskDevice:
 
 
 # ----------------------------------------------------------------
-# Console and Logging Helpers
+# Console UI Helpers
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a high-tech ASCII art header with Nord theme styling.
+    Create a stylish ASCII banner header using Pyfiglet and apply Nord colors.
 
     Returns:
-        Panel containing the styled header
+        Panel object containing the header.
     """
-    # Use smaller, more compact but still tech-looking fonts
-    compact_fonts = ["slant", "small", "smslant", "mini", "digital"]
-
-    # Try each font until we find one that works well
-    for font_name in compact_fonts:
+    fonts = ["slant", "small", "digital", "mini", "smslant"]
+    ascii_art: Optional[str] = None
+    for font in fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)
+            fig = pyfiglet.Figlet(font=font, width=60)
             ascii_art = fig.renderText(APP_NAME)
-
-            # If we got a reasonable result, use it
-            if ascii_art and len(ascii_art.strip()) > 0:
+            if ascii_art.strip():
                 break
         except Exception:
             continue
+    if not ascii_art or not ascii_art.strip():
+        ascii_art = APP_NAME
 
-    # Custom ASCII art fallback if all else fails
-    if not ascii_art or len(ascii_art.strip()) == 0:
-        ascii_art = """
-     _ _     _                                   
-  __| (_)___| | __   ___ _ __ __ _ ___  ___ _ __ 
- / _` | / __| |/ /  / _ \ '__/ _` / __|/ _ \ '__|
-| (_| | \__ \   <  |  __/ | | (_| \__ \  __/ |   
- \__,_|_|___/_|\_\  \___|_|  \__,_|___/\___|_|    
-        """
-
-    # Clean up extra whitespace
-    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
-
-    # Create a gradient effect with Nord colors
+    # Apply a gradient effect using Nord colors
+    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
     colors = [
         NordColors.FROST_1,
         NordColors.FROST_2,
         NordColors.FROST_3,
         NordColors.FROST_4,
     ]
-
     styled_text = ""
     for i, line in enumerate(ascii_lines):
-        color = colors[i % len(colors)]
-        styled_text += f"[bold {color}]{line}[/]\n"
+        styled_text += f"[bold {colors[i % len(colors)]}]{line}[/]\n"
 
-    # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 60 + "[/]"
-    styled_text = tech_border + "\n" + styled_text + tech_border
-
-    # Create a panel with appropriate padding
-    header_panel = Panel(
+    border = f"[{NordColors.FROST_3}]" + "━" * 60 + "[/]"
+    styled_text = f"{border}\n{styled_text}{border}"
+    header = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
         padding=(1, 2),
@@ -232,51 +198,38 @@ def create_header() -> Panel:
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
-
-    return header_panel
+    return header
 
 
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """
-    Print a styled message with a prefix symbol.
-
-    Args:
-        text: The message to display
-        style: The color style to use
-        prefix: The prefix symbol
-    """
+    """Display a styled message with a prefix."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def print_success(message: str) -> None:
-    """Print a success message with a checkmark prefix."""
+    """Display a success message."""
     print_message(message, NordColors.GREEN, "✓")
 
 
 def print_warning(message: str) -> None:
-    """Print a warning message with a warning symbol prefix."""
+    """Display a warning message."""
     print_message(message, NordColors.YELLOW, "⚠")
 
 
 def print_error(message: str) -> None:
-    """Print an error message with an X prefix."""
+    """Display an error message."""
     print_message(message, NordColors.RED, "✗")
 
 
 def print_step(message: str) -> None:
-    """Print a step description with a bullet prefix."""
+    """Display a step description."""
     print_message(message, NordColors.FROST_2, "•")
 
 
 def print_section(title: str) -> None:
-    """
-    Print a formatted section header with decorative borders.
-
-    Args:
-        title: The section title to display
-    """
+    """Display a formatted section header."""
     border = "═" * min(TERM_WIDTH, 80)
     console.print(f"\n[bold {NordColors.FROST_3}]{border}[/]")
     console.print(f"[bold {NordColors.FROST_3}]{title.center(min(TERM_WIDTH, 80))}[/]")
@@ -286,14 +239,7 @@ def print_section(title: str) -> None:
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """
-    Display a message in a styled panel.
-
-    Args:
-        message: The message to display
-        style: The color style to use
-        title: Optional panel title
-    """
+    """Display a message inside a styled panel."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
@@ -307,15 +253,7 @@ def display_panel(
 # Utility Functions
 # ----------------------------------------------------------------
 def format_size(num_bytes: float) -> str:
-    """
-    Convert a byte value to a human-readable string.
-
-    Args:
-        num_bytes: Size in bytes
-
-    Returns:
-        Human-readable size string (e.g., "1.5 GB")
-    """
+    """Convert a byte value to a human-readable string."""
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if num_bytes < 1024:
             return f"{num_bytes:.1f} {unit}"
@@ -324,24 +262,13 @@ def format_size(num_bytes: float) -> str:
 
 
 def format_time(seconds: float) -> str:
-    """
-    Convert seconds into a human-readable time string.
-
-    Args:
-        seconds: Time in seconds
-
-    Returns:
-        Formatted time string (e.g., "01:23:45")
-    """
+    """Convert seconds into a formatted time string (HH:MM:SS or MM:SS)."""
     seconds = int(seconds)
     hours, remainder = divmod(seconds, 3600)
     minutes, secs = divmod(remainder, 60)
     if hours:
         return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-    elif minutes:
-        return f"{minutes:02d}:{secs:02d}"
-    else:
-        return f"{secs:02d} sec"
+    return f"{minutes:02d}:{secs:02d}" if minutes else f"{secs:02d} sec"
 
 
 # ----------------------------------------------------------------
@@ -354,13 +281,12 @@ def setup_logging() -> None:
     logger = logging.getLogger()
     logger.setLevel(getattr(logging, DEFAULT_LOG_LEVEL, logging.INFO))
 
-    # Remove existing handlers
+    # Remove any existing handlers
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
 
-    # Create formatter
     formatter = logging.Formatter(
-        fmt="[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        "[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
     )
 
     # Console handler
@@ -391,20 +317,13 @@ def run_command(
     timeout: int = OPERATION_TIMEOUT,
 ) -> subprocess.CompletedProcess:
     """
-    Executes a system command and returns the result.
+    Execute a system command and return the CompletedProcess.
 
-    Args:
-        cmd: Command and arguments as a list
-        env: Environment variables for the command
-        check: Whether to check the return code
-        capture_output: Whether to capture stdout/stderr
-        timeout: Command timeout in seconds
-
-    Returns:
-        CompletedProcess instance with command results
+    Raises:
+        subprocess.CalledProcessError: If command fails.
     """
+    logging.debug(f"Executing: {' '.join(cmd)}")
     try:
-        logging.debug(f"Executing: {' '.join(cmd)}")
         result = subprocess.run(
             cmd,
             env=env or os.environ.copy(),
@@ -433,19 +352,13 @@ def run_command(
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform any cleanup tasks before exit."""
+    """Perform cleanup tasks before exit."""
     print_step("Performing cleanup tasks...")
     logging.info("Cleanup completed")
 
 
 def signal_handler(sig: int, frame: Any) -> None:
-    """
-    Handle process termination signals gracefully.
-
-    Args:
-        sig: Signal number
-        frame: Current stack frame
-    """
+    """Handle termination signals gracefully."""
     sig_name = signal.Signals(sig).name
     print_warning(f"Process interrupted by {sig_name}")
     logging.error(f"Script interrupted by {sig_name}")
@@ -453,7 +366,6 @@ def signal_handler(sig: int, frame: Any) -> None:
     sys.exit(128 + sig)
 
 
-# Register signal handlers
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 atexit.register(cleanup)
@@ -463,12 +375,7 @@ atexit.register(cleanup)
 # Validation Functions
 # ----------------------------------------------------------------
 def check_root() -> bool:
-    """
-    Check if the script is running with root privileges.
-
-    Returns:
-        True if running as root, False otherwise
-    """
+    """Verify the script is run with root privileges."""
     if os.geteuid() != 0:
         print_error("This script must be run as root.")
         print_message("Please run with sudo or as root.", NordColors.SNOW_STORM_1)
@@ -481,7 +388,7 @@ def check_dependencies() -> bool:
     Ensure required external commands are available.
 
     Returns:
-        True if all dependencies are available, False otherwise
+        True if all dependencies exist; otherwise, False.
     """
     required = ["lsblk", "dd", "shred"]
     missing = [cmd for cmd in required if not shutil.which(cmd)]
@@ -496,13 +403,10 @@ def check_dependencies() -> bool:
 
 def is_valid_device(device_path: str) -> bool:
     """
-    Validate that the provided path is a block device.
-
-    Args:
-        device_path: Path to check
+    Validate that the provided path is an absolute path to a block device.
 
     Returns:
-        True if valid block device, False otherwise
+        True if valid, False otherwise.
     """
     if not os.path.exists(device_path):
         print_error(f"Device not found: {device_path}")
@@ -512,9 +416,10 @@ def is_valid_device(device_path: str) -> bool:
         return False
 
     device_name = os.path.basename(device_path)
-    if not os.path.exists(f"/sys/block/{device_name}") and not any(
-        os.path.exists(f"/sys/block/{bd}/{device_name}")
-        for bd in os.listdir("/sys/block")
+    sys_block = "/sys/block"
+    if not os.path.exists(f"{sys_block}/{device_name}") and not any(
+        os.path.exists(f"{sys_block}/{bd}/{device_name}")
+        for bd in os.listdir(sys_block)
     ):
         print_error(f"{device_path} is not recognized as a block device.")
         return False
@@ -529,7 +434,7 @@ def list_disks() -> List[DiskDevice]:
     List all block devices using lsblk with JSON output.
 
     Returns:
-        List of DiskDevice objects representing available block devices
+        A list of DiskDevice objects.
     """
     try:
         output = run_command(
@@ -537,19 +442,15 @@ def list_disks() -> List[DiskDevice]:
             capture_output=True,
         )
         data = json.loads(output.stdout)
-        disks = []
-
-        for disk_data in data.get("blockdevices", []):
-            if disk_data.get("type") != "disk":
+        disks: List[DiskDevice] = []
+        for device in data.get("blockdevices", []):
+            if device.get("type") != "disk":
                 continue
-
-            name = disk_data.get("name", "")
+            name = device.get("name", "")
             path = f"/dev/{name}"
-            size = int(disk_data.get("size", 0))
-            model = disk_data.get("model", "").strip() or "Unknown"
-
+            size = int(device.get("size", 0))
+            model = device.get("model", "").strip() or "Unknown"
             disks.append(DiskDevice(name, path, size, model))
-
         return disks
     except Exception as e:
         logging.error(f"Error listing disks: {e}")
@@ -559,13 +460,10 @@ def list_disks() -> List[DiskDevice]:
 
 def detect_disk_type(disk: str) -> str:
     """
-    Detect whether a disk is NVMe, HDD, or SSD.
-
-    Args:
-        disk: Disk name (e.g., 'sda')
+    Detect the disk type (NVMe, HDD, SSD, or Unknown).
 
     Returns:
-        String indicating disk type: 'NVMe', 'SSD', 'HDD', or 'Unknown'
+        A string indicating the disk type.
     """
     try:
         if disk.startswith("nvme"):
@@ -581,18 +479,14 @@ def detect_disk_type(disk: str) -> str:
 
 def is_system_disk(disk: str) -> bool:
     """
-    Check if the disk is likely the system disk.
-
-    Args:
-        disk: Disk name (e.g., 'sda')
+    Check if the disk appears to be the system disk.
 
     Returns:
-        True if this appears to be a system disk, False otherwise
+        True if it is likely the system disk, else False.
     """
     try:
         result = run_command(
-            ["findmnt", "-n", "-o", "SOURCE", "/"],
-            capture_output=True,
+            ["findmnt", "-n", "-o", "SOURCE", "/"], capture_output=True
         )
         root_device = result.stdout.strip()
         if root_device.startswith("/dev/"):
@@ -600,19 +494,15 @@ def is_system_disk(disk: str) -> bool:
         base = re.sub(r"\d+$", "", root_device)
         return disk == base
     except Exception:
-        # If we can't determine, better safe than sorry
         return True
 
 
 def is_mounted(disk: str) -> bool:
     """
-    Check if a disk or its partitions are mounted.
-
-    Args:
-        disk: Disk path (e.g., '/dev/sda')
+    Check if a disk or any of its partitions are mounted.
 
     Returns:
-        True if the disk or any of its partitions are mounted
+        True if mounted; otherwise, False.
     """
     try:
         output = run_command(["mount"], capture_output=True)
@@ -620,31 +510,25 @@ def is_mounted(disk: str) -> bool:
             return True
 
         disk_name = os.path.basename(disk)
-        output = run_command(
+        lsblk_out = run_command(
             ["lsblk", "-n", "-o", "NAME,MOUNTPOINT"], capture_output=True
         )
-
-        for line in output.stdout.splitlines():
+        for line in lsblk_out.stdout.splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[0].startswith(disk_name) and parts[1]:
                 return True
-
         return False
     except Exception as e:
         logging.error(f"Error checking mount status: {e}")
-        # If we can't determine, assume it's mounted to be safe
         return True
 
 
 def get_disk_size(disk: str) -> int:
     """
-    Return disk size in bytes.
-
-    Args:
-        disk: Disk path (e.g., '/dev/sda')
+    Retrieve the disk size in bytes.
 
     Returns:
-        Size in bytes
+        The size in bytes.
     """
     try:
         disk_name = os.path.basename(disk)
@@ -652,7 +536,6 @@ def get_disk_size(disk: str) -> int:
         if os.path.exists(size_path):
             with open(size_path, "r") as f:
                 return int(f.read().strip()) * 512
-
         output = run_command(
             ["lsblk", "-b", "-d", "-n", "-o", "SIZE", disk], capture_output=True
         )
@@ -660,44 +543,32 @@ def get_disk_size(disk: str) -> int:
     except Exception as e:
         logging.error(f"Error getting disk size: {e}")
         print_error(f"Error getting disk size: {e}")
-        # Default to 1TB as a fallback
-        return 1_000_000_000_000
+        return 1_000_000_000_000  # Fallback to 1 TB
 
 
 def unmount_disk(disk: str, force: bool = False) -> bool:
     """
     Attempt to unmount the disk and its partitions.
 
-    Args:
-        disk: Disk path (e.g., '/dev/sda')
-        force: Whether to force unmount if normal unmount fails
-
     Returns:
-        True if successfully unmounted or already not mounted
+        True if successfully unmounted (or already unmounted), False otherwise.
     """
     if not is_mounted(disk):
         return True
 
     print_warning(f"{disk} is mounted. Attempting to unmount...")
-
     try:
-        # Try to unmount the disk itself
         run_command(["umount", disk], check=False)
-
-        # Find and unmount all partitions
-        output = run_command(
+        lsblk_out = run_command(
             ["lsblk", "-n", "-o", "NAME,MOUNTPOINT"], capture_output=True
         )
-
         disk_name = os.path.basename(disk)
-        for line in output.stdout.splitlines():
+        for line in lsblk_out.stdout.splitlines():
             parts = line.split()
             if len(parts) >= 2 and parts[0].startswith(disk_name) and parts[1]:
                 run_command(["umount", f"/dev/{parts[0]}"], check=False)
     except Exception as e:
         logging.error(f"Failed to unmount disk: {e}")
-
-    # Check if we succeeded
     if is_mounted(disk):
         if not force:
             choice = Prompt.ask(
@@ -708,37 +579,29 @@ def unmount_disk(disk: str, force: bool = False) -> bool:
             if choice.lower() != "y":
                 print_message("Disk erasure cancelled.", NordColors.SNOW_STORM_1)
                 return False
-
         try:
-            # Force unmount the disk
             run_command(["umount", "-f", disk], check=False)
-
-            # Force unmount all partitions
-            output = run_command(["lsblk", "-n", "-o", "NAME"], capture_output=True)
+            lsblk_names = run_command(
+                ["lsblk", "-n", "-o", "NAME"], capture_output=True
+            )
             disk_name = os.path.basename(disk)
-
-            for line in output.stdout.splitlines():
+            for line in lsblk_names.stdout.splitlines():
                 if line.startswith(disk_name) and line != disk_name:
                     run_command(["umount", "-f", f"/dev/{line}"], check=False)
         except Exception as e:
             logging.error(f"Force unmount failed: {e}")
             print_error(f"Could not unmount {disk} even with force.")
             return False
-
     return not is_mounted(disk)
 
 
 def display_disk_list(disks: List[DiskDevice]) -> None:
     """
     Display available disks in a formatted table.
-
-    Args:
-        disks: List of DiskDevice objects to display
     """
     if not disks:
         print_message("No disks found.", NordColors.SNOW_STORM_1)
         return
-
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -747,30 +610,27 @@ def display_disk_list(disks: List[DiskDevice]) -> None:
         border_style=NordColors.FROST_3,
         title_justify="center",
     )
-
     table.add_column(
         "No.", style=f"bold {NordColors.FROST_4}", justify="right", width=4
     )
     table.add_column("Name", style=f"bold {NordColors.FROST_1}")
-    table.add_column("Size", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Type", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Path", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Model", style=f"{NordColors.SNOW_STORM_1}")
+    table.add_column("Size", style=NordColors.SNOW_STORM_1)
+    table.add_column("Type", style=NordColors.SNOW_STORM_1)
+    table.add_column("Path", style=NordColors.SNOW_STORM_1)
+    table.add_column("Model", style=NordColors.SNOW_STORM_1)
     table.add_column("System", justify="center")
     table.add_column("Mounted", justify="center")
-
     for idx, disk in enumerate(disks, start=1):
-        system_indicator = (
+        system_text = (
             Text("YES", style=f"bold {NordColors.RED}")
             if disk.is_system
             else Text("no", style=f"dim {NordColors.SNOW_STORM_1}")
         )
-        mounted_indicator = (
+        mounted_text = (
             Text("YES", style=f"bold {NordColors.YELLOW}")
             if disk.mounted
             else Text("no", style=f"dim {NordColors.SNOW_STORM_1}")
         )
-
         table.add_row(
             str(idx),
             disk.name,
@@ -778,10 +638,9 @@ def display_disk_list(disks: List[DiskDevice]) -> None:
             disk.type,
             disk.path,
             disk.model,
-            system_indicator,
-            mounted_indicator,
+            system_text,
+            mounted_text,
         )
-
     console.print(table)
 
 
@@ -791,30 +650,23 @@ def select_disk(
     """
     Prompt the user to select a disk from the list.
 
-    Args:
-        prompt: Message to display when asking for selection
-
     Returns:
-        Selected disk path or None if canceled
+        The selected disk path or None if cancelled.
     """
     disks = list_disks()
     if not disks:
         print_message("No disks available.", NordColors.SNOW_STORM_1)
         return None
-
     display_disk_list(disks)
-
     while True:
         choice = Prompt.ask(f"[bold {NordColors.PURPLE}]{prompt}[/]")
         if choice.lower() == "q":
             return None
-
         try:
             num = int(choice)
             if 1 <= num <= len(disks):
                 return disks[num - 1].path
-            else:
-                print_error("Invalid selection number.")
+            print_error("Invalid selection number.")
         except ValueError:
             print_error("Please enter a valid number.")
 
@@ -824,19 +676,14 @@ def select_disk(
 # ----------------------------------------------------------------
 def wipe_with_dd(disk: str, source: str) -> bool:
     """
-    Erase the disk using dd (with /dev/zero or /dev/urandom).
-
-    Args:
-        disk: Path to the disk to erase
-        source: Source device for dd (/dev/zero or /dev/urandom)
+    Erase the disk using dd with the specified data source.
 
     Returns:
-        True if wiping succeeded, False otherwise
+        True if wiping succeeded; otherwise, False.
     """
     try:
         disk_size = get_disk_size(disk)
         disk_name = os.path.basename(disk)
-
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn(f"[bold {NordColors.FROST_3}]Wiping disk..."),
@@ -849,14 +696,15 @@ def wipe_with_dd(disk: str, source: str) -> bool:
             TextColumn(f"[{NordColors.SNOW_STORM_1}]{{task.fields[bytes_written]}}"),
             TextColumn(f"[{NordColors.PURPLE}]{{task.fields[speed]}}/s"),
             TimeRemainingColumn(),
+            transient=True,
+            console=console,
         ) as progress:
-            task = progress.add_task(
+            task_id = progress.add_task(
                 f"Wiping {disk_name}",
                 total=disk_size,
                 bytes_written="0 B",
                 speed="0 B/s",
             )
-
             dd_cmd = [
                 "dd",
                 f"if={source}",
@@ -865,24 +713,20 @@ def wipe_with_dd(disk: str, source: str) -> bool:
                 "conv=fsync,noerror",
                 "status=progress",
             ]
-
             process = subprocess.Popen(
                 dd_cmd,
-                stderr=subprocess.PIPE,
                 stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                universal_newlines=True,
             )
-
             bytes_written = 0
-            last_update_time = time.time()
-
+            last_update = time.time()
+            # Read output from dd to update progress
             while True:
                 line = process.stdout.readline() or process.stderr.readline()
                 if not line and process.poll() is not None:
                     break
-
                 if "bytes" in line:
                     try:
                         parts = line.split()
@@ -895,28 +739,26 @@ def wipe_with_dd(disk: str, source: str) -> bool:
                                 current = int(part)
                                 now = time.time()
                                 speed = (
-                                    (current - bytes_written) / (now - last_update_time)
-                                    if now > last_update_time
+                                    (current - bytes_written) / (now - last_update)
+                                    if now > last_update
                                     else 0
                                 )
                                 progress.update(
-                                    task,
+                                    task_id,
                                     completed=current,
                                     bytes_written=format_size(current),
                                     speed=format_size(speed),
                                 )
                                 bytes_written = current
-                                last_update_time = now
+                                last_update = now
                                 break
                     except Exception as e:
                         logging.error(f"Error parsing dd output: {e}")
-                        progress.update(task, advance=CHUNK_SIZE)
-
-            returncode = process.wait()
-            if returncode == 0:
-                progress.update(task, completed=disk_size)
-
-            return returncode == 0
+                        progress.update(task_id, advance=CHUNK_SIZE)
+            retcode = process.wait()
+            if retcode == 0:
+                progress.update(task_id, completed=disk_size)
+            return retcode == 0
     except Exception as e:
         logging.error(f"Error during dd wipe: {e}")
         print_error(f"Error during disk erasure: {e}")
@@ -927,18 +769,13 @@ def wipe_with_shred(disk: str, passes: int) -> bool:
     """
     Erase the disk using shred (DoD-compliant).
 
-    Args:
-        disk: Path to the disk to erase
-        passes: Number of wiping passes to perform
-
     Returns:
-        True if shred succeeded, False otherwise
+        True if shredding succeeded; otherwise, False.
     """
     try:
         disk_size = get_disk_size(disk)
         disk_name = os.path.basename(disk)
-        total_work = disk_size * (passes + 1)  # +1 for final zero pass
-
+        total_work = disk_size * (passes + 1)  # Including final zero pass
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn(f"[bold {NordColors.FROST_3}]Secure erasing..."),
@@ -952,57 +789,48 @@ def wipe_with_shred(disk: str, passes: int) -> bool:
                 f"[{NordColors.PURPLE}]Pass {{task.fields[current_pass]}}/{{task.fields[total_passes]}}"
             ),
             TimeRemainingColumn(),
+            transient=True,
+            console=console,
         ) as progress:
-            task = progress.add_task(
+            task_id = progress.add_task(
                 f"Wiping {disk_name}",
                 total=total_work,
                 current_pass="1",
-                total_passes=str(passes + 1),  # +1 for final zero pass
+                total_passes=str(passes + 1),
             )
-
             shred_cmd = ["shred", "-n", str(passes), "-z", "-v", disk]
-
             process = subprocess.Popen(
                 shred_cmd,
-                stderr=subprocess.PIPE,
                 stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                universal_newlines=True,
             )
-
             current_pass = 1
             current_bytes = 0
-
             for line in iter(process.stderr.readline, ""):
                 if "pass" in line and "/" in line:
-                    try:
-                        pass_info = re.search(r"pass (\d+)/(\d+)", line)
-                        if pass_info:
-                            new_pass = int(pass_info.group(1))
-                            if new_pass != current_pass:
-                                current_pass = new_pass
-                                current_bytes = 0
-                                progress.update(task, current_pass=str(current_pass))
-                    except Exception:
-                        pass
-
+                    match = re.search(r"pass (\d+)/(\d+)", line)
+                    if match:
+                        new_pass = int(match.group(1))
+                        if new_pass != current_pass:
+                            current_pass = new_pass
+                            current_bytes = 0
+                            progress.update(task_id, current_pass=str(current_pass))
                 if "%" in line:
                     try:
                         pct = float(line.split("%")[0].strip())
                         new_bytes = int(disk_size * pct / 100)
                         delta = new_bytes - current_bytes
                         if delta > 0:
-                            progress.update(task, advance=delta)
+                            progress.update(task_id, advance=delta)
                             current_bytes = new_bytes
                     except Exception:
-                        progress.update(task, advance=CHUNK_SIZE)
-
-            returncode = process.wait()
-            if returncode == 0:
-                progress.update(task, completed=total_work)
-
-            return returncode == 0
+                        progress.update(task_id, advance=CHUNK_SIZE)
+            retcode = process.wait()
+            if retcode == 0:
+                progress.update(task_id, completed=total_work)
+            return retcode == 0
     except Exception as e:
         logging.error(f"Error during shred wipe: {e}")
         print_error(f"Error during secure erasure: {e}")
@@ -1015,23 +843,14 @@ def erase_disk(
     """
     Erase the specified disk using the chosen erasure method.
 
-    Args:
-        disk: Path to the disk to erase
-        method: Erasure method to use (zeros, random, dod)
-        passes: Number of passes for DoD method
-        force: Whether to force unmount
-
     Returns:
-        True if erasure succeeded, False otherwise
+        True if erasure succeeded; otherwise, False.
     """
     if method not in ERASURE_METHODS:
         print_error(f"Unknown erasure method: {method}")
         return False
 
-    if not is_valid_device(disk):
-        return False
-
-    if not unmount_disk(disk, force):
+    if not is_valid_device(disk) or not unmount_disk(disk, force):
         return False
 
     print_section("Disk Erasure Confirmation")
@@ -1043,7 +862,6 @@ def erase_disk(
         f"Description: {ERASURE_METHODS[method]['description']}",
         NordColors.SNOW_STORM_1,
     )
-
     if method == "dod":
         print_message(f"Passes: {passes}", NordColors.SNOW_STORM_1)
 
@@ -1052,7 +870,6 @@ def erase_disk(
         print_error(
             "⚠ WARNING: THIS APPEARS TO BE A SYSTEM DISK! Erasing it will destroy your OS!"
         )
-
     if not force:
         confirm = Prompt.ask(
             f"[bold {NordColors.RED}]Type 'YES' to confirm disk erasure[/]"
@@ -1062,28 +879,20 @@ def erase_disk(
             return False
 
     disk_size = get_disk_size(disk)
-    estimated_time = "unknown"
-
-    # Rough time estimates based on method and disk size
+    # Estimate completion time based on method
     if method == "zeros":
         speed_factor = 100 * 1024 * 1024  # ~100 MB/s
-        estimated_time = format_time(disk_size / speed_factor)
     elif method == "random":
         speed_factor = 50 * 1024 * 1024  # ~50 MB/s
-        estimated_time = format_time(disk_size / speed_factor)
     elif method == "dod":
         speed_factor = 75 * 1024 * 1024  # ~75 MB/s
-        estimated_time = format_time((passes + 1) * disk_size / speed_factor)
-
+    estimated_time = format_time((disk_size * (passes + 1)) / speed_factor)
     print_message(
         f"Estimated completion time: {estimated_time} (varies by disk speed)",
         NordColors.YELLOW,
     )
     print_message("Starting disk erasure...", NordColors.FROST_3)
-
-    success = False
-    start_time = time.time()
-
+    start = time.time()
     try:
         if method in ["zeros", "random"]:
             source = "/dev/zero" if method == "zeros" else "/dev/urandom"
@@ -1093,15 +902,11 @@ def erase_disk(
     except KeyboardInterrupt:
         print_warning("Disk erasure interrupted by user")
         return False
-
-    end_time = time.time()
-    elapsed = format_time(end_time - start_time)
-
+    elapsed = format_time(time.time() - start)
     if success:
         print_success(f"Disk {disk} erased successfully in {elapsed}")
     else:
         print_error(f"Disk {disk} erasure failed after {elapsed}")
-
     return success
 
 
@@ -1113,43 +918,33 @@ def show_disk_info() -> None:
     disk_path = select_disk("Select a disk to view details (or 'q' to cancel): ")
     if not disk_path:
         return
-
     disk_name = os.path.basename(disk_path)
     print_section(f"Disk Information: {disk_name}")
-
     try:
         with console.status(
             f"[bold {NordColors.FROST_3}]Gathering disk information...", spinner="dots"
         ):
-            # Basic partition info
             output = run_command(
                 ["lsblk", "-o", "NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINT", disk_path],
                 capture_output=True,
             )
-
-            # Get disk details
             disk_type = detect_disk_type(disk_name)
             disk_size = get_disk_size(disk_path)
             is_system = is_system_disk(disk_name)
             mounted = is_mounted(disk_path)
-
-            # Get model and serial
-            model_output = run_command(
+            model_out = run_command(
                 ["lsblk", "-d", "-n", "-o", "MODEL", disk_path],
                 capture_output=True,
                 check=False,
             )
-            model = model_output.stdout.strip() or "Unknown"
-
-            serial_output = run_command(
+            model = model_out.stdout.strip() or "Unknown"
+            serial_out = run_command(
                 ["lsblk", "-d", "-n", "-o", "SERIAL", disk_path],
                 capture_output=True,
                 check=False,
             )
-            serial = serial_output.stdout.strip() or "Unknown"
-
-        # Create panel with disk info
-        disk_info = [
+            serial = serial_out.stdout.strip() or "Unknown"
+        info = [
             f"[{NordColors.FROST_3}]Path:[/] [{NordColors.SNOW_STORM_1}]{disk_path}[/]",
             f"[{NordColors.FROST_3}]Type:[/] [{NordColors.SNOW_STORM_1}]{disk_type}[/]",
             f"[{NordColors.FROST_3}]Size:[/] [{NordColors.SNOW_STORM_1}]{format_size(disk_size)}[/]",
@@ -1158,41 +953,32 @@ def show_disk_info() -> None:
             f"[{NordColors.FROST_3}]System Disk:[/] [{NordColors.SNOW_STORM_1}]{'Yes' if is_system else 'No'}[/]",
             f"[{NordColors.FROST_3}]Mounted:[/] [{NordColors.SNOW_STORM_1}]{'Yes' if mounted else 'No'}[/]",
         ]
-
         info_panel = Panel(
-            Text.from_markup("\n".join(disk_info)),
+            Text.from_markup("\n".join(info)),
             title=f"[bold {NordColors.FROST_1}]Disk Details[/]",
             border_style=NordColors.FROST_3,
         )
-
         console.print(info_panel)
-
-        # Show partition info
         print_section("Partition Information")
         console.print(output.stdout)
-
-        # Show SMART status if available
         print_section("SMART Status")
         if shutil.which("smartctl"):
             try:
-                smart_output = run_command(
+                smart_out = run_command(
                     ["smartctl", "-a", disk_path], capture_output=True, check=False
                 )
-                smart_status = smart_output.stdout.lower()
-
-                if "failed" in smart_status:
+                smart_text = smart_out.stdout.lower()
+                if "failed" in smart_text:
                     print_warning("SMART status: FAILED - Disk might be failing!")
-                elif "passed" in smart_status:
+                elif "passed" in smart_text:
                     print_success("SMART status: PASSED")
                 else:
                     print_message(
                         "SMART status: Unknown or not available",
                         NordColors.SNOW_STORM_1,
                     )
-
-                # Show important SMART attributes
                 console.print(f"[{NordColors.FROST_2}]SMART data summary:[/]")
-                for line in smart_output.stdout.splitlines():
+                for line in smart_out.stdout.splitlines():
                     if any(
                         attr in line.lower()
                         for attr in [
@@ -1219,13 +1005,12 @@ def show_disk_info() -> None:
 # ----------------------------------------------------------------
 def select_erasure_method() -> Optional[str]:
     """
-    Display a menu of available erasure methods and return the user's choice.
+    Display a menu of available erasure methods and return the chosen key.
 
     Returns:
-        Selected method key or None if cancelled
+        The selected method key or None if cancelled.
     """
     print_section("Select Erasure Method")
-
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -1233,39 +1018,27 @@ def select_erasure_method() -> Optional[str]:
         title=f"[bold {NordColors.FROST_2}]Available Methods[/]",
         border_style=NordColors.FROST_3,
     )
-
     table.add_column("#", style=f"bold {NordColors.FROST_4}", justify="right", width=4)
     table.add_column("Method", style=f"bold {NordColors.FROST_1}")
-    table.add_column("Description", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Security", style=f"{NordColors.SNOW_STORM_1}")
-
-    # Add security rating column for better decision making
-    security_ratings = {"zeros": "Basic", "random": "Good", "dod": "Best"}
-
-    for idx, (method_key, method_info) in enumerate(ERASURE_METHODS.items(), start=1):
+    table.add_column("Description", style=NordColors.SNOW_STORM_1)
+    security = {"zeros": "Basic", "random": "Good", "dod": "Best"}
+    table.add_column("Security", style=NordColors.SNOW_STORM_1)
+    for idx, (key, info) in enumerate(ERASURE_METHODS.items(), start=1):
         table.add_row(
-            str(idx),
-            method_info["name"],
-            method_info["description"],
-            security_ratings.get(method_key, "Unknown"),
+            str(idx), info["name"], info["description"], security.get(key, "Unknown")
         )
-
     console.print(table)
-
     while True:
         choice = Prompt.ask(
-            f"[bold {NordColors.PURPLE}]Select erasure method (1-{len(ERASURE_METHODS)}, or 'q' to cancel)[/]"
+            f"[bold {NordColors.PURPLE}]Select erasure method (1-{len(ERASURE_METHODS)} or 'q' to cancel)[/]"
         )
-
         if choice.lower() == "q":
             return None
-
         try:
             num = int(choice)
             if 1 <= num <= len(ERASURE_METHODS):
                 return list(ERASURE_METHODS.keys())[num - 1]
-            else:
-                print_error("Invalid selection number.")
+            print_error("Invalid selection number.")
         except ValueError:
             print_error("Please enter a valid number.")
 
@@ -1276,12 +1049,10 @@ def erasure_menu() -> None:
     if not disk_path:
         print_message("Erasure cancelled", NordColors.SNOW_STORM_1)
         return
-
     method = select_erasure_method()
     if not method:
         print_message("Erasure cancelled", NordColors.SNOW_STORM_1)
         return
-
     passes = DEFAULT_PASSES
     if method == "dod":
         while True:
@@ -1290,16 +1061,12 @@ def erasure_menu() -> None:
                     f"[bold {NordColors.PURPLE}]Number of passes (1-7, default {DEFAULT_PASSES})[/]",
                     default=str(DEFAULT_PASSES),
                 )
-                if not passes_input:
-                    break
-
-                passes = int(passes_input)
+                passes = int(passes_input) if passes_input else DEFAULT_PASSES
                 if 1 <= passes <= 7:
                     break
                 print_error("Please enter a number between 1 and 7")
             except ValueError:
                 print_error("Please enter a valid number")
-
     force = False
     erase_disk(disk_path, method, passes, force)
 
@@ -1309,8 +1076,6 @@ def interactive_menu() -> None:
     while True:
         console.clear()
         console.print(create_header())
-
-        # Display system info
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         console.print(
             Align.center(
@@ -1319,50 +1084,40 @@ def interactive_menu() -> None:
             )
         )
         console.print()
-
-        # Create menu table
         menu_table = Table(
             title=f"[bold {NordColors.FROST_2}]Main Menu[/]",
-            box=None,
+            box=box.SIMPLE,
             title_style=f"bold {NordColors.FROST_1}",
             show_header=False,
             expand=True,
         )
-
         menu_table.add_column(
             style=f"bold {NordColors.FROST_4}", justify="right", width=4
         )
         menu_table.add_column(style=f"bold {NordColors.FROST_3}")
-        menu_table.add_column(style=f"{NordColors.SNOW_STORM_1}")
-
+        menu_table.add_column(style=NordColors.SNOW_STORM_1)
         menu_table.add_row("1", "List Disks", "View all available storage devices")
         menu_table.add_row(
             "2", "Show Disk Information", "Examine disk details and SMART status"
         )
         menu_table.add_row("3", "Erase Disk", "Permanently destroy all data on a disk")
         menu_table.add_row("4", "Exit", "Quit the application")
-
         console.print(Panel(menu_table, border_style=Style(color=NordColors.FROST_4)))
         console.print()
-
-        # Add a warning message about data destruction
         console.print(
             Panel(
                 Text.from_markup(
-                    "[bold]CAUTION:[/] This tool permanently destroys all data on selected disks.\n"
-                    "There is NO recovery option after erasure is complete."
+                    "[bold]CAUTION:[/] This tool permanently destroys all data on selected disks.\nThere is NO recovery option after erasure is complete."
                 ),
                 border_style=Style(color=NordColors.RED),
                 padding=(1, 2),
             )
         )
         console.print()
-
         choice = Prompt.ask(
             f"[bold {NordColors.PURPLE}]Enter your choice[/]",
             choices=["1", "2", "3", "4"],
         )
-
         if choice == "1":
             display_disk_list(list_disks())
             input(f"\n[bold {NordColors.PURPLE}]Press Enter to continue...[/] ")
@@ -1395,13 +1150,10 @@ def main() -> None:
     try:
         if not check_root():
             sys.exit(1)
-
         setup_logging()
         logging.info(f"Starting Disk Eraser Tool v{VERSION}")
-
         if not check_dependencies():
             sys.exit(1)
-
         interactive_menu()
     except KeyboardInterrupt:
         print_warning("\nOperation cancelled by user")

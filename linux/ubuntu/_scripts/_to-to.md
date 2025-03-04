@@ -5,17 +5,18 @@
     *└── _to-to.md
     *└── deploy_scripts.py
     *└── file_toolkit.py
-    └── ftp_toolkit.py
     *└── hacker_toolkit.py
     *└── hacking_tools.py
     *└── hello_world.py
     *└── log_monitor.py
     *└── metasploit.py
     *└── network_toolkit.py
+    *|__owncloud_setup.py
     *└── python_dev_setup.py
     *└── raspberry_pi_5_overclocking_utility.py
     *└── reset_tailscale.py
-    └── secure_disk_eraser.py
+    *└── secure_disk_eraser.py
+    *└── sftp_toolkit.py
     *└── ssh_machine_selector.py
     *└── system_monitor.py
     └── ubuntu_voip_setup.py
@@ -34,7 +35,7 @@
 
 Prompt:
 
-Rewrite and enhance the following Python script using your best practices. The updated version should feature:
+Rewrite and enhance the following Python script using your best practices and template / instructions. The updated version should feature:
 	•	A fully interactive, menu-driven CLI using Rich for improved UX.
 	•	A numbered menu system with clear options and prompts.
 	•	Pyfiglet for a stylish ASCII banner at startup.
@@ -49,7 +50,7 @@ Ensure the script maintains its core functionality while significantly improving
 
 Prompt:
 
-Rewrite and enhance the following Python script using your best practices. The updated version should:
+Rewrite and enhance the following Python script using your best practices and template / instructions. The updated version should:
 	•	Run fully unattended with no interactive menu system.
 	•	Automatically perform all actions without requiring user input.
 	•	Utilize Pyfiglet to display a stylish ASCII banner at startup.
