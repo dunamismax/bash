@@ -23,7 +23,7 @@
     └── unified_restore_to_home.py
     *└── universal_downloader.py
     *└── update_dns_records.py
-    └── update_plex.py
+    *└── update_plex.py
     └── virtualization_setup.py
     └── vm_manager.py
     *└── vscode_wayland_setup.py

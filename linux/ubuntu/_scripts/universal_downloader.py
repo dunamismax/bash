@@ -15,7 +15,7 @@ Features:
   • Automatic dependency detection and installation
   • Beautiful Nord-themed terminal interface
 
-Version: 4.0.0
+Version: 4.2.0
 """
 
 import atexit
