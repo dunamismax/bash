@@ -3,9 +3,9 @@
 Debian Trixie Server Setup & Hardening Utility (Unattended)
 -----------------------------------------------------------
 
-This fully automated utility performs preflight checks, system updates, 
-package installations, user environment setup, security hardening, 
-service installations, maintenance tasks, system tuning, and final 
+This fully automated utility performs preflight checks, system updates,
+package installations, user environment setup, security hardening,
+service installations, maintenance tasks, system tuning, and final
 health checks on a Debian Trixie server.
 
 Features:
@@ -39,6 +39,7 @@ import signal
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -132,7 +133,7 @@ class AppConfig:
     DEBIAN_CODENAME = "trixie"  # Debian 13 codename
     DEBIAN_MIRROR = "deb.debian.org"
     DEBIAN_CDN = f"https://{DEBIAN_MIRROR}/debian"
-    
+
     # Logging and backup settings
     LOG_FILE = "/var/log/debian_setup.log"
     MAX_LOG_SIZE = 10 * 1024 * 1024
@@ -150,7 +151,7 @@ class AppConfig:
 
     # Package and service lists
     ALLOWED_PORTS = ["22", "80", "443", "32400"]
-    
+
     # Host info
     try:
         HOSTNAME = socket.gethostname()
@@ -330,21 +331,25 @@ console = Console(
 # ----------------------------------------------------------------
 class SetupError(Exception):
     """Base exception for Debian Setup errors."""
+
     pass
 
 
 class DependencyError(SetupError):
     """Raised when a required dependency is missing and cannot be installed."""
+
     pass
 
 
 class ConfigurationError(SetupError):
     """Raised when a configuration change fails."""
+
     pass
 
 
 class ExecutionError(SetupError):
     """Raised when command execution fails."""
+
     pass
 
 
@@ -354,18 +359,24 @@ class ExecutionError(SetupError):
 def setup_logging() -> logging.Logger:
     """Configure logging with Rich handler and file output."""
     os.makedirs(os.path.dirname(AppConfig.LOG_FILE), exist_ok=True)
-    
+
     # Handle log rotation if needed
-    if os.path.exists(AppConfig.LOG_FILE) and os.path.getsize(AppConfig.LOG_FILE) > AppConfig.MAX_LOG_SIZE:
+    if (
+        os.path.exists(AppConfig.LOG_FILE)
+        and os.path.getsize(AppConfig.LOG_FILE) > AppConfig.MAX_LOG_SIZE
+    ):
         ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         rotated = f"{AppConfig.LOG_FILE}.{ts}.gz"
         try:
-            with open(AppConfig.LOG_FILE, "rb") as fin, gzip.open(rotated, "wb") as fout:
+            with (
+                open(AppConfig.LOG_FILE, "rb") as fin,
+                gzip.open(rotated, "wb") as fout,
+            ):
                 shutil.copyfileobj(fin, fout)
             open(AppConfig.LOG_FILE, "w").close()
         except Exception:
             pass
-    
+
     # Configure the logger
     logging.basicConfig(
         level=logging.DEBUG,
@@ -519,7 +530,7 @@ def status_report() -> None:
     """Print a status report panel with all setup tasks."""
     print_section("Setup Status Report")
     icons = {"success": "✓", "failed": "✗", "pending": "?", "in_progress": "⋯"}
-    
+
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -527,28 +538,31 @@ def status_report() -> None:
         title=f"[bold {NordColors.FROST_2}]Debian Trixie Setup Status[/]",
         border_style=NordColors.FROST_3,
     )
-    
+
     table.add_column("Task", style=f"bold {NordColors.FROST_2}")
     table.add_column("Status", style=f"bold {NordColors.FROST_3}")
     table.add_column("Message", style=f"{NordColors.SNOW_STORM_1}")
-    
+
     for task, data in SETUP_STATUS.items():
         st = data["status"]
         msg = data["message"]
         icon = icons.get(st, "?")
         status_style = (
-            "success" if st == "success" 
-            else "error" if st == "failed" 
-            else "warning" if st == "in_progress" 
+            "success"
+            if st == "success"
+            else "error"
+            if st == "failed"
+            else "warning"
+            if st == "in_progress"
             else "step"
         )
-        
+
         table.add_row(
-            f"{task.replace('_', ' ').title()}", 
+            f"{task.replace('_', ' ').title()}",
             f"[{status_style}]{icon} {st.upper()}[/]",
-            msg
+            msg,
         )
-    
+
     console.print(table)
 
 
@@ -556,12 +570,12 @@ def status_report() -> None:
 # Command Execution Helper
 # ----------------------------------------------------------------
 def run_command(
-    cmd: Union[List[str], str], 
+    cmd: Union[List[str], str],
     env: Optional[Dict[str, str]] = None,
-    check: bool = True, 
+    check: bool = True,
     capture_output: bool = True,
-    timeout: int = 300, 
-    verbose: bool = False
+    timeout: int = 300,
+    verbose: bool = False,
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
@@ -579,10 +593,10 @@ def run_command(
     """
     cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
     logger.debug(f"Executing: {cmd_str}")
-    
+
     if verbose:
         print_step(f"Executing: {cmd_str[:80]}{'...' if len(cmd_str) > 80 else ''}")
-    
+
     try:
         if isinstance(cmd, str):
             result = subprocess.run(
@@ -620,21 +634,17 @@ def run_command(
 
 
 def run_with_progress(
-    desc: str, 
-    func: Callable, 
-    *args, 
-    task_name: Optional[str] = None, 
-    **kwargs
+    desc: str, func: Callable, *args, task_name: Optional[str] = None, **kwargs
 ) -> Any:
     """
     Run a function with a progress indicator.
-    
+
     Args:
         desc: Description of the task
         func: Function to run
         task_name: Name of the task for status tracking
         args, kwargs: Arguments to pass to the function
-        
+
     Returns:
         The result of the function
     """
@@ -643,7 +653,7 @@ def run_with_progress(
             "status": "in_progress",
             "message": f"{desc} in progress...",
         }
-        
+
     with console.status(f"[section]{desc}...[/section]"):
         start = time.time()
         try:
@@ -731,10 +741,10 @@ class Utils:
     def backup_file(fp: str) -> Optional[str]:
         """
         Create a backup of a file with timestamp.
-        
+
         Args:
             fp: File path to backup
-            
+
         Returns:
             Backup file path if successful, None otherwise
         """
@@ -755,12 +765,12 @@ class Utils:
     ) -> bool:
         """
         Ensure a directory exists with proper permissions.
-        
+
         Args:
             path: Directory path to ensure
             owner: Optional owner (user:group) for the directory
             mode: File mode permissions
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -778,11 +788,11 @@ class Utils:
     def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
         """
         Check if a TCP port is open.
-        
+
         Args:
             port: Port number to check
             host: Host to check against
-            
+
         Returns:
             True if the port is open, False otherwise
         """
@@ -805,7 +815,7 @@ class PreflightChecker:
     def check_network(self) -> bool:
         """
         Check if the system has network connectivity.
-        
+
         Returns:
             True if network is available, False otherwise
         """
@@ -823,7 +833,7 @@ class PreflightChecker:
     def check_os_version(self) -> Optional[Tuple[str, str]]:
         """
         Check if the system is running Debian.
-        
+
         Returns:
             Tuple of (os_id, version) if Debian, None otherwise
         """
@@ -831,18 +841,18 @@ class PreflightChecker:
         if not os.path.isfile("/etc/os-release"):
             logger.warning("Missing /etc/os-release")
             return None
-        
+
         os_info = {}
         with open("/etc/os-release") as f:
             for line in f:
                 if "=" in line:
                     k, v = line.strip().split("=", 1)
                     os_info[k] = v.strip('"')
-                    
+
         if os_info.get("ID") != "debian":
             logger.warning("Non-Debian system detected.")
             return None
-            
+
         ver = os_info.get("VERSION_ID", "")
         logger.info(f"Detected Debian version: {ver}")
         return ("debian", ver)
@@ -850,7 +860,7 @@ class PreflightChecker:
     def save_config_snapshot(self) -> Optional[str]:
         """
         Save a snapshot of important configuration files.
-        
+
         Returns:
             Path to the snapshot file if successful, None otherwise
         """
@@ -858,7 +868,7 @@ class PreflightChecker:
         ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         os.makedirs(AppConfig.BACKUP_DIR, exist_ok=True)
         snapshot = os.path.join(AppConfig.BACKUP_DIR, f"config_snapshot_{ts}.tar.gz")
-        
+
         try:
             with tarfile.open(snapshot, "w:gz") as tar:
                 for cfg in AppConfig.CONFIG_FILES:
@@ -880,132 +890,164 @@ class APTSourcesManager:
         self.sources_list = "/etc/apt/sources.list"
         self.sources_dir = "/etc/apt/sources.list.d"
         self.backup_created = False
-        
+
     def backup_sources(self) -> bool:
         """
         Backup the current APT sources configuration.
-        
+
         Returns:
             True if successful, False otherwise
         """
         if self.backup_created:
             return True
-            
+
         try:
             # Backup the main sources.list file
             if os.path.exists(self.sources_list):
                 backup = Utils.backup_file(self.sources_list)
                 if not backup:
                     return False
-            
+
             # Backup any *.list files in the sources.list.d directory
             if os.path.isdir(self.sources_dir):
                 for f in os.listdir(self.sources_dir):
                     if f.endswith(".list"):
                         source_file = os.path.join(self.sources_dir, f)
                         Utils.backup_file(source_file)
-            
+
             self.backup_created = True
             return True
         except Exception as e:
             logger.error(f"Failed to backup APT sources: {e}")
             return False
-    
+
     def add_debian_cdn_source(self) -> bool:
         """
         Configure APT to use the Debian CDN service.
-        
+
         Returns:
             True if successful, False otherwise
         """
         logger.info("Configuring Debian Trixie CDN sources...")
-        
+
         # First backup existing sources
         if not self.backup_sources():
             return False
-            
+
         try:
             # Create a new sources.list with CDN repositories
             with open(self.sources_list, "w") as f:
                 f.write(f"# Debian Trixie repositories configured by setup utility\n")
-                f.write(f"deb {AppConfig.DEBIAN_CDN} trixie main contrib non-free-firmware\n")
-                f.write(f"deb {AppConfig.DEBIAN_CDN} trixie-updates main contrib non-free-firmware\n")
-                f.write(f"deb {AppConfig.DEBIAN_CDN} trixie-security main contrib non-free-firmware\n")
+                f.write(
+                    f"deb {AppConfig.DEBIAN_CDN} trixie main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"deb {AppConfig.DEBIAN_CDN} trixie-updates main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"deb {AppConfig.DEBIAN_CDN} trixie-security main contrib non-free-firmware\n"
+                )
                 f.write(f"# Uncomment if you need source packages\n")
-                f.write(f"# deb-src {AppConfig.DEBIAN_CDN} trixie main contrib non-free-firmware\n")
-                f.write(f"# deb-src {AppConfig.DEBIAN_CDN} trixie-updates main contrib non-free-firmware\n")
-                f.write(f"# deb-src {AppConfig.DEBIAN_CDN} trixie-security main contrib non-free-firmware\n")
-            
+                f.write(
+                    f"# deb-src {AppConfig.DEBIAN_CDN} trixie main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"# deb-src {AppConfig.DEBIAN_CDN} trixie-updates main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"# deb-src {AppConfig.DEBIAN_CDN} trixie-security main contrib non-free-firmware\n"
+                )
+
             logger.info(f"Debian Trixie CDN sources configured in {self.sources_list}")
             return True
         except Exception as e:
             logger.error(f"Failed to configure Debian CDN sources: {e}")
             return False
-            
+
     def add_debian_mirror_source(self, mirror_url: str) -> bool:
         """
         Configure APT to use a specific Debian mirror.
-        
+
         Args:
             mirror_url: Base URL of the Debian mirror
-            
+
         Returns:
             True if successful, False otherwise
         """
         logger.info(f"Configuring Debian Trixie mirror source: {mirror_url}")
-        
+
         # First backup existing sources
         if not self.backup_sources():
             return False
-            
+
         try:
             # Create a new sources.list with the specified mirror
             with open(self.sources_list, "w") as f:
                 f.write(f"# Debian Trixie repositories configured by setup utility\n")
-                f.write(f"deb {mirror_url}/debian trixie main contrib non-free-firmware\n")
-                f.write(f"deb {mirror_url}/debian trixie-updates main contrib non-free-firmware\n")
-                f.write(f"deb {mirror_url}/debian-security trixie-security main contrib non-free-firmware\n")
+                f.write(
+                    f"deb {mirror_url}/debian trixie main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"deb {mirror_url}/debian trixie-updates main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"deb {mirror_url}/debian-security trixie-security main contrib non-free-firmware\n"
+                )
                 f.write(f"# Uncomment if you need source packages\n")
-                f.write(f"# deb-src {mirror_url}/debian trixie main contrib non-free-firmware\n")
-                f.write(f"# deb-src {mirror_url}/debian trixie-updates main contrib non-free-firmware\n")
-                f.write(f"# deb-src {mirror_url}/debian-security trixie-security main contrib non-free-firmware\n")
-            
-            logger.info(f"Debian Trixie mirror sources configured in {self.sources_list}")
+                f.write(
+                    f"# deb-src {mirror_url}/debian trixie main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"# deb-src {mirror_url}/debian trixie-updates main contrib non-free-firmware\n"
+                )
+                f.write(
+                    f"# deb-src {mirror_url}/debian-security trixie-security main contrib non-free-firmware\n"
+                )
+
+            logger.info(
+                f"Debian Trixie mirror sources configured in {self.sources_list}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to configure Debian mirror sources: {e}")
             return False
-    
+
     def add_local_mirror_source(self, local_path: str) -> bool:
         """
         Configure APT to use a local filesystem mirror.
-        
+
         Args:
             local_path: Path to the local Debian mirror
-            
+
         Returns:
             True if successful, False otherwise
         """
         logger.info(f"Configuring Debian Trixie local mirror source: {local_path}")
-        
+
         # Check if the local path exists
         if not os.path.isdir(local_path):
             logger.error(f"Local mirror path does not exist: {local_path}")
             return False
-        
+
         # First backup existing sources
         if not self.backup_sources():
             return False
-            
+
         try:
             # Create a new sources.list with the local mirror
             with open(self.sources_list, "w") as f:
                 f.write(f"# Debian Trixie repositories configured by setup utility\n")
-                f.write(f"deb file:{local_path} trixie main contrib non-free-firmware\n")
+                f.write(
+                    f"deb file:{local_path} trixie main contrib non-free-firmware\n"
+                )
                 f.write(f"# Uncomment if you need source packages\n")
-                f.write(f"# deb-src file:{local_path} trixie main contrib non-free-firmware\n")
-            
-            logger.info(f"Debian Trixie local mirror sources configured in {self.sources_list}")
+                f.write(
+                    f"# deb-src file:{local_path} trixie main contrib non-free-firmware\n"
+                )
+
+            logger.info(
+                f"Debian Trixie local mirror sources configured in {self.sources_list}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to configure Debian local mirror sources: {e}")
@@ -1019,7 +1061,7 @@ class SystemUpdater:
     def fix_package_issues(self) -> bool:
         """
         Fix common package management issues.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1047,10 +1089,10 @@ class SystemUpdater:
     def update_system(self, full_upgrade: bool = False) -> bool:
         """
         Update the system packages.
-        
+
         Args:
             full_upgrade: Whether to perform a full upgrade
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -1058,20 +1100,20 @@ class SystemUpdater:
         try:
             if not self.fix_package_issues():
                 logger.warning("Proceeding despite package issues.")
-                
+
             # Try using nala first; fallback to apt if nala fails
             try:
                 run_command(["nala", "update"])
             except Exception as e:
                 logger.warning(f"Nala update failed: {e}; using apt update")
                 run_command(["apt", "update"])
-                
+
             upgrade_cmd = (
                 ["nala", "full-upgrade", "-y"]
                 if full_upgrade
                 else ["nala", "upgrade", "-y"]
             )
-            
+
             try:
                 run_command(upgrade_cmd)
             except Exception as e:
@@ -1082,7 +1124,7 @@ class SystemUpdater:
                     else ["apt", "upgrade", "-y"]
                 )
                 run_command(alt_cmd)
-                
+
             logger.info("System update completed.")
             return True
         except Exception as e:
@@ -1092,19 +1134,19 @@ class SystemUpdater:
     def install_packages(self, packages: Optional[List[str]] = None) -> bool:
         """
         Install specified packages.
-        
+
         Args:
             packages: List of packages to install, or None for default list
-            
+
         Returns:
             True if successful, False otherwise
         """
         logger.info("Installing packages...")
         packages = packages or PACKAGES
-        
+
         if not self.fix_package_issues():
             logger.warning("Proceeding despite package issues.")
-            
+
         # Find which packages need to be installed
         missing = []
         for pkg in packages:
@@ -1117,11 +1159,11 @@ class SystemUpdater:
                 )
             except subprocess.CalledProcessError:
                 missing.append(pkg)
-                
+
         if not missing:
             logger.info("All requested packages are already installed.")
             return True
-            
+
         # Try installing with nala first, fall back to apt
         try:
             run_command(["nala", "install", "-y"] + missing)
@@ -1140,20 +1182,20 @@ class SystemUpdater:
     def configure_timezone(self, tz: str = "America/New_York") -> bool:
         """
         Configure the system timezone.
-        
+
         Args:
             tz: Timezone to set
-            
+
         Returns:
             True if successful, False otherwise
         """
         logger.info(f"Setting timezone to {tz}...")
         tz_file = f"/usr/share/zoneinfo/{tz}"
-        
+
         if not os.path.isfile(tz_file):
             logger.warning(f"Timezone file {tz_file} not found.")
             return False
-            
+
         try:
             if Utils.command_exists("timedatectl"):
                 run_command(["timedatectl", "set-timezone", tz])
@@ -1172,23 +1214,23 @@ class SystemUpdater:
     def configure_locale(self, locale: str = "en_US.UTF-8") -> bool:
         """
         Configure the system locale.
-        
+
         Args:
             locale: Locale to set
-            
+
         Returns:
             True if successful, False otherwise
         """
         logger.info(f"Setting locale to {locale}...")
-        
+
         try:
             run_command(["locale-gen", locale])
             run_command(["update-locale", f"LANG={locale}", f"LC_ALL={locale}"])
-            
+
             env_file = "/etc/environment"
             lines = []
             locale_set = False
-            
+
             if os.path.isfile(env_file):
                 with open(env_file) as f:
                     for line in f:
@@ -1197,13 +1239,13 @@ class SystemUpdater:
                             locale_set = True
                         else:
                             lines.append(line)
-                            
+
             if not locale_set:
                 lines.append(f"LANG={locale}\n")
-                
+
             with open(env_file, "w") as f:
                 f.writelines(lines)
-                
+
             logger.info("Locale configured.")
             return True
         except Exception as e:
@@ -1218,17 +1260,19 @@ class UserEnvironment:
     def setup_repos(self) -> bool:
         """
         Setup git repositories for the user.
-        
+
         Returns:
             True if all repositories were set up successfully, False otherwise
         """
         logger.info(f"Setting up repositories for {AppConfig.USERNAME}...")
         gh_dir = os.path.join(AppConfig.USER_HOME, "github")
-        Utils.ensure_directory(gh_dir, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}")
-        
+        Utils.ensure_directory(
+            gh_dir, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}"
+        )
+
         repos = ["bash", "windows", "web", "python", "go", "misc"]
         all_success = True
-        
+
         for repo in repos:
             repo_dir = os.path.join(gh_dir, repo)
             if os.path.isdir(os.path.join(repo_dir, ".git")):
@@ -1250,19 +1294,21 @@ class UserEnvironment:
                 except Exception:
                     logger.warning(f"Repo clone failed: {repo}")
                     all_success = False
-                    
+
         try:
-            run_command(["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", gh_dir])
+            run_command(
+                ["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", gh_dir]
+            )
         except Exception:
             logger.warning(f"Ownership update failed for {gh_dir}.")
             all_success = False
-            
+
         return all_success
 
     def copy_shell_configs(self) -> bool:
         """
         Copy shell configuration files to user and root home directories.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1271,52 +1317,54 @@ class UserEnvironment:
         src_dir = os.path.join(
             AppConfig.USER_HOME, "github", "bash", "linux", "debian", "dotfiles"
         )
-        
+
         # Fallback to ubuntu folder if debian folder doesn't exist
         if not os.path.isdir(src_dir):
             src_dir = os.path.join(
                 AppConfig.USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles"
             )
-            
+
         if not os.path.isdir(src_dir):
             logger.warning(f"Source directory {src_dir} not found.")
             return False
-            
+
         dest_dirs = [AppConfig.USER_HOME, "/root"]
         all_success = True
-        
+
         for file in files:
             src = os.path.join(src_dir, file)
             if not os.path.isfile(src):
                 continue
-                
+
             for d in dest_dirs:
                 dest = os.path.join(d, file)
                 copy_needed = True
-                
+
                 if os.path.isfile(dest) and filecmp.cmp(src, dest):
                     copy_needed = False
-                    
+
                 if copy_needed and os.path.isfile(dest):
                     Utils.backup_file(dest)
-                    
+
                 if copy_needed:
                     try:
                         shutil.copy2(src, dest)
                         owner = (
-                            f"{AppConfig.USERNAME}:{AppConfig.USERNAME}" if d == AppConfig.USER_HOME else "root:root"
+                            f"{AppConfig.USERNAME}:{AppConfig.USERNAME}"
+                            if d == AppConfig.USER_HOME
+                            else "root:root"
                         )
                         run_command(["chown", owner, dest])
                     except Exception as e:
                         logger.warning(f"Copy {src} to {dest} failed: {e}")
                         all_success = False
-                        
+
         return all_success
 
     def copy_config_folders(self) -> bool:
         """
         Synchronize configuration folders to the user's .config directory.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1324,20 +1372,22 @@ class UserEnvironment:
         src_dir = os.path.join(
             AppConfig.USER_HOME, "github", "bash", "linux", "debian", "dotfiles"
         )
-        
+
         # Fallback to ubuntu folder if debian folder doesn't exist
         if not os.path.isdir(src_dir):
             src_dir = os.path.join(
                 AppConfig.USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles"
             )
-            
+
         if not os.path.isdir(src_dir):
             logger.warning(f"Source directory {src_dir} not found.")
             return False
-            
+
         dest_dir = os.path.join(AppConfig.USER_HOME, ".config")
-        Utils.ensure_directory(dest_dir, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}")
-        
+        Utils.ensure_directory(
+            dest_dir, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}"
+        )
+
         success = True
         try:
             for item in os.listdir(src_dir):
@@ -1348,7 +1398,14 @@ class UserEnvironment:
                     run_command(
                         ["rsync", "-a", "--update", f"{src_path}/", f"{dest_path}/"]
                     )
-                    run_command(["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", dest_path])
+                    run_command(
+                        [
+                            "chown",
+                            "-R",
+                            f"{AppConfig.USERNAME}:{AppConfig.USERNAME}",
+                            dest_path,
+                        ]
+                    )
             return success
         except Exception as e:
             logger.error(f"Error copying config folders: {e}")
@@ -1357,7 +1414,7 @@ class UserEnvironment:
     def set_default_shell(self) -> bool:
         """
         Set the default shell for the user.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1365,24 +1422,26 @@ class UserEnvironment:
         if not Utils.command_exists("bash"):
             if not SystemUpdater().install_packages(["bash"]):
                 return False
-                
+
         try:
             with open("/etc/shells") as f:
                 shells = f.read()
-                
+
             if "/bin/bash" not in shells:
                 with open("/etc/shells", "a") as f:
                     f.write("/bin/bash\n")
-                    
+
             current_shell = (
-                subprocess.check_output(["getent", "passwd", AppConfig.USERNAME], text=True)
+                subprocess.check_output(
+                    ["getent", "passwd", AppConfig.USERNAME], text=True
+                )
                 .strip()
                 .split(":")[-1]
             )
-            
+
             if current_shell != "/bin/bash":
                 run_command(["chsh", "-s", "/bin/bash", AppConfig.USERNAME])
-                
+
             return True
         except Exception as e:
             logger.error(f"Error setting default shell: {e}")
@@ -1396,10 +1455,10 @@ class SecurityHardener:
     def configure_ssh(self, port: int = 22) -> bool:
         """
         Configure SSH service for security.
-        
+
         Args:
             port: SSH port to use
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -1409,14 +1468,14 @@ class SecurityHardener:
         except Exception as e:
             logger.error(f"Error enabling SSH: {e}")
             return False
-            
+
         sshd_config = "/etc/ssh/sshd_config"
         if not os.path.isfile(sshd_config):
             logger.error(f"{sshd_config} not found.")
             return False
-            
+
         Utils.backup_file(sshd_config)
-        
+
         ssh_settings = {
             "Port": str(port),
             "PermitRootLogin": "no",
@@ -1436,11 +1495,11 @@ class SecurityHardener:
             "AllowAgentForwarding": "yes",
             "AllowTcpForwarding": "yes",
         }
-        
+
         try:
             with open(sshd_config) as f:
                 lines = f.readlines()
-                
+
             for key, value in ssh_settings.items():
                 updated = False
                 for i, line in enumerate(lines):
@@ -1450,14 +1509,14 @@ class SecurityHardener:
                         break
                 if not updated:
                     lines.append(f"{key} {value}\n")
-                    
+
             with open(sshd_config, "w") as f:
                 f.writelines(lines)
-                
+
         except Exception as e:
             logger.error(f"Error updating SSH config: {e}")
             return False
-            
+
         try:
             run_command(["systemctl", "restart", "ssh"])
             return True
@@ -1468,7 +1527,7 @@ class SecurityHardener:
     def setup_sudoers(self) -> bool:
         """
         Configure sudoers for the user.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1478,15 +1537,17 @@ class SecurityHardener:
         except Exception:
             logger.error(f"User {AppConfig.USERNAME} not found.")
             return False
-            
+
         try:
-            groups = subprocess.check_output(["id", "-nG", AppConfig.USERNAME], text=True).split()
+            groups = subprocess.check_output(
+                ["id", "-nG", AppConfig.USERNAME], text=True
+            ).split()
             if "sudo" not in groups:
                 run_command(["usermod", "-aG", "sudo", AppConfig.USERNAME])
         except Exception as e:
             logger.error(f"Error updating sudo group: {e}")
             return False
-            
+
         sudo_file = f"/etc/sudoers.d/99-{AppConfig.USERNAME}"
         try:
             with open(sudo_file, "w") as f:
@@ -1503,7 +1564,7 @@ class SecurityHardener:
     def configure_firewall(self) -> bool:
         """
         Configure UFW firewall.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1512,12 +1573,12 @@ class SecurityHardener:
         if not (os.path.isfile(ufw_cmd) and os.access(ufw_cmd, os.X_OK)):
             if not SystemUpdater().install_packages(["ufw"]):
                 return False
-                
+
         try:
             run_command([ufw_cmd, "reset", "--force"], check=False)
         except Exception:
             pass
-            
+
         for cmd in (
             [ufw_cmd, "default", "deny", "incoming"],
             [ufw_cmd, "default", "allow", "outgoing"],
@@ -1526,20 +1587,20 @@ class SecurityHardener:
                 run_command(cmd)
             except Exception:
                 pass
-                
+
         for port in AppConfig.ALLOWED_PORTS:
             try:
                 run_command([ufw_cmd, "allow", f"{port}/tcp"])
             except Exception:
                 pass
-                
+
         try:
             status = run_command([ufw_cmd, "status"], capture_output=True)
             if "inactive" in status.stdout.lower():
                 run_command([ufw_cmd, "--force", "enable"])
         except Exception:
             return False
-            
+
         try:
             run_command([ufw_cmd, "logging", "on"])
             run_command(["systemctl", "enable", "ufw"])
@@ -1551,7 +1612,7 @@ class SecurityHardener:
     def configure_fail2ban(self) -> bool:
         """
         Configure Fail2ban service.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1559,7 +1620,7 @@ class SecurityHardener:
         if not Utils.command_exists("fail2ban-server"):
             if not SystemUpdater().install_packages(["fail2ban"]):
                 return False
-                
+
         jail = "/etc/fail2ban/jail.local"
         config = (
             "[DEFAULT]\n"
@@ -1575,10 +1636,10 @@ class SecurityHardener:
             "logpath  = /var/log/auth.log\n"
             "maxretry = 3\n"
         )
-        
+
         if os.path.isfile(jail):
             Utils.backup_file(jail)
-            
+
         try:
             with open(jail, "w") as f:
                 f.write(config)
@@ -1594,7 +1655,7 @@ class SecurityHardener:
     def configure_apparmor(self) -> bool:
         """
         Configure AppArmor.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1602,15 +1663,17 @@ class SecurityHardener:
         try:
             if not SystemUpdater().install_packages(["apparmor", "apparmor-utils"]):
                 return False
-                
+
             run_command(["systemctl", "enable", "apparmor"])
             run_command(["systemctl", "start", "apparmor"])
-            
+
             status = run_command(
                 ["systemctl", "is-active", "apparmor"], capture_output=True
             )
-            
-            if status.stdout.strip() == "active" and Utils.command_exists("aa-update-profiles"):
+
+            if status.stdout.strip() == "active" and Utils.command_exists(
+                "aa-update-profiles"
+            ):
                 try:
                     run_command(["aa-update-profiles"], check=False)
                 except Exception:
@@ -1628,19 +1691,19 @@ class ServiceInstaller:
     def install_nala(self) -> bool:
         """
         Install the Nala APT frontend.
-        
+
         Returns:
             True if successful, False otherwise
         """
         logger.info("Installing Nala...")
         if Utils.command_exists("nala"):
             return True
-            
+
         try:
             # First make sure apt is up to date
             run_command(["apt", "update"])
             run_command(["apt", "install", "nala", "-y"])
-            
+
             if Utils.command_exists("nala"):
                 try:
                     run_command(["nala", "fetch", "--auto", "-y"], check=False)
@@ -1654,14 +1717,14 @@ class ServiceInstaller:
     def install_fastfetch(self) -> bool:
         """
         Install the Fastfetch system information tool.
-        
+
         Returns:
             True if successful, False otherwise
         """
         logger.info("Installing Fastfetch...")
         if Utils.command_exists("fastfetch"):
             return True
-            
+
         temp_deb = os.path.join(AppConfig.TEMP_DIR, "fastfetch-linux-amd64.deb")
         try:
             run_command(
@@ -1674,16 +1737,16 @@ class ServiceInstaller:
                 ]
             )
             run_command(["dpkg", "-i", temp_deb])
-            
+
             # Fix dependencies if needed
             if Utils.command_exists("nala"):
                 run_command(["nala", "install", "-f", "-y"])
             else:
                 run_command(["apt", "install", "-f", "-y"])
-                
+
             if os.path.exists(temp_deb):
                 os.remove(temp_deb)
-                
+
             return Utils.command_exists("fastfetch")
         except Exception:
             return False
@@ -1691,7 +1754,7 @@ class ServiceInstaller:
     def docker_config(self) -> bool:
         """
         Install and configure Docker.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1708,17 +1771,19 @@ class ServiceInstaller:
             except Exception as e:
                 if not SystemUpdater().install_packages(["docker.io"]):
                     return False
-                    
+
         try:
-            groups = subprocess.check_output(["id", "-nG", AppConfig.USERNAME], text=True).split()
+            groups = subprocess.check_output(
+                ["id", "-nG", AppConfig.USERNAME], text=True
+            ).split()
             if "docker" not in groups:
                 run_command(["usermod", "-aG", "docker", AppConfig.USERNAME])
         except Exception:
             pass
-            
+
         daemon = "/etc/docker/daemon.json"
         os.makedirs("/etc/docker", exist_ok=True)
-        
+
         desired = json.dumps(
             {
                 "log-driver": "json-file",
@@ -1730,7 +1795,7 @@ class ServiceInstaller:
             },
             indent=4,
         )
-        
+
         update_needed = True
         if os.path.isfile(daemon):
             try:
@@ -1742,20 +1807,20 @@ class ServiceInstaller:
                     Utils.backup_file(daemon)
             except Exception:
                 pass
-                
+
         if update_needed:
             try:
                 with open(daemon, "w") as f:
                     f.write(desired)
             except Exception:
                 pass
-                
+
         try:
             run_command(["systemctl", "enable", "docker"])
             run_command(["systemctl", "restart", "docker"])
         except Exception:
             return False
-            
+
         if not Utils.command_exists("docker-compose"):
             try:
                 if Utils.command_exists("nala"):
@@ -1764,7 +1829,7 @@ class ServiceInstaller:
                     run_command(["apt", "install", "docker-compose-plugin", "-y"])
             except Exception:
                 return False
-                
+
         try:
             run_command(["docker", "info"], capture_output=True)
             return True
@@ -1774,7 +1839,7 @@ class ServiceInstaller:
     def install_enable_tailscale(self) -> bool:
         """
         Install and enable Tailscale.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1786,11 +1851,11 @@ class ServiceInstaller:
                 )
             except Exception:
                 return False
-                
+
         try:
             run_command(["systemctl", "enable", "tailscaled"])
             run_command(["systemctl", "start", "tailscaled"])
-            
+
             status = run_command(
                 ["systemctl", "is-active", "tailscaled"], capture_output=True
             )
@@ -1801,26 +1866,32 @@ class ServiceInstaller:
     def deploy_user_scripts(self) -> bool:
         """
         Deploy user scripts to the bin directory.
-        
+
         Returns:
             True if successful, False otherwise
         """
         logger.info("Deploying user scripts...")
         # Try debian folder first, fall back to ubuntu
-        src = os.path.join(AppConfig.USER_HOME, "github", "bash", "linux", "debian", "_scripts")
+        src = os.path.join(
+            AppConfig.USER_HOME, "github", "bash", "linux", "debian", "_scripts"
+        )
         if not os.path.isdir(src):
-            src = os.path.join(AppConfig.USER_HOME, "github", "bash", "linux", "ubuntu", "_scripts")
-            
+            src = os.path.join(
+                AppConfig.USER_HOME, "github", "bash", "linux", "ubuntu", "_scripts"
+            )
+
         if not os.path.isdir(src):
             return False
-            
+
         tgt = os.path.join(AppConfig.USER_HOME, "bin")
         Utils.ensure_directory(tgt, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}")
-        
+
         try:
             run_command(["rsync", "-ah", "--delete", f"{src}/", f"{tgt}/"])
             run_command(["find", tgt, "-type", "f", "-exec", "chmod", "755", "{}", ";"])
-            run_command(["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", tgt])
+            run_command(
+                ["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", tgt]
+            )
             return True
         except Exception:
             return False
@@ -1828,7 +1899,7 @@ class ServiceInstaller:
     def configure_unattended_upgrades(self) -> bool:
         """
         Configure unattended upgrades.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1838,7 +1909,7 @@ class ServiceInstaller:
                 ["unattended-upgrades", "apt-listchanges"]
             ):
                 return False
-                
+
             auto_file = "/etc/apt/apt.conf.d/20auto-upgrades"
             auto_content = (
                 'APT::Periodic::Update-Package-Lists "1";\n'
@@ -1846,14 +1917,14 @@ class ServiceInstaller:
                 'APT::Periodic::AutocleanInterval "7";\n'
                 'APT::Periodic::Download-Upgradeable-Packages "1";\n'
             )
-            
+
             with open(auto_file, "w") as f:
                 f.write(auto_content)
-                
+
             unattended_file = "/etc/apt/apt.conf.d/50unattended-upgrades"
             if os.path.isfile(unattended_file):
                 Utils.backup_file(unattended_file)
-                
+
             # Debian-specific configuration
             unattended_content = (
                 "Unattended-Upgrade::Allowed-Origins {\n"
@@ -1870,13 +1941,13 @@ class ServiceInstaller:
                 'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
                 'Unattended-Upgrade::SyslogEnable "true";\n'
             )
-            
+
             with open(unattended_file, "w") as f:
                 f.write(unattended_content)
-                
+
             run_command(["systemctl", "enable", "unattended-upgrades"])
             run_command(["systemctl", "restart", "unattended-upgrades"])
-            
+
             status = run_command(
                 ["systemctl", "is-active", "unattended-upgrades"], capture_output=True
             )
@@ -1892,20 +1963,20 @@ class MaintenanceManager:
     def configure_periodic(self) -> bool:
         """
         Set up daily maintenance cron job.
-        
+
         Returns:
             True if successful, False otherwise
         """
         logger.info("Setting up daily maintenance cron job...")
         cron_file = "/etc/cron.daily/debian_maintenance"
         marker = "# Debian maintenance script"
-        
+
         if os.path.isfile(cron_file):
             with open(cron_file) as f:
                 if marker in f.read():
                     return True
             Utils.backup_file(cron_file)
-            
+
         content = f"""#!/bin/sh
 {marker}
 LOG="/var/log/daily_maintenance.log"
@@ -1938,7 +2009,7 @@ echo "Completed $(date)" >> $LOG
     def backup_configs(self) -> bool:
         """
         Backup important configuration files.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1946,7 +2017,7 @@ echo "Completed $(date)" >> $LOG
         ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         backup_dir = os.path.join(AppConfig.BACKUP_DIR, f"debian_config_{ts}")
         os.makedirs(backup_dir, exist_ok=True)
-        
+
         success = True
         for file in AppConfig.CONFIG_FILES:
             if os.path.isfile(file):
@@ -1955,7 +2026,7 @@ echo "Completed $(date)" >> $LOG
                 except Exception as e:
                     logger.warning(f"Backup failed for {file}: {e}")
                     success = False
-                    
+
         try:
             manifest = os.path.join(backup_dir, "MANIFEST.txt")
             with open(manifest, "w") as f:
@@ -1967,13 +2038,13 @@ echo "Completed $(date)" >> $LOG
                         f.write(f"- {file}\n")
         except Exception:
             pass
-            
+
         return success
 
     def update_ssl_certificates(self) -> bool:
         """
         Update SSL certificates using certbot.
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -1981,15 +2052,15 @@ echo "Completed $(date)" >> $LOG
         if not Utils.command_exists("certbot"):
             if not SystemUpdater().install_packages(["certbot"]):
                 return False
-                
+
         try:
             output = run_command(
                 ["certbot", "renew", "--dry-run"], capture_output=True
             ).stdout
-            
+
             if "No renewals were attempted" not in output:
                 run_command(["certbot", "renew"])
-                
+
             return True
         except Exception:
             return False
@@ -2002,16 +2073,16 @@ class SystemTuner:
     def tune_system(self) -> bool:
         """
         Apply system tuning settings.
-        
+
         Returns:
             True if successful, False otherwise
         """
         logger.info("Applying system tuning settings...")
         sysctl_conf = "/etc/sysctl.conf"
-        
+
         if os.path.isfile(sysctl_conf):
             Utils.backup_file(sysctl_conf)
-            
+
         tuning = {
             "net.core.somaxconn": "1024",
             "net.core.netdev_max_backlog": "5000",
@@ -2031,22 +2102,22 @@ class SystemTuner:
             "net.ipv4.conf.default.rp_filter": "1",
             "net.ipv4.conf.all.rp_filter": "1",
         }
-        
+
         try:
             with open(sysctl_conf) as f:
                 content = f.read()
-                
+
             marker = "# Performance tuning settings for Debian"
             if marker in content:
                 content = re.split(marker, content)[0]
-                
+
             content += f"\n{marker}\n" + "".join(
                 f"{k} = {v}\n" for k, v in tuning.items()
             )
-            
+
             with open(sysctl_conf, "w") as f:
                 f.write(content)
-                
+
             run_command(["sysctl", "-p"])
             return True
         except Exception:
@@ -2055,24 +2126,41 @@ class SystemTuner:
     def home_permissions(self) -> bool:
         """
         Secure home directory permissions.
-        
+
         Returns:
             True if successful, False otherwise
         """
         logger.info(f"Securing home directory for {AppConfig.USERNAME}...")
         try:
-            run_command(["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", AppConfig.USER_HOME])
+            run_command(
+                [
+                    "chown",
+                    "-R",
+                    f"{AppConfig.USERNAME}:{AppConfig.USERNAME}",
+                    AppConfig.USER_HOME,
+                ]
+            )
             run_command(["chmod", "750", AppConfig.USER_HOME])
-            
+
             for sub in [".ssh", ".gnupg", ".config"]:
                 d = os.path.join(AppConfig.USER_HOME, sub)
                 if os.path.isdir(d):
                     run_command(["chmod", "700", d])
-                    
+
             run_command(
-                ["find", AppConfig.USER_HOME, "-type", "d", "-exec", "chmod", "g+s", "{}", ";"]
+                [
+                    "find",
+                    AppConfig.USER_HOME,
+                    "-type",
+                    "d",
+                    "-exec",
+                    "chmod",
+                    "g+s",
+                    "{}",
+                    ";",
+                ]
             )
-            
+
             if Utils.command_exists("setfacl"):
                 run_command(
                     [
@@ -2084,7 +2172,7 @@ class SystemTuner:
                         AppConfig.USER_HOME,
                     ]
                 )
-                
+
             return True
         except Exception:
             return False
@@ -2097,19 +2185,19 @@ class FinalChecker:
     def system_health_check(self) -> Dict[str, Any]:
         """
         Perform a system health check.
-        
+
         Returns:
             Dictionary with health information
         """
         logger.info("Performing system health check...")
         health: Dict[str, Any] = {}
-        
+
         try:
             uptime = subprocess.check_output(["uptime"], text=True).strip()
             health["uptime"] = uptime
         except Exception:
             pass
-            
+
         try:
             df_lines = (
                 subprocess.check_output(["df", "-h", "/"], text=True)
@@ -2126,7 +2214,7 @@ class FinalChecker:
                 }
         except Exception:
             pass
-            
+
         try:
             free_lines = (
                 subprocess.check_output(["free", "-h"], text=True).strip().splitlines()
@@ -2141,7 +2229,7 @@ class FinalChecker:
                     }
         except Exception:
             pass
-            
+
         try:
             with open("/proc/loadavg") as f:
                 load = f.read().split()[:3]
@@ -2152,7 +2240,7 @@ class FinalChecker:
             }
         except Exception:
             pass
-            
+
         try:
             dmesg_output = subprocess.check_output(
                 ["dmesg", "--level=err,crit,alert,emerg"],
@@ -2162,7 +2250,7 @@ class FinalChecker:
             health["kernel_errors"] = bool(dmesg_output)
         except Exception:
             pass
-            
+
         try:
             if Utils.command_exists("nala"):
                 updates = (
@@ -2184,19 +2272,19 @@ class FinalChecker:
                     .strip()
                     .splitlines()
                 )
-                
+
             security_updates = sum(1 for line in updates if "security" in line.lower())
             total_updates = len(updates) - 1
             health["updates"] = {"total": total_updates, "security": security_updates}
         except Exception:
             pass
-            
+
         return health
 
     def verify_firewall_rules(self) -> bool:
         """
         Verify that firewall rules are properly configured.
-        
+
         Returns:
             True if firewall rules are properly set, False otherwise
         """
@@ -2207,7 +2295,7 @@ class FinalChecker:
                 return False
         except Exception:
             return False
-            
+
         for port in AppConfig.ALLOWED_PORTS:
             try:
                 result = subprocess.run(
@@ -2220,37 +2308,39 @@ class FinalChecker:
                     return False
             except Exception:
                 return False
-                
+
         return True
 
     def final_checks(self) -> bool:
         """
         Perform final system checks before completion.
-        
+
         Returns:
             True if all checks pass, False otherwise
         """
         logger.info("Performing final system checks...")
         all_passed = True
-        
+
         try:
             kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
             disk_line = subprocess.check_output(
                 ["df", "-h", "/"], text=True
             ).splitlines()[1]
-            
+
             disk_percent = int(disk_line.split()[4].strip("%"))
             if disk_percent > 90:
                 logger.warning(f"Disk usage is high: {disk_percent}%")
                 all_passed = False
-                
+
             load_avg = open("/proc/loadavg").read().split()[:3]
             cpu_count = os.cpu_count() or 1
-            
+
             if float(load_avg[1]) > cpu_count:
-                logger.warning(f"System load is high: {load_avg[1]} (CPUs: {cpu_count})")
+                logger.warning(
+                    f"System load is high: {load_avg[1]} (CPUs: {cpu_count})"
+                )
                 all_passed = False
-                
+
             services = [
                 "ssh",
                 "ufw",
@@ -2259,7 +2349,7 @@ class FinalChecker:
                 "tailscaled",
                 "unattended-upgrades",
             ]
-            
+
             for svc in services:
                 status = subprocess.run(
                     ["systemctl", "is-active", svc],
@@ -2270,7 +2360,7 @@ class FinalChecker:
                 if status.stdout.strip() != "active" and svc in ["ssh", "ufw"]:
                     logger.warning(f"Critical service not active: {svc}")
                     all_passed = False
-                    
+
             try:
                 unattended_output = subprocess.check_output(
                     ["unattended-upgrade", "--dry-run", "--debug"],
@@ -2286,7 +2376,7 @@ class FinalChecker:
                     all_passed = False
             except Exception:
                 pass
-                
+
             return all_passed
         except Exception as e:
             logger.error(f"Error during final checks: {e}")
@@ -2295,13 +2385,13 @@ class FinalChecker:
     def cleanup_system(self) -> bool:
         """
         Perform system cleanup.
-        
+
         Returns:
             True if cleanup was successful, False otherwise
         """
         logger.info("Performing system cleanup...")
         success = True
-        
+
         try:
             if Utils.command_exists("nala"):
                 run_command(["nala", "autoremove", "-y"])
@@ -2309,12 +2399,12 @@ class FinalChecker:
             else:
                 run_command(["apt", "autoremove", "-y"])
                 run_command(["apt", "clean"])
-                
+
             try:
                 current_kernel = subprocess.check_output(
                     ["uname", "-r"], text=True
                 ).strip()
-                
+
                 installed = (
                     subprocess.check_output(
                         ["dpkg", "--list", "linux-image-*", "linux-headers-*"],
@@ -2323,7 +2413,7 @@ class FinalChecker:
                     .strip()
                     .splitlines()
                 )
-                
+
                 old_kernels = [
                     line.split()[1]
                     for line in installed
@@ -2335,7 +2425,7 @@ class FinalChecker:
                     )
                     and "generic" in line.split()[1]
                 ]
-                
+
                 if len(old_kernels) > 1:
                     old_kernels.sort()
                     to_remove = old_kernels[:-1]
@@ -2343,10 +2433,10 @@ class FinalChecker:
                         run_command(["apt", "purge", "-y"] + to_remove)
             except Exception as e:
                 logger.warning(f"Old kernel cleanup failed: {e}")
-                
+
             if Utils.command_exists("journalctl"):
                 run_command(["journalctl", "--vacuum-time=7d"])
-                
+
             for tmp in ["/tmp", "/var/tmp"]:
                 try:
                     run_command(
@@ -2365,7 +2455,7 @@ class FinalChecker:
                     )
                 except Exception:
                     pass
-                    
+
             try:
                 log_files = (
                     subprocess.check_output(
@@ -2374,14 +2464,14 @@ class FinalChecker:
                     .strip()
                     .splitlines()
                 )
-                
+
                 for lf in log_files:
                     with open(lf, "rb") as fin, gzip.open(f"{lf}.gz", "wb") as fout:
                         shutil.copyfileobj(fin, fout)
                     open(lf, "w").close()
             except Exception:
                 pass
-                
+
             return success
         except Exception:
             return False
@@ -2417,7 +2507,7 @@ class DebianServerSetup:
     def run(self) -> int:
         """
         Run the Debian Server Setup.
-        
+
         Returns:
             Exit code (0 for success, 1 for failure)
         """
@@ -2442,7 +2532,9 @@ class DebianServerSetup:
                 }
                 sys.exit(1)
             if not self.preflight.check_os_version():
-                logger.warning("OS check failed - this may not be Debian, proceeding anyway.")
+                logger.warning(
+                    "OS check failed - this may not be Debian, proceeding anyway."
+                )
             self.preflight.save_config_snapshot()
         except Exception as e:
             logger.error(f"Preflight error: {e}")
@@ -2464,6 +2556,7 @@ class DebianServerSetup:
 
         # Fix broken packages
         print_section("Fix Broken Packages")
+
         def fix_broken():
             backup_dir = "/etc/apt/apt.conf.d/"
             for fname in os.listdir(backup_dir):
@@ -2500,7 +2593,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"System update error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Installing packages",
@@ -2512,7 +2605,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Package installation error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Configuring timezone", self.updater.configure_timezone
@@ -2522,7 +2615,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Timezone error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Configuring locale", self.updater.configure_locale
@@ -2546,7 +2639,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"User repos error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Copying shell configs", self.user_env.copy_shell_configs
@@ -2556,7 +2649,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Shell configs error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Copying config folders", self.user_env.copy_config_folders
@@ -2566,7 +2659,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Config folders error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Setting default shell", self.user_env.set_default_shell
@@ -2588,7 +2681,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"SSH error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Configuring sudoers", self.security.setup_sudoers
@@ -2598,7 +2691,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Sudoers error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Configuring firewall", self.security.configure_firewall
@@ -2608,7 +2701,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Firewall error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Configuring Fail2ban", self.security.configure_fail2ban
@@ -2618,7 +2711,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Fail2ban error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Configuring AppArmor", self.security.configure_apparmor
@@ -2642,17 +2735,15 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Fastfetch error: {e}")
             self.success = False
-            
+
         try:
-            if not run_with_progress(
-                "Configuring Docker", self.services.docker_config
-            ):
+            if not run_with_progress("Configuring Docker", self.services.docker_config):
                 logger.warning("Docker configuration failed.")
                 self.success = False
         except Exception as e:
             logger.error(f"Docker error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Installing Tailscale", self.services.install_enable_tailscale
@@ -2662,7 +2753,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Tailscale error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Configuring unattended upgrades",
@@ -2673,7 +2764,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Unattended upgrades error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Deploying user scripts", self.services.deploy_user_scripts
@@ -2697,7 +2788,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Periodic maintenance error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Backing up configurations", self.maintenance.backup_configs
@@ -2707,7 +2798,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Backup configs error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Updating SSL certificates", self.maintenance.update_ssl_certificates
@@ -2729,7 +2820,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"System tuning error: {e}")
             self.success = False
-            
+
         try:
             if not run_with_progress(
                 "Securing home directory", self.tuner.home_permissions
@@ -2746,14 +2837,14 @@ class DebianServerSetup:
             "status": "in_progress",
             "message": "Running final checks...",
         }
-        
+
         try:
             health_info = self.final_checker.system_health_check()
             logger.info(f"Health check results: {health_info}")
         except Exception as e:
             logger.error(f"Health check error: {e}")
             self.success = False
-            
+
         try:
             if not self.final_checker.verify_firewall_rules():
                 logger.warning("Firewall verification failed.")
@@ -2761,7 +2852,7 @@ class DebianServerSetup:
         except Exception as e:
             logger.error(f"Firewall verification error: {e}")
             self.success = False
-            
+
         final_result = True
         try:
             final_result = self.final_checker.final_checks()
@@ -2772,7 +2863,7 @@ class DebianServerSetup:
             logger.error(f"Final checks error: {e}")
             self.success = False
             final_result = False
-            
+
         try:
             if not self.final_checker.cleanup_system():
                 logger.warning("System cleanup had issues.")
@@ -2784,7 +2875,7 @@ class DebianServerSetup:
         # Calculate and show duration
         duration = time.time() - self.start_time
         minutes, seconds = divmod(duration, 60)
-        
+
         if self.success and final_result:
             SETUP_STATUS["final"] = {
                 "status": "success",
@@ -2795,7 +2886,7 @@ class DebianServerSetup:
                 "status": "failed",
                 "message": f"Completed with issues in {int(minutes)}m {int(seconds)}s.",
             }
-            
+
         status_report()
 
         # For unattended mode, automatically reboot if all final checks passed
@@ -2805,7 +2896,7 @@ class DebianServerSetup:
             print_warning(
                 "Setup completed with issues. Please review the log and status report."
             )
-            
+
         return 0 if self.success and final_result else 1
 
 
@@ -2816,7 +2907,9 @@ def main() -> int:
     """Main entry point for the Debian Trixie Setup Utility."""
     try:
         console.print(create_header())
-        print_step(f"Starting Debian Trixie Setup & Hardening Utility v{AppConfig.VERSION}")
+        print_step(
+            f"Starting Debian Trixie Setup & Hardening Utility v{AppConfig.VERSION}"
+        )
         print_step(f"System: {platform.system()} {platform.release()}")
         print_step(f"Hostname: {AppConfig.HOSTNAME}")
         return DebianServerSetup().run()
