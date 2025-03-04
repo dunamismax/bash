@@ -4,7 +4,8 @@ SFTP Toolkit
 --------------------------------------------------
 A fully interactive, menu-driven SFTP toolkit for performing
 all the most important SFTP file transfer operations with a
-professional, Nord-themed CLI experience powered by Rich and Pyfiglet.
+professional, Nord-themed CLI experience powered by Rich, Pyfiglet,
+and prompt_toolkit for enhanced file path auto-completion.
 
 Features:
   • Interactive, menu-driven interface with dynamic ASCII banners
@@ -14,12 +15,13 @@ Features:
   • Predefined device lists (Tailscale and local) for quick connection setup
   • Real-time progress tracking during file transfers
   • Robust error handling and cross-platform compatibility
+  • Auto-completion for local and remote file paths via prompt_toolkit
 
-Version: 1.0.0
+Version: 1.1.0
 """
 
 # ----------------------------------------------------------------
-# Dependency Check and Imports
+# Imports and Dependency Checks
 # ----------------------------------------------------------------
 import os
 import sys
@@ -43,6 +45,13 @@ from rich.progress import (
     TimeRemainingColumn,
     DownloadColumn,
 )
+
+# Attempt to import prompt_toolkit for auto-completion; if missing, auto-complete will not be available.
+try:
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.completion import PathCompleter, Completer, Completion
+except ImportError:
+    pt_prompt = None
 
 
 # ----------------------------------------------------------------
@@ -78,6 +87,31 @@ transport = None
 
 # Global default local folder for file operations
 DEFAULT_LOCAL_FOLDER = "/home/sawyer/Downloads"
+
+# ----------------------------------------------------------------
+# Auto-completion Classes
+# ----------------------------------------------------------------
+if pt_prompt:
+
+    class RemotePathCompleter(Completer):
+        """
+        A simple remote path completer using SFTP's listdir.
+        Assumes the remote path is relative to a base directory.
+        """
+
+        def __init__(self, sftp_client, base_path="."):
+            self.sftp = sftp_client
+            self.base_path = base_path
+
+        def get_completions(self, document, complete_event):
+            text = document.text
+            try:
+                files = self.sftp.listdir(self.base_path)
+            except Exception:
+                files = []
+            for f in files:
+                if f.startswith(text):
+                    yield Completion(f, start_position=-len(text))
 
 
 # ----------------------------------------------------------------
@@ -207,7 +241,6 @@ def select_device_menu() -> Device:
         table.add_row(str(idx), device.name, device.ip_address, device.description)
     console.print(table)
 
-    # Ensure default is an integer and convert user input appropriately.
     choice = IntPrompt.ask(
         f"[bold {NordColors.PURPLE}]Select device number[/]", default=1
     )
@@ -356,11 +389,19 @@ def upload_file() -> None:
         console.print(f"[bold {NordColors.RED}]Not connected. Please connect first.[/]")
         return
 
-    # Default local file path for upload is set to the Downloads folder.
-    local_path = Prompt.ask(
-        f"[bold {NordColors.PURPLE}]Enter the local file path to upload[/]",
-        default=DEFAULT_LOCAL_FOLDER,
-    )
+    # Use prompt_toolkit auto-completion for local file selection if available.
+    if pt_prompt:
+        local_path = pt_prompt(
+            f"Enter the local file path to upload: ",
+            completer=PathCompleter(),
+            default=os.path.join(DEFAULT_LOCAL_FOLDER, ""),
+        )
+    else:
+        local_path = Prompt.ask(
+            f"[bold {NordColors.PURPLE}]Enter the local file path to upload[/]",
+            default=DEFAULT_LOCAL_FOLDER,
+        )
+
     if not os.path.isfile(local_path):
         console.print(f"[bold {NordColors.RED}]Local file does not exist.[/]")
         return
@@ -397,14 +438,30 @@ def download_file() -> None:
         console.print(f"[bold {NordColors.RED}]Not connected. Please connect first.[/]")
         return
 
-    remote_path = Prompt.ask(
-        f"[bold {NordColors.PURPLE}]Enter the remote file path to download[/]"
-    )
-    # Use the Downloads folder as the default local destination.
-    local_path = Prompt.ask(
-        f"[bold {NordColors.PURPLE}]Enter the local destination directory[/]",
-        default=DEFAULT_LOCAL_FOLDER,
-    )
+    # Use auto-completion for remote file path if prompt_toolkit is available.
+    if pt_prompt:
+        remote_path = pt_prompt(
+            "Enter the remote file path to download: ",
+            completer=RemotePathCompleter(sftp),
+            default="",
+        )
+    else:
+        remote_path = Prompt.ask(
+            f"[bold {NordColors.PURPLE}]Enter the remote file path to download[/]"
+        )
+
+    # For the local destination directory, always default to DEFAULT_LOCAL_FOLDER.
+    if pt_prompt:
+        local_dest = pt_prompt(
+            "Enter the local destination directory: ",
+            completer=PathCompleter(only_directories=True),
+            default=DEFAULT_LOCAL_FOLDER,
+        )
+    else:
+        local_dest = Prompt.ask(
+            f"[bold {NordColors.PURPLE}]Enter the local destination directory[/]",
+            default=DEFAULT_LOCAL_FOLDER,
+        )
 
     try:
         file_size = sftp.stat(remote_path).st_size
@@ -427,10 +484,10 @@ def download_file() -> None:
             task = progress.add_task(
                 "download", total=file_size, message="Downloading..."
             )
-            dest_path = os.path.join(local_path, os.path.basename(remote_path))
+            dest_path = os.path.join(local_dest, os.path.basename(remote_path))
             sftp.get(remote_path, dest_path, callback=progress_callback)
         console.print(
-            f"[bold {NordColors.GREEN}]Download completed: {remote_path} -> {local_path}[/]"
+            f"[bold {NordColors.GREEN}]Download completed: {remote_path} -> {local_dest}[/]"
         )
     except Exception as e:
         console.print(f"[bold {NordColors.RED}]Download failed: {e}[/]")
