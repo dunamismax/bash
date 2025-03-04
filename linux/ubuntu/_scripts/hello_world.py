@@ -4,8 +4,8 @@ Automated Nord-Themed Hello World
 --------------------------------------------------
 
 A streamlined terminal application that automatically displays a stylish
-'Hello, World!' demonstration using a dynamic ASCII art header and a spinner.
-All actions run unattended.
+'Hello, World!' demonstration using a dynamic ASCII art header, a spinner,
+and a styled panel. All actions run unattended.
 
 Version: 2.0.0
 """
@@ -62,7 +62,7 @@ console = Console()
 def create_header(text: str = APP_NAME) -> Panel:
     """
     Create an ASCII art header using Pyfiglet with Nord-themed styling.
-    Uses a single font ("slant") without fallback.
+    Uses the "slant" font.
     """
     fig = pyfiglet.Figlet(font="slant", width=60)
     ascii_art = fig.renderText(text)
@@ -113,14 +113,12 @@ def display_panel(message: str, style: str = NordColors.FROST_2) -> None:
 
 def cleanup() -> None:
     """Perform any cleanup tasks before exit."""
-    console.print("[bold]Cleaning up resources...[/bold]")
+    console.print("[bold]Cleaning up resources...[/]")
 
 
 def signal_handler(sig, frame) -> None:
     """Handle termination signals gracefully."""
-    console.print(
-        f"[bold {NordColors.FROST_3}]Process interrupted by signal {sig}[/bold]"
-    )
+    console.print(f"[bold {NordColors.FROST_3}]Process interrupted by signal {sig}[/]")
     cleanup()
     sys.exit(128 + sig)
 
@@ -137,9 +135,8 @@ def main() -> None:
     console.clear()
     console.print(create_header())
     display_spinner("Initializing...", SPINNER_DURATION)
-    display_panel(
-        f"[bold {NordColors.FROST_2}]{DISPLAY_TEXT}[/bold]", NordColors.FROST_2
-    )
+    # Use generic closing tag "[/]" instead of "[/bold]" to avoid markup errors
+    display_panel(f"[bold {NordColors.FROST_2}]{DISPLAY_TEXT}[/]", NordColors.FROST_2)
     time.sleep(2)
 
 
