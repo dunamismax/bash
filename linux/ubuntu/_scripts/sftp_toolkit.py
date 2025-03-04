@@ -3,19 +3,21 @@
 SFTP Toolkit
 --------------------------------------------------
 A fully interactive, menu-driven SFTP toolkit for performing
-all the most important SFTP file transfer operations with a
-professional, Nord-themed CLI experience powered by Rich, Pyfiglet,
-and prompt_toolkit for enhanced file path auto-completion.
+SFTP file transfer operations with a production-grade, polished
+CLI that integrates prompt_toolkit for auto-completion, Rich for
+stylish output, and Pyfiglet for dynamic ASCII banners.
 
 Features:
-  • Interactive, menu-driven interface with dynamic ASCII banners
-  • SFTP operations: manual connection, device-based connection,
-    directory listing, file upload/download, deletion, renaming,
-    and remote directory management
-  • Predefined device lists (Tailscale and local) for quick connection setup
-  • Real-time progress tracking during file transfers
-  • Robust error handling and cross-platform compatibility
-  • Auto-completion for local and remote file paths via prompt_toolkit
+  • Interactive, menu-driven interface with dynamic ASCII banners.
+  • SFTP operations including manual connection, device-based connection,
+    directory listing, file upload/download, deletion, renaming, and remote
+    directory management.
+  • Predefined device lists (Tailscale and local) for quick connection setup.
+  • Real-time progress tracking during file transfers.
+  • Robust error handling and cross-platform compatibility.
+  • Fully integrated prompt_toolkit auto-completion for both local and remote
+    file/directory selection.
+  • Nord-themed color styling throughout the application.
 
 Version: 1.1.0
 """
@@ -46,7 +48,7 @@ from rich.progress import (
     DownloadColumn,
 )
 
-# Attempt to import prompt_toolkit for auto-completion; if missing, auto-complete will not be available.
+# Import prompt_toolkit for robust auto-completion
 try:
     from prompt_toolkit import prompt as pt_prompt
     from prompt_toolkit.completion import PathCompleter, Completer, Completion
@@ -55,7 +57,7 @@ except ImportError:
 
 
 # ----------------------------------------------------------------
-# Nord-Themed Colors
+# Nord-Themed Colors and Global Constants
 # ----------------------------------------------------------------
 class NordColors:
     POLAR_NIGHT_1 = "#2E3440"
@@ -76,27 +78,40 @@ class NordColors:
     PURPLE = "#B48EAD"
 
 
-# ----------------------------------------------------------------
-# Console Initialization
-# ----------------------------------------------------------------
 console = Console()
 
 # Global SFTP connection objects
 sftp = None
 transport = None
 
-# Global default local folder for file operations
+# Default local folder for all file operations
 DEFAULT_LOCAL_FOLDER = "/home/sawyer/Downloads"
 
+
 # ----------------------------------------------------------------
-# Auto-completion Classes
+# Helper: Unified Input Function with prompt_toolkit Integration
+# ----------------------------------------------------------------
+def get_input(message: str, completer=None, default: str = "") -> str:
+    """
+    Return user input using prompt_toolkit if available (with auto-completion)
+    or fallback to standard input.
+    """
+    if pt_prompt:
+        return pt_prompt(message, completer=completer, default=default)
+    else:
+        # Fallback if prompt_toolkit is not installed
+        return input(message)
+
+
+# ----------------------------------------------------------------
+# Custom Remote Path Completer
 # ----------------------------------------------------------------
 if pt_prompt:
 
     class RemotePathCompleter(Completer):
         """
-        A simple remote path completer using SFTP's listdir.
-        Assumes the remote path is relative to a base directory.
+        Completer for remote file paths using the active SFTP client.
+        This completer lists files in the current remote base directory.
         """
 
         def __init__(self, sftp_client, base_path="."):
@@ -115,7 +130,7 @@ if pt_prompt:
 
 
 # ----------------------------------------------------------------
-# Environment and Helper Functions
+# Environment Loader and SSH Key Helper Functions
 # ----------------------------------------------------------------
 def load_env() -> None:
     """
@@ -135,9 +150,7 @@ def load_env() -> None:
 
 def get_default_username() -> str:
     """
-    Return the default username.
-    If the script is run with sudo, return the original user's username;
-    otherwise, use getpass.getuser().
+    Return the default username. If run with sudo, use the original user's username.
     """
     return os.getenv("SUDO_USER") or getpass.getuser()
 
@@ -145,7 +158,7 @@ def get_default_username() -> str:
 def load_private_key():
     """
     Load the default SSH private key from ~/.ssh/id_rsa.
-    If the key is encrypted, use the SSH_KEY_PASSWORD from the environment.
+    If the key is encrypted, use SSH_KEY_PASSWORD from environment.
     """
     key_path = os.path.expanduser("~/.ssh/id_rsa")
     try:
@@ -211,9 +224,8 @@ def load_local_devices() -> List[Device]:
 
 def select_device_menu() -> Device:
     """
-    Display a device selection menu for choosing either
-    Tailscale or local devices. Ensures that the input is
-    correctly converted to an integer.
+    Display a device selection menu for choosing Tailscale or local devices.
+    Ensures proper integer conversion for the selection.
     """
     console.print(
         Panel(f"[bold {NordColors.FROST_2}]Select Device Type[/]", expand=False)
@@ -236,7 +248,6 @@ def select_device_menu() -> Device:
     table.add_column("Name", style="bold")
     table.add_column("IP Address", style=f"bold {NordColors.GREEN}")
     table.add_column("Description", style="italic")
-
     for idx, device in enumerate(devices, start=1):
         table.add_row(str(idx), device.name, device.ip_address, device.description)
     console.print(table)
@@ -258,7 +269,7 @@ def select_device_menu() -> Device:
 
 
 # ----------------------------------------------------------------
-# SFTP Operations and Connection Management
+# SFTP Connection and Operations
 # ----------------------------------------------------------------
 class AppConfig:
     """Application configuration constants."""
@@ -389,19 +400,13 @@ def upload_file() -> None:
         console.print(f"[bold {NordColors.RED}]Not connected. Please connect first.[/]")
         return
 
-    # Use prompt_toolkit auto-completion for local file selection if available.
-    if pt_prompt:
-        local_path = pt_prompt(
-            f"Enter the local file path to upload: ",
-            completer=PathCompleter(),
-            default=os.path.join(DEFAULT_LOCAL_FOLDER, ""),
-        )
-    else:
-        local_path = Prompt.ask(
-            f"[bold {NordColors.PURPLE}]Enter the local file path to upload[/]",
-            default=DEFAULT_LOCAL_FOLDER,
-        )
-
+    # Use prompt_toolkit PathCompleter for local file selection.
+    local_completer = PathCompleter(only_files=True, expanduser=True)
+    local_path = get_input(
+        "Enter the local file path to upload: ",
+        completer=local_completer,
+        default=DEFAULT_LOCAL_FOLDER,
+    )
     if not os.path.isfile(local_path):
         console.print(f"[bold {NordColors.RED}]Local file does not exist.[/]")
         return
@@ -438,11 +443,12 @@ def download_file() -> None:
         console.print(f"[bold {NordColors.RED}]Not connected. Please connect first.[/]")
         return
 
-    # Use auto-completion for remote file path if prompt_toolkit is available.
+    # Use prompt_toolkit auto-completion for remote file path if available.
     if pt_prompt:
-        remote_path = pt_prompt(
+        remote_completer = RemotePathCompleter(sftp)
+        remote_path = get_input(
             "Enter the remote file path to download: ",
-            completer=RemotePathCompleter(sftp),
+            completer=remote_completer,
             default="",
         )
     else:
@@ -450,18 +456,13 @@ def download_file() -> None:
             f"[bold {NordColors.PURPLE}]Enter the remote file path to download[/]"
         )
 
-    # For the local destination directory, always default to DEFAULT_LOCAL_FOLDER.
-    if pt_prompt:
-        local_dest = pt_prompt(
-            "Enter the local destination directory: ",
-            completer=PathCompleter(only_directories=True),
-            default=DEFAULT_LOCAL_FOLDER,
-        )
-    else:
-        local_dest = Prompt.ask(
-            f"[bold {NordColors.PURPLE}]Enter the local destination directory[/]",
-            default=DEFAULT_LOCAL_FOLDER,
-        )
+    # For local destination directory, use prompt_toolkit PathCompleter for directories.
+    local_dir_completer = PathCompleter(only_directories=True, expanduser=True)
+    local_dest = get_input(
+        "Enter the local destination directory: ",
+        completer=local_dir_completer,
+        default=DEFAULT_LOCAL_FOLDER,
+    )
 
     try:
         file_size = sftp.stat(remote_path).st_size
@@ -578,7 +579,9 @@ def delete_remote_directory() -> None:
 # UI Components and Main Menu
 # ----------------------------------------------------------------
 def display_banner() -> None:
-    """Display an ASCII art banner using Pyfiglet."""
+    """
+    Display a dynamic ASCII art banner using Pyfiglet with Nord-themed styling.
+    """
     fonts = ["slant", "big", "digital"]
     ascii_banner = ""
     for font in fonts:
@@ -599,8 +602,8 @@ def display_banner() -> None:
 
 def main_menu() -> None:
     """
-    Display the interactive SFTP Toolkit menu and loop until the user exits.
-    Defaults to device selection (option "2") to quickly connect using a predefined device.
+    Display the interactive SFTP Toolkit menu and loop until exit.
+    Defaults to device selection for quick connection.
     """
     while True:
         console.print(f"\n[bold {NordColors.PURPLE}]SFTP Toolkit Menu[/]")
@@ -665,7 +668,10 @@ def main_menu() -> None:
 # Main Entry Point
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main function: load environment, display banner, and launch the interactive menu."""
+    """
+    Main function: load environment variables, clear the console,
+    display the banner, and launch the interactive menu.
+    """
     load_env()
     console.clear()
     display_banner()
