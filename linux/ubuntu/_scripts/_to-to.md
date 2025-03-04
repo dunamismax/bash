@@ -32,12 +32,37 @@
 ```
 
 
-Menu driven fully interactive Python Script Rewrite using your Template
-Rewrite and improve and clean up the below script based on your template. Incorporate a fully interactive Rich CLI numbered menu system and utilize Pyfiglet and Rich throughout including Rich spinners and progress bars. Do not add command line argument parsing to it either:
+Prompt:
+
+Rewrite and enhance the following Python script using your best practices. The updated version should feature:
+	•	A fully interactive, menu-driven CLI using Rich for improved UX.
+	•	A numbered menu system with clear options and prompts.
+	•	Pyfiglet for a stylish ASCII banner at startup.
+	•	Rich for styling, spinners, and progress bars throughout the script.
+	•	Cleaned-up and optimized code for better readability and maintainability.
+	•	No command-line argument parsing—it should remain purely interactive.
+
+Ensure the script maintains its core functionality while significantly improving its user experience with Rich and Pyfiglet.
 
 
-Automated Python Script Rewrite using your Template
-Rewrite and improve and clean up the below script based on your template, and make it run fully unattended with no interactive menu system, it should just perform all actions automatically. Do not add command line argument parsing to it either. utilize Pyfiglet and Rich throughout including Rich spinners and progress bars:
+
+
+Prompt:
+
+Rewrite and enhance the following Python script using your best practices. The updated version should:
+	•	Run fully unattended with no interactive menu system.
+	•	Automatically perform all actions without requiring user input.
+	•	Utilize Pyfiglet to display a stylish ASCII banner at startup.
+	•	Incorporate Rich for enhanced terminal output, including:
+	•	Spinners for indicating ongoing processes.
+	•	Progress bars for tracking task completion.
+	•	Styled text for improved readability and clarity.
+	•	Ensure clean, efficient, and optimized code while maintaining its core functionality.
+	•	No command-line argument parsing—the script should execute autonomously.
+
+Make the script robust and user-friendly, leveraging Pyfiglet and Rich for an engaging terminal experience.
+
+
 
 
 rewrite (o3-mini-high)
