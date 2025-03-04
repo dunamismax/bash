@@ -2,17 +2,10 @@
 """
 Script Deployer - Automated Deployment Tool
 --------------------------------------------------
-Automatically deploys scripts from a source directory to a destination directory
-with proper permission handling, updating only modified files, and setting the
-appropriate ownership and permissions.
-
-Features:
-  • Efficiently copies files by checking MD5 hashes
-  • Automatically sets executable permissions for scripts
-  • Updates file ownership and permissions for a specific user
-  • Displays progress with Rich spinners and progress bars
-  • Uses a Nord-themed terminal interface with dynamic ASCII headers
-  • Fully unattended execution with detailed deployment statistics
+Automatically deploys files from a source directory to a destination directory,
+updating only modified files, setting ownership and permissions (including making
+scripts executable) and displaying real-time progress via a Nord-themed terminal
+interface with dynamic ASCII headers.
 
 Version: 2.0.0
 """
@@ -78,8 +71,9 @@ try:
         SpinnerColumn,
         TextColumn,
         BarColumn,
-        TimeRemainingColumn,
         TaskProgressColumn,
+        TimeRemainingColumn,
+        DownloadColumn,
     )
     from rich.align import Align
     from rich.style import Style
@@ -102,6 +96,8 @@ class AppConfig:
     VERSION = "2.0.0"
     APP_NAME = "Script Deployer"
     APP_SUBTITLE = "File Deployment & Permission Utility"
+
+    # Directories (adjust as needed)
     SOURCE_DIR = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
     DEST_DIR = "/home/sawyer/bin"
     OWNER_USER = "sawyer"
@@ -111,9 +107,11 @@ class AppConfig:
     except KeyError:
         OWNER_UID = None
         OWNER_GID = None
+
     FILE_PERMISSIONS = 0o700  # rwx------
     DIR_PERMISSIONS = 0o700  # rwx------
     EXECUTABLE_EXTENSIONS = [".py", ".sh"]
+
     try:
         TERM_WIDTH = shutil.get_terminal_size().columns
     except Exception:
@@ -253,7 +251,7 @@ class DeploymentResult:
 
 
 # ----------------------------------------------------------------
-# Console and Logging Helpers
+# Console & UI Helpers
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
@@ -428,7 +426,7 @@ def set_owner(path: str) -> bool:
 
 def set_permissions(path: str, is_directory: bool = False) -> bool:
     """
-    Set file or directory permissions.
+    Set file or directory permissions and update owner.
     """
     try:
         set_owner(path)
@@ -552,14 +550,14 @@ def deploy_files() -> DeploymentResult:
 
 
 # ----------------------------------------------------------------
-# Results Reporting
+# Reporting Functions
 # ----------------------------------------------------------------
 def display_deployment_details() -> None:
     """
     Display deployment configuration details.
     """
     current_user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
-    is_root = os.geteuid() == 0
+    is_root = (os.geteuid() == 0) if hasattr(os, "geteuid") else False
     permission_warning = ""
     if not is_root and AppConfig.OWNER_USER != current_user:
         permission_warning = f"\n[bold {NordColors.YELLOW}]Warning: Not running as root. Permission changes may fail.[/]"
@@ -656,13 +654,12 @@ def create_file_details_table(result: DeploymentResult, max_files: int = 20) -> 
 # ----------------------------------------------------------------
 def run_deployment() -> None:
     """
-    Execute the complete, unattended deployment process.
+    Execute the complete unattended deployment process.
     """
     console.print(create_header())
     print_step(f"Starting deployment at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     console.print()
     display_deployment_details()
-    console.print()
     console.print(create_section_header("Path Verification"))
     if not verify_paths():
         display_panel(
@@ -678,7 +675,6 @@ def run_deployment() -> None:
         result = deploy_files()
         console.print(create_stats_table(result))
         console.print()
-        # Optionally display details for modified files
         if result.new_files or result.updated_files:
             console.print(create_file_details_table(result))
             console.print()
