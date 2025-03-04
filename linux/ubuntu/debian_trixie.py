@@ -27,6 +27,7 @@ import sys
 import subprocess
 import tempfile
 import time
+import shutil
 
 
 def print_status(message, status="INFO"):
