@@ -3,49 +3,43 @@
 Automated Tailscale Reset Utility
 --------------------------------------------------
 
-A beautiful, non-interactive terminal utility for automatically resetting Tailscale on Ubuntu systems.
-This script automatically performs a complete Tailscale reset workflow:
-  • Stop and disable tailscaled service
-  • Uninstall tailscale package
-  • Clean configuration
-  • Install tailscale
-  • Start service
-  • Run 'tailscale up'
-  • Display status
+A beautiful, non-interactive terminal utility for automatically resetting Tailscale
+on Ubuntu systems. This script performs the following steps sequentially:
+  • Uninstalls Tailscale (stops and disables the tailscaled service, removes packages and configuration)
+  • Installs Tailscale via the official install script
+  • Enables and starts the tailscaled service
+  • Runs 'tailscale up'
+  • Displays the final status
 
-No user interaction is required - the script executes all steps sequentially.
-
-Note: This script requires root privileges to function properly.
+No user interaction is required – all actions run automatically.
 
 Version: 3.0.0
 """
 
 import atexit
+import datetime
+import logging
 import os
 import platform
+import shutil
 import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
-import shutil
-import logging
-from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Tuple, Callable
+from typing import Any, Dict, List, Optional
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
 # ----------------------------------------------------------------
 try:
     import pyfiglet
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.table import Table
-    from rich.text import Text
     from rich.align import Align
+    from rich.console import Console
     from rich.live import Live
+    from rich.panel import Panel
     from rich.progress import (
         Progress,
         SpinnerColumn,
@@ -54,18 +48,22 @@ try:
         TimeRemainingColumn,
         TaskID,
     )
-    from rich.style import Style
+    from rich.table import Table
+    from rich.text import Text
     from rich.traceback import install as install_rich_traceback
+    from rich.style import Style
 except ImportError:
-    print("This script requires the 'rich' and 'pyfiglet' libraries.")
-    print("Please install them using: pip install rich pyfiglet")
+    print(
+        "This script requires the 'rich' and 'pyfiglet' libraries.\n"
+        "Please install them using: pip install rich pyfiglet"
+    )
     sys.exit(1)
 
-# Install rich traceback handler for better error reporting
+# Install rich traceback handler for improved error reporting
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
-# Configuration
+# Configuration & Constants
 # ----------------------------------------------------------------
 APP_NAME: str = "Tailscale Reset Utility"
 APP_SUBTITLE: str = "Automated System Management"
@@ -76,12 +74,6 @@ OPERATION_TIMEOUT: int = 120  # seconds
 TRANSITION_DELAY: float = 0.5  # seconds between operations
 LOG_FILE: str = os.path.expanduser("~/tailscale_reset_logs/tailscale_reset.log")
 TAILSCALE_INSTALL_URL: str = "https://tailscale.com/install.sh"
-
-# Terminal dimensions
-TERM_WIDTH: int = min(shutil.get_terminal_size().columns, 100)
-TERM_HEIGHT: int = min(shutil.get_terminal_size().lines, 30)
-
-# Tailscale paths for cleanup
 TAILSCALE_PATHS: List[str] = [
     "/var/lib/tailscale",
     "/etc/tailscale",
@@ -95,45 +87,37 @@ TAILSCALE_PATHS: List[str] = [
 class NordColors:
     """Nord color palette for consistent theming throughout the application."""
 
-    # Polar Night (dark) shades
-    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_2 = "#3B4252"  # Dark background shade
-    POLAR_NIGHT_3 = "#434C5E"  # Medium background shade
-    POLAR_NIGHT_4 = "#4C566A"  # Light background shade
-
-    # Snow Storm (light) shades
-    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
-    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
-    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
-
-    # Frost (blues/cyans) shades
-    FROST_1 = "#8FBCBB"  # Light cyan
-    FROST_2 = "#88C0D0"  # Light blue
-    FROST_3 = "#81A1C1"  # Medium blue
-    FROST_4 = "#5E81AC"  # Dark blue
-
-    # Aurora (accent) shades
-    RED = "#BF616A"  # Red - Errors and critical issues
-    ORANGE = "#D08770"  # Orange - Warnings
-    YELLOW = "#EBCB8B"  # Yellow - Cautions and notices
-    GREEN = "#A3BE8C"  # Green - Success and positive indicators
-    PURPLE = "#B48EAD"  # Purple - Special operations and highlights
+    POLAR_NIGHT_1 = "#2E3440"
+    POLAR_NIGHT_2 = "#3B4252"
+    POLAR_NIGHT_3 = "#434C5E"
+    POLAR_NIGHT_4 = "#4C566A"
+    SNOW_STORM_1 = "#D8DEE9"
+    SNOW_STORM_2 = "#E5E9F0"
+    SNOW_STORM_3 = "#ECEFF4"
+    FROST_1 = "#8FBCBB"
+    FROST_2 = "#88C0D0"
+    FROST_3 = "#81A1C1"
+    FROST_4 = "#5E81AC"
+    RED = "#BF616A"  # Errors and critical issues
+    ORANGE = "#D08770"  # Warnings
+    YELLOW = "#EBCB8B"  # Cautions
+    GREEN = "#A3BE8C"  # Success indicators
+    PURPLE = "#B48EAD"  # Special highlights
 
 
-# Create a Rich Console
-console: Console = Console(theme=None, highlight=False)
+# Create a Rich Console instance
+console: Console = Console()
 
 
 # ----------------------------------------------------------------
 # Logging Setup
 # ----------------------------------------------------------------
 def setup_logging() -> None:
-    """Configure basic logging for the utility."""
+    """Configure file logging for the utility."""
     try:
         log_dir = os.path.dirname(LOG_FILE)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
-
         logging.basicConfig(
             filename=LOG_FILE,
             level=logging.INFO,
@@ -142,70 +126,45 @@ def setup_logging() -> None:
         )
         print_message(f"Logging configured to: {LOG_FILE}", NordColors.FROST_3)
     except Exception as e:
-        print_message(
-            f"Could not set up logging to {LOG_FILE}: {e}", NordColors.YELLOW, "⚠"
-        )
-        print_message("Continuing without logging to file...", NordColors.FROST_3)
+        print_message(f"Logging setup failed: {e}", NordColors.YELLOW, "⚠")
+        print_message("Continuing without file logging...", NordColors.FROST_3)
 
 
 # ----------------------------------------------------------------
-# Console and Logging Helpers
+# UI Helper Functions
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a high-tech ASCII art header with impressive styling.
-
-    Returns:
-        Panel containing the styled header
+    Create a dynamic ASCII art header with gradient styling.
     """
-    # Use smaller, more compact but still tech-looking fonts
-    compact_fonts = ["slant", "small", "smslant", "mini", "digital"]
-
-    # Try each font until we find one that works well
-    for font_name in compact_fonts:
+    fonts = ["slant", "small", "digital", "mini"]
+    ascii_art = ""
+    for font in fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)
+            fig = pyfiglet.Figlet(font=font, width=60)
             ascii_art = fig.renderText(APP_NAME)
-
-            # If we got a reasonable result, use it
-            if ascii_art and len(ascii_art.strip()) > 0:
+            if ascii_art.strip():
                 break
         except Exception:
             continue
+    if not ascii_art.strip():
+        ascii_art = APP_NAME
 
-    # Custom ASCII art fallback if all else fails
-    if not ascii_art or len(ascii_art.strip()) == 0:
-        ascii_art = """
- _        _ _               _                           _   
-| |_ __ _(_) |___  ___ __ _| | ___   _ __ ___  ___  ___| |_ 
-| __/ _` | | / __|/ __/ _` | |/ _ \ | '__/ _ \/ __|/ _ \ __|
-| || (_| | | \__ \ (_| (_| | |  __/ | | |  __/\__ \  __/ |_ 
- \__\__,_|_|_|___/\___\__,_|_|\___| |_|  \___||___/\___|\__|
-        """
-
-    # Clean up extra whitespace that might cause display issues
-    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
-
-    # Create a high-tech gradient effect with Nord colors
+    lines = [line for line in ascii_art.split("\n") if line.strip()]
     colors = [
         NordColors.FROST_1,
         NordColors.FROST_2,
         NordColors.FROST_3,
         NordColors.FROST_2,
     ]
-
-    styled_text = ""
-    for i, line in enumerate(ascii_lines):
+    styled = ""
+    for i, line in enumerate(lines):
         color = colors[i % len(colors)]
-        styled_text += f"[bold {color}]{line}[/]\n"
-
-    # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
-    styled_text = tech_border + "\n" + styled_text + tech_border
-
-    # Create a panel with sufficient padding to avoid cutoff
-    header_panel = Panel(
-        Text.from_markup(styled_text),
+        styled += f"[bold {color}]{line}[/]\n"
+    border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
+    styled = border + "\n" + styled + border
+    return Panel(
+        Text.from_markup(styled),
         border_style=Style(color=NordColors.FROST_1),
         padding=(1, 1),
         title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
@@ -214,51 +173,28 @@ def create_header() -> Panel:
         subtitle_align="center",
     )
 
-    return header_panel
-
 
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """
-    Print a styled message.
-
-    Args:
-        text: The message to display
-        style: The color style to use
-        prefix: The prefix symbol
-    """
+    """Print a styled message to the console and log it."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
     logging.info(f"{prefix} {text}")
 
 
 def print_section(title: str) -> None:
-    """
-    Print a section header with a decorative border.
-
-    Args:
-        title: The section title to display
-    """
-    border = "═" * min(TERM_WIDTH, 80)
-    console.print()
-    console.print(f"[bold {NordColors.FROST_3}]{border}[/]")
+    """Print a section header with decorative borders."""
+    border = "═" * 60
+    console.print("\n" + f"[bold {NordColors.FROST_3}]{border}[/]")
     console.print(f"[bold {NordColors.FROST_2}]  {title}[/]")
-    console.print(f"[bold {NordColors.FROST_3}]{border}[/]")
-    console.print()
+    console.print(f"[bold {NordColors.FROST_3}]{border}[/]\n")
     logging.info(f"SECTION: {title}")
 
 
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """
-    Display a message in a styled panel.
-
-    Args:
-        message: The message to display
-        style: The color style to use
-        title: Optional panel title
-    """
+    """Display a message inside a Rich panel."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
@@ -275,15 +211,7 @@ def clear_screen() -> None:
 
 
 def format_time(seconds: float) -> str:
-    """
-    Format seconds into a human-readable time string.
-
-    Args:
-        seconds: Time duration in seconds
-
-    Returns:
-        Formatted time string (e.g., "1.5s", "2.3m", "1.2h")
-    """
+    """Format a time duration into a human-readable string."""
     if seconds < 60:
         return f"{seconds:.1f}s"
     elif seconds < 3600:
@@ -296,7 +224,7 @@ def format_time(seconds: float) -> str:
 # Command Execution Helper
 # ----------------------------------------------------------------
 def run_command(
-    cmd: List[str],
+    cmd: List[str] or str,
     env: Optional[Dict[str, str]] = None,
     shell: bool = False,
     check: bool = True,
@@ -305,28 +233,13 @@ def run_command(
     verbose: bool = False,
 ) -> subprocess.CompletedProcess:
     """
-    Executes a system command and returns the CompletedProcess.
-
-    Args:
-        cmd: Command and arguments as a list
-        env: Environment variables for the command
-        shell: Whether to run command in a shell
-        check: Whether to check the return code
-        capture_output: Whether to capture stdout/stderr
-        timeout: Command timeout in seconds
-        verbose: Whether to print the command before execution
-
-    Returns:
-        CompletedProcess instance with command results
+    Execute a system command and return the CompletedProcess.
     """
+    cmd_display = cmd if isinstance(cmd, str) else " ".join(cmd)
     if verbose:
-        print_message(
-            f"Executing: {cmd if isinstance(cmd, str) else ' '.join(cmd)}",
-            NordColors.FROST_3,
-        )
-
+        print_message(f"Executing: {cmd_display}", NordColors.FROST_3)
     try:
-        return subprocess.run(
+        result = subprocess.run(
             cmd,
             env=env or os.environ.copy(),
             shell=shell,
@@ -335,15 +248,12 @@ def run_command(
             capture_output=capture_output,
             timeout=timeout,
         )
+        return result
     except subprocess.CalledProcessError as e:
-        print_message(
-            f"Command failed: {cmd if isinstance(cmd, str) else ' '.join(cmd)}",
-            NordColors.RED,
-            "✗",
-        )
-        if hasattr(e, "stdout") and e.stdout:
+        print_message(f"Command failed: {cmd_display}", NordColors.RED, "✗")
+        if e.stdout:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if hasattr(e, "stderr") and e.stderr:
+        if e.stderr:
             console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
         raise
     except subprocess.TimeoutExpired:
@@ -358,39 +268,29 @@ def run_command(
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform any cleanup tasks before exit."""
+    """Perform cleanup tasks before exit."""
     print_message("Cleaning up resources...", NordColors.FROST_3)
 
 
 def signal_handler(sig: int, frame: Any) -> None:
-    """
-    Handle process termination signals gracefully.
-
-    Args:
-        sig: Signal number
-        frame: Current stack frame
-    """
-    sig_name = (
-        signal.Signals(sig).name if hasattr(signal, "Signals") else f"signal {sig}"
-    )
-    print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
+    """Handle termination signals gracefully."""
+    sig_name = getattr(signal, "Signals", lambda x: f"signal {x}")(sig)
+    print_message(f"Process interrupted by signal {sig}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
 
-# Register signal handlers
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 atexit.register(cleanup)
 
 
 # ----------------------------------------------------------------
-# Progress Tracking Classes
+# Progress and Spinner Classes
 # ----------------------------------------------------------------
 class ProgressManager:
     """
-    Unified progress tracking system using Rich Progress.
-    Provides a consistent way to show operation progress.
+    Provides a unified Rich progress tracking system.
     """
 
     def __init__(self):
@@ -402,8 +302,7 @@ class ProgressManager:
                 style=NordColors.FROST_4,
                 complete_style=NordColors.FROST_2,
             ),
-            TextColumn(f"[bold {NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
-            TextColumn("[{task.fields[status]}]"),
+            TextColumn("[bold {task.percentage:>3.0f}]%"),
             TimeRemainingColumn(),
             console=console,
             expand=True,
@@ -419,17 +318,6 @@ class ProgressManager:
     def add_task(
         self, description: str, total: float, color: str = NordColors.FROST_2
     ) -> TaskID:
-        """
-        Add a task to the progress tracker.
-
-        Args:
-            description: Task description
-            total: Total units of work
-            color: Color for task description
-
-        Returns:
-            Task ID for referencing this task
-        """
         return self.progress.add_task(
             description,
             total=total,
@@ -438,30 +326,15 @@ class ProgressManager:
         )
 
     def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
-        """
-        Update task progress.
-
-        Args:
-            task_id: Task identifier
-            advance: Units of work to add to progress
-            **kwargs: Additional task fields to update
-        """
         self.progress.update(task_id, advance=advance, **kwargs)
 
 
 class Spinner:
     """
-    Thread-safe spinner for indeterminate progress.
-    Shows an animated spinner during operations with unknown duration.
+    A thread-safe spinner for operations with unknown duration.
     """
 
     def __init__(self, message: str):
-        """
-        Initialize a new spinner.
-
-        Args:
-            message: Text to display next to the spinner
-        """
         self.message = message
         self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
         self.current = 0
@@ -471,7 +344,6 @@ class Spinner:
         self._lock = threading.Lock()
 
     def _spin(self) -> None:
-        """Animation loop for the spinner."""
         while self.spinning:
             elapsed = time.time() - self.start_time
             time_str = format_time(elapsed)
@@ -479,14 +351,13 @@ class Spinner:
                 console.print(
                     f"\r[{NordColors.FROST_1}]{self.spinner_chars[self.current]}[/] "
                     f"[{NordColors.FROST_2}]{self.message}[/] "
-                    f"[[dim]elapsed: {time_str}[/dim]]",
+                    f"[dim]elapsed: {time_str}[/dim]",
                     end="",
                 )
                 self.current = (self.current + 1) % len(self.spinner_chars)
             time.sleep(0.1)
 
     def start(self) -> None:
-        """Start the spinner animation."""
         with self._lock:
             self.spinning = True
             self.start_time = time.time()
@@ -494,23 +365,13 @@ class Spinner:
             self.thread.start()
 
     def stop(self, success: bool = True) -> None:
-        """
-        Stop the spinner animation.
-
-        Args:
-            success: Whether the operation completed successfully
-        """
         with self._lock:
             self.spinning = False
             if self.thread:
                 self.thread.join()
-
             elapsed = time.time() - self.start_time
             time_str = format_time(elapsed)
-
-            # Clear the spinner line
-            console.print("\r" + " " * TERM_WIDTH, end="\r")
-
+            console.print("\r" + " " * 80, end="\r")
             if success:
                 console.print(
                     f"[{NordColors.GREEN}]✓[/] [{NordColors.FROST_2}]{self.message}[/] "
@@ -536,63 +397,58 @@ class Spinner:
 # System Helper Functions
 # ----------------------------------------------------------------
 def check_root() -> bool:
-    """
-    Check if the script is running with root privileges.
-
-    Returns:
-        True if running as root, False otherwise
-    """
+    """Return True if running with root privileges."""
     return os.geteuid() == 0 if hasattr(os, "geteuid") else False
 
 
 def ensure_root() -> bool:
-    """
-    Ensure script is running with root privileges.
-
-    Returns:
-        True if running as root, False otherwise
-    """
+    """Ensure the script is running as root."""
     if not check_root():
-        print_message("This operation requires root privileges.", NordColors.RED, "✗")
-        print_message("Please run the script with sudo.", NordColors.YELLOW, "⚠")
+        print_message(
+            "This utility requires root privileges. Please run with sudo.",
+            NordColors.RED,
+            "✗",
+        )
         return False
     return True
 
 
 def check_system_compatibility() -> bool:
     """
-    Check if the system is compatible with this utility.
-
-    Returns:
-        True if system is compatible, False otherwise
+    Check if the system is Linux and has apt-get available.
     """
-    system = platform.system().lower()
-
-    if system != "linux":
+    if platform.system().lower() != "linux":
         print_message(
-            f"This utility is designed for Linux systems, detected: {system}",
+            f"Designed for Linux systems. Detected: {platform.system()}",
             NordColors.YELLOW,
             "⚠",
         )
         return False
-
-    # Check if we're on a Debian-based system (for apt commands)
     try:
         result = run_command(["which", "apt-get"], check=False)
         if result.returncode != 0:
-            print_message(
-                "This utility requires apt-get, which was not found.",
-                NordColors.YELLOW,
-                "⚠",
-            )
+            print_message("apt-get not found.", NordColors.YELLOW, "⚠")
             return False
     except Exception:
         print_message(
-            "Could not verify package manager compatibility.", NordColors.YELLOW, "⚠"
+            "Failed to verify package manager compatibility.", NordColors.YELLOW, "⚠"
         )
         return False
-
     return True
+
+
+def display_system_info() -> None:
+    """Display basic system information."""
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sys_info = (
+        f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]User: {USERNAME}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]Root: {'Yes' if check_root() else 'No'}[/]"
+    )
+    console.print(Align.center(sys_info))
+    console.print()
 
 
 # ----------------------------------------------------------------
@@ -600,16 +456,12 @@ def check_system_compatibility() -> bool:
 # ----------------------------------------------------------------
 def uninstall_tailscale() -> bool:
     """
-    Stop and disable tailscaled, uninstall tailscale, and remove config/data directories.
-
-    Returns:
-        True if successful, False if errors occurred
+    Stop tailscaled, disable its service, remove the Tailscale package,
+    and delete configuration directories.
     """
     if not ensure_root():
         return False
-
     print_section("Uninstalling Tailscale")
-
     steps = [
         ("Stopping tailscaled service", ["systemctl", "stop", "tailscaled"]),
         ("Disabling tailscaled service", ["systemctl", "disable", "tailscaled"]),
@@ -619,14 +471,11 @@ def uninstall_tailscale() -> bool:
         ),
         ("Autoremoving unused packages", ["apt-get", "autoremove", "-y"]),
     ]
-
     success = True
-
     with ProgressManager() as progress:
         task = progress.add_task(
             "Uninstalling Tailscale", total=len(steps) + len(TAILSCALE_PATHS)
         )
-
         for desc, cmd in steps:
             print_message(desc, NordColors.FROST_3)
             try:
@@ -638,8 +487,6 @@ def uninstall_tailscale() -> bool:
                 print_message(f"Error during {desc}: {e}", NordColors.RED, "✗")
                 progress.update(task, advance=1, status=f"[{NordColors.RED}]Failed")
                 success = False
-                # Continue with remaining steps despite error
-
         print_message("Removing configuration directories...", NordColors.FROST_3)
         for path in TAILSCALE_PATHS:
             if os.path.exists(path):
@@ -662,36 +509,26 @@ def uninstall_tailscale() -> bool:
                 progress.update(
                     task, advance=1, status=f"[{NordColors.FROST_3}]Skipped"
                 )
-
     if success:
         print_message(
             "Tailscale uninstalled and cleaned up successfully.", NordColors.GREEN, "✓"
         )
     else:
         print_message(
-            "Tailscale uninstallation completed with some issues.",
-            NordColors.YELLOW,
-            "⚠",
+            "Uninstallation completed with some issues.", NordColors.YELLOW, "⚠"
         )
-
     return success
 
 
 def install_tailscale() -> bool:
     """
-    Install tailscale using the official install script.
-
-    Returns:
-        True if successful, False if errors occurred
+    Install Tailscale using the official install script.
     """
     if not ensure_root():
         return False
-
     print_section("Installing Tailscale")
-
     print_message("Running Tailscale install script", NordColors.FROST_3)
     install_cmd = f"curl -fsSL {TAILSCALE_INSTALL_URL} | sh"
-
     with Spinner("Installing Tailscale") as spinner:
         try:
             result = run_command(install_cmd, shell=True)
@@ -716,25 +553,17 @@ def install_tailscale() -> bool:
 def start_tailscale_service() -> bool:
     """
     Enable and start the tailscaled service.
-
-    Returns:
-        True if successful, False if errors occurred
     """
     if not ensure_root():
         return False
-
-    print_section("Enabling and Starting Tailscale Service")
-
+    print_section("Starting Tailscale Service")
     steps = [
         ("Enabling tailscaled service", ["systemctl", "enable", "tailscaled"]),
         ("Starting tailscaled service", ["systemctl", "start", "tailscaled"]),
     ]
-
     success = True
-
     with ProgressManager() as progress:
         task = progress.add_task("Configuring Tailscale Service", total=len(steps))
-
         for desc, cmd in steps:
             print_message(desc, NordColors.FROST_3)
             try:
@@ -746,40 +575,29 @@ def start_tailscale_service() -> bool:
                 print_message(f"Error during {desc}: {e}", NordColors.RED, "✗")
                 progress.update(task, advance=1, status=f"[{NordColors.RED}]Failed")
                 success = False
-                # Continue despite error
-
     if success:
         print_message(
             "Tailscale service enabled and started successfully.", NordColors.GREEN, "✓"
         )
     else:
         print_message(
-            "Tailscale service configuration completed with issues.",
-            NordColors.YELLOW,
-            "⚠",
+            "Service configuration completed with issues.", NordColors.YELLOW, "⚠"
         )
-
     return success
 
 
 def tailscale_up() -> bool:
     """
-    Run 'tailscale up' to bring up the daemon.
-
-    Returns:
-        True if successful, False if errors occurred
+    Run 'tailscale up' to bring the daemon online.
     """
     if not ensure_root():
         return False
-
     print_section("Running 'tailscale up'")
-
     with Spinner("Executing tailscale up") as spinner:
         try:
             result = run_command(["tailscale", "up"])
             spinner.stop(success=True)
             print_message("Tailscale is up!", NordColors.GREEN, "✓")
-
             if result.stdout.strip():
                 display_panel(
                     result.stdout.strip(),
@@ -796,16 +614,11 @@ def tailscale_up() -> bool:
 def check_tailscale_status() -> bool:
     """
     Check and display the current Tailscale status.
-
-    Returns:
-        True if Tailscale is running properly, False otherwise
     """
     print_section("Tailscale Status")
-
     with Spinner("Checking Tailscale status") as spinner:
         try:
             result = run_command(["tailscale", "status"], check=False)
-
             if result.returncode == 0 and result.stdout.strip():
                 spinner.stop(success=True)
                 console.print(
@@ -823,17 +636,15 @@ def check_tailscale_status() -> bool:
                     NordColors.YELLOW,
                     "⚠",
                 )
-
-                # Try to check service status as well
                 try:
-                    service_result = run_command(
+                    svc_result = run_command(
                         ["systemctl", "status", "tailscaled"], check=False
                     )
-                    if service_result.stdout.strip():
+                    if svc_result.stdout.strip():
                         console.print(
                             Panel(
-                                service_result.stdout.strip(),
-                                title="Tailscaled Service Status",
+                                svc_result.stdout.strip(),
+                                title="tailscaled Service Status",
                                 border_style=f"bold {NordColors.FROST_2}",
                             )
                         )
@@ -846,156 +657,64 @@ def check_tailscale_status() -> bool:
                 return False
         except Exception as e:
             spinner.stop(success=False)
-            print_message(f"Failed to check Tailscale status: {e}", NordColors.RED, "✗")
-            print_message(
-                "Tailscale may not be installed or running.", NordColors.FROST_3
-            )
+            print_message(f"Failed to check status: {e}", NordColors.RED, "✗")
             return False
-
-
-def display_system_info() -> None:
-    """Display system information."""
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    system_info = (
-        f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]User: {USERNAME}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Root: {'Yes' if check_root() else 'No'}[/]"
-    )
-    console.print(Align.center(system_info))
-    console.print()
 
 
 def reset_tailscale() -> bool:
     """
-    Perform a complete reset of Tailscale without user interaction.
-
-    Returns:
-        True if the entire process completed successfully, False otherwise
+    Perform a complete reset of Tailscale by sequentially:
+      1. Uninstalling Tailscale
+      2. Installing Tailscale
+      3. Starting the tailscaled service
+      4. Running 'tailscale up'
+      5. Checking final status
     """
     if not ensure_root():
         return False
-
     print_section("Complete Tailscale Reset")
-
     steps = [
-        "Uninstalling Tailscale",
-        "Installing Tailscale",
-        "Starting Tailscale Service",
-        "Running 'tailscale up'",
-        "Checking Final Status",
+        ("Uninstall", uninstall_tailscale),
+        ("Install", install_tailscale),
+        ("Service Start", start_tailscale_service),
+        ("Tailscale Up", tailscale_up),
+        ("Status Check", check_tailscale_status),
     ]
-
-    success = True
+    overall_success = True
     results = []
-
     with ProgressManager() as progress:
-        task = progress.add_task("Complete Tailscale Reset", total=len(steps))
-
-        # Step 1: Uninstall
-        print_message("Step 1: Uninstalling Tailscale", NordColors.FROST_2)
-        uninstall_success = uninstall_tailscale()
-        results.append(("Uninstall", uninstall_success))
-        if uninstall_success:
-            progress.update(task, advance=1, status=f"[{NordColors.GREEN}]Uninstalled")
-        else:
-            progress.update(
-                task, advance=1, status=f"[{NordColors.YELLOW}]Partial uninstall"
-            )
-            success = False
-
-        time.sleep(TRANSITION_DELAY)
-
-        # Step 2: Install
-        print_message("Step 2: Installing Tailscale", NordColors.FROST_2)
-        install_success = install_tailscale()
-        results.append(("Install", install_success))
-        if install_success:
-            progress.update(task, advance=1, status=f"[{NordColors.GREEN}]Installed")
-        else:
-            progress.update(task, advance=1, status=f"[{NordColors.RED}]Install failed")
-            print_message(
-                "Reset process failed at installation step.", NordColors.RED, "✗"
-            )
-            success = False
-
-        time.sleep(TRANSITION_DELAY)
-
-        # Step 3: Start service (only if install succeeded)
-        if install_success:
-            print_message("Step 3: Starting Tailscale Service", NordColors.FROST_2)
-            service_success = start_tailscale_service()
-            results.append(("Service Start", service_success))
-            if service_success:
+        task = progress.add_task("Resetting Tailscale", total=len(steps))
+        for label, func in steps:
+            print_message(f"Step: {label}", NordColors.FROST_2)
+            step_success = func()
+            results.append((label, step_success))
+            if step_success:
                 progress.update(
-                    task, advance=1, status=f"[{NordColors.GREEN}]Service started"
+                    task, advance=1, status=f"[{NordColors.GREEN}]{label} succeeded"
                 )
             else:
                 progress.update(
-                    task, advance=1, status=f"[{NordColors.YELLOW}]Service issues"
+                    task, advance=1, status=f"[{NordColors.RED}]{label} failed"
                 )
-                success = False
-        else:
-            progress.update(task, advance=1, status=f"[{NordColors.RED}]Skipped")
-            results.append(("Service Start", False))
-
-        time.sleep(TRANSITION_DELAY)
-
-        # Step 4: Run 'tailscale up' (only if service started)
-        if install_success:
-            print_message("Step 4: Running 'tailscale up'", NordColors.FROST_2)
-            up_success = tailscale_up()
-            results.append(("Tailscale Up", up_success))
-            if up_success:
-                progress.update(
-                    task, advance=1, status=f"[{NordColors.GREEN}]Up and running"
-                )
-            else:
-                progress.update(task, advance=1, status=f"[{NordColors.RED}]Up failed")
-                success = False
-        else:
-            progress.update(task, advance=1, status=f"[{NordColors.RED}]Skipped")
-            results.append(("Tailscale Up", False))
-
-        # Step 5: Check final status
-        print_message("Step 5: Checking Final Status", NordColors.FROST_2)
-        status_success = check_tailscale_status()
-        results.append(("Status Check", status_success))
-        if status_success:
-            progress.update(
-                task, advance=1, status=f"[{NordColors.GREEN}]Running correctly"
-            )
-        else:
-            progress.update(
-                task, advance=1, status=f"[{NordColors.YELLOW}]Issues detected"
-            )
-            success = False
-
-    # Display final summary
+                overall_success = False
+            time.sleep(TRANSITION_DELAY)
+    # Display summary table
     print_section("Reset Process Summary")
-
     table = Table(
-        title="Tailscale Reset Operation Results",
+        title="Tailscale Reset Results",
         title_style=f"bold {NordColors.FROST_2}",
         border_style=NordColors.FROST_3,
         expand=True,
     )
-
     table.add_column("Operation", style=f"bold {NordColors.FROST_1}")
     table.add_column("Result", style=f"bold {NordColors.FROST_2}")
-
-    for operation, result in results:
+    for op, res in results:
         status = (
-            f"[{NordColors.GREEN}]Success[/]"
-            if result
-            else f"[{NordColors.RED}]Failed[/]"
+            f"[{NordColors.GREEN}]Success[/]" if res else f"[{NordColors.RED}]Failed[/]"
         )
-        table.add_row(operation, status)
-
+        table.add_row(op, status)
     console.print(table)
-
-    if success:
+    if overall_success:
         print_message(
             "Tailscale has been completely reset and is now running!",
             NordColors.GREEN,
@@ -1003,31 +722,23 @@ def reset_tailscale() -> bool:
         )
     else:
         print_message(
-            "Tailscale reset completed with some issues.",
+            "Tailscale reset completed with issues. Please check the logs.",
             NordColors.YELLOW,
             "⚠",
         )
-
-    return success
+    return overall_success
 
 
 # ----------------------------------------------------------------
-# Main Function
+# Main Entry Point
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main function that automatically performs all Tailscale reset operations."""
+    """Main function that performs all reset operations automatically."""
     try:
-        # Clear screen and show header
         clear_screen()
         console.print(create_header())
-
-        # Display system info
         display_system_info()
-
-        # Setup logging
         setup_logging()
-
-        # Check system compatibility
         print_section("System Compatibility Check")
         if not check_system_compatibility():
             print_message(
@@ -1036,33 +747,18 @@ def main() -> None:
                 "⚠",
             )
         else:
-            print_message(
-                "System compatibility check passed.",
-                NordColors.GREEN,
-                "✓",
-            )
-
-        # Check root access
+            print_message("System compatibility check passed.", NordColors.GREEN, "✓")
         if not check_root():
             print_message(
-                "This utility requires root privileges to function properly.",
+                "This utility requires root privileges. Please run with sudo.",
                 NordColors.RED,
                 "✗",
             )
-            print_message(
-                "Please re-run this script with sudo.",
-                NordColors.YELLOW,
-                "⚠",
-            )
-            return
-
-        # Perform the complete reset process
+            sys.exit(1)
         print_message(
             "Beginning automated Tailscale reset process...", NordColors.FROST_2, "▶"
         )
         reset_success = reset_tailscale()
-
-        # Final status message
         if reset_success:
             display_panel(
                 "Tailscale has been successfully reset and configured!",
@@ -1075,9 +771,8 @@ def main() -> None:
                 style=NordColors.YELLOW,
                 title="Operation Partially Complete",
             )
-
     except KeyboardInterrupt:
-        print_message("\nProcess interrupted by user.", NordColors.YELLOW, "⚠")
+        print_message("Process interrupted by user.", NordColors.YELLOW, "⚠")
         sys.exit(130)
     except Exception as e:
         print_message(f"Unexpected error: {e}", NordColors.RED, "✗")
@@ -1085,8 +780,5 @@ def main() -> None:
         sys.exit(1)
 
 
-# ----------------------------------------------------------------
-# Program Entry Point
-# ----------------------------------------------------------------
 if __name__ == "__main__":
     main()
