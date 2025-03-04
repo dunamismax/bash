@@ -34,8 +34,11 @@ from pathlib import Path
 
 def ensure_dependencies() -> bool:
     """
-    Ensure required Python packages are installed at the system level or via pip.
-    Returns True if all dependencies are available or successfully installed.
+    Ensure required Python packages are installed using multiple methods
+    to handle Debian's externally managed environment restrictions.
+
+    Returns:
+        True if all dependencies are available or successfully installed.
     """
     # Required packages and their corresponding apt packages if available
     required_packages = {"rich": "python3-rich", "pyfiglet": "python3-pyfiglet"}
@@ -55,6 +58,13 @@ def ensure_dependencies() -> bool:
                     __import__("rich.group")
                 except ImportError:
                     missing_modules.append("rich.group")
+
+                # Also check for rich.box which we need
+                try:
+                    __import__("rich.box")
+                except ImportError:
+                    if "rich.group" not in missing_modules:
+                        missing_modules.append("rich.box")
         except ImportError:
             missing_packages.append(pkg_name)
 
@@ -64,51 +74,61 @@ def ensure_dependencies() -> bool:
             f"Installing missing packages: {', '.join(missing_packages + missing_modules)}"
         )
 
-        # Try with apt-get first for system-wide installation
-        try:
+        # Method 1: Try with apt-get first for system-wide installation (preferred method on Debian)
+        if os.geteuid() == 0:  # Check if we have root privileges
             apt_packages = [
                 required_packages[pkg]
                 for pkg in missing_packages
                 if pkg in required_packages
             ]
             if apt_packages:
-                print("Installing system packages using apt-get...")
-                # Make sure we're running with sudo
-                if os.geteuid() != 0:
-                    print(
-                        "Error: This script needs root privileges to install system packages."
+                print("Attempting installation with apt-get (preferred method)...")
+                try:
+                    subprocess.run(
+                        ["apt-get", "update"],
+                        check=True,
+                        capture_output=True,
                     )
-                    print("Please run with sudo.")
-                    return False
 
-                subprocess.run(
-                    ["apt-get", "update"],
-                    check=True,
-                    capture_output=True,
-                )
+                    subprocess.run(
+                        ["apt-get", "install", "-y"] + apt_packages,
+                        check=True,
+                        capture_output=True,
+                    )
+                    print("System packages installed successfully with apt-get.")
 
-                subprocess.run(
-                    ["apt-get", "install", "-y"] + apt_packages,
-                    check=True,
-                    capture_output=True,
-                )
-                print("System packages installed successfully.")
-        except Exception as e:
-            print(f"Failed to install system packages: {e}")
+                    # If rich.group is still missing after apt installation, we need a newer version
+                    if any(
+                        module in missing_modules
+                        for module in ["rich.group", "rich.box"]
+                    ):
+                        print(
+                            "Need newer version of rich with required modules, trying alternative methods..."
+                        )
+                    else:
+                        return True  # Successfully installed all needed packages
+                except Exception as e:
+                    print(f"Failed to install system packages with apt-get: {e}")
+            else:
+                print("No apt packages to install, trying alternative methods.")
+        else:
+            print("Not running as root, skipping apt-get installation method.")
 
-        # If rich.group is missing or we couldn't install with apt-get, use pip
+        # Method 2: Try with pip --break-system-packages (works on newer Debian systems)
+        print("Attempting installation with pip --break-system-packages...")
         try:
-            # For rich.group we need a newer version of rich
-            if "rich.group" in missing_modules or "rich" in missing_packages:
-                print(
-                    "Installing rich package with pip to ensure all required modules..."
-                )
+            # For rich modules we need a newer version of rich
+            if (
+                any(module in missing_modules for module in ["rich.group", "rich.box"])
+                or "rich" in missing_packages
+            ):
                 subprocess.run(
                     [
                         sys.executable,
                         "-m",
                         "pip",
                         "install",
+                        "--break-system-packages",
                         "--upgrade",
                         "rich>=13.0.0",
                     ],
@@ -120,27 +140,197 @@ def ensure_dependencies() -> bool:
             other_missing = [pkg for pkg in missing_packages if pkg != "rich"]
             if other_missing:
                 subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "--upgrade"]
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "--break-system-packages",
+                        "--upgrade",
+                    ]
                     + other_missing,
                     check=True,
                     capture_output=True,
                 )
 
-            print("Dependencies installed successfully using pip.")
-
+            print(
+                "Dependencies installed successfully using pip with --break-system-packages."
+            )
             # Restart script to ensure dependencies are loaded properly
             os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
-            print(f"Failed to install required packages with pip: {e}")
-            print("Please install the required packages manually:")
-            print(f"pip install {' '.join(missing_packages)} rich>=13.0.0")
+            print(f"Failed to install with pip --break-system-packages: {e}")
+
+        # Method 3: Try with pipx (creates isolated environments but makes them available in PATH)
+        print("Attempting installation with pipx...")
+        try:
+            # First check if pipx is installed
+            try:
+                subprocess.run(["pipx", "--version"], check=True, capture_output=True)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                # Try to install pipx
+                if os.geteuid() == 0:
+                    try:
+                        subprocess.run(
+                            ["apt-get", "install", "-y", "pipx"],
+                            check=True,
+                            capture_output=True,
+                        )
+                    except Exception:
+                        # Try with pip
+                        subprocess.run(
+                            [
+                                sys.executable,
+                                "-m",
+                                "pip",
+                                "install",
+                                "--break-system-packages",
+                                "pipx",
+                            ],
+                            check=True,
+                            capture_output=True,
+                        )
+                        # Ensure pipx is in PATH
+                        subprocess.run(
+                            ["pipx", "ensurepath"], check=False, capture_output=True
+                        )
+                else:
+                    # Try user-level installation
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "--user", "pipx"],
+                        check=True,
+                        capture_output=True,
+                    )
+                    # Ensure pipx is in PATH
+                    subprocess.run(
+                        ["pipx", "ensurepath"], check=False, capture_output=True
+                    )
+
+            # Now try to install packages with pipx
+            if "rich" in missing_packages or any(
+                module in missing_modules for module in ["rich.group", "rich.box"]
+            ):
+                subprocess.run(
+                    ["pipx", "install", "rich>=13.0.0"], check=True, capture_output=True
+                )
+
+            for pkg in [p for p in missing_packages if p != "rich"]:
+                subprocess.run(
+                    ["pipx", "install", pkg], check=True, capture_output=True
+                )
+
+            print("Dependencies installed successfully using pipx.")
+            # Restart script to ensure dependencies are loaded properly
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"Failed to install with pipx: {e}")
+
+        # Method 4: For systems with strict apt/pip restrictions, create a venv
+        print("Attempting installation using a Python virtual environment...")
+        try:
+            # Create a temporary directory for the venv
+            venv_dir = os.path.join(tempfile.gettempdir(), "debian_setup_venv")
+            os.makedirs(venv_dir, exist_ok=True)
+
+            # Create the virtual environment
+            subprocess.run(
+                [sys.executable, "-m", "venv", venv_dir],
+                check=True,
+                capture_output=True,
+            )
+
+            # Get paths to Python and pip in the venv
+            venv_python = os.path.join(venv_dir, "bin", "python")
+            venv_pip = os.path.join(venv_dir, "bin", "pip")
+
+            # Upgrade pip in the venv
+            subprocess.run(
+                [venv_pip, "install", "--upgrade", "pip"],
+                check=True,
+                capture_output=True,
+            )
+
+            # Install packages in the venv
+            if "rich" in missing_packages or any(
+                module in missing_modules for module in ["rich.group", "rich.box"]
+            ):
+                subprocess.run(
+                    [venv_pip, "install", "rich>=13.0.0"],
+                    check=True,
+                    capture_output=True,
+                )
+
+            for pkg in [p for p in missing_packages if p != "rich"]:
+                subprocess.run(
+                    [venv_pip, "install", pkg], check=True, capture_output=True
+                )
+
+            print(f"Dependencies installed in virtual environment at: {venv_dir}")
+            print(
+                f"To use this script with the venv, run: {venv_python} {' '.join(sys.argv)}"
+            )
+
+            # Copy the script to the venv bin directory for easy access
+            script_path = os.path.abspath(sys.argv[0])
+            venv_script = os.path.join(venv_dir, "bin", "debian_setup")
+
+            with open(venv_script, "w") as f:
+                f.write(f"""#!/bin/bash
+# Auto-generated wrapper for Debian Trixie Setup script
+{venv_python} {script_path} "$@"
+""")
+            os.chmod(venv_script, 0o755)
+
+            print(f"Created wrapper script at: {venv_script}")
+            print(
+                "You can run this script later using the 'debian_setup' command in the virtual environment."
+            )
+
+            # Option to run the script now
+            if os.isatty(sys.stdin.fileno()):  # Only prompt if running in a terminal
+                response = input(
+                    "Would you like to run the script in the virtual environment now? (y/n): "
+                ).lower()
+                if response == "y" or response == "yes":
+                    print("Running script in virtual environment...")
+                    os.execl(venv_python, venv_python, script_path)
+
             return False
+        except Exception as e:
+            print(f"Failed to create and use virtual environment: {e}")
+
+        # If all methods failed
+        print(
+            "\nAll installation methods failed. Please try one of these manual installation methods:"
+        )
+        print("\n1. System-wide installation (recommended):")
+        print(
+            f"   sudo apt-get install {' '.join([required_packages[pkg] for pkg in missing_packages if pkg in required_packages])}"
+        )
+
+        print("\n2. Using pip with --break-system-packages flag:")
+        print(
+            f"   pip install --break-system-packages {' '.join(missing_packages)} rich>=13.0.0"
+        )
+
+        print("\n3. Using pipx (isolated environments):")
+        print(f"   pipx install rich>=13.0.0")
+        for pkg in [p for p in missing_packages if p != "rich"]:
+            print(f"   pipx install {pkg}")
+
+        print("\n4. Using a virtual environment:")
+        print("   python3 -m venv ~/debian_setup_venv")
+        print("   source ~/debian_setup_venv/bin/activate")
+        print(f"   pip install {' '.join(missing_packages)} rich>=13.0.0")
+
+        return False
 
     return True
 
 
 # Ensure we have the required dependencies before proceeding
 if not ensure_dependencies():
+    print("\nPlease install the required dependencies and run the script again.")
     sys.exit(1)
 
 # ----------------------------------------------------------------
