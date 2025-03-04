@@ -274,6 +274,7 @@ import json
 import logging
 import platform
 import re
+import box
 import shutil
 import socket
 import signal
@@ -4241,9 +4242,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import box
-    from rich.group import Group
-
     try:
         sys.exit(main())
     except Exception as e:
