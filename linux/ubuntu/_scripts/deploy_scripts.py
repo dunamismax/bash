@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
-Enhanced Script Deployment Tool
+Script Deployer - Automated Deployment Tool
 --------------------------------------------------
-
-A powerful terminal-based utility for deploying scripts from a source directory
-to a destination directory with proper permission handling.
+Automatically deploys scripts from a source directory to a destination directory
+with proper permission handling, updating only modified files, and setting the
+appropriate ownership and permissions.
 
 Features:
-  • Efficiently copies files by checking hashes and only updating what has changed
-  • Makes Python and shell scripts executable after copying
-  • Sets full ownership and permissions for user "sawyer"
-  • Beautiful Nord-themed terminal interface with real-time progress tracking
-  • Displays detailed statistics and deployment results
-
-Usage:
-  python3 deploy.py
+  • Efficiently copies files by checking MD5 hashes
+  • Automatically sets executable permissions for scripts
+  • Updates file ownership and permissions for a specific user
+  • Displays progress with Rich spinners and progress bars
+  • Uses a Nord-themed terminal interface with dynamic ASCII headers
+  • Fully unattended execution with detailed deployment statistics
 
 Version: 2.0.0
 """
@@ -31,23 +29,23 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, Callable
+from typing import Any, List
 
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
 # ----------------------------------------------------------------
-def install_missing_packages():
-    """Install required Python packages if they're missing."""
+def install_missing_packages() -> None:
+    """
+    Install required Python packages if they're missing.
+    """
     required_packages = ["rich", "pyfiglet"]
     missing_packages = []
-
     for package in required_packages:
         try:
             __import__(package)
         except ImportError:
             missing_packages.append(package)
-
     if missing_packages:
         print(f"Installing missing packages: {', '.join(missing_packages)}")
         try:
@@ -57,7 +55,6 @@ def install_missing_packages():
                 capture_output=True,
             )
             print("Successfully installed required packages. Restarting script...")
-            # Restart the script to ensure imports work
             os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
             print(f"Failed to install required packages: {e}")
@@ -68,10 +65,8 @@ def install_missing_packages():
             sys.exit(1)
 
 
-# Try installing missing packages
 install_missing_packages()
 
-# Now import the installed packages
 try:
     import pyfiglet
     from rich.console import Console
@@ -88,9 +83,6 @@ try:
     )
     from rich.align import Align
     from rich.style import Style
-    from rich.live import Live
-    from rich.columns import Columns
-    from rich.rule import Rule
     from rich.traceback import install as install_rich_traceback
     from rich.theme import Theme
 except ImportError as e:
@@ -98,7 +90,6 @@ except ImportError as e:
     print("Please install them manually: pip install rich pyfiglet")
     sys.exit(1)
 
-# Install rich traceback handler for better error reporting
 install_rich_traceback(show_locals=True)
 
 
@@ -111,37 +102,23 @@ class AppConfig:
     VERSION = "2.0.0"
     APP_NAME = "Script Deployer"
     APP_SUBTITLE = "File Deployment & Permission Utility"
-
-    # Deployment configuration
     SOURCE_DIR = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
     DEST_DIR = "/home/sawyer/bin"
-
-    # User configuration
     OWNER_USER = "sawyer"
-
-    # Try to get user information
     try:
         OWNER_UID = pwd.getpwnam(OWNER_USER).pw_uid
         OWNER_GID = pwd.getpwnam(OWNER_USER).pw_gid
     except KeyError:
         OWNER_UID = None
         OWNER_GID = None
-
-    # Permission settings
     FILE_PERMISSIONS = 0o700  # rwx------
     DIR_PERMISSIONS = 0o700  # rwx------
-
-    # Executable file extensions
     EXECUTABLE_EXTENSIONS = [".py", ".sh"]
-
-    # Terminal settings
     try:
         TERM_WIDTH = shutil.get_terminal_size().columns
-    except:
+    except Exception:
         TERM_WIDTH = 80
     PROGRESS_WIDTH = min(50, TERM_WIDTH - 30)
-
-    # Command timeouts
     DEFAULT_TIMEOUT = 30  # seconds
 
 
@@ -149,34 +126,26 @@ class AppConfig:
 # Nord-Themed Colors
 # ----------------------------------------------------------------
 class NordColors:
-    """Nord color palette for consistent theming throughout the application."""
+    """Nord color palette for consistent theming."""
 
-    # Polar Night (dark) shades
-    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_2 = "#3B4252"  # Dark background shade
-    POLAR_NIGHT_3 = "#434C5E"  # Medium background shade
-    POLAR_NIGHT_4 = "#4C566A"  # Light background shade
-
-    # Snow Storm (light) shades
-    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
-    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
-    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
-
-    # Frost (blues/cyans) shades
-    FROST_1 = "#8FBCBB"  # Light cyan
-    FROST_2 = "#88C0D0"  # Light blue
-    FROST_3 = "#81A1C1"  # Medium blue
-    FROST_4 = "#5E81AC"  # Dark blue
-
-    # Aurora (accent) shades
-    RED = "#BF616A"  # Red
-    ORANGE = "#D08770"  # Orange
-    YELLOW = "#EBCB8B"  # Yellow
-    GREEN = "#A3BE8C"  # Green
-    PURPLE = "#B48EAD"  # Purple
+    POLAR_NIGHT_1 = "#2E3440"
+    POLAR_NIGHT_2 = "#3B4252"
+    POLAR_NIGHT_3 = "#434C5E"
+    POLAR_NIGHT_4 = "#4C566A"
+    SNOW_STORM_1 = "#D8DEE9"
+    SNOW_STORM_2 = "#E5E9F0"
+    SNOW_STORM_3 = "#ECEFF4"
+    FROST_1 = "#8FBCBB"
+    FROST_2 = "#88C0D0"
+    FROST_3 = "#81A1C1"
+    FROST_4 = "#5E81AC"
+    RED = "#BF616A"
+    ORANGE = "#D08770"
+    YELLOW = "#EBCB8B"
+    GREEN = "#A3BE8C"
+    PURPLE = "#B48EAD"
 
 
-# Create a Rich Console with Nord theme
 console = Console(
     theme=Theme(
         {
@@ -194,7 +163,7 @@ console = Console(
 # Custom Exception Classes
 # ----------------------------------------------------------------
 class DeploymentError(Exception):
-    """Base exception for Script Deployer errors."""
+    """Base exception for deployment errors."""
 
     pass
 
@@ -205,7 +174,7 @@ class PathVerificationError(DeploymentError):
     pass
 
 
-class PermissionError(DeploymentError):
+class PermissionOperationError(DeploymentError):
     """Raised when permission operations fail."""
 
     pass
@@ -218,11 +187,9 @@ class FileOperationError(DeploymentError):
 
 
 # ----------------------------------------------------------------
-# Data Structures
+# Deployment Data Structures
 # ----------------------------------------------------------------
 class FileStatus:
-    """Enumeration of possible file statuses during deployment."""
-
     NEW = "new"
     UPDATED = "updated"
     UNCHANGED = "unchanged"
@@ -230,7 +197,9 @@ class FileStatus:
 
 
 class DeploymentResult:
-    """Tracks the results of the deployment operation."""
+    """
+    Tracks deployment statistics.
+    """
 
     def __init__(self):
         self.new_files = 0
@@ -245,18 +214,13 @@ class DeploymentResult:
 
     @property
     def total_files(self) -> int:
-        """Get the total number of files processed."""
         return self.new_files + self.updated_files + self.unchanged_files
 
     @property
     def elapsed_time(self) -> float:
-        """Get the elapsed time in seconds."""
-        if self.end_time:
-            return self.end_time - self.start_time
-        return time.time() - self.start_time
+        return (self.end_time or time.time()) - self.start_time
 
-    def complete(self):
-        """Mark the deployment as complete."""
+    def complete(self) -> None:
         self.end_time = time.time()
 
     def add_file(
@@ -265,8 +229,7 @@ class DeploymentResult:
         status: str,
         is_executable: bool = False,
         permission_changed: bool = False,
-    ):
-        """Add a file to the deployment results."""
+    ) -> None:
         self.file_details.append(
             {
                 "filename": filename,
@@ -275,7 +238,6 @@ class DeploymentResult:
                 "permission_changed": permission_changed,
             }
         )
-
         if status == FileStatus.NEW:
             self.new_files += 1
         elif status == FileStatus.UPDATED:
@@ -284,10 +246,8 @@ class DeploymentResult:
             self.unchanged_files += 1
         elif status == FileStatus.FAILED:
             self.failed_files += 1
-
         if is_executable:
             self.executable_files += 1
-
         if permission_changed:
             self.permission_changes += 1
 
@@ -297,58 +257,33 @@ class DeploymentResult:
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a high-tech ASCII art header with impressive styling.
-
-    Returns:
-        Panel containing the styled header
+    Create an ASCII art header using Pyfiglet and Nord-themed colors.
     """
-    # Use smaller, more compact but still tech-looking fonts
-    compact_fonts = ["slant", "small", "standard", "digital", "big"]
-
-    # Try each font until we find one that works well
-    for font_name in compact_fonts:
+    fonts = ["slant", "small", "standard", "digital", "big"]
+    ascii_art = ""
+    for font in fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
+            fig = pyfiglet.Figlet(font=font, width=60)
             ascii_art = fig.renderText(AppConfig.APP_NAME)
-
-            # If we got a reasonable result, use it
-            if ascii_art and len(ascii_art.strip()) > 0:
+            if ascii_art and ascii_art.strip():
                 break
         except Exception:
             continue
-
-    # Custom ASCII art fallback if all else fails
-    if not ascii_art or len(ascii_art.strip()) == 0:
-        ascii_art = """
-               _       _         _            _                       
- ___  ___ _ __(_)_ __ | |_    __| | ___ _ __ | | ___  _   _  ___ _ __ 
-/ __|/ __| '__| | '_ \| __|  / _` |/ _ \ '_ \| |/ _ \| | | |/ _ \ '__|
-\__ \ (__| |  | | |_) | |_  | (_| |  __/ |_) | | (_) | |_| |  __/ |   
-|___/\___|_|  |_| .__/ \__|  \__,_|\___| .__/|_|\___/ \__, |\___|_|   
-                |_|                    |_|            |___/           
-        """
-
-    # Clean up extra whitespace that might cause display issues
+    if not ascii_art or not ascii_art.strip():
+        ascii_art = AppConfig.APP_NAME
     ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
-
-    # Create a high-tech gradient effect with Nord colors
     colors = [
         NordColors.FROST_1,
         NordColors.FROST_2,
         NordColors.FROST_3,
         NordColors.FROST_4,
     ]
-
     styled_text = ""
     for i, line in enumerate(ascii_lines):
         color = colors[i % len(colors)]
         styled_text += f"[bold {color}]{line}[/]\n"
-
-    # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
-    styled_text = tech_border + "\n" + styled_text + tech_border
-
-    # Create a panel with sufficient padding to avoid cutoff
+    border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
+    styled_text = border + "\n" + styled_text + border
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
@@ -358,57 +293,36 @@ def create_header() -> Panel:
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{AppConfig.APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
-
     return header_panel
 
 
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """
-    Print a styled message.
-
-    Args:
-        text: The message to display
-        style: The color style to use
-        prefix: The prefix symbol
-    """
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def print_step(message: str) -> None:
-    """Print a step description."""
     print_message(message, NordColors.FROST_3, "➜")
 
 
 def print_success(message: str) -> None:
-    """Print a success message."""
     print_message(message, NordColors.GREEN, "✓")
 
 
 def print_warning(message: str) -> None:
-    """Print a warning message."""
     print_message(message, NordColors.YELLOW, "⚠")
 
 
 def print_error(message: str) -> None:
-    """Print an error message."""
     print_message(message, NordColors.RED, "✗")
 
 
 def display_panel(
-    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
+    message: str, style: str = NordColors.FROST_2, title: str = ""
 ) -> None:
-    """
-    Display a message in a styled panel.
-
-    Args:
-        message: The message to display
-        style: The color style to use
-        title: Optional panel title
-    """
     panel = Panel(
-        Text.from_markup(f"[{style}]{message}[/]"),
+        Text.from_markup(f"[bold {style}]{message}[/]"),
         border_style=Style(color=style),
         padding=(1, 2),
         title=f"[bold {style}]{title}[/]" if title else None,
@@ -417,15 +331,6 @@ def display_panel(
 
 
 def create_section_header(title: str) -> Panel:
-    """
-    Create a styled section header panel.
-
-    Args:
-        title: The section title
-
-    Returns:
-        A styled panel for the section
-    """
     return Panel(
         Text(title, style=f"bold {NordColors.FROST_1}"),
         border_style=Style(color=NordColors.FROST_3),
@@ -437,36 +342,25 @@ def create_section_header(title: str) -> Panel:
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform any cleanup tasks before exit."""
     print_message("Cleaning up...", NordColors.FROST_3)
 
 
 def signal_handler(sig: int, frame: Any) -> None:
-    """
-    Handle process termination signals gracefully.
-
-    Args:
-        sig: Signal number
-        frame: Current stack frame
-    """
     sig_name = str(sig)
     if hasattr(signal, "Signals"):
         try:
             sig_name = signal.Signals(sig).name
         except ValueError:
             pass
-
     print_message(f"Process interrupted by signal {sig_name}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
 
-# Register signal handlers (if supported by platform)
 try:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-except (AttributeError, ValueError):
-    # Some signals might not be available on all platforms
+except Exception:
     pass
 atexit.register(cleanup)
 
@@ -477,19 +371,12 @@ atexit.register(cleanup)
 def get_file_hash(file_path: str) -> str:
     """
     Calculate the MD5 hash of a file's contents.
-
-    Args:
-        file_path: Path to the file
-
-    Returns:
-        MD5 hash string of the file contents
     """
     md5_hash = hashlib.md5()
     try:
         with open(file_path, "rb") as f:
-            # Read and update hash in chunks for memory efficiency
-            for byte_block in iter(lambda: f.read(4096), b""):
-                md5_hash.update(byte_block)
+            for chunk in iter(lambda: f.read(4096), b""):
+                md5_hash.update(chunk)
         return md5_hash.hexdigest()
     except Exception as e:
         raise FileOperationError(f"Failed to calculate hash for {file_path}: {e}")
@@ -497,18 +384,11 @@ def get_file_hash(file_path: str) -> str:
 
 def list_files(directory: str) -> List[str]:
     """
-    List all files in a directory (non-recursively).
-
-    Args:
-        directory: Directory path to list files from
-
-    Returns:
-        List of filenames
+    List all files (non-recursively) in a directory.
     """
     try:
         if not os.path.exists(directory):
             return []
-
         return [
             f
             for f in os.listdir(directory)
@@ -521,63 +401,24 @@ def list_files(directory: str) -> List[str]:
 def is_executable_file(filename: str) -> bool:
     """
     Check if a file should be made executable based on its extension.
-
-    Args:
-        filename: The name of the file to check
-
-    Returns:
-        True if file should be made executable, False otherwise
     """
     _, ext = os.path.splitext(filename)
     return ext.lower() in AppConfig.EXECUTABLE_EXTENSIONS
 
 
-def make_executable(file_path: str) -> bool:
-    """
-    Make a file executable by setting the appropriate permissions.
-
-    Args:
-        file_path: Path to the file to make executable
-
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        # First make sure the file has the right ownership
-        set_owner(file_path)
-
-        # Set permissions to: User: rwx (7), Group: --- (0), Others: --- (0)
-        os.chmod(file_path, AppConfig.FILE_PERMISSIONS | stat.S_IXUSR)
-        return True
-    except Exception as e:
-        print_warning(f"Failed to set executable permissions on {file_path}: {e}")
-        return False
-
-
 def set_owner(path: str) -> bool:
     """
     Set the owner of a file or directory to the configured user.
-
-    Args:
-        path: Path to the file or directory
-
-    Returns:
-        True if successful, False otherwise
     """
-    # Skip if uid/gid not available
     if AppConfig.OWNER_UID is None or AppConfig.OWNER_GID is None:
         return False
-
     try:
-        # Check current ownership
         current_stat = os.stat(path)
         if (
             current_stat.st_uid == AppConfig.OWNER_UID
             and current_stat.st_gid == AppConfig.OWNER_GID
         ):
-            return False  # No change needed
-
-        # Change ownership
+            return False
         os.chown(path, AppConfig.OWNER_UID, AppConfig.OWNER_GID)
         return True
     except Exception as e:
@@ -587,79 +428,62 @@ def set_owner(path: str) -> bool:
 
 def set_permissions(path: str, is_directory: bool = False) -> bool:
     """
-    Set permissions on a file or directory.
-
-    Args:
-        path: Path to the file or directory
-        is_directory: Whether the path is a directory
-
-    Returns:
-        True if successful, False otherwise
+    Set file or directory permissions.
     """
     try:
-        # First make sure the file has the right ownership
-        ownership_changed = set_owner(path)
-
-        # Set proper permissions based on type
+        set_owner(path)
         if is_directory:
             os.chmod(path, AppConfig.DIR_PERMISSIONS)
         else:
-            # For files, use basic file permissions (executable bit is added separately)
             os.chmod(path, AppConfig.FILE_PERMISSIONS)
-
         return True
     except Exception as e:
         print_warning(f"Failed to set permissions on {path}: {e}")
         return False
 
 
+def make_executable(file_path: str) -> bool:
+    """
+    Make a file executable by setting the executable bit.
+    """
+    try:
+        set_owner(file_path)
+        os.chmod(file_path, AppConfig.FILE_PERMISSIONS | stat.S_IXUSR)
+        return True
+    except Exception as e:
+        print_warning(f"Failed to set executable permissions on {file_path}: {e}")
+        return False
+
+
 def verify_paths() -> bool:
     """
-    Verify that source and destination directories exist or can be created.
-
-    Returns:
-        True if paths are valid, False otherwise
+    Verify that the source and destination directories exist (or can be created).
     """
-    # Check source directory
-    if not os.path.exists(AppConfig.SOURCE_DIR):
-        print_error(f"Source directory does not exist: {AppConfig.SOURCE_DIR}")
+    if not os.path.exists(AppConfig.SOURCE_DIR) or not os.path.isdir(
+        AppConfig.SOURCE_DIR
+    ):
+        print_error(f"Source directory invalid: {AppConfig.SOURCE_DIR}")
         return False
-
-    if not os.path.isdir(AppConfig.SOURCE_DIR):
-        print_error(f"Source path is not a directory: {AppConfig.SOURCE_DIR}")
-        return False
-
-    # Check destination directory
     if not os.path.exists(AppConfig.DEST_DIR):
         try:
             os.makedirs(AppConfig.DEST_DIR, exist_ok=True)
             print_step(f"Created destination directory: {AppConfig.DEST_DIR}")
-
-            # Set owner and permissions for the new directory
             set_permissions(AppConfig.DEST_DIR, is_directory=True)
         except Exception as e:
             print_error(f"Failed to create destination directory: {e}")
             return False
-
     if not os.path.isdir(AppConfig.DEST_DIR):
         print_error(f"Destination path is not a directory: {AppConfig.DEST_DIR}")
         return False
-
-    # Always ensure permissions on the destination directory
     set_permissions(AppConfig.DEST_DIR, is_directory=True)
-
     return True
 
 
 def deploy_files() -> DeploymentResult:
     """
-    Deploy files from source to destination directory.
-
-    Returns:
-        DeploymentResult object with deployment statistics
+    Deploy files from the source to destination directory.
     """
     result = DeploymentResult()
-
     try:
         source_files = list_files(AppConfig.SOURCE_DIR)
         dest_files = list_files(AppConfig.DEST_DIR)
@@ -668,22 +492,16 @@ def deploy_files() -> DeploymentResult:
         result.complete()
         return result
 
-    # Track files to process
     files_to_process = []
     for file in source_files:
         source_path = os.path.join(AppConfig.SOURCE_DIR, file)
         dest_path = os.path.join(AppConfig.DEST_DIR, file)
-
-        # Determine if file needs to be copied
         if file not in dest_files:
-            # New file
             files_to_process.append((source_path, dest_path, FileStatus.NEW))
         else:
-            # Existing file - check if content has changed
             try:
                 source_hash = get_file_hash(source_path)
                 dest_hash = get_file_hash(dest_path)
-
                 if source_hash != dest_hash:
                     files_to_process.append(
                         (source_path, dest_path, FileStatus.UPDATED)
@@ -696,7 +514,6 @@ def deploy_files() -> DeploymentResult:
                 print_warning(f"Error comparing file {file}: {e}")
                 files_to_process.append((source_path, dest_path, FileStatus.UPDATED))
 
-    # Process files with progress bar
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn(f"[bold {NordColors.FROST_2}]Processing files"),
@@ -710,40 +527,26 @@ def deploy_files() -> DeploymentResult:
         console=console,
     ) as progress:
         task = progress.add_task("Deploying", total=len(files_to_process))
-
         for source_path, dest_path, status in files_to_process:
             filename = os.path.basename(source_path)
-            is_executable = is_executable_file(filename)
+            is_exec = is_executable_file(filename)
             perm_changed = False
-
             if status in (FileStatus.NEW, FileStatus.UPDATED):
                 try:
                     shutil.copy2(source_path, dest_path)
-
-                    # Set permissions on the file
                     perm_changed = set_permissions(dest_path)
-
-                    # Set executable permissions if needed
-                    if is_executable:
+                    if is_exec:
                         make_executable(dest_path)
-
-                    result.add_file(filename, status, is_executable, perm_changed)
-
+                    result.add_file(filename, status, is_exec, perm_changed)
                 except Exception as e:
                     print_warning(f"Failed to copy file {filename}: {e}")
                     result.add_file(filename, FileStatus.FAILED)
-            else:  # status == FileStatus.UNCHANGED
-                # Check permissions and executable status
+            else:  # UNCHANGED
                 perm_changed = set_permissions(dest_path)
-
-                # Ensure executable if needed
-                if is_executable and not os.access(dest_path, os.X_OK):
+                if is_exec and not os.access(dest_path, os.X_OK):
                     make_executable(dest_path)
-
-                result.add_file(filename, status, is_executable, perm_changed)
-
+                result.add_file(filename, status, is_exec, perm_changed)
             progress.advance(task)
-
     result.complete()
     return result
 
@@ -752,15 +555,14 @@ def deploy_files() -> DeploymentResult:
 # Results Reporting
 # ----------------------------------------------------------------
 def display_deployment_details() -> None:
-    """Display the deployment details in a panel."""
+    """
+    Display deployment configuration details.
+    """
     current_user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
     is_root = os.geteuid() == 0
-
-    # Create a warning if needed
     permission_warning = ""
     if not is_root and AppConfig.OWNER_USER != current_user:
         permission_warning = f"\n[bold {NordColors.YELLOW}]Warning: Not running as root. Permission changes may fail.[/]"
-
     panel_content = f"""
 Source: [bold]{AppConfig.SOURCE_DIR}[/]
 Target: [bold]{AppConfig.DEST_DIR}[/]
@@ -770,7 +572,6 @@ Permissions: [bold]Files: {oct(AppConfig.FILE_PERMISSIONS)[2:]}, Dirs: {oct(AppC
 Running as: [bold]{current_user}[/] ({"root" if is_root else "non-root"})
 {permission_warning}
 """
-
     console.print(
         Panel(
             Text.from_markup(panel_content),
@@ -785,12 +586,6 @@ Running as: [bold]{current_user}[/] ({"root" if is_root else "non-root"})
 def create_stats_table(result: DeploymentResult) -> Table:
     """
     Create a table displaying deployment statistics.
-
-    Args:
-        result: DeploymentResult object
-
-    Returns:
-        Rich Table object
     """
     table = Table(
         show_header=True,
@@ -800,10 +595,8 @@ def create_stats_table(result: DeploymentResult) -> Table:
         title=f"[bold {NordColors.SNOW_STORM_2}]Deployment Statistics[/]",
         title_justify="center",
     )
-
     table.add_column("Metric", style=f"bold {NordColors.FROST_2}")
     table.add_column("Value", style=NordColors.SNOW_STORM_1)
-
     table.add_row("New Files", str(result.new_files))
     table.add_row("Updated Files", str(result.updated_files))
     table.add_row("Unchanged Files", str(result.unchanged_files))
@@ -812,33 +605,18 @@ def create_stats_table(result: DeploymentResult) -> Table:
     table.add_row("Executable Files", str(result.executable_files))
     table.add_row("Permission Changes", str(result.permission_changes))
     table.add_row("Elapsed Time", f"{result.elapsed_time:.2f} seconds")
-
     return table
 
 
-def create_file_details_table(
-    result: DeploymentResult, max_files: int = 20
-) -> Optional[Table]:
+def create_file_details_table(result: DeploymentResult, max_files: int = 20) -> Table:
     """
     Create a table displaying details of modified files.
-
-    Args:
-        result: DeploymentResult object
-        max_files: Maximum number of files to display
-
-    Returns:
-        Rich Table object or None if no modified files
     """
-    # Get modified files (new + updated)
     modified_files = [
         f
         for f in result.file_details
         if f["status"] in (FileStatus.NEW, FileStatus.UPDATED)
     ]
-
-    if not modified_files:
-        return None
-
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -847,19 +625,12 @@ def create_file_details_table(
         title=f"[bold {NordColors.SNOW_STORM_2}]Modified Files[/]",
         title_justify="center",
     )
-
     table.add_column("Filename", style=f"bold {NordColors.FROST_2}")
     table.add_column("Status", justify="center")
     table.add_column("Permissions", justify="center")
-
-    # Display up to max_files, prioritizing failures
-    failed_files = [f for f in result.file_details if f["status"] == FileStatus.FAILED]
-    display_files = failed_files + modified_files
-    display_files = display_files[:max_files]
-
+    display_files = modified_files[:max_files]
     for file_info in display_files:
         filename = file_info["filename"]
-
         if file_info["status"] == FileStatus.NEW:
             status_text = Text("✓ NEW", style=f"bold {NordColors.GREEN}")
         elif file_info["status"] == FileStatus.UPDATED:
@@ -868,38 +639,30 @@ def create_file_details_table(
             status_text = Text("✗ FAILED", style=f"bold {NordColors.RED}")
         else:
             status_text = Text("● UNCHANGED", style=NordColors.SNOW_STORM_1)
-
         permissions = []
         if file_info["executable"]:
             permissions.append("executable")
         if file_info["permission_changed"]:
             permissions.append("ownership")
-
         permission_text = ", ".join(permissions) if permissions else "standard"
-
         table.add_row(filename, status_text, permission_text)
-
-    # Add a note if we truncated the list
     if len(modified_files) > max_files:
         table.add_row(f"... and {len(modified_files) - max_files} more files", "", "")
-
     return table
 
 
 # ----------------------------------------------------------------
-# Main Functions
+# Main Deployment Process
 # ----------------------------------------------------------------
 def run_deployment() -> None:
-    """Run the complete deployment process."""
+    """
+    Execute the complete, unattended deployment process.
+    """
     console.print(create_header())
     print_step(f"Starting deployment at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     console.print()
-
-    # Display deployment details
     display_deployment_details()
     console.print()
-
-    # Step 1: Verify paths
     console.print(create_section_header("Path Verification"))
     if not verify_paths():
         display_panel(
@@ -907,27 +670,18 @@ def run_deployment() -> None:
             style=NordColors.RED,
             title="Error",
         )
-        return
+        sys.exit(1)
     print_success("Source and destination directories verified")
     console.print()
-
-    # Step 2: Deploy files and set permissions
     console.print(create_section_header("File Deployment"))
     try:
         result = deploy_files()
-
-        # Display statistics
         console.print(create_stats_table(result))
         console.print()
-
-        # Display file details for modified files
-        file_details_table = create_file_details_table(result)
-        if file_details_table:
-            console.print(file_details_table)
+        # Optionally display details for modified files
+        if result.new_files or result.updated_files:
+            console.print(create_file_details_table(result))
             console.print()
-
-        # Final message
-        if result.new_files > 0 or result.updated_files > 0:
             display_panel(
                 f"Successfully deployed {result.new_files + result.updated_files} files.\n"
                 f"Made {result.executable_files} files executable and changed permissions on {result.permission_changes} files/dirs.\n"
@@ -942,20 +696,21 @@ def run_deployment() -> None:
                 style=NordColors.FROST_3,
                 title="Deployment Complete",
             )
-
     except Exception as e:
-        # Display error
         display_panel(
             f"Deployment failed: {str(e)}", style=NordColors.RED, title="Error"
         )
+        sys.exit(1)
 
 
 def main() -> None:
-    """Main entry point for the script."""
+    """
+    Main entry point for the unattended deployment script.
+    """
     try:
         run_deployment()
     except KeyboardInterrupt:
-        print_warning("\nOperation cancelled by user.")
+        print_warning("Operation cancelled by user.")
         sys.exit(1)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
