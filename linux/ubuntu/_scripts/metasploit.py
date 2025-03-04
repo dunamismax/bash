@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
 """
-Fully Automated Metasploit Framework Installer
-----------------------------------------------
-
-A zero-interaction installer and configuration tool for the Metasploit Framework.
-Automatically handles installation, database setup, and configuration with no user input.
-
-Features:
-  • Downloads and installs the latest Metasploit Framework
-  • Configures PostgreSQL database for Metasploit
-  • Verifies system requirements and dependencies
-  • Completely automated with no user interaction required
-
-Usage:
-  Simply run with: sudo python3 metasploit_installer.py
+Automated Metasploit Framework Installer
+--------------------------------------------------
+A fully automated, zero-interaction installer and configuration tool for the
+Metasploit Framework. This script automatically handles installation,
+database setup, and configuration with no user input.
 
 Version: 1.0.0
 """
@@ -27,7 +18,7 @@ import signal
 import subprocess
 import sys
 import time
-from typing import List, Dict, Optional, Any, Tuple, Callable
+from typing import List, Dict, Optional, Any
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
@@ -50,20 +41,19 @@ try:
     from rich.live import Live
     from rich.traceback import install as install_rich_traceback
 except ImportError:
-    print("This script requires the 'rich' and 'pyfiglet' libraries.")
-    print("Installing them now...")
+    print("Required libraries missing. Installing now...")
     try:
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "rich", "pyfiglet"], check=True
+            [sys.executable, "-m", "pip", "install", "rich", "pyfiglet"],
+            check=True,
         )
-        print("Successfully installed required libraries. Restarting script...")
+        print("Installed required libraries. Restarting script...")
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
-        print(f"Failed to install required libraries: {e}")
-        print("Please install them manually: pip install rich pyfiglet")
+        print(f"Failed to install libraries: {e}")
         sys.exit(1)
 
-# Install rich traceback handler for better error reporting
+# Install rich traceback for better error reporting
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
@@ -72,16 +62,17 @@ install_rich_traceback(show_locals=True)
 VERSION = "1.0.0"
 APP_NAME = "Metasploit Installer"
 APP_SUBTITLE = "Automated Framework Setup"
-
-# Command timeouts (in seconds)
 DEFAULT_TIMEOUT = 300
-INSTALLATION_TIMEOUT = 1200  # 20 minutes for installation on slow machines
+INSTALLATION_TIMEOUT = 1200  # 20 minutes for slower machines
 
-# Installer URL
-INSTALLER_URL = "https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb"
+# Installer URL and temporary download location
+INSTALLER_URL = (
+    "https://raw.githubusercontent.com/rapid7/metasploit-omnibus/"
+    "master/config/templates/metasploit-framework-wrappers/msfupdate.erb"
+)
 INSTALLER_PATH = "/tmp/msfinstall"
 
-# System dependencies that might be needed
+# List of required system dependencies (for apt-based systems)
 SYSTEM_DEPENDENCIES = [
     "build-essential",
     "libpq-dev",
@@ -97,31 +88,22 @@ SYSTEM_DEPENDENCIES = [
 # Nord-Themed Colors
 # ----------------------------------------------------------------
 class NordColors:
-    """Nord color palette for consistent theming throughout the application."""
-
-    # Polar Night (dark) shades
-    POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
-    POLAR_NIGHT_4 = "#4C566A"  # Light background shade
-
-    # Snow Storm (light) shades
-    SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
-    SNOW_STORM_2 = "#E5E9F0"  # Medium text color
-
-    # Frost (blues/cyans) shades
-    FROST_1 = "#8FBCBB"  # Light cyan
-    FROST_2 = "#88C0D0"  # Light blue
-    FROST_3 = "#81A1C1"  # Medium blue
-    FROST_4 = "#5E81AC"  # Dark blue
-
-    # Aurora (accent) shades
-    RED = "#BF616A"  # Red
-    ORANGE = "#D08770"  # Orange
-    YELLOW = "#EBCB8B"  # Yellow
-    GREEN = "#A3BE8C"  # Green
+    POLAR_NIGHT_1 = "#2E3440"
+    POLAR_NIGHT_4 = "#4C566A"
+    SNOW_STORM_1 = "#D8DEE9"
+    SNOW_STORM_2 = "#E5E9F0"
+    FROST_1 = "#8FBCBB"
+    FROST_2 = "#88C0D0"
+    FROST_3 = "#81A1C1"
+    FROST_4 = "#5E81AC"
+    RED = "#BF616A"
+    ORANGE = "#D08770"
+    YELLOW = "#EBCB8B"
+    GREEN = "#A3BE8C"
 
 
-# Create a Rich Console
-console: Console = Console(theme=None, highlight=False)
+# Create a global Rich Console instance
+console: Console = Console()
 
 
 # ----------------------------------------------------------------
@@ -129,58 +111,33 @@ console: Console = Console(theme=None, highlight=False)
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a high-tech ASCII art header with impressive styling.
-
-    Returns:
-        Panel containing the styled header
+    Create an ASCII art header using Pyfiglet and return it as a Rich Panel.
     """
-    # Use smaller, more compact but still tech-looking fonts
     compact_fonts = ["slant", "small", "smslant", "standard", "digital"]
-
-    # Try each font until we find one that works well
-    for font_name in compact_fonts:
+    ascii_art = ""
+    for font in compact_fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
+            fig = pyfiglet.Figlet(font=font, width=60)
             ascii_art = fig.renderText(APP_NAME)
-
-            # If we got a reasonable result, use it
-            if ascii_art and len(ascii_art.strip()) > 0:
+            if ascii_art and ascii_art.strip():
                 break
         except Exception:
             continue
-
-    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
-    if not ascii_art or len(ascii_art.strip()) == 0:
-        ascii_art = """
-                _                  _       _ _   
- _ __ ___   ___| |_ __ _ ___ _ __ | | ___ (_) |_ 
-| '_ ` _ \ / _ \ __/ _` / __| '_ \| |/ _ \| | __|
-| | | | | |  __/ || (_| \__ \ |_) | | (_) | | |_ 
-|_| |_| |_|\___|\__\__,_|___/ .__/|_|\___/|_|\__|
-                            |_|                  
-        """
-
-    # Clean up extra whitespace that might cause display issues
-    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
-
-    # Create a high-tech gradient effect with Nord colors
+    if not ascii_art or not ascii_art.strip():
+        ascii_art = APP_NAME
+    lines = [line for line in ascii_art.splitlines() if line.strip()]
     colors = [
         NordColors.FROST_1,
         NordColors.FROST_2,
         NordColors.FROST_3,
         NordColors.FROST_2,
     ]
-
     styled_text = ""
-    for i, line in enumerate(ascii_lines):
+    for i, line in enumerate(lines):
         color = colors[i % len(colors)]
         styled_text += f"[bold {color}]{line}[/]\n"
-
-    # Add decorative tech elements (shorter than before)
     tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
     styled_text = tech_border + "\n" + styled_text + tech_border
-
-    # Create a panel with sufficient padding to avoid cutoff
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
@@ -190,55 +147,34 @@ def create_header() -> Panel:
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
-
     return header_panel
 
 
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """
-    Print a styled message.
-
-    Args:
-        text: The message to display
-        style: The color style to use
-        prefix: The prefix symbol
-    """
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def print_step(message: str) -> None:
-    """Print a step description."""
     print_message(message, NordColors.FROST_3, "➜")
 
 
 def print_success(message: str) -> None:
-    """Print a success message."""
     print_message(message, NordColors.GREEN, "✓")
 
 
 def print_warning(message: str) -> None:
-    """Print a warning message."""
     print_message(message, NordColors.YELLOW, "⚠")
 
 
 def print_error(message: str) -> None:
-    """Print an error message."""
     print_message(message, NordColors.RED, "✗")
 
 
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """
-    Display a message in a styled panel.
-
-    Args:
-        message: The message to display
-        style: The color style to use
-        title: Optional panel title
-    """
     panel = Panel(
         Text.from_markup(f"[bold {style}]{message}[/]"),
         border_style=Style(color=style),
@@ -261,26 +197,14 @@ def run_command(
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
-
-    Args:
-        cmd: Command and arguments as a list
-        env: Environment variables for the command
-        check: Whether to check the return code
-        capture_output: Whether to capture stdout/stderr
-        timeout: Command timeout in seconds
-        shell: Whether to run the command in a shell
-
-    Returns:
-        CompletedProcess instance with command results
     """
     try:
-        cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
+        cmd_str = " ".join(cmd)
         print_message(
             f"Running: {cmd_str[:80]}{'...' if len(cmd_str) > 80 else ''}",
             NordColors.SNOW_STORM_1,
             "→",
         )
-
         result = subprocess.run(
             cmd,
             env=env or os.environ.copy(),
@@ -292,11 +216,10 @@ def run_command(
         )
         return result
     except subprocess.CalledProcessError as e:
-        cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
         print_error(f"Command failed: {cmd_str}")
-        if hasattr(e, "stdout") and e.stdout:
+        if e.stdout:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if hasattr(e, "stderr") and e.stderr:
+        if e.stderr:
             console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
         raise
     except subprocess.TimeoutExpired:
@@ -307,8 +230,10 @@ def run_command(
         raise
 
 
-def check_command_available(command):
-    """Return True if the command is available in the PATH."""
+def check_command_available(command: str) -> bool:
+    """
+    Return True if the command is available in the PATH.
+    """
     return shutil.which(command) is not None
 
 
@@ -316,7 +241,9 @@ def check_command_available(command):
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform any cleanup tasks before exit."""
+    """
+    Cleanup temporary files before exit.
+    """
     print_message("Cleaning up temporary files...", NordColors.FROST_3)
     if os.path.exists(INSTALLER_PATH):
         try:
@@ -328,19 +255,14 @@ def cleanup() -> None:
 
 def signal_handler(sig: int, frame: Any) -> None:
     """
-    Handle process termination signals gracefully.
-
-    Args:
-        sig: Signal number
-        frame: Current stack frame
+    Handle termination signals gracefully.
     """
-    sig_name: str = signal.Signals(sig).name
+    sig_name = signal.Signals(sig).name
     print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
 
-# Register signal handlers
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 atexit.register(cleanup)
@@ -351,59 +273,40 @@ atexit.register(cleanup)
 # ----------------------------------------------------------------
 def check_system() -> bool:
     """
-    Check system compatibility and required tools.
-
-    Returns:
-        bool: True if system is compatible, False otherwise
+    Check system compatibility, distribution, and required tools.
     """
     print_step("Checking system compatibility...")
-
-    # Check OS
     os_name = platform.system().lower()
     if os_name != "linux":
         print_warning(f"This script is designed for Linux, not {os_name}.")
         return False
 
-    # Check if we're on Ubuntu/Debian
-    is_ubuntu = False
-    is_debian = False
+    is_ubuntu_or_debian = False
     try:
         with open("/etc/os-release", "r") as f:
             os_release = f.read().lower()
-            is_ubuntu = "ubuntu" in os_release
-            is_debian = "debian" in os_release
+            if "ubuntu" in os_release or "debian" in os_release:
+                is_ubuntu_or_debian = True
     except FileNotFoundError:
         pass
-
-    if not (is_ubuntu or is_debian):
+    if not is_ubuntu_or_debian:
         print_warning(
-            "This script is optimized for Ubuntu/Debian. It may not work correctly on your system."
+            "Optimized for Ubuntu/Debian. May not work correctly on your system."
         )
 
-    # Check root privileges
     if os.geteuid() != 0:
-        print_error("This script must be run with root privileges.")
-        print_message(
-            "Please run with: sudo python3 metasploit_installer.py", NordColors.YELLOW
-        )
+        print_error("Script must be run with root privileges.")
         return False
 
-    # Create a system info table
+    # Display system information
     table = Table(
-        show_header=False,
-        box=None,
-        border_style=NordColors.FROST_3,
-        padding=(0, 2),
+        show_header=False, box=None, border_style=NordColors.FROST_3, padding=(0, 2)
     )
     table.add_column("Property", style=f"bold {NordColors.FROST_2}")
     table.add_column("Value", style=NordColors.SNOW_STORM_1)
-
     table.add_row("Python Version", platform.python_version())
-    table.add_row("Operating System", platform.platform())
-    table.add_row(
-        "Distribution", "Ubuntu/Debian" if (is_ubuntu or is_debian) else "Unknown"
-    )
-
+    table.add_row("OS", platform.platform())
+    table.add_row("Distribution", "Ubuntu/Debian" if is_ubuntu_or_debian else "Unknown")
     console.print(
         Panel(
             table,
@@ -415,36 +318,32 @@ def check_system() -> bool:
 
     # Check for required tools
     required_tools = ["curl", "git"]
-    missing = [tool for tool in required_tools if not check_command_available(tool)]
-    if missing:
-        print_error(f"Missing required tools: {', '.join(missing)}")
+    missing_tools = [
+        tool for tool in required_tools if not check_command_available(tool)
+    ]
+    if missing_tools:
+        print_error(f"Missing required tools: {', '.join(missing_tools)}")
         print_step("Installing missing tools...")
         try:
             run_command(["apt-get", "update"])
-            run_command(["apt-get", "install", "-y"] + missing)
-            print_success("Required tools installed successfully.")
+            run_command(["apt-get", "install", "-y"] + missing_tools)
+            print_success("Required tools installed.")
         except Exception as e:
             print_error(f"Failed to install required tools: {e}")
             return False
     else:
         print_success("All required tools are available.")
-
     return True
 
 
 def install_system_dependencies() -> bool:
     """
-    Install system dependencies that might be needed by Metasploit.
-
-    Returns:
-        bool: True if dependencies installed successfully, False otherwise
+    Install required system dependencies.
     """
     print_step("Installing system dependencies...")
-
     try:
         with console.status("[bold blue]Updating package lists...", spinner="dots"):
             run_command(["apt-get", "update"])
-
         with Progress(
             SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
             TextColumn(f"[bold {NordColors.FROST_2}]Installing dependencies"),
@@ -458,15 +357,13 @@ def install_system_dependencies() -> bool:
             console=console,
         ) as progress:
             task = progress.add_task("Installing", total=len(SYSTEM_DEPENDENCIES))
-
-            for package in SYSTEM_DEPENDENCIES:
+            for pkg in SYSTEM_DEPENDENCIES:
                 try:
-                    run_command(["apt-get", "install", "-y", package], check=False)
+                    run_command(["apt-get", "install", "-y", pkg], check=False)
                     progress.advance(task)
                 except Exception as e:
-                    print_warning(f"Failed to install {package}: {e}")
+                    print_warning(f"Failed to install {pkg}: {e}")
                     progress.advance(task)
-
         print_success("System dependencies installed.")
         return True
     except Exception as e:
@@ -476,23 +373,18 @@ def install_system_dependencies() -> bool:
 
 def download_metasploit_installer() -> bool:
     """
-    Download the Metasploit installer script.
-
-    Returns:
-        bool: True if download successful, False otherwise
+    Download the Metasploit installer script from the given URL.
     """
     print_step("Downloading Metasploit installer...")
-
     try:
         with console.status("[bold blue]Downloading installer...", spinner="dots"):
             run_command(["curl", "-sSL", INSTALLER_URL, "-o", INSTALLER_PATH])
-
         if os.path.exists(INSTALLER_PATH):
-            os.chmod(INSTALLER_PATH, 0o755)  # Make executable
-            print_success("Metasploit installer downloaded and made executable.")
+            os.chmod(INSTALLER_PATH, 0o755)
+            print_success("Installer downloaded and made executable.")
             return True
         else:
-            print_error("Failed to download Metasploit installer.")
+            print_error("Failed to download installer.")
             return False
     except Exception as e:
         print_error(f"Error downloading installer: {e}")
@@ -501,20 +393,15 @@ def download_metasploit_installer() -> bool:
 
 def run_metasploit_installer() -> bool:
     """
-    Run the Metasploit installer script.
-
-    Returns:
-        bool: True if installation successful, False otherwise
+    Run the downloaded Metasploit installer script.
     """
     print_step("Running Metasploit installer...")
-
     display_panel(
         "Installing Metasploit Framework. This may take several minutes.\n"
-        "The installer will download and set up all necessary components.",
-        style=NordColors.FROST_3,
-        title="Installation",
+        "The installer will download and set up all required components.",
+        NordColors.FROST_3,
+        "Installation",
     )
-
     try:
         with Progress(
             SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
@@ -523,16 +410,10 @@ def run_metasploit_installer() -> bool:
             console=console,
         ) as progress:
             task = progress.add_task("Installing", total=None)
-
-            # Set environment variables to make the installer run non-interactively
             env = os.environ.copy()
-            env["DEBIAN_FRONTEND"] = "noninteractive"  # Avoid prompts from apt
-
-            result = run_command(
-                [INSTALLER_PATH], timeout=INSTALLATION_TIMEOUT, env=env
-            )
+            env["DEBIAN_FRONTEND"] = "noninteractive"
+            run_command([INSTALLER_PATH], timeout=INSTALLATION_TIMEOUT, env=env)
             progress.update(task, completed=100)
-
         print_success("Metasploit Framework installed successfully.")
         return True
     except Exception as e:
@@ -542,306 +423,219 @@ def run_metasploit_installer() -> bool:
 
 def configure_postgresql() -> bool:
     """
-    Configure PostgreSQL for Metasploit automatically.
-
-    Returns:
-        bool: True if configuration successful, False otherwise
+    Configure PostgreSQL for use with Metasploit.
     """
-    print_step("Configuring PostgreSQL for Metasploit...")
-
+    print_step("Configuring PostgreSQL...")
     try:
-        # Check if PostgreSQL is running
         pg_status = run_command(["systemctl", "status", "postgresql"], check=False)
         if pg_status.returncode != 0:
             print_step("Starting PostgreSQL service...")
             run_command(["systemctl", "start", "postgresql"])
             run_command(["systemctl", "enable", "postgresql"])
-
-            # Verify it started successfully
             pg_verify = run_command(["systemctl", "status", "postgresql"], check=False)
             if pg_verify.returncode != 0:
                 print_warning(
                     "Could not start PostgreSQL service, continuing anyway..."
                 )
                 return False
-
-        print_success("PostgreSQL is running and enabled at startup.")
-
-        # Create msf database user and database automatically
+        print_success("PostgreSQL is running and enabled.")
         print_step("Setting up Metasploit database user...")
-        try:
-            # Check if msf user exists
-            user_check = run_command(
+        user_check = run_command(
+            [
+                "sudo",
+                "-u",
+                "postgres",
+                "psql",
+                "-tAc",
+                "SELECT 1 FROM pg_roles WHERE rolname='msf'",
+            ],
+            check=False,
+        )
+        if "1" not in user_check.stdout:
+            run_command(
                 [
                     "sudo",
                     "-u",
                     "postgres",
                     "psql",
-                    "-tAc",
-                    "SELECT 1 FROM pg_roles WHERE rolname='msf'",
+                    "-c",
+                    "CREATE USER msf WITH PASSWORD 'msf'",
                 ],
                 check=False,
             )
-
-            if "1" not in user_check.stdout:
-                # Create msf user with password 'msf'
-                run_command(
-                    [
-                        "sudo",
-                        "-u",
-                        "postgres",
-                        "psql",
-                        "-c",
-                        "CREATE USER msf WITH PASSWORD 'msf'",
-                    ],
-                    check=False,
-                )
-
-                # Create msf database
-                run_command(
-                    [
-                        "sudo",
-                        "-u",
-                        "postgres",
-                        "psql",
-                        "-c",
-                        "CREATE DATABASE msf OWNER msf",
-                    ],
-                    check=False,
-                )
-
-                print_success("Created Metasploit database and user")
-            else:
-                print_success("Metasploit database user already exists")
-
-            # Ensure the database exists
-            db_check = run_command(
+            run_command(
                 [
                     "sudo",
                     "-u",
                     "postgres",
                     "psql",
-                    "-tAc",
-                    "SELECT 1 FROM pg_database WHERE datname='msf'",
+                    "-c",
+                    "CREATE DATABASE msf OWNER msf",
                 ],
                 check=False,
             )
-
-            if "1" not in db_check.stdout:
-                run_command(
-                    [
-                        "sudo",
-                        "-u",
-                        "postgres",
-                        "psql",
-                        "-c",
-                        "CREATE DATABASE msf OWNER msf",
-                    ],
-                    check=False,
-                )
-                print_success("Created Metasploit database")
-
-            # Set up authentication
-            pg_hba_path = "/etc/postgresql/*/main/pg_hba.conf"
-            pg_hba_files = glob.glob(pg_hba_path)
-
-            if pg_hba_files:
-                # Add local access for msf user
-                for pg_hba_file in pg_hba_files:
-                    backup_path = f"{pg_hba_file}.backup"
-                    if not os.path.exists(backup_path):
-                        shutil.copy2(pg_hba_file, backup_path)
-                        print_success(f"Created backup of {pg_hba_file}")
-
-                    # Check if msf user is already in the file
-                    with open(pg_hba_file, "r") as f:
-                        content = f.read()
-
-                    if (
-                        "local   msf         msf                                     md5"
-                        not in content
-                    ):
-                        with open(pg_hba_file, "a") as f:
-                            f.write("\n# Added by Metasploit installer\n")
-                            f.write(
-                                "local   msf         msf                                     md5\n"
-                            )
-                        print_success(
-                            f"Updated PostgreSQL authentication file: {pg_hba_file}"
+            print_success("Created Metasploit database and user.")
+        else:
+            print_success("Metasploit database user already exists.")
+        db_check = run_command(
+            [
+                "sudo",
+                "-u",
+                "postgres",
+                "psql",
+                "-tAc",
+                "SELECT 1 FROM pg_database WHERE datname='msf'",
+            ],
+            check=False,
+        )
+        if "1" not in db_check.stdout:
+            run_command(
+                [
+                    "sudo",
+                    "-u",
+                    "postgres",
+                    "psql",
+                    "-c",
+                    "CREATE DATABASE msf OWNER msf",
+                ],
+                check=False,
+            )
+            print_success("Created Metasploit database.")
+        # Update PostgreSQL authentication file if needed
+        pg_hba_files = glob.glob("/etc/postgresql/*/main/pg_hba.conf")
+        if pg_hba_files:
+            for pg_hba in pg_hba_files:
+                backup = f"{pg_hba}.backup"
+                if not os.path.exists(backup):
+                    shutil.copy2(pg_hba, backup)
+                    print_success(f"Created backup of {pg_hba}")
+                with open(pg_hba, "r") as f:
+                    content = f.read()
+                if (
+                    "local   msf         msf                                     md5"
+                    not in content
+                ):
+                    with open(pg_hba, "a") as f:
+                        f.write("\n# Added by Metasploit installer\n")
+                        f.write(
+                            "local   msf         msf                                     md5\n"
                         )
-
-                        # Reload PostgreSQL to apply changes
-                        run_command(["systemctl", "reload", "postgresql"], check=False)
-
-        except Exception as e:
-            print_warning(f"Error setting up database: {e}")
-            print_message(
-                "Database setup incomplete. Will try to initialize it later.",
-                NordColors.YELLOW,
-            )
-
+                    print_success(f"Updated {pg_hba}")
+                    run_command(["systemctl", "reload", "postgresql"], check=False)
         return True
     except Exception as e:
         print_warning(f"PostgreSQL configuration error: {e}")
-        print_message(
-            "PostgreSQL configuration incomplete. Will try to initialize database later.",
-            NordColors.YELLOW,
-        )
         return False
 
 
-def check_installation():
+def check_installation() -> Optional[str]:
     """
-    Verify that Metasploit was installed correctly.
-
-    Returns:
-        str or bool: Path to msfconsole if found, False otherwise
+    Verify that Metasploit was installed successfully and return the msfconsole path.
     """
     print_step("Verifying installation...")
-
-    # Look for msfconsole in common locations
     possible_paths = [
         "/usr/bin/msfconsole",
         "/opt/metasploit-framework/bin/msfconsole",
         "/usr/local/bin/msfconsole",
     ]
-
     msfconsole_path = None
     for path in possible_paths:
         if os.path.exists(path):
             msfconsole_path = path
             break
-
-    # Try PATH as a last resort
     if not msfconsole_path and check_command_available("msfconsole"):
         msfconsole_path = "msfconsole"
-
     if not msfconsole_path:
-        print_error("Could not locate msfconsole. Installation might have failed.")
-        return False
-
+        print_error("msfconsole not found. Installation might have failed.")
+        return None
     try:
         with console.status(
             "[bold blue]Checking Metasploit version...", spinner="dots"
         ):
             version_result = run_command([msfconsole_path, "-v"], timeout=30)
-
         if (
             version_result.returncode == 0
             and "metasploit" in version_result.stdout.lower()
         ):
-            # Extract and display the version
-            version_lines = version_result.stdout.strip().split("\n")
             version_info = next(
-                (line for line in version_lines if "Framework" in line), ""
+                (
+                    line
+                    for line in version_result.stdout.strip().splitlines()
+                    if "Framework" in line
+                ),
+                "",
             )
-
-            print_success(f"Metasploit Framework installed successfully!")
+            print_success("Metasploit Framework installed successfully!")
             console.print(f"[{NordColors.FROST_1}]{version_info}[/]")
-
-            # Display path information
             console.print(f"[{NordColors.FROST_2}]Location: {msfconsole_path}[/]")
             return msfconsole_path
         else:
             print_error("Metasploit verification failed.")
-            return False
+            return None
     except Exception as e:
-        print_error(f"Error verifying Metasploit installation: {e}")
-        return False
+        print_error(f"Error verifying installation: {e}")
+        return None
 
 
-def initialize_database(msfconsole_path) -> bool:
+def initialize_database(msfconsole_path: str) -> bool:
     """
     Initialize the Metasploit database.
-
-    Args:
-        msfconsole_path: Path to msfconsole
-
-    Returns:
-        bool: True if initialization successful, False otherwise
     """
     print_step("Initializing Metasploit database...")
-
     msfdb_path = os.path.join(os.path.dirname(msfconsole_path), "msfdb")
-
     if not os.path.exists(msfdb_path) and not check_command_available("msfdb"):
         print_warning(
-            "Could not locate msfdb utility. Will try alternative database initialization."
+            "msfdb utility not found. Attempting alternative initialization via msfconsole."
         )
-        # Try running msfconsole with database commands
         try:
+            resource_path = "/tmp/msf_init.rc"
+            with open(resource_path, "w") as f:
+                f.write("db_status\nexit\n")
             with console.status("[bold blue]Initializing database...", spinner="dots"):
-                # Create a temporary resource script with initialization commands
-                resource_path = "/tmp/msf_init.rc"
-                with open(resource_path, "w") as f:
-                    f.write("db_status\n")
-                    f.write("exit\n")
-
-                # Run msfconsole with the resource script
-                result = run_command(
+                run_command(
                     [msfconsole_path, "-q", "-r", resource_path],
                     check=False,
                     timeout=60,
                 )
-
-                # Clean up
-                if os.path.exists(resource_path):
-                    os.remove(resource_path)
-
-            print_success("Metasploit database initialized through console.")
+            if os.path.exists(resource_path):
+                os.remove(resource_path)
+            print_success("Database initialized via msfconsole.")
             return True
         except Exception as e:
-            print_warning(f"Error initializing database through console: {e}")
+            print_warning(f"Database initialization via msfconsole failed: {e}")
             return False
-
-    # Use msfdb if available
-    msfdb_cmd = msfdb_path if os.path.exists(msfdb_path) else "msfdb"
-
     try:
-        with console.status("[bold blue]Initializing database...", spinner="dots"):
-            # Run msfdb init non-interactively
+        with console.status(
+            "[bold blue]Initializing database with msfdb...", spinner="dots"
+        ):
             env = os.environ.copy()
             env["DEBIAN_FRONTEND"] = "noninteractive"
-
-            result = run_command([msfdb_cmd, "init"], check=False, env=env)
-
+            result = run_command(
+                [msfdb_path if os.path.exists(msfdb_path) else "msfdb", "init"],
+                check=False,
+                env=env,
+            )
         if result.returncode == 0:
             print_success("Metasploit database initialized successfully.")
             return True
         else:
-            print_warning("Database initialization may have encountered issues.")
-            print_message(
-                "Will still try to use Metasploit without database.", NordColors.YELLOW
-            )
+            print_warning("Database initialization encountered issues.")
             return False
     except Exception as e:
         print_warning(f"Error initializing database: {e}")
-        print_message(
-            "Will still try to use Metasploit without database.", NordColors.YELLOW
-        )
         return False
 
 
-def create_startup_script(msfconsole_path) -> bool:
+def create_startup_script(msfconsole_path: str) -> bool:
     """
-    Create a startup script for easier Metasploit launching.
-
-    Args:
-        msfconsole_path: Path to msfconsole
-
-    Returns:
-        bool: True if creation successful, False otherwise
+    Create a startup script for launching Metasploit.
     """
     print_step("Creating startup script...")
-
     script_path = "/usr/local/bin/msf-start"
-
     try:
         script_content = f"""#!/bin/bash
 # Metasploit Framework Launcher
-# Created by automated installer
 
-# Check database status and initialize if needed
 echo "Checking Metasploit database status..."
 if command -v msfdb &> /dev/null; then
     msfdb status || msfdb init
@@ -849,142 +643,91 @@ else
     echo "msfdb not found, starting msfconsole directly"
 fi
 
-# Start Metasploit console
 echo "Starting Metasploit Framework..."
 {msfconsole_path} "$@"
 """
         with open(script_path, "w") as f:
             f.write(script_content)
-
-        os.chmod(script_path, 0o755)  # Make executable
-        print_success(f"Created startup script at {script_path}")
-
+        os.chmod(script_path, 0o755)
+        print_success(f"Startup script created at {script_path}")
         return True
     except Exception as e:
         print_warning(f"Failed to create startup script: {e}")
         return False
 
 
-def display_completion_info(msfconsole_path) -> None:
+def display_completion_info(msfconsole_path: str) -> None:
     """
-    Display information about the completed installation.
-
-    Args:
-        msfconsole_path: Path to msfconsole
+    Display final installation information.
     """
     completion_message = f"""
-Installation has been completed successfully!
+Installation completed successfully!
 
-[bold {NordColors.FROST_2}]Metasploit Framework Information:[/]
+[bold {NordColors.FROST_2}]Metasploit Framework:[/]
 • Command: {msfconsole_path}
-• Start with: msf-start (if created successfully) or {msfconsole_path}
-• Database status: Run 'db_status' in msfconsole
-• Initialize database: Run 'msfdb init' if needed
-
-[bold {NordColors.FROST_2}]Common Commands:[/]
-• Search for modules: search <keyword>
-• Use a module: use <module_path>
-• Show options: show options
-• Set an option: set <option> <value>
-• Run the module: run or exploit
+• Launch with: msf-start or {msfconsole_path}
+• Database: Run 'db_status' in msfconsole; initialize with 'msfdb init' if needed
 
 [bold {NordColors.FROST_2}]Documentation:[/]
 • https://docs.metasploit.com/
 """
-
-    display_panel(
-        completion_message, style=NordColors.GREEN, title="Installation Complete"
-    )
+    display_panel(completion_message, NordColors.GREEN, "Installation Complete")
 
 
-# ----------------------------------------------------------------
-# Main Setup Process
-# ----------------------------------------------------------------
-def run_full_setup():
-    """Run the complete Metasploit setup process without user interaction."""
+def run_full_setup() -> None:
+    """
+    Execute the complete automated setup process.
+    """
     console.clear()
     console.print(create_header())
     console.print()
-
     display_panel(
-        "Fully automated Metasploit Framework installation in progress.\n\n"
-        "The process includes:\n"
-        "1. Checking system compatibility\n"
-        "2. Installing required dependencies\n"
-        "3. Downloading and running the Metasploit installer\n"
-        "4. Configuring PostgreSQL database\n"
-        "5. Verifying the installation\n"
-        "6. Initializing the Metasploit database\n"
-        "7. Creating a convenient startup script",
-        style=NordColors.FROST_2,
-        title="Automated Setup Process",
+        "Automated Metasploit installation in progress.\n\n"
+        "Steps:\n"
+        "1. System check\n"
+        "2. Install system dependencies\n"
+        "3. Download installer\n"
+        "4. Run installer\n"
+        "5. Configure PostgreSQL\n"
+        "6. Verify installation\n"
+        "7. Initialize database\n"
+        "8. Create startup script",
+        NordColors.FROST_2,
+        "Automated Setup Process",
     )
-
     console.print()
-
-    # Step 1: Check system
     if not check_system():
-        print_error("System check failed. Installation cannot proceed.")
+        print_error("System check failed. Exiting.")
         sys.exit(1)
-
-    # Step 2: Install dependencies
     if not install_system_dependencies():
-        print_warning("Some dependencies could not be installed. Continuing anyway.")
-
-    # Step 3: Download installer
+        print_warning("Some dependencies failed to install. Continuing anyway...")
     if not download_metasploit_installer():
-        print_error("Failed to download Metasploit installer. Cannot proceed.")
+        print_error("Failed to download installer. Exiting.")
         sys.exit(1)
-
-    # Step 4: Run installer
     if not run_metasploit_installer():
-        print_error("Metasploit installation failed.")
+        print_error("Metasploit installation failed. Exiting.")
         sys.exit(1)
-
-    # Step 5: Configure PostgreSQL
     configure_postgresql()
-
-    # Step 6: Verify installation
     msfconsole_path = check_installation()
     if not msfconsole_path:
-        print_error(
-            "Metasploit verification failed but installation might still be successful."
-        )
-        print_message(
-            "You can try running 'msfconsole' manually later.", NordColors.YELLOW
-        )
+        print_error("Metasploit verification failed. Exiting.")
         sys.exit(1)
-
-    # Step 7: Initialize database
     initialize_database(msfconsole_path)
-
-    # Step 8: Create startup script
     create_startup_script(msfconsole_path)
-
-    # Step 9: Display completion information
     display_completion_info(msfconsole_path)
 
 
 # ----------------------------------------------------------------
 # Main Entry Point
 # ----------------------------------------------------------------
-def main():
+def main() -> None:
     try:
-        # Auto-install dependencies if not found (handled at import time)
-
-        # Check if running with proper permissions
         if os.geteuid() != 0:
             console.clear()
             console.print(create_header())
             console.print()
-
-            print_error("This script must be run with root privileges.")
-            print_message(
-                "Please run with: sudo python3 metasploit_installer.py",
-                NordColors.YELLOW,
-            )
+            print_error("Script must be run with root privileges.")
             sys.exit(1)
-
         run_full_setup()
     except KeyboardInterrupt:
         console.print()
