@@ -99,7 +99,6 @@ def get_input(message: str, completer=None, default: str = "") -> str:
     if pt_prompt:
         return pt_prompt(message, completer=completer, default=default)
     else:
-        # Fallback if prompt_toolkit is not installed
         return input(message)
 
 
@@ -111,7 +110,7 @@ if pt_prompt:
     class RemotePathCompleter(Completer):
         """
         Completer for remote file paths using the active SFTP client.
-        This completer lists files in the current remote base directory.
+        This completer lists files in the specified remote base directory.
         """
 
         def __init__(self, sftp_client, base_path="."):
@@ -400,8 +399,10 @@ def upload_file() -> None:
         console.print(f"[bold {NordColors.RED}]Not connected. Please connect first.[/]")
         return
 
-    # Use prompt_toolkit PathCompleter for local file selection.
-    local_completer = PathCompleter(only_files=True, expanduser=True)
+    # Use prompt_toolkit's PathCompleter for local file selection if available.
+    local_completer = (
+        PathCompleter(only_files=True, expanduser=True) if pt_prompt else None
+    )
     local_path = get_input(
         "Enter the local file path to upload: ",
         completer=local_completer,
@@ -443,21 +444,18 @@ def download_file() -> None:
         console.print(f"[bold {NordColors.RED}]Not connected. Please connect first.[/]")
         return
 
-    # Use prompt_toolkit auto-completion for remote file path if available.
-    if pt_prompt:
-        remote_completer = RemotePathCompleter(sftp)
-        remote_path = get_input(
-            "Enter the remote file path to download: ",
-            completer=remote_completer,
-            default="",
-        )
-    else:
-        remote_path = Prompt.ask(
-            f"[bold {NordColors.PURPLE}]Enter the remote file path to download[/]"
-        )
+    # Use auto-completion for remote file path if available.
+    remote_completer = RemotePathCompleter(sftp) if pt_prompt else None
+    remote_path = get_input(
+        "Enter the remote file path to download: ",
+        completer=remote_completer,
+        default="",
+    )
 
-    # For local destination directory, use prompt_toolkit PathCompleter for directories.
-    local_dir_completer = PathCompleter(only_directories=True, expanduser=True)
+    # For the local destination directory, use prompt_toolkit's PathCompleter for directories.
+    local_dir_completer = (
+        PathCompleter(only_directories=True, expanduser=True) if pt_prompt else None
+    )
     local_dest = get_input(
         "Enter the local destination directory: ",
         completer=local_dir_completer,
