@@ -1,4 +1,3 @@
-# to do
 #!/usr/bin/env python3
 """
 SFTP Toolkit
@@ -204,8 +203,8 @@ class AppConfig:
 # ----------------------------------------------------------------
 def connect_sftp():
     """
-    Establish an SFTP connection using user-provided credentials.
-    Prompts for hostname, port, username, and password.
+    Establish an SFTP connection using key-based authentication.
+    Prompts for hostname, port, and username (defaulting to the current user).
     """
     global sftp, transport
     console.print(Panel("[bold cyan]SFTP Connection Setup[/]", expand=False))
@@ -213,14 +212,22 @@ def connect_sftp():
     port = IntPrompt.ask(
         "[bold purple]Enter Port[/]", default=AppConfig.SFTP_DEFAULT_PORT
     )
-    username = Prompt.ask("[bold purple]Enter Username[/]")
-    password = getpass.getpass(prompt="Enter Password: ")
+    username = Prompt.ask("[bold purple]Enter Username[/]", default=getpass.getuser())
+
+    # Attempt to load the default private key
+    try:
+        key = paramiko.RSAKey.from_private_key_file(os.path.expanduser("~/.ssh/id_rsa"))
+    except Exception as e:
+        console.print(f"[bold red]Error loading private key: {e}[/]")
+        key = None
 
     try:
         transport = paramiko.Transport((hostname, port))
-        transport.connect(username=username, password=password)
+        transport.connect(username=username, pkey=key)
         sftp = paramiko.SFTPClient.from_transport(transport)
-        console.print("[bold green]Successfully connected to SFTP server.[/]")
+        console.print(
+            "[bold green]Successfully connected to SFTP server using key-based authentication.[/]"
+        )
     except Exception as e:
         console.print(f"[bold red]Error connecting to SFTP server: {e}[/]")
         sftp = None
@@ -230,7 +237,7 @@ def connect_sftp():
 def connect_sftp_device(device: Device):
     """
     Establish an SFTP connection using a predefined device.
-    The device's IP address is used as the hostname.
+    The device's IP address is used as the hostname and key-based authentication is used.
     """
     global sftp, transport
     console.print(
@@ -242,14 +249,22 @@ def connect_sftp_device(device: Device):
     port = IntPrompt.ask(
         "[bold purple]Enter Port[/]", default=AppConfig.SFTP_DEFAULT_PORT
     )
-    username = Prompt.ask("[bold purple]Enter Username[/]")
-    password = getpass.getpass(prompt="Enter Password: ")
+    username = Prompt.ask("[bold purple]Enter Username[/]", default=getpass.getuser())
+
+    # Attempt to load the default private key
+    try:
+        key = paramiko.RSAKey.from_private_key_file(os.path.expanduser("~/.ssh/id_rsa"))
+    except Exception as e:
+        console.print(f"[bold red]Error loading private key: {e}[/]")
+        key = None
 
     try:
         transport = paramiko.Transport((device.ip_address, port))
-        transport.connect(username=username, password=password)
+        transport.connect(username=username, pkey=key)
         sftp = paramiko.SFTPClient.from_transport(transport)
-        console.print(f"[bold green]Successfully connected to {device.name}.[/]")
+        console.print(
+            f"[bold green]Successfully connected to {device.name} using key-based authentication.[/]"
+        )
     except Exception as e:
         console.print(f"[bold red]Error connecting to {device.name}: {e}[/]")
         sftp = None
