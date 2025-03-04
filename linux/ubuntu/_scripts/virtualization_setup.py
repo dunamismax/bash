@@ -3,48 +3,86 @@
 Enhanced Virtualization Environment Setup Script
 --------------------------------------------------
 
-A streamlined terminal interface for setting up a virtualization environment on Ubuntu.
-Features clean, user-friendly output with Nord theme styling and comprehensive
-progress indicators, following best practices for terminal applications.
+A powerful and beautiful terminal-based utility for setting up a complete
+virtualization environment on Ubuntu with automated execution and rich visuals.
 
-This utility performs the following tasks:
+Features:
   • Updates package lists and installs virtualization packages
   • Manages virtualization services
   • Configures and recreates the default NAT network
   • Fixes storage permissions and user group settings
   • Updates VM network settings, configures autostart, and starts VMs
   • Verifies the overall setup and installs a systemd service
+  • Runs fully unattended without requiring user interaction
+  • Beautiful Nord-themed terminal interface with real-time progress tracking
 
 Note: Run this script with root privileges.
 
-Version: 1.0.0
+Version: 2.0.0
 """
 
 import atexit
-import os
-import pwd
+import datetime
 import grp
+import os
+import platform
+import pwd
+import random
+import shutil
 import signal
 import socket
 import subprocess
 import sys
 import time
-import random
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from enum import Enum, auto
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union, Set, Callable
+
 
 # ----------------------------------------------------------------
 # Dependency Check and Imports
 # ----------------------------------------------------------------
+def install_missing_packages():
+    """Install required Python packages if they're missing."""
+    required_packages = ["rich", "pyfiglet"]
+    missing_packages = []
+
+    for package in required_packages:
+        try:
+            __import__(package)
+        except ImportError:
+            missing_packages.append(package)
+
+    if missing_packages:
+        print(f"Installing missing packages: {', '.join(missing_packages)}")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install"] + missing_packages,
+                check=True,
+                capture_output=True,
+            )
+            print("Successfully installed required packages. Restarting script...")
+            # Restart the script to ensure imports work
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"Failed to install required packages: {e}")
+            print(
+                "Please install them manually: pip install "
+                + " ".join(missing_packages)
+            )
+            sys.exit(1)
+
+
+# Try installing missing packages
+install_missing_packages()
+
+# Now import the installed packages
 try:
     import pyfiglet
     from rich.console import Console
     from rich.text import Text
     from rich.table import Table
-    from rich.live import Live
-    from rich.columns import Columns
     from rich.panel import Panel
     from rich.progress import (
         Progress,
@@ -52,50 +90,74 @@ try:
         TextColumn,
         BarColumn,
         TimeRemainingColumn,
+        TaskProgressColumn,
     )
     from rich.align import Align
     from rich.style import Style
+    from rich.live import Live
+    from rich.columns import Columns
+    from rich.rule import Rule
     from rich.traceback import install as install_rich_traceback
-except ImportError:
-    print("This script requires the 'rich' and 'pyfiglet' libraries.")
-    print("Please install them using: pip install rich pyfiglet")
+    from rich.theme import Theme
+except ImportError as e:
+    print(f"Error importing required libraries: {e}")
+    print("Please install them manually: pip install rich pyfiglet")
     sys.exit(1)
 
 # Install rich traceback handler for better error reporting
 install_rich_traceback(show_locals=True)
 
+
 # ----------------------------------------------------------------
-# Configuration
+# Configuration & Constants
 # ----------------------------------------------------------------
-HOSTNAME: str = socket.gethostname()
-OPERATION_TIMEOUT: int = 600  # seconds
-VERSION: str = "1.0.0"
-APP_NAME: str = "Virt Setup"
-APP_SUBTITLE: str = "Enhanced Virtualization Environment"
+class AppConfig:
+    """Application configuration settings."""
 
-VM_STORAGE_PATHS: List[str] = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
-VIRTUALIZATION_PACKAGES: List[str] = [
-    "qemu-kvm",
-    "qemu-utils",
-    "libvirt-daemon-system",
-    "libvirt-clients",
-    "virt-manager",
-    "bridge-utils",
-    "cpu-checker",
-    "ovmf",
-    "virtinst",
-    "libguestfs-tools",
-    "virt-top",
-]
-VIRTUALIZATION_SERVICES: List[str] = ["libvirtd", "virtlogd"]
+    VERSION = "2.0.0"
+    APP_NAME = "VirtSetup"
+    APP_SUBTITLE = "Enhanced Virtualization Environment"
 
-VM_OWNER: str = "root"
-VM_GROUP: str = "libvirt-qemu"
-VM_DIR_MODE: int = 0o2770
-VM_FILE_MODE: int = 0o0660
-LIBVIRT_USER_GROUP: str = "libvirt"
+    # Host info
+    try:
+        HOSTNAME = socket.gethostname()
+    except:
+        HOSTNAME = "Unknown"
 
-DEFAULT_NETWORK_XML: str = """<network>
+    # Terminal settings
+    try:
+        TERM_WIDTH = shutil.get_terminal_size().columns
+    except:
+        TERM_WIDTH = 80
+    PROGRESS_WIDTH = min(50, TERM_WIDTH - 30)
+
+    # Command timeouts
+    DEFAULT_TIMEOUT = 300  # 5 minutes default timeout for commands
+
+    # Virtualization-specific settings
+    VM_STORAGE_PATHS = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
+    VIRTUALIZATION_PACKAGES = [
+        "qemu-kvm",
+        "qemu-utils",
+        "libvirt-daemon-system",
+        "libvirt-clients",
+        "virt-manager",
+        "bridge-utils",
+        "cpu-checker",
+        "ovmf",
+        "virtinst",
+        "libguestfs-tools",
+        "virt-top",
+    ]
+    VIRTUALIZATION_SERVICES = ["libvirtd", "virtlogd"]
+
+    VM_OWNER = "root"
+    VM_GROUP = "libvirt-qemu"
+    VM_DIR_MODE = 0o2770
+    VM_FILE_MODE = 0o0660
+    LIBVIRT_USER_GROUP = "libvirt"
+
+    DEFAULT_NETWORK_XML = """<network>
   <name>default</name>
   <forward mode='nat'/>
   <bridge name='virbr0' stp='on' delay='0'/>
@@ -107,14 +169,14 @@ DEFAULT_NETWORK_XML: str = """<network>
 </network>
 """
 
-SERVICE_PATH: Path = Path("/etc/systemd/system/virtualization_setup.service")
-SERVICE_CONTENT: str = """[Unit]
+    SERVICE_PATH = Path("/etc/systemd/system/virtualization_setup.service")
+    SERVICE_CONTENT = """[Unit]
 Description=Virtualization Setup Service
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /path/to/this_script.py
+ExecStart=/usr/bin/python3 {script_path}
 Restart=on-failure
 
 [Install]
@@ -130,11 +192,14 @@ class NordColors:
 
     # Polar Night (dark) shades
     POLAR_NIGHT_1 = "#2E3440"  # Darkest background shade
+    POLAR_NIGHT_2 = "#3B4252"  # Dark background shade
+    POLAR_NIGHT_3 = "#434C5E"  # Medium background shade
     POLAR_NIGHT_4 = "#4C566A"  # Light background shade
 
     # Snow Storm (light) shades
     SNOW_STORM_1 = "#D8DEE9"  # Darkest text color
     SNOW_STORM_2 = "#E5E9F0"  # Medium text color
+    SNOW_STORM_3 = "#ECEFF4"  # Lightest text color
 
     # Frost (blues/cyans) shades
     FROST_1 = "#8FBCBB"  # Light cyan
@@ -147,15 +212,86 @@ class NordColors:
     ORANGE = "#D08770"  # Orange
     YELLOW = "#EBCB8B"  # Yellow
     GREEN = "#A3BE8C"  # Green
+    PURPLE = "#B48EAD"  # Purple
 
 
-# Create a Rich Console
-console: Console = Console(theme=None, highlight=False)
+# Create a Rich Console with Nord theme
+console = Console(
+    theme=Theme(
+        {
+            "info": f"bold {NordColors.FROST_2}",
+            "warning": f"bold {NordColors.YELLOW}",
+            "error": f"bold {NordColors.RED}",
+            "success": f"bold {NordColors.GREEN}",
+        }
+    )
+)
+
+
+# ----------------------------------------------------------------
+# Custom Exception Classes
+# ----------------------------------------------------------------
+class VirtualizationSetupError(Exception):
+    """Base exception for Virtualization Setup errors."""
+
+    pass
+
+
+class CommandError(VirtualizationSetupError):
+    """Raised when a system command fails."""
+
+    pass
+
+
+class NetworkConfigError(VirtualizationSetupError):
+    """Raised when network configuration fails."""
+
+    pass
+
+
+class PermissionError(VirtualizationSetupError):
+    """Raised when permission operations fail."""
+
+    pass
+
+
+class ServiceError(VirtualizationSetupError):
+    """Raised when service management fails."""
+
+    pass
 
 
 # ----------------------------------------------------------------
 # Data Structures
 # ----------------------------------------------------------------
+class VMState(Enum):
+    """Enum representing different states of virtual machines."""
+
+    RUNNING = auto()
+    IDLE = auto()
+    PAUSED = auto()
+    SHUTDOWN = auto()
+    CRASHED = auto()
+    UNKNOWN = auto()
+
+    @classmethod
+    def from_libvirt_state(cls, state_string: str) -> "VMState":
+        """Convert libvirt state string to VMState enum."""
+        state_map = {
+            "running": cls.RUNNING,
+            "idle": cls.IDLE,
+            "paused": cls.PAUSED,
+            "shut off": cls.SHUTDOWN,
+            "crashed": cls.CRASHED,
+        }
+
+        for libvirt_state, enum_state in state_map.items():
+            if libvirt_state in state_string.lower():
+                return enum_state
+
+        return cls.UNKNOWN
+
+
 @dataclass
 class VirtualMachine:
     """
@@ -164,14 +300,42 @@ class VirtualMachine:
     Attributes:
         id: The VM's ID in libvirt
         name: The VM's name
-        state: Current state (running, shut off, etc.)
+        state: Current state as a VMState enum
+        state_text: Original state text from libvirt
         autostart: Whether autostart is enabled
     """
 
     id: str
     name: str
-    state: str
+    state_text: str
+    state: VMState = field(init=False)
     autostart: Optional[bool] = None
+
+    def __post_init__(self):
+        self.state = VMState.from_libvirt_state(self.state_text)
+
+    @property
+    def is_running(self) -> bool:
+        """Check if the VM is in running state."""
+        return self.state == VMState.RUNNING
+
+
+@dataclass
+class TaskResult:
+    """
+    Tracks the result of a setup task.
+
+    Attributes:
+        name: The task name
+        success: Whether the task was successful
+        message: Optional result message
+        details: Additional details about the task execution
+    """
+
+    name: str
+    success: bool
+    message: str = ""
+    details: Dict[str, Any] = field(default_factory=dict)
 
 
 # ----------------------------------------------------------------
@@ -184,14 +348,14 @@ def create_header() -> Panel:
     Returns:
         Panel containing the styled header
     """
-    # Try to use a tech-looking font
-    compact_fonts = ["slant", "small", "smslant", "digital", "times"]
+    # Use smaller, more compact but still tech-looking fonts
+    compact_fonts = ["slant", "small", "standard", "digital", "big"]
 
     # Try each font until we find one that works well
     for font_name in compact_fonts:
         try:
-            fig = pyfiglet.Figlet(font=font_name, width=60)
-            ascii_art = fig.renderText(APP_NAME)
+            fig = pyfiglet.Figlet(font=font_name, width=60)  # Constrained width
+            ascii_art = fig.renderText(AppConfig.APP_NAME)
 
             # If we got a reasonable result, use it
             if ascii_art and len(ascii_art.strip()) > 0:
@@ -199,15 +363,19 @@ def create_header() -> Panel:
         except Exception:
             continue
 
-    # Custom ASCII art fallback if all else fails (kept small and tech-looking)
+    # Custom ASCII art fallback if all else fails
     if not ascii_art or len(ascii_art.strip()) == 0:
         ascii_art = """
-       _      _                                _               
-__   _(_)_ __| |_    ___ _ ____   __  ___  ___| |_ _   _ _ __  
-\ \ / / | '__| __|  / _ \ '_ \ \ / / / __|/ _ \ __| | | | '_ \ 
- \ V /| | |  | |_  |  __/ | | \ V /  \__ \  __/ |_| |_| | |_) |
-  \_/ |_|_|   \__|  \___|_| |_|\_/   |___/\___|\__|\__,_| .__/ 
-                                                        |_|    
+       _      _               _ _          _   _             
+__   _(_)_ __| |_ _   _  __ _| (_)______ _| |_(_) ___  _ __  
+\ \ / / | '__| __| | | |/ _` | | |_  / _` | __| |/ _ \| '_ \ 
+ \ V /| | |  | |_| |_| | (_| | | |/ / (_| | |_| | (_) | | | |
+  \_/ |_|_|   \__|\__,_|\__,_|_|_/___\__,_|\__|_|\___/|_| |_|
+ ___  ___| |_ _   _ _ __                                     
+/ __|/ _ \ __| | | | '_ \                                    
+\__ \  __/ |_| |_| | |_) |                                   
+|___/\___|\__|\__,_| .__/                                    
+                   |_|                                       
         """
 
     # Clean up extra whitespace that might cause display issues
@@ -218,7 +386,7 @@ __   _(_)_ __| |_    ___ _ ____   __  ___  ___| |_ _   _ _ __
         NordColors.FROST_1,
         NordColors.FROST_2,
         NordColors.FROST_3,
-        NordColors.FROST_2,
+        NordColors.FROST_4,
     ]
 
     styled_text = ""
@@ -227,17 +395,17 @@ __   _(_)_ __| |_    ___ _ ____   __  ___  ___| |_ _   _ _ __
         styled_text += f"[bold {color}]{line}[/]\n"
 
     # Add decorative tech elements
-    tech_border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
+    tech_border = f"[{NordColors.FROST_3}]" + "━" * 50 + "[/]"
     styled_text = tech_border + "\n" + styled_text + tech_border
 
     # Create a panel with sufficient padding to avoid cutoff
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 1),
-        title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
+        padding=(1, 2),
+        title=f"[bold {NordColors.SNOW_STORM_2}]v{AppConfig.VERSION}[/]",
         title_align="right",
-        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{AppConfig.APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
 
@@ -258,19 +426,24 @@ def print_message(
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
-def print_success(text: str) -> None:
-    """Print a success message with the appropriate styling."""
-    print_message(text, NordColors.GREEN, "✓")
+def print_step(message: str) -> None:
+    """Print a step description."""
+    print_message(message, NordColors.FROST_3, "➜")
 
 
-def print_warning(text: str) -> None:
-    """Print a warning message with the appropriate styling."""
-    print_message(text, NordColors.YELLOW, "⚠")
+def print_success(message: str) -> None:
+    """Print a success message."""
+    print_message(message, NordColors.GREEN, "✓")
 
 
-def print_error(text: str) -> None:
-    """Print an error message with the appropriate styling."""
-    print_message(text, NordColors.RED, "✗")
+def print_warning(message: str) -> None:
+    """Print a warning message."""
+    print_message(message, NordColors.YELLOW, "⚠")
+
+
+def print_error(message: str) -> None:
+    """Print an error message."""
+    print_message(message, NordColors.RED, "✗")
 
 
 def display_panel(
@@ -285,7 +458,7 @@ def display_panel(
         title: Optional panel title
     """
     panel = Panel(
-        Text.from_markup(f"[bold {style}]{message}[/]"),
+        Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
         padding=(1, 2),
         title=f"[bold {style}]{title}[/]" if title else None,
@@ -333,10 +506,10 @@ def display_vm_table(vms: List[VirtualMachine]) -> None:
 
     for vm in vms:
         # Create status indicator for state
-        if "running" in vm.state.lower():
-            state = Text(vm.state, style=f"bold {NordColors.GREEN}")
+        if vm.is_running:
+            state = Text(vm.state_text, style=f"bold {NordColors.GREEN}")
         else:
-            state = Text(vm.state, style=f"dim {NordColors.POLAR_NIGHT_4}")
+            state = Text(vm.state_text, style=f"dim {NordColors.POLAR_NIGHT_4}")
 
         # Create status indicator for autostart
         if vm.autostart is True:
@@ -357,6 +530,44 @@ def display_vm_table(vms: List[VirtualMachine]) -> None:
     )
 
 
+def display_results_table(results: List[TaskResult]) -> None:
+    """
+    Display a table summarizing task results.
+
+    Args:
+        results: List of TaskResult objects
+    """
+    table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        expand=True,
+        title=f"[bold {NordColors.FROST_2}]Setup Summary[/]",
+        border_style=NordColors.FROST_3,
+        title_justify="center",
+    )
+
+    table.add_column("Task", style=f"bold {NordColors.FROST_4}")
+    table.add_column("Status", justify="center")
+    table.add_column("Message", style=f"{NordColors.SNOW_STORM_1}")
+
+    for result in results:
+        task_name = result.name.replace("_", " ").title()
+        status = (
+            Text("✓ Success", style=f"bold {NordColors.GREEN}")
+            if result.success
+            else Text("✗ Failed", style=f"bold {NordColors.RED}")
+        )
+        table.add_row(task_name, status, result.message)
+
+    console.print(
+        Panel(
+            table,
+            border_style=Style(color=NordColors.FROST_4),
+            padding=(0, 1),
+        )
+    )
+
+
 # ----------------------------------------------------------------
 # Command Execution Helper
 # ----------------------------------------------------------------
@@ -365,7 +576,8 @@ def run_command(
     env: Optional[Dict[str, str]] = None,
     check: bool = True,
     capture_output: bool = True,
-    timeout: int = OPERATION_TIMEOUT,
+    timeout: int = AppConfig.DEFAULT_TIMEOUT,
+    verbose: bool = False,
 ) -> subprocess.CompletedProcess:
     """
     Executes a system command and returns the CompletedProcess.
@@ -376,11 +588,19 @@ def run_command(
         check: Whether to check the return code
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
+        verbose: Whether to print detailed information
 
     Returns:
         CompletedProcess instance with command results
+
+    Raises:
+        CommandError: If the command fails and check is True
     """
     try:
+        cmd_str = " ".join(cmd)
+        if verbose:
+            print_step(f"Executing: {cmd_str[:80]}{'...' if len(cmd_str) > 80 else ''}")
+
         result = subprocess.run(
             cmd,
             env=env or os.environ.copy(),
@@ -392,17 +612,53 @@ def run_command(
         return result
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {' '.join(cmd)}")
-        if e.stdout:
+        if e.stdout and verbose:
             console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
         if e.stderr:
             console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
+        if check:
+            raise CommandError(f"Command failed: {' '.join(cmd)}")
         raise
     except subprocess.TimeoutExpired:
         print_error(f"Command timed out after {timeout} seconds")
+        if check:
+            raise CommandError(f"Command timeout: {' '.join(cmd)}")
         raise
     except Exception as e:
         print_error(f"Error executing command: {e}")
+        if check:
+            raise CommandError(f"Command error: {' '.join(cmd)}")
         raise
+
+
+def run_direct_command(
+    cmd: List[str], verbose: bool = False
+) -> subprocess.CompletedProcess:
+    """
+    Run a command directly, capturing all output and properly handling errors.
+
+    Args:
+        cmd: Command and arguments as a list
+        verbose: Whether to show verbose output
+
+    Returns:
+        CompletedProcess instance with command results
+    """
+    try:
+        if verbose:
+            print_step(f"Running command: {' '.join(cmd)}")
+
+        result = subprocess.run(cmd, text=True, capture_output=True, check=False)
+
+        if result.returncode != 0 and verbose:
+            print_error(f"Command failed with exit code {result.returncode}")
+            if result.stderr:
+                print_error(f"Error output: {result.stderr}")
+
+        return result
+    except Exception as e:
+        print_error(f"Failed to execute command: {e}")
+        raise CommandError(f"Direct command failed: {' '.join(cmd)}")
 
 
 # ----------------------------------------------------------------
@@ -421,42 +677,78 @@ def signal_handler(sig: int, frame: Any) -> None:
         sig: Signal number
         frame: Current stack frame
     """
-    sig_name: str = signal.Signals(sig).name
-    print_warning(f"Process interrupted by {sig_name}")
+    sig_name = str(sig)
+    if hasattr(signal, "Signals"):
+        try:
+            sig_name = signal.Signals(sig).name
+        except ValueError:
+            pass
+
+    print_message(f"Process interrupted by signal {sig_name}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
 
-# Register signal handlers
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+# Register signal handlers (if supported by platform)
+try:
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+except (AttributeError, ValueError):
+    # Some signals might not be available on all platforms
+    pass
 atexit.register(cleanup)
 
 
 # ----------------------------------------------------------------
 # Virtualization Setup Functions
 # ----------------------------------------------------------------
-def update_system_packages() -> bool:
-    """Update the package lists using apt-get."""
+def update_system_packages() -> TaskResult:
+    """
+    Update the package lists using apt-get.
+
+    Returns:
+        TaskResult with the outcome of the operation
+    """
     console.print(create_section_header("Updating Package Lists"))
+
     try:
         with console.status(
             f"[bold {NordColors.FROST_3}]Updating package lists...", spinner="dots"
         ):
             run_command(["apt-get", "update"])
+
         print_success("Package lists updated successfully")
-        return True
+        return TaskResult(
+            name="package_update",
+            success=True,
+            message="Package lists updated successfully",
+        )
     except Exception as e:
         print_error(f"Failed to update package lists: {e}")
-        return False
+        return TaskResult(
+            name="package_update",
+            success=False,
+            message=f"Failed to update package lists: {e}",
+        )
 
 
-def install_virtualization_packages(packages: List[str]) -> bool:
-    """Install the required virtualization packages."""
+def install_virtualization_packages(packages: List[str]) -> TaskResult:
+    """
+    Install the required virtualization packages.
+
+    Args:
+        packages: List of packages to install
+
+    Returns:
+        TaskResult with the outcome of the operation
+    """
     console.print(create_section_header("Installing Virtualization Packages"))
+
     if not packages:
         print_warning("No packages specified")
-        return True
+        return TaskResult(
+            name="package_install", success=True, message="No packages specified"
+        )
 
     total: int = len(packages)
     print_message(f"Installing {total} package(s)")
@@ -468,10 +760,12 @@ def install_virtualization_packages(packages: List[str]) -> bool:
         BarColumn(
             bar_width=None, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
         ),
+        TaskProgressColumn(),
         TimeRemainingColumn(),
         console=console,
     ) as progress:
         task = progress.add_task("Installing packages", total=total)
+
         for pkg in packages:
             progress.update(task, description=f"Installing {pkg}")
             try:
@@ -482,11 +776,13 @@ def install_virtualization_packages(packages: List[str]) -> bool:
                     text=True,
                     bufsize=1,
                 )
+
                 for line in iter(proc.stdout.readline, ""):
                     if "Unpacking" in line or "Setting up" in line:
                         console.print(
                             "  " + line.strip(), style=f"{NordColors.SNOW_STORM_1}"
                         )
+
                 proc.wait()
                 if proc.returncode != 0:
                     print_error(f"Failed to install {pkg}")
@@ -496,22 +792,43 @@ def install_virtualization_packages(packages: List[str]) -> bool:
             except Exception as e:
                 print_error(f"Error installing {pkg}: {e}")
                 failed.append(pkg)
+
             progress.advance(task)
 
     if failed:
         print_warning(f"Failed to install: {', '.join(failed)}")
-        return False
+        return TaskResult(
+            name="package_install",
+            success=False,
+            message=f"Failed to install {len(failed)} of {total} packages",
+            details={"failed_packages": failed},
+        )
 
     print_success("All virtualization packages installed successfully")
-    return True
+    return TaskResult(
+        name="package_install",
+        success=True,
+        message=f"Successfully installed {total} packages",
+    )
 
 
-def manage_virtualization_services(services: List[str]) -> bool:
-    """Enable and start virtualization-related services."""
+def manage_virtualization_services(services: List[str]) -> TaskResult:
+    """
+    Enable and start virtualization-related services.
+
+    Args:
+        services: List of services to manage
+
+    Returns:
+        TaskResult with the outcome of the operation
+    """
     console.print(create_section_header("Managing Virtualization Services"))
+
     if not services:
         print_warning("No services specified")
-        return True
+        return TaskResult(
+            name="services", success=True, message="No services specified"
+        )
 
     total: int = len(services) * 2  # Each service has enable and start actions
     failed: List[str] = []
@@ -522,10 +839,12 @@ def manage_virtualization_services(services: List[str]) -> bool:
         BarColumn(
             bar_width=None, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
         ),
+        TaskProgressColumn(),
         TimeRemainingColumn(),
         console=console,
     ) as progress:
         task = progress.add_task("Managing services", total=total)
+
         for svc in services:
             for action, cmd in [
                 ("enable", ["systemctl", "enable", svc]),
@@ -538,24 +857,41 @@ def manage_virtualization_services(services: List[str]) -> bool:
                 except Exception as e:
                     print_error(f"Failed to {action} {svc}: {e}")
                     failed.append(f"{svc} ({action})")
+
                 progress.advance(task)
 
     if failed:
         print_warning(f"Issues with services: {', '.join(failed)}")
-        return False
+        return TaskResult(
+            name="services",
+            success=False,
+            message=f"Issues with {len(failed)} service operations",
+            details={"failed_services": failed},
+        )
 
     print_success("Services managed successfully")
-    return True
+    return TaskResult(
+        name="services",
+        success=True,
+        message=f"Successfully managed {len(services)} services",
+    )
 
 
-def recreate_default_network() -> bool:
-    """Recreate the default NAT network."""
+def recreate_default_network() -> TaskResult:
+    """
+    Recreate the default NAT network.
+
+    Returns:
+        TaskResult with the outcome of the operation
+    """
     console.print(create_section_header("Recreating Default Network"))
+
     try:
         # Check if default network exists
         result = run_command(
             ["virsh", "net-list", "--all"], capture_output=True, check=False
         )
+
         if "default" in result.stdout:
             print_message("Removing existing default network")
             run_command(["virsh", "net-destroy", "default"], check=False)
@@ -573,13 +909,19 @@ def recreate_default_network() -> bool:
 
         # Create temporary XML file
         net_xml_path: Path = Path("/tmp/default_network.xml")
-        net_xml_path.write_text(DEFAULT_NETWORK_XML)
+        net_xml_path.write_text(AppConfig.DEFAULT_NETWORK_XML)
         print_message("Created network definition file")
 
         # Define, start and autostart the network
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn("[progress.description]{task.description}"),
+            BarColumn(
+                bar_width=None,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TaskProgressColumn(),
             console=console,
         ) as progress:
             task = progress.add_task("Configuring network", total=3)
@@ -600,18 +942,36 @@ def recreate_default_network() -> bool:
         net_list = run_command(["virsh", "net-list"], capture_output=True)
         if "default" in net_list.stdout and "active" in net_list.stdout:
             print_success("Default network is active")
-            return True
+            return TaskResult(
+                name="network_recreation",
+                success=True,
+                message="Default network successfully recreated and activated",
+            )
 
         print_error("Default network not running after recreation")
-        return False
+        return TaskResult(
+            name="network_recreation",
+            success=False,
+            message="Default network not running after recreation",
+        )
     except Exception as e:
         print_error(f"Error recreating network: {e}")
-        return False
+        return TaskResult(
+            name="network_recreation",
+            success=False,
+            message=f"Error recreating network: {e}",
+        )
 
 
-def configure_default_network() -> bool:
-    """Ensure the default network exists and is active."""
+def configure_default_network() -> TaskResult:
+    """
+    Ensure the default network exists and is active.
+
+    Returns:
+        TaskResult with the outcome of the operation
+    """
     console.print(create_section_header("Configuring Default Network"))
+
     try:
         with console.status(
             f"[bold {NordColors.FROST_3}]Checking network status...", spinner="dots"
@@ -620,7 +980,7 @@ def configure_default_network() -> bool:
 
         if "default" in net_list.stdout:
             print_message("Default network exists")
-            if "active" not in net_list.stdout:
+            if "active" not in net_list.stdout or "inactive" in net_list.stdout:
                 print_message("Default network is inactive, starting it")
                 try:
                     run_command(["virsh", "net-start", "default"])
@@ -647,10 +1007,18 @@ def configure_default_network() -> bool:
         except Exception as e:
             print_warning(f"Autostart configuration issue: {e}")
 
-        return True
+        return TaskResult(
+            name="network_configuration",
+            success=True,
+            message="Default network properly configured",
+        )
     except Exception as e:
         print_error(f"Network configuration error: {e}")
-        return False
+        return TaskResult(
+            name="network_configuration",
+            success=False,
+            message=f"Network configuration error: {e}",
+        )
 
 
 def get_virtual_machines() -> List[VirtualMachine]:
@@ -661,6 +1029,7 @@ def get_virtual_machines() -> List[VirtualMachine]:
         List of VirtualMachine objects
     """
     vms: List[VirtualMachine] = []
+
     try:
         with console.status(
             f"[bold {NordColors.FROST_3}]Retrieving VM information...", spinner="dots"
@@ -685,7 +1054,7 @@ def get_virtual_machines() -> List[VirtualMachine]:
                     vm = VirtualMachine(
                         id=parts[0],
                         name=parts[1],
-                        state=" ".join(parts[2:]),
+                        state_text=" ".join(parts[2:]),
                     )
 
                     # Get autostart info
@@ -705,7 +1074,7 @@ def get_virtual_machines() -> List[VirtualMachine]:
         return vms
 
 
-def set_vm_autostart(vms: List[VirtualMachine]) -> bool:
+def set_vm_autostart(vms: List[VirtualMachine]) -> TaskResult:
     """
     Set virtual machines to start automatically.
 
@@ -713,42 +1082,61 @@ def set_vm_autostart(vms: List[VirtualMachine]) -> bool:
         vms: List of VirtualMachine objects
 
     Returns:
-        True if successful, False otherwise
+        TaskResult with the outcome of the operation
     """
     console.print(create_section_header("Configuring VM Autostart"))
+
     if not vms:
         print_warning("No VMs found")
-        return True
+        return TaskResult(
+            name="vm_autostart", success=True, message="No VMs found to configure"
+        )
 
     failed: List[str] = []
+    success_count = 0
+
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(
             bar_width=None, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
         ),
+        TaskProgressColumn(),
         console=console,
     ) as progress:
         task = progress.add_task("Setting VM autostart", total=len(vms))
+
         for vm in vms:
             progress.update(task, description=f"Configuring {vm.name}")
             try:
                 if vm.autostart:
                     print_success(f"{vm.name} already set to autostart")
+                    success_count += 1
                 else:
                     run_command(["virsh", "autostart", vm.name])
                     vm.autostart = True
                     print_success(f"{vm.name} set to autostart")
+                    success_count += 1
             except Exception as e:
                 print_error(f"Autostart failed for {vm.name}: {e}")
                 failed.append(vm.name)
+
             progress.advance(task)
 
     if failed:
         print_warning(f"Autostart configuration failed for: {', '.join(failed)}")
-        return False
+        return TaskResult(
+            name="vm_autostart",
+            success=False,
+            message=f"Autostart failed for {len(failed)} of {len(vms)} VMs",
+            details={"failed_vms": failed},
+        )
 
-    return True
+    return TaskResult(
+        name="vm_autostart",
+        success=True,
+        message=f"Successfully configured autostart for {success_count} VMs",
+    )
 
 
 def ensure_network_active_before_vm_start() -> bool:
@@ -759,6 +1147,7 @@ def ensure_network_active_before_vm_start() -> bool:
         True if network is active, False otherwise
     """
     print_message("Verifying network status before starting VMs")
+
     try:
         with console.status(
             f"[bold {NordColors.FROST_3}]Checking network...", spinner="dots"
@@ -771,13 +1160,14 @@ def ensure_network_active_before_vm_start() -> bool:
                 return True
 
         print_warning("Default network inactive; attempting recreation")
-        return recreate_default_network()
+        result = recreate_default_network()
+        return result.success
     except Exception as e:
         print_error(f"Network verification error: {e}")
         return False
 
 
-def start_virtual_machines(vms: List[VirtualMachine]) -> bool:
+def start_virtual_machines(vms: List[VirtualMachine]) -> TaskResult:
     """
     Start any virtual machines that are not currently running.
 
@@ -785,31 +1175,38 @@ def start_virtual_machines(vms: List[VirtualMachine]) -> bool:
         vms: List of VirtualMachine objects
 
     Returns:
-        True if all VMs started successfully, False otherwise
+        TaskResult with the outcome of the operation
     """
     console.print(create_section_header("Starting Virtual Machines"))
+
     if not vms:
         print_warning("No VMs found")
-        return True
+        return TaskResult(
+            name="vm_start", success=True, message="No VMs found to start"
+        )
 
-    to_start: List[VirtualMachine] = [
-        vm for vm in vms if "running" not in vm.state.lower()
-    ]
+    to_start: List[VirtualMachine] = [vm for vm in vms if not vm.is_running]
 
     if not to_start:
         print_success("All VMs are already running")
-        return True
+        return TaskResult(
+            name="vm_start", success=True, message="All VMs are already running"
+        )
 
     if not ensure_network_active_before_vm_start():
         print_error("Default network not active; VM start may fail")
 
     failed: List[str] = []
+    success_count = 0
+
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(
             bar_width=None, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
         ),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
         console=console,
     ) as progress:
         task = progress.add_task("Starting VMs", total=len(to_start))
@@ -818,13 +1215,15 @@ def start_virtual_machines(vms: List[VirtualMachine]) -> bool:
             progress.update(task, description=f"Starting {vm.name}")
             success: bool = False
 
-            for attempt in range(1, 4):
+            for attempt in range(1, 4):  # Try up to 3 times
                 try:
                     result = run_command(["virsh", "start", vm.name], check=False)
                     if result.returncode == 0:
                         print_success(f"{vm.name} started successfully")
-                        vm.state = "running"
+                        vm.state = VMState.RUNNING
+                        vm.state_text = "running"
                         success = True
+                        success_count += 1
                         break
                     else:
                         if (
@@ -850,13 +1249,22 @@ def start_virtual_machines(vms: List[VirtualMachine]) -> bool:
 
     if failed:
         print_warning(f"Failed to start VMs: {', '.join(failed)}")
-        return False
+        return TaskResult(
+            name="vm_start",
+            success=False,
+            message=f"Failed to start {len(failed)} of {len(to_start)} VMs",
+            details={"failed_vms": failed},
+        )
 
     print_success("Virtual machines started successfully")
-    return True
+    return TaskResult(
+        name="vm_start",
+        success=True,
+        message=f"Successfully started {success_count} VMs",
+    )
 
 
-def fix_storage_permissions(paths: List[str]) -> bool:
+def fix_storage_permissions(paths: List[str]) -> TaskResult:
     """
     Fix storage directory and file permissions for VM storage.
 
@@ -864,19 +1272,27 @@ def fix_storage_permissions(paths: List[str]) -> bool:
         paths: List of storage directory paths
 
     Returns:
-        True if successful, False otherwise
+        TaskResult with the outcome of the operation
     """
     console.print(create_section_header("Fixing VM Storage Permissions"))
+
     if not paths:
         print_warning("No storage paths specified")
-        return True
+        return TaskResult(
+            name="storage", success=True, message="No storage paths specified"
+        )
 
     try:
-        uid: int = pwd.getpwnam(VM_OWNER).pw_uid
-        gid: int = grp.getgrnam(VM_GROUP).gr_gid
+        uid: int = pwd.getpwnam(AppConfig.VM_OWNER).pw_uid
+        gid: int = grp.getgrnam(AppConfig.VM_GROUP).gr_gid
     except KeyError as e:
         print_error(f"User/group not found: {e}")
-        return False
+        return TaskResult(
+            name="storage", success=False, message=f"User/group not found: {e}"
+        )
+
+    fixed_paths = []
+    failed_paths = []
 
     for path_str in paths:
         path: Path = Path(path_str)
@@ -884,7 +1300,12 @@ def fix_storage_permissions(paths: List[str]) -> bool:
 
         if not path.exists():
             print_warning(f"{path} does not exist; creating directory")
-            path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
+            try:
+                path.mkdir(mode=AppConfig.VM_DIR_MODE, parents=True, exist_ok=True)
+            except Exception as e:
+                print_error(f"Failed to create directory {path}: {e}")
+                failed_paths.append(str(path))
+                continue
 
         # Count total items for progress bar
         total_items = 0
@@ -899,6 +1320,7 @@ def fix_storage_permissions(paths: List[str]) -> bool:
                 style=NordColors.FROST_4,
                 complete_style=NordColors.FROST_2,
             ),
+            TaskProgressColumn(),
             console=console,
         ) as progress:
             task = progress.add_task(
@@ -908,8 +1330,10 @@ def fix_storage_permissions(paths: List[str]) -> bool:
             try:
                 # Set permission on the root path
                 os.chown(str(path), uid, gid)
-                os.chmod(str(path), VM_DIR_MODE)
+                os.chmod(str(path), AppConfig.VM_DIR_MODE)
                 progress.advance(task)
+
+                errors = False
 
                 # Process all subdirectories and files
                 for root, dirs, files in os.walk(str(path)):
@@ -918,9 +1342,10 @@ def fix_storage_permissions(paths: List[str]) -> bool:
                         progress.update(task, description=f"Directory: {dpath.name}")
                         try:
                             os.chown(str(dpath), uid, gid)
-                            os.chmod(str(dpath), VM_DIR_MODE)
+                            os.chmod(str(dpath), AppConfig.VM_DIR_MODE)
                         except Exception as e:
                             print_warning(f"Error on {dpath}: {e}")
+                            errors = True
                         progress.advance(task)
 
                     for f in files:
@@ -928,38 +1353,64 @@ def fix_storage_permissions(paths: List[str]) -> bool:
                         progress.update(task, description=f"File: {fpath.name}")
                         try:
                             os.chown(str(fpath), uid, gid)
-                            os.chmod(str(fpath), VM_FILE_MODE)
+                            os.chmod(str(fpath), AppConfig.VM_FILE_MODE)
                         except Exception as e:
                             print_warning(f"Error on {fpath}: {e}")
+                            errors = True
                         progress.advance(task)
+
+                if errors:
+                    print_warning(f"Some permissions could not be set on {path}")
+                else:
+                    fixed_paths.append(str(path))
             except Exception as e:
                 print_error(f"Failed to update permissions on {path}: {e}")
-                return False
+                failed_paths.append(str(path))
+
+    if failed_paths:
+        print_warning(f"Failed to fix permissions on: {', '.join(failed_paths)}")
+        return TaskResult(
+            name="storage",
+            success=False,
+            message=f"Fixed {len(fixed_paths)} paths, failed on {len(failed_paths)} paths",
+            details={"fixed_paths": fixed_paths, "failed_paths": failed_paths},
+        )
 
     print_success("Storage permissions updated successfully")
-    return True
+    return TaskResult(
+        name="storage",
+        success=True,
+        message=f"Successfully updated permissions on {len(fixed_paths)} paths",
+    )
 
 
-def configure_user_groups() -> bool:
+def configure_user_groups() -> TaskResult:
     """
     Ensure that the invoking (sudo) user is a member of the required group.
 
     Returns:
-        True if successful, False otherwise
+        TaskResult with the outcome of the operation
     """
     console.print(create_section_header("Configuring User Group Membership"))
+
     sudo_user: Optional[str] = os.environ.get("SUDO_USER")
 
     if not sudo_user:
         print_warning("SUDO_USER not set; skipping group configuration")
-        return True
+        return TaskResult(
+            name="user_groups",
+            success=True,
+            message="SUDO_USER not set; skipping group configuration",
+        )
 
     try:
         pwd.getpwnam(sudo_user)
-        grp.getgrnam(LIBVIRT_USER_GROUP)
+        grp.getgrnam(AppConfig.LIBVIRT_USER_GROUP)
     except KeyError as e:
         print_error(f"User or group error: {e}")
-        return False
+        return TaskResult(
+            name="user_groups", success=False, message=f"User or group error: {e}"
+        )
 
     # Get current user groups
     user_groups = [g.gr_name for g in grp.getgrall() if sudo_user in g.gr_mem]
@@ -969,32 +1420,51 @@ def configure_user_groups() -> bool:
         user_groups.append(primary)
 
     # Check if user is already in the required group
-    if LIBVIRT_USER_GROUP in user_groups:
-        print_success(f"User '{sudo_user}' is already in group '{LIBVIRT_USER_GROUP}'")
-        return True
+    if AppConfig.LIBVIRT_USER_GROUP in user_groups:
+        print_success(
+            f"User '{sudo_user}' is already in group '{AppConfig.LIBVIRT_USER_GROUP}'"
+        )
+        return TaskResult(
+            name="user_groups",
+            success=True,
+            message=f"User '{sudo_user}' is already in group '{AppConfig.LIBVIRT_USER_GROUP}'",
+        )
 
     try:
         with console.status(
             f"[bold {NordColors.FROST_3}]Adding user to group...", spinner="dots"
         ):
-            run_command(["usermod", "-a", "-G", LIBVIRT_USER_GROUP, sudo_user])
+            run_command(
+                ["usermod", "-a", "-G", AppConfig.LIBVIRT_USER_GROUP, sudo_user]
+            )
 
-        print_success(f"User '{sudo_user}' added to group '{LIBVIRT_USER_GROUP}'")
+        print_success(
+            f"User '{sudo_user}' added to group '{AppConfig.LIBVIRT_USER_GROUP}'"
+        )
         print_warning("Please log out and log back in for changes to take effect")
-        return True
+        return TaskResult(
+            name="user_groups",
+            success=True,
+            message=f"User '{sudo_user}' added to group '{AppConfig.LIBVIRT_USER_GROUP}'. Logout required.",
+        )
     except Exception as e:
         print_error(f"Failed to add user to group: {e}")
-        return False
+        return TaskResult(
+            name="user_groups",
+            success=False,
+            message=f"Failed to add user to group: {e}",
+        )
 
 
-def verify_virtualization_setup() -> bool:
+def verify_virtualization_setup() -> TaskResult:
     """
     Perform a series of checks to verify the virtualization environment.
 
     Returns:
-        True if all checks pass, False otherwise
+        TaskResult with the outcome of the operation
     """
     console.print(create_section_header("Verifying Virtualization Setup"))
+
     checks = [
         ("libvirtd Service", "systemctl is-active libvirtd", "active"),
         ("KVM Modules", "lsmod | grep kvm", "kvm"),
@@ -1002,16 +1472,20 @@ def verify_virtualization_setup() -> bool:
     ]
 
     results = []
+    check_details = {}
+
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(
             bar_width=None, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
         ),
+        TaskProgressColumn(),
         console=console,
     ) as progress:
         task = progress.add_task(
-            "Running verification checks", total=len(checks) + len(VM_STORAGE_PATHS)
+            "Running verification checks",
+            total=len(checks) + len(AppConfig.VM_STORAGE_PATHS),
         )
 
         # Run service and module checks
@@ -1044,32 +1518,38 @@ def verify_virtualization_setup() -> bool:
                 if result:
                     print_success(f"{name}: OK")
                     results.append(True)
+                    check_details[name] = "OK"
                 else:
                     print_error(f"{name}: FAILED")
                     results.append(False)
+                    check_details[name] = "FAILED"
             except Exception as e:
                 print_error(f"{name} check error: {e}")
                 results.append(False)
+                check_details[name] = f"ERROR: {e}"
 
             progress.advance(task)
 
         # Check storage paths
-        for path_str in VM_STORAGE_PATHS:
+        for path_str in AppConfig.VM_STORAGE_PATHS:
             path = Path(path_str)
             progress.update(task, description=f"Checking storage: {path.name}")
 
             if path.exists():
                 print_success(f"Storage exists: {path}")
                 results.append(True)
+                check_details[f"Storage {path}"] = "OK"
             else:
                 print_error(f"Storage missing: {path}")
                 try:
-                    path.mkdir(mode=VM_DIR_MODE, parents=True, exist_ok=True)
+                    path.mkdir(mode=AppConfig.VM_DIR_MODE, parents=True, exist_ok=True)
                     print_success(f"Created storage directory: {path}")
                     results.append(True)
+                    check_details[f"Storage {path}"] = "Created"
                 except Exception as e:
                     print_error(f"Failed to create {path}: {e}")
                     results.append(False)
+                    check_details[f"Storage {path}"] = f"FAILED: {e}"
 
             progress.advance(task)
 
@@ -1080,7 +1560,12 @@ def verify_virtualization_setup() -> bool:
             style=NordColors.GREEN,
             title="Verification Complete",
         )
-        return True
+        return TaskResult(
+            name="verification",
+            success=True,
+            message="All verification checks passed",
+            details=check_details,
+        )
     else:
         failed_count = results.count(False)
         display_panel(
@@ -1088,36 +1573,45 @@ def verify_virtualization_setup() -> bool:
             style=NordColors.YELLOW,
             title="Verification Issues",
         )
-        return False
+        return TaskResult(
+            name="verification",
+            success=False,
+            message=f"{failed_count} verification check(s) failed",
+            details=check_details,
+        )
 
 
-def install_and_enable_service() -> bool:
+def install_and_enable_service() -> TaskResult:
     """
     Install the systemd unit file for virtualization setup,
     reload systemd, enable and start the service.
 
     Returns:
-        True if successful, False otherwise
+        TaskResult with the outcome of the operation
     """
     console.print(create_section_header("Installing Systemd Service"))
 
     current_script = Path(sys.argv[0]).resolve()
     # Update service content with actual script path
-    service_content = SERVICE_CONTENT.replace(
-        "/path/to/this_script.py", str(current_script)
-    )
+    service_content = AppConfig.SERVICE_CONTENT.format(script_path=str(current_script))
 
     try:
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn("[progress.description]{task.description}"),
+            BarColumn(
+                bar_width=None,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TaskProgressColumn(),
             console=console,
         ) as progress:
             task = progress.add_task("Setting up service", total=4)
 
             progress.update(task, description="Installing service file")
-            SERVICE_PATH.write_text(service_content)
-            print_success(f"Service file installed to {SERVICE_PATH}")
+            AppConfig.SERVICE_PATH.write_text(service_content)
+            print_success(f"Service file installed to {AppConfig.SERVICE_PATH}")
             progress.advance(task)
 
             progress.update(task, description="Reloading systemd")
@@ -1135,10 +1629,18 @@ def install_and_enable_service() -> bool:
             print_success("Service started")
             progress.advance(task)
 
-        return True
+        return TaskResult(
+            name="systemd_service",
+            success=True,
+            message="Systemd service installed, enabled, and started successfully",
+        )
     except Exception as e:
         print_error(f"Failed to install and enable service: {e}")
-        return False
+        return TaskResult(
+            name="systemd_service",
+            success=False,
+            message=f"Failed to install and enable service: {e}",
+        )
 
 
 # ----------------------------------------------------------------
@@ -1146,14 +1648,15 @@ def install_and_enable_service() -> bool:
 # ----------------------------------------------------------------
 def main() -> None:
     """Main function to orchestrate the virtualization setup."""
+    # Clear the console and display the header
     console.clear()
     console.print(create_header())
 
     # Display system information
     console.print(
         Align.center(
-            f"[{NordColors.SNOW_STORM_1}]Hostname: {HOSTNAME}[/] | "
-            f"[{NordColors.SNOW_STORM_1}]Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]"
+            f"[{NordColors.SNOW_STORM_1}]Hostname: {AppConfig.HOSTNAME}[/] | "
+            f"[{NordColors.SNOW_STORM_1}]Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]"
         )
     )
     console.print()
@@ -1169,68 +1672,59 @@ def main() -> None:
 
     # Display setup summary
     display_panel(
-        "This utility will set up a complete virtualization environment on Ubuntu.\n"
+        "This utility will automatically set up a complete virtualization environment on Ubuntu.\n"
         "It will install packages, configure networks, fix permissions, and start VMs.\n"
-        "The setup process may take several minutes to complete.",
+        "The setup process runs unattended and may take several minutes to complete.",
         style=NordColors.FROST_2,
         title="Setup Overview",
     )
     console.print()
 
-    # Ask for confirmation
-    console.print(f"[bold {NordColors.FROST_2}]Proceed with setup? (y/n)[/]", end=" ")
-    choice = input().strip().lower()
-    if choice != "y":
-        display_panel(
-            "Setup cancelled by user", style=NordColors.YELLOW, title="Cancelled"
-        )
-        sys.exit(0)
-
-    console.print()
-
-    # Execute each setup task sequentially
-    tasks_results = {}
+    # Execute each setup task sequentially and collect results
+    tasks_results = []
 
     # 1. Update package lists
-    tasks_results["package_update"] = update_system_packages()
+    tasks_results.append(update_system_packages())
     console.print()
 
     # 2. Install virtualization packages
-    tasks_results["package_install"] = install_virtualization_packages(
-        VIRTUALIZATION_PACKAGES
+    tasks_results.append(
+        install_virtualization_packages(AppConfig.VIRTUALIZATION_PACKAGES)
     )
     console.print()
 
     # 3. Manage virtualization services
-    tasks_results["services"] = manage_virtualization_services(VIRTUALIZATION_SERVICES)
+    tasks_results.append(
+        manage_virtualization_services(AppConfig.VIRTUALIZATION_SERVICES)
+    )
     console.print()
 
     # 4. Install systemd service
-    tasks_results["systemd_service"] = install_and_enable_service()
+    tasks_results.append(install_and_enable_service())
     console.print()
 
     # 5. Configure network (with retries)
-    network_configured = False
+    network_result = None
     for attempt in range(1, 4):
         print_message(f"Network configuration attempt {attempt}")
-        if configure_default_network():
-            network_configured = True
+        network_result = configure_default_network()
+        if network_result.success:
             break
         time.sleep(2)
 
-    if not network_configured:
+    if not (network_result and network_result.success):
         print_error("Failed to configure network after multiple attempts")
-        recreate_default_network()
+        network_result = recreate_default_network()
 
-    tasks_results["network"] = network_configured
+    tasks_results.append(network_result)
     console.print()
 
     # 6. Fix storage permissions
-    tasks_results["storage"] = fix_storage_permissions(VM_STORAGE_PATHS)
+    tasks_results.append(fix_storage_permissions(AppConfig.VM_STORAGE_PATHS))
     console.print()
 
     # 7. Configure user groups
-    tasks_results["user_groups"] = configure_user_groups()
+    tasks_results.append(configure_user_groups())
     console.print()
 
     # 8. Get and display VM information
@@ -1240,70 +1734,57 @@ def main() -> None:
         display_vm_table(vms)
 
         # 9. Configure VM autostart
-        tasks_results["vm_autostart"] = set_vm_autostart(vms)
+        tasks_results.append(set_vm_autostart(vms))
         console.print()
 
         # 10. Start VMs
-        tasks_results["vm_start"] = start_virtual_machines(vms)
+        tasks_results.append(start_virtual_machines(vms))
     else:
         print_message("No virtual machines found")
-        tasks_results["vm_autostart"] = True
-        tasks_results["vm_start"] = True
+        tasks_results.append(
+            TaskResult(
+                name="vm_autostart",
+                success=True,
+                message="No virtual machines found to configure",
+            )
+        )
+        tasks_results.append(
+            TaskResult(
+                name="vm_start",
+                success=True,
+                message="No virtual machines found to start",
+            )
+        )
 
     console.print()
 
     # 11. Verify the setup
-    tasks_results["verification"] = verify_virtualization_setup()
+    tasks_results.append(verify_virtualization_setup())
     console.print()
 
-    # Display summary
-    success_count = sum(1 for result in tasks_results.values() if result)
-    total_tasks = len(tasks_results)
-
-    # Create summary table
-    table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]Setup Summary[/]",
-        border_style=NordColors.FROST_3,
-    )
-
-    table.add_column("Task", style=f"bold {NordColors.FROST_4}")
-    table.add_column("Status", justify="center")
-
-    for task, result in tasks_results.items():
-        task_name = task.replace("_", " ").title()
-        status = (
-            Text("✓ Success", style=f"bold {NordColors.GREEN}")
-            if result
-            else Text("✗ Failed", style=f"bold {NordColors.RED}")
-        )
-        table.add_row(task_name, status)
-
-    console.print(
-        Panel(
-            table,
-            border_style=Style(color=NordColors.FROST_4),
-            padding=(1, 2),
-        )
-    )
+    # Display summary table
+    display_results_table(tasks_results)
 
     # Final status message
+    success_count = sum(1 for result in tasks_results if result.success)
+    total_tasks = len(tasks_results)
+
     if success_count == total_tasks:
         display_panel(
             "Virtualization environment setup completed successfully!\n\n"
             "Next steps:\n"
             "• Log out and log back in for group changes to take effect\n"
             "• Run 'virt-manager' to manage virtual machines\n"
-            "• Check logs with 'journalctl -u libvirtd'",
+            "• Check logs with 'journalctl -u libvirtd'\n"
+            "• Systemd service is installed to maintain configuration",
             style=NordColors.GREEN,
             title="Setup Complete",
         )
     else:
         display_panel(
             f"Setup completed with {total_tasks - success_count} issue(s).\n"
-            "Review the warnings and errors above for details.",
+            "Review the warnings and errors above for details.\n\n"
+            "You may need to manually fix some issues and re-run the script.",
             style=NordColors.YELLOW,
             title="Setup Complete with Issues",
         )
