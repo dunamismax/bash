@@ -25,18 +25,23 @@ Note: This script must be run with root privileges.
 # ----------------------------------------------------------------
 # Dependency Installation and Bootstrap
 # ----------------------------------------------------------------
-
 import os
 import sys
 import subprocess
 import tempfile
-from pathlib import Path
-import shutil
 import time
+import shutil
+from pathlib import Path
 
 
 def print_status(message: str, status: str = "INFO") -> None:
-    """Print a status message with a timestamp and color coding."""
+    """
+    Print a timestamped status message with colored output.
+
+    Args:
+        message: The status message.
+        status: One of "INFO", "SUCCESS", "WARNING", or "ERROR".
+    """
     colors = {
         "INFO": "\033[94m",  # Blue
         "SUCCESS": "\033[92m",  # Green
@@ -55,28 +60,29 @@ def print_status(message: str, status: str = "INFO") -> None:
 def ensure_dependencies() -> bool:
     """
     Ensure required Python packages (rich and pyfiglet) are installed.
-    Attempts multiple installation methods to overcome Debian's restrictions.
+    This function attempts multiple installation methods (apt-get, pip,
+    pipx, or via a virtual environment) to overcome Debian restrictions.
 
     Returns:
         True if all dependencies are available or successfully installed.
     """
     print("Checking dependencies...")
 
-    # Mapping of package names to their apt package equivalents.
+    # Map package names to their apt package equivalents.
     required_packages = {"rich": "python3-rich", "pyfiglet": "python3-pyfiglet"}
     missing_pkgs = []
 
-    # For rich, we require that rich.console.Group is available.
+    # For rich, we require that rich.console.Group exists.
     try:
         import importlib
 
         rich_console = importlib.import_module("rich.console")
         if not hasattr(rich_console, "Group"):
-            raise ImportError("rich.console.Group not found")
+            raise ImportError("rich.console.Group attribute missing")
     except ImportError:
         missing_pkgs.append("rich")
 
-    # Check for pyfiglet
+    # Check for pyfiglet.
     try:
         __import__("pyfiglet")
     except ImportError:
@@ -88,7 +94,7 @@ def ensure_dependencies() -> bool:
 
     print("Missing packages: " + ", ".join(missing_pkgs))
 
-    # --- Method 1: Try apt-get installation (preferred on Debian) ---
+    # --- Method 1: Attempt system-wide installation via apt-get ---
     if os.geteuid() == 0:
         apt_list = [
             required_packages[pkg] for pkg in missing_pkgs if pkg in required_packages
@@ -107,12 +113,12 @@ def ensure_dependencies() -> bool:
                 print_status(f"apt-get installation failed: {e}", "WARNING")
         else:
             print_status(
-                "No apt packages to install, moving to alternative methods.", "INFO"
+                "No apt packages to install; trying alternative methods.", "INFO"
             )
     else:
         print_status("Not running as root; skipping apt-get installation.", "WARNING")
 
-    # Check again for each dependency
+    # Recheck dependencies.
     still_missing = []
     try:
         import importlib
@@ -134,10 +140,9 @@ def ensure_dependencies() -> bool:
             "Some packages are still missing: " + ", ".join(still_missing), "WARNING"
         )
 
-    # --- Method 2: Try pip installation with --break-system-packages ---
+    # --- Method 2: Attempt installation using pip with --break-system-packages ---
     print_status("Attempting installation with pip --break-system-packages...", "INFO")
     try:
-        # For rich, always require a sufficiently new version.
         if "rich" in still_missing:
             subprocess.run(
                 [
@@ -152,7 +157,6 @@ def ensure_dependencies() -> bool:
                 check=True,
                 capture_output=True,
             )
-        # Install any other missing packages with pip
         other = [pkg for pkg in still_missing if pkg != "rich"]
         if other:
             subprocess.run(
@@ -169,14 +173,14 @@ def ensure_dependencies() -> bool:
                 capture_output=True,
             )
         print_status("Dependencies installed via pip.", "SUCCESS")
+        # Restart the script to load new modules.
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
         print_status(f"pip installation failed: {e}", "WARNING")
 
-    # --- Method 3: Try pipx installation ---
+    # --- Method 3: Attempt installation using pipx ---
     print_status("Attempting installation with pipx...", "INFO")
     try:
-        # Check if pipx is available; if not, try installing it.
         try:
             subprocess.run(["pipx", "--version"], check=True, capture_output=True)
         except Exception:
@@ -205,7 +209,7 @@ def ensure_dependencies() -> bool:
     except Exception as e:
         print_status(f"pipx installation failed: {e}", "WARNING")
 
-    # --- Method 4: Create a virtual environment and install dependencies there ---
+    # --- Method 4: Create a virtual environment and install dependencies ---
     print_status("Attempting installation using a virtual environment...", "INFO")
     try:
         venv_dir = os.path.join(tempfile.gettempdir(), "debian_setup_venv")
@@ -227,13 +231,13 @@ def ensure_dependencies() -> bool:
         print_status(
             f"Dependencies installed in virtual environment at: {venv_dir}", "SUCCESS"
         )
-        print("To run the script with the venv, use:")
+        print("To run the script with the virtual environment, use:")
         print(f"  {venv_python} {' '.join(sys.argv)}")
         return False
     except Exception as e:
         print_status(f"Virtual environment installation failed: {e}", "ERROR")
 
-    # If all methods have failed, show manual instructions.
+    # If all methods fail, display manual instructions.
     print(
         "\nAll automatic installation methods failed. Please try one of these manual methods:"
     )
@@ -249,18 +253,12 @@ def ensure_dependencies() -> bool:
     print("   sudo pipx install rich>=13.0.0")
     for pkg in [p for p in still_missing if p != "rich"]:
         print(f"   sudo pipx install {pkg}")
-    print("4. Use a virtual environment and install the packages inside it:")
+    print("4. Using a virtual environment:")
     print("   python3 -m venv ~/debian_setup_venv")
     print("   source ~/debian_setup_venv/bin/activate")
     print(f"   pip install {' '.join(still_missing)} rich>=13.0.0")
 
     return False
-
-
-# Ensure we have the required dependencies before proceeding
-if not ensure_dependencies():
-    print("\nPlease install the required dependencies and run the script again.")
-    sys.exit(1)
 
 
 # ----------------------------------------------------------------
@@ -277,18 +275,19 @@ import logging
 import platform
 import re
 import shutil
+import socket
 import signal
 import tarfile
-import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 # Third-party imports
 import pyfiglet
 from rich.align import Align
 from rich.box import ROUNDED
-from rich.console import Console, Group  # Group is now imported from rich.console
+from rich.console import Console, Group  # Group imported from rich.console
 from rich.live import Live
 from rich.layout import Layout
 from rich.logging import RichHandler
@@ -299,6 +298,7 @@ from rich.progress import (
     TextColumn,
     BarColumn,
     TaskProgressColumn,
+    TimeElapsedColumn,
     TimeRemainingColumn,
     DownloadColumn,
 )
@@ -308,6 +308,10 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
+from rich.traceback import install as install_rich_traceback
+
+# Install Rich traceback handler for better error display.
+install_rich_traceback(show_locals=True)
 
 
 # ----------------------------------------------------------------

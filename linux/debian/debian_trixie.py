@@ -19,17 +19,16 @@ Features:
 Run with root privileges.
 """
 
-
 # ----------------------------------------------------------------
 # Dependency Installation and Bootstrap
 # ----------------------------------------------------------------
-
 import os
 import sys
 import subprocess
 import tempfile
 import time
 import shutil
+from pathlib import Path
 
 
 def print_status(message: str, status: str = "INFO") -> None:
@@ -37,7 +36,7 @@ def print_status(message: str, status: str = "INFO") -> None:
     Print a timestamped status message with colored output.
 
     Args:
-        message: The message text.
+        message: The status message to display.
         status: One of "INFO", "SUCCESS", "WARNING", or "ERROR".
     """
     colors = {
@@ -67,13 +66,12 @@ def check_root() -> None:
 
 def install_system_dependencies() -> bool:
     """
-    Install essential system packages needed to run the script.
+    Install essential system packages required to run the script.
 
     Returns:
-        True if the command was executed (even if minor issues occurred).
+        True if the installation command executed (even if minor issues occurred).
     """
     print_status("Installing required system packages...")
-
     try:
         subprocess.run(["apt-get", "update", "-qq"], check=False)
     except Exception as e:
@@ -84,12 +82,11 @@ def install_system_dependencies() -> bool:
         "python3-venv",
         "python3-dev",
         "python3-apt",
-        "pipx",  # Isolated package installation
+        "pipx",  # For isolated package installation
         "wget",
         "curl",
         "git",
     ]
-
     try:
         print_status(f"Installing essential packages: {', '.join(essential_packages)}")
         subprocess.run(["apt-get", "install", "-y"] + essential_packages, check=False)
@@ -103,8 +100,8 @@ def install_system_dependencies() -> bool:
 
 def install_python_dependencies() -> bool:
     """
-    Ensure required Python packages (rich and pyfiglet) are installed,
-    using several fallback methods to overcome Debian's restrictions.
+    Ensure required Python packages (rich and pyfiglet) are installed.
+    Attempts multiple installation methods to overcome Debian's restrictions.
 
     Returns:
         True if all dependencies are available or successfully installed.
@@ -115,27 +112,26 @@ def install_python_dependencies() -> bool:
     rich_installed = False
     pyfiglet_installed = False
 
-    # --- Method 1: Install via apt-get ---
+    # --- Method 1: System installation via apt-get ---
     apt_packages = ["python3-rich", "python3-pyfiglet"]
     print_status("Method 1: Installing via apt-get (system packages)")
     try:
         subprocess.run(["apt-get", "install", "-y"] + apt_packages, check=False)
         import importlib
 
-        # Instead of importing from "rich.group", we check for the 'Group' attribute in rich.console.
         try:
+            # Instead of "rich.group", verify that 'Group' is in rich.console.
             rich_console = importlib.import_module("rich.console")
             if hasattr(rich_console, "Group"):
                 rich_installed = True
                 print_status("Successfully installed rich via apt-get", "SUCCESS")
             else:
-                raise ImportError("rich.console.Group attribute not found")
+                raise ImportError("rich.console.Group attribute missing")
         except ImportError:
             print_status(
                 "apt-get installed python3-rich but required rich components are missing",
                 "WARNING",
             )
-
         try:
             importlib.import_module("pyfiglet")
             pyfiglet_installed = True
@@ -147,170 +143,169 @@ def install_python_dependencies() -> bool:
     except Exception as e:
         print_status(f"apt-get installation failed: {e}", "WARNING")
 
-    # --- Method 2: Install via pipx (if available) ---
-    if not (rich_installed and pyfiglet_installed) and shutil.which("pipx"):
-        print_status("Method 2: Installing via pipx (isolated environment)")
+    # --- Recheck dependencies ---
+    still_missing = []
+    try:
+        import importlib
+
+        rich_console = importlib.import_module("rich.console")
+        if not hasattr(rich_console, "Group"):
+            still_missing.append("rich")
+    except ImportError:
+        still_missing.append("rich")
+    try:
+        __import__("pyfiglet")
+    except ImportError:
+        still_missing.append("pyfiglet")
+
+    if not still_missing:
+        return True
+    else:
+        print_status(
+            "Some packages are still missing: " + ", ".join(still_missing), "WARNING"
+        )
+
+    # --- Method 2: Installation using pip with --break-system-packages ---
+    print_status("Attempting installation with pip --break-system-packages...", "INFO")
+    try:
+        if "rich" in still_missing:
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--break-system-packages",
+                    "--upgrade",
+                    "rich>=13.0.0",
+                ],
+                check=True,
+                capture_output=True,
+            )
+        other = [pkg for pkg in still_missing if pkg != "rich"]
+        if other:
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--break-system-packages",
+                    "--upgrade",
+                ]
+                + other,
+                check=True,
+                capture_output=True,
+            )
+        print_status("Dependencies installed via pip.", "SUCCESS")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        print_status(f"pip installation failed: {e}", "WARNING")
+
+    # --- Method 3: Installation using pipx ---
+    print_status("Attempting installation with pipx...", "INFO")
+    try:
+        try:
+            subprocess.run(["pipx", "--version"], check=True, capture_output=True)
+        except Exception:
+            if os.geteuid() == 0:
+                subprocess.run(
+                    ["apt-get", "install", "-y", "pipx"],
+                    check=True,
+                    capture_output=True,
+                )
+            else:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--user", "pipx"],
+                    check=True,
+                    capture_output=True,
+                )
+            subprocess.run(["pipx", "ensurepath"], check=False, capture_output=True)
+
+        if "rich" in still_missing:
+            subprocess.run(
+                ["pipx", "install", "rich>=13.0.0"], check=True, capture_output=True
+            )
+        for pkg in [p for p in still_missing if p != "rich"]:
+            subprocess.run(["pipx", "install", pkg], check=True, capture_output=True)
+        print_status("Dependencies installed using pipx.", "SUCCESS")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        print_status(f"pipx installation failed: {e}", "WARNING")
+
+    # --- Method 4: Installation using a virtual environment ---
+    print_status("Attempting installation using a virtual environment...", "INFO")
+    try:
+        venv_dir = os.path.join(tempfile.gettempdir(), "debian_setup_venv")
+        os.makedirs(venv_dir, exist_ok=True)
+        subprocess.run(
+            [sys.executable, "-m", "venv", venv_dir], check=True, capture_output=True
+        )
+        venv_python = os.path.join(venv_dir, "bin", "python")
+        venv_pip = os.path.join(venv_dir, "bin", "pip")
+        subprocess.run(
+            [venv_pip, "install", "--upgrade", "pip"], check=True, capture_output=True
+        )
+        if "rich" in still_missing:
+            subprocess.run(
+                [venv_pip, "install", "rich>=13.0.0"], check=True, capture_output=True
+            )
+        for pkg in [p for p in still_missing if p != "rich"]:
+            subprocess.run([venv_pip, "install", pkg], check=True, capture_output=True)
+        site_packages = subprocess.check_output(
+            [venv_python, "-c", "import site; print(site.getsitepackages()[0])"],
+            text=True,
+        ).strip()
+        if site_packages not in sys.path:
+            sys.path.insert(0, site_packages)
+            print_status(
+                f"Added virtual environment site-packages to PYTHONPATH: {site_packages}",
+                "INFO",
+            )
+        import importlib
+
         if not rich_installed:
             try:
-                subprocess.run(["pipx", "install", "rich"], check=False)
-                # Add pipx bin directory to PATH
-                pipx_path = subprocess.check_output(
-                    ["pipx", "environment", "--value", "PIPX_BIN_DIR"], text=True
-                ).strip()
-                os.environ["PATH"] = f"{pipx_path}:{os.environ.get('PATH', '')}"
-                import importlib
-
-                importlib.reload(sys.modules.get("rich", None))
+                if "rich" in sys.modules:
+                    importlib.reload(sys.modules["rich"])
                 rich_console = importlib.import_module("rich.console")
                 if hasattr(rich_console, "Group"):
                     rich_installed = True
-                    print_status("Successfully installed rich via pipx", "SUCCESS")
+                    print_status(
+                        "Successfully installed rich in virtual environment", "SUCCESS"
+                    )
                 else:
-                    raise ImportError("rich.console.Group attribute not found")
-            except Exception as e:
-                print_status(f"pipx installation of rich failed: {e}", "WARNING")
-
+                    raise ImportError("rich.console.Group attribute missing")
+            except ImportError:
+                print_status(
+                    "Virtual environment installation failed for rich", "WARNING"
+                )
         if not pyfiglet_installed:
             try:
-                subprocess.run(["pipx", "install", "pyfiglet"], check=False)
-                import importlib
-
-                importlib.reload(sys.modules.get("pyfiglet", None))
+                if "pyfiglet" in sys.modules:
+                    importlib.reload(sys.modules["pyfiglet"])
                 importlib.import_module("pyfiglet")
                 pyfiglet_installed = True
-                print_status("Successfully installed pyfiglet via pipx", "SUCCESS")
-            except Exception as e:
-                print_status(f"pipx installation of pyfiglet failed: {e}", "WARNING")
-
-    # --- Method 3: Install via pip with --break-system-packages ---
-    if not (rich_installed and pyfiglet_installed):
-        print_status(
-            "Method 3: Installing via pip with --break-system-packages", "WARNING"
-        )
-        try:
-            packages_to_install = []
-            if not rich_installed:
-                packages_to_install.append("rich>=13.3.0")
-            if not pyfiglet_installed:
-                packages_to_install.append("pyfiglet>=0.8.post1")
-            if packages_to_install:
-                subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "--break-system-packages"]
-                    + packages_to_install,
-                    check=False,
+                print_status(
+                    "Successfully installed pyfiglet in virtual environment", "SUCCESS"
                 )
-                import importlib
-
-                if not rich_installed:
-                    try:
-                        if "rich" in sys.modules:
-                            importlib.reload(sys.modules["rich"])
-                        rich_console = importlib.import_module("rich.console")
-                        if hasattr(rich_console, "Group"):
-                            rich_installed = True
-                            print_status(
-                                "Successfully installed rich with --break-system-packages",
-                                "SUCCESS",
-                            )
-                        else:
-                            raise ImportError("rich.console.Group attribute not found")
-                    except ImportError:
-                        print_status(
-                            "pip install with --break-system-packages failed for rich",
-                            "WARNING",
-                        )
-                if not pyfiglet_installed:
-                    try:
-                        if "pyfiglet" in sys.modules:
-                            importlib.reload(sys.modules["pyfiglet"])
-                        importlib.import_module("pyfiglet")
-                        pyfiglet_installed = True
-                        print_status(
-                            "Successfully installed pyfiglet with --break-system-packages",
-                            "SUCCESS",
-                        )
-                    except ImportError:
-                        print_status(
-                            "pip install with --break-system-packages failed for pyfiglet",
-                            "WARNING",
-                        )
-        except Exception as e:
-            print_status(f"pip installation failed: {e}", "WARNING")
-
-    # --- Method 4: Use a virtual environment as a last resort ---
-    if not (rich_installed and pyfiglet_installed):
-        print_status(
-            "Method 4: Creating a virtual environment as last resort", "WARNING"
-        )
-        venv_dir = "/tmp/debian_setup_venv"
-        try:
-            subprocess.run([sys.executable, "-m", "venv", venv_dir], check=True)
-            venv_python = os.path.join(venv_dir, "bin", "python")
-            packages_to_install = []
-            if not rich_installed:
-                packages_to_install.append("rich>=13.3.0")
-            if not pyfiglet_installed:
-                packages_to_install.append("pyfiglet>=0.8.post1")
-            if packages_to_install:
-                subprocess.run(
-                    [venv_python, "-m", "pip", "install"] + packages_to_install,
-                    check=True,
+            except ImportError:
+                print_status(
+                    "Virtual environment installation failed for pyfiglet", "WARNING"
                 )
-                site_packages = subprocess.check_output(
-                    [
-                        venv_python,
-                        "-c",
-                        "import site; print(site.getsitepackages()[0])",
-                    ],
-                    text=True,
-                ).strip()
-                if site_packages not in sys.path:
-                    sys.path.insert(0, site_packages)
-                    print_status(
-                        f"Added virtual environment site-packages to PYTHONPATH: {site_packages}",
-                        "INFO",
-                    )
-                import importlib
+        else:
+            print_status("No additional packages needed in virtual environment", "INFO")
+        # At this point, if installation in venv succeeded, we inform the user.
+        print_status(
+            f"Dependencies installed in virtual environment at: {venv_dir}", "SUCCESS"
+        )
+        print("To run the script with the venv, use:")
+        print(f"  {venv_python} {' '.join(sys.argv)}")
+        return False
+    except Exception as e:
+        print_status(f"Virtual environment installation failed: {e}", "WARNING")
 
-                if not rich_installed:
-                    try:
-                        if "rich" in sys.modules:
-                            importlib.reload(sys.modules["rich"])
-                        rich_console = importlib.import_module("rich.console")
-                        if hasattr(rich_console, "Group"):
-                            rich_installed = True
-                            print_status(
-                                "Successfully installed rich in virtual environment",
-                                "SUCCESS",
-                            )
-                        else:
-                            raise ImportError("rich.console.Group attribute not found")
-                    except ImportError:
-                        print_status(
-                            "Virtual environment installation failed for rich",
-                            "WARNING",
-                        )
-                if not pyfiglet_installed:
-                    try:
-                        if "pyfiglet" in sys.modules:
-                            importlib.reload(sys.modules["pyfiglet"])
-                        importlib.import_module("pyfiglet")
-                        pyfiglet_installed = True
-                        print_status(
-                            "Successfully installed pyfiglet in virtual environment",
-                            "SUCCESS",
-                        )
-                    except ImportError:
-                        print_status(
-                            "Virtual environment installation failed for pyfiglet",
-                            "WARNING",
-                        )
-            else:
-                print_status("No packages needed to be installed in venv", "INFO")
-        except Exception as e:
-            print_status(f"Virtual environment creation failed: {e}", "WARNING")
-
-    # Final check and reporting.
+    # Final check and instructions.
     if rich_installed and pyfiglet_installed:
         print_status("All required Python dependencies have been installed", "SUCCESS")
         return True
@@ -329,7 +324,7 @@ def install_python_dependencies() -> bool:
 def bootstrap() -> None:
     """
     Perform initial bootstrapping before running the main script.
-    Exits the script if a critical dependency is missing.
+    Exits the script if critical dependencies are missing.
     """
     check_root()
     if not install_system_dependencies():
@@ -338,7 +333,9 @@ def bootstrap() -> None:
         )
     if not install_python_dependencies():
         print_status("Failed to install all required Python dependencies", "ERROR")
-        print_status("This script requires 'rich' and 'pyfiglet' packages.", "ERROR")
+        print_status(
+            "This script requires the 'rich' and 'pyfiglet' packages.", "ERROR"
+        )
         print_status("Please install them manually before running the script", "ERROR")
         sys.exit(1)
     print_status("Bootstrap completed successfully", "SUCCESS")
@@ -350,6 +347,8 @@ bootstrap()
 # ----------------------------------------------------------------
 # Dependency Check and Imports
 # ----------------------------------------------------------------
+
+# Standard library imports
 import atexit
 import datetime
 import filecmp
@@ -367,77 +366,32 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
-# Import third-party packages that were installed by our bootstrap.
-try:
-    import pyfiglet
-    from rich.console import Console, Group  # Group now imported from rich.console
-    from rich.text import Text
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.progress import (
-        Progress,
-        SpinnerColumn,
-        TextColumn,
-        BarColumn,
-        TimeElapsedColumn,
-        TimeRemainingColumn,
-        TaskProgressColumn,
-        DownloadColumn,
-    )
-    from rich.align import Align
-    from rich.style import Style
-    from rich.traceback import install as install_rich_traceback
-    from rich.theme import Theme
-    from rich.logging import RichHandler
-    from rich.live import Live
-    from rich.layout import Layout
-    from rich.markdown import Markdown
-except ImportError as e:
-    print_status(f"Error importing libraries after installation: {e}", "ERROR")
-    print_status("Attempting to fix via pip...", "WARNING")
-    try:
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--force-reinstall",
-                "rich>=13.3.0",
-                "pyfiglet>=0.8.post1",
-            ],
-            check=True,
-        )
-        import pyfiglet
-        from rich.console import Console, Group
-        from rich.text import Text
-        from rich.table import Table
-        from rich.panel import Panel
-        from rich.progress import (
-            Progress,
-            SpinnerColumn,
-            TextColumn,
-            BarColumn,
-            TimeElapsedColumn,
-            TimeRemainingColumn,
-            TaskProgressColumn,
-            DownloadColumn,
-        )
-        from rich.align import Align
-        from rich.style import Style
-        from rich.traceback import install as install_rich_traceback
-        from rich.theme import Theme
-        from rich.logging import RichHandler
-        from rich.live import Live
-        from rich.layout import Layout
-        from rich.markdown import Markdown
-
-        print_status("Successfully fixed dependencies via pip reinstall", "SUCCESS")
-    except Exception as e:
-        print_status(
-            f"Fatal error: Could not install required dependencies: {e}", "ERROR"
-        )
-        sys.exit(1)
+# Third-party imports
+import pyfiglet
+from rich.align import Align
+from rich.box import ROUNDED
+from rich.console import Console, Group  # Group imported from rich.console
+from rich.live import Live
+from rich.layout import Layout
+from rich.logging import RichHandler
+from rich.panel import Panel
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    TaskProgressColumn,
+    DownloadColumn,
+)
+from rich.prompt import Confirm
+from rich.style import Style
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
+from rich.theme import Theme
+from rich.traceback import install as install_rich_traceback
 
 # Install Rich traceback handler for better error display.
 install_rich_traceback(show_locals=True)
