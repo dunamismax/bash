@@ -5,7 +5,9 @@ Automated Nord-Themed Hello World
 
 A streamlined terminal application that automatically displays a stylish
 'Hello, World!' demonstration using a dynamic ASCII art header, a spinner,
-and a styled panel. All actions run unattended.
+and a styled panel. This script auto-installs required packages as needed
+(using the standard local user on Linux/macOS when run as root) and supports
+Linux, macOS, and Windows.
 
 Version: 2.0.0
 """
@@ -14,19 +16,72 @@ import sys
 import time
 import signal
 import atexit
+import os
+import subprocess
+import platform
 
-try:
-    import pyfiglet
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, TextColumn
-    from rich.align import Align
-    from rich.style import Style
-    from rich.traceback import install as install_rich_traceback
-except ImportError:
-    print("This script requires the 'rich' and 'pyfiglet' libraries.")
-    print("Please install them using: pip install rich pyfiglet")
-    sys.exit(1)
+# ----------------------------------------------------------------
+# OS Detection
+# ----------------------------------------------------------------
+CURRENT_OS = platform.system().lower()
+# For Linux and macOS, if running as root we may want to run pip install commands
+# as the original user using the SUDO_USER environment variable.
+IS_ROOT = False
+if CURRENT_OS in ["linux", "darwin"]:
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        IS_ROOT = True
+
+
+# ----------------------------------------------------------------
+# Package Installation Helper Functions
+# ----------------------------------------------------------------
+def install_package(package: str) -> None:
+    """
+    Install the given package using pip. On Linux/macOS, if running as root,
+    attempt to install as the standard user via SUDO_USER if available.
+    """
+    if CURRENT_OS in ["linux", "darwin"]:
+        if IS_ROOT:
+            sudo_user = os.environ.get("SUDO_USER")
+            if sudo_user:
+                # Run pip install as the original user
+                cmd = f"su - {sudo_user} -c 'pip install {package}'"
+            else:
+                # Fallback to installing with --user flag
+                cmd = f"pip install --user {package}"
+        else:
+            cmd = f"pip install {package}"
+    else:
+        # Windows (or any other OS)
+        cmd = f"pip install {package}"
+    print(f"Installing missing package: {package}\nRunning command: {cmd}")
+    subprocess.check_call(cmd, shell=True)
+
+
+def ensure_package_installed(package: str) -> None:
+    """
+    Attempt to import the package and install it if not found.
+    """
+    try:
+        __import__(package)
+    except ImportError:
+        install_package(package)
+        # Try to import again after installation
+        __import__(package)
+
+
+# Ensure required packages are installed.
+ensure_package_installed("rich")
+ensure_package_installed("pyfiglet")
+
+# Now import the required modules.
+import pyfiglet
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.align import Align
+from rich.style import Style
+from rich.traceback import install as install_rich_traceback
 
 install_rich_traceback(show_locals=True)
 
@@ -93,7 +148,7 @@ def display_spinner(message: str, duration: float) -> None:
         transient=True,
         console=console,
     ) as progress:
-        task = progress.add_task("", total=None)
+        progress.add_task("", total=None)
         start_time = time.time()
         while time.time() - start_time < duration:
             time.sleep(0.1)
@@ -135,7 +190,7 @@ def main() -> None:
     console.clear()
     console.print(create_header())
     display_spinner("Initializing...", SPINNER_DURATION)
-    # Use generic closing tag "[/]" instead of "[/bold]" to avoid markup errors
+    # Use generic closing tag "[/]" to end styling
     display_panel(f"[bold {NordColors.FROST_2}]{DISPLAY_TEXT}[/]", NordColors.FROST_2)
     time.sleep(2)
 
