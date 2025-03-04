@@ -1270,9 +1270,7 @@ deb http://security.debian.org/debian-security bookworm-security main contrib no
 
             # Try to fix any broken packages before proceeding
             try:
-                self.run_command(
-                    ["apt-get", "--fix-broken", "install", "-y"], check=False
-                )
+                self.run_command(["apt-get", "install", "-y"], check=False)
             except subprocess.CalledProcessError:
                 self.logger.warning(
                     "Failed to fix broken packages, continuing anyway..."

@@ -1492,7 +1492,7 @@ class SystemUpdater:
                         run_command(["apt-mark", "unhold", pkg.strip()], check=False)
 
             # Attempt package repairs
-            run_command(["apt", "--fix-broken", "install", "-y"])
+            run_command(["apt", "install", "-y"])
             run_command(["apt", "clean"])
             run_command(["apt", "autoclean", "-y"])
 
@@ -2442,7 +2442,7 @@ class ServiceInstaller:
 
             # Install the package
             run_command(["dpkg", "-i", temp_deb])
-            run_command(["apt", "--fix-broken", "install", "-y"])
+            run_command(["apt", "install", "-y"])
 
             # Clean up
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -3649,7 +3649,7 @@ class DebianServerSetup:
 
             # Fix broken packages with appropriate command
             apt_cmd = Utils.get_apt_command()
-            return run_command([apt_cmd, "--fix-broken", "install", "-y"])
+            return run_command([apt_cmd, "install", "-y"])
 
         run_with_progress(
             "Fixing broken packages",
