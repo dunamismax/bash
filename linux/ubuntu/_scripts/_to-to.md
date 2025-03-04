@@ -16,7 +16,7 @@
     *└── reset_tailscale.py
     └── secure_disk_eraser.py
     *└── ssh_machine_selector.py
-    └── system_monitor.py
+    *└── system_monitor.py
     └── ubuntu_voip_setup.py
     └── unified_backup_restore_deployment.py
     *└── unified_backup.py
