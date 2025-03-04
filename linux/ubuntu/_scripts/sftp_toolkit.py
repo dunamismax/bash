@@ -11,7 +11,7 @@ Features:
   • Stylish ASCII banner using Pyfiglet at startup
   • SFTP operations: connect, list directory, upload, download, delete,
     rename, create and delete remote directories
-  • Predefined device lists (Tailscale and local) for quick connection setup
+  • Predefined device lists (Local devices by default) for quick connection setup
   • Progress tracking with Rich spinners and progress bars during transfers
   • Clean, optimized, and well-documented code for maintainability
 """
@@ -50,6 +50,28 @@ transport = None
 
 
 # ----------------------------------------------------------------
+# Environment Loader
+# ----------------------------------------------------------------
+def load_env():
+    """
+    Load environment variables from a ".env" file located in the root directory.
+    Expected format:
+      SSH_KEY_PASSWORD="your_key_password"
+    """
+    try:
+        with open(".env", "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    # Remove any surrounding quotes from the value
+                    value = value.strip().strip('"').strip("'")
+                    os.environ[key.strip()] = value
+    except Exception as e:
+        console.print(f"[bold red]Error loading .env file: {e}[/]")
+
+
+# ----------------------------------------------------------------
 # Helper Functions for User & SSH Key Handling
 # ----------------------------------------------------------------
 def get_default_username() -> str:
@@ -64,18 +86,19 @@ def get_default_username() -> str:
 def load_private_key():
     """
     Attempt to load the default SSH private key from ~/.ssh/id_rsa.
-    If the key is encrypted, prompt the user for the passphrase.
+    If the key is encrypted, use the SSH_KEY_PASSWORD from the environment.
     """
     key_path = os.path.expanduser("~/.ssh/id_rsa")
     try:
         key = paramiko.RSAKey.from_private_key_file(key_path)
         return key
     except paramiko.PasswordRequiredException:
-        passphrase = Prompt.ask(
-            "[bold purple]Enter passphrase for SSH key[/]", password=True
-        )
+        key_password = os.getenv("SSH_KEY_PASSWORD")
+        if not key_password:
+            console.print("[bold red]SSH key password not found in .env.[/]")
+            return None
         try:
-            key = paramiko.RSAKey.from_private_key_file(key_path, password=passphrase)
+            key = paramiko.RSAKey.from_private_key_file(key_path, password=key_password)
             return key
         except Exception as e:
             console.print(
@@ -190,13 +213,13 @@ def load_local_devices() -> List[Device]:
 def select_device_menu() -> Device:
     """
     Display a device selection menu allowing the user to choose
-    from Tailscale or local devices.
+    from local devices (default) or Tailscale devices.
     """
     console.print(Panel("[bold cyan]Select Device Type[/]", expand=False))
     device_type = Prompt.ask(
         "[bold purple]Choose device type[/]",
         choices=["tailscale", "local"],
-        default="tailscale",
+        default="local",
     )
     devices = (
         load_tailscale_devices() if device_type == "tailscale" else load_local_devices()
@@ -219,6 +242,7 @@ def select_device_menu() -> Device:
     choice = IntPrompt.ask(
         "[bold purple]Select device number[/]",
         choices=[str(i) for i in range(1, len(devices) + 1)],
+        default="1",
     )
     selected_device = devices[choice - 1]
     console.print(
@@ -511,6 +535,8 @@ def main_menu():
     """
     Display the interactive menu for the SFTP Toolkit.
     Loops until the user chooses to exit.
+    Defaults to option "2" (Connect via device selection) so that hitting enter
+    repeatedly quickly connects to the primary (first) local device.
     """
     while True:
         console.print("\n[bold magenta]SFTP Toolkit Menu[/]")
@@ -533,7 +559,7 @@ def main_menu():
         choice = Prompt.ask(
             "[bold purple]Enter your choice[/]",
             choices=[str(i) for i in list(range(1, 10))] + ["A", "0"],
-            default="0",
+            default="2",
         )
 
         if choice == "1":
@@ -572,7 +598,8 @@ def main_menu():
 # Main Entry Point
 # ----------------------------------------------------------------
 def main():
-    """Main function: display banner and launch the interactive menu."""
+    """Main function: load environment, display banner and launch the interactive menu."""
+    load_env()  # Load .env file for SSH_KEY_PASSWORD
     console.clear()
     display_banner()
     main_menu()

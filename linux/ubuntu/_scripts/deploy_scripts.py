@@ -2,9 +2,9 @@
 """
 Script Deployer - Automated Deployment Tool
 --------------------------------------------------
-Automatically deploys files from a source directory to a destination directory,
+Automatically deploys all files from a source directory to a destination directory,
 updating only modified files, setting ownership and permissions (including making
-scripts executable) and displaying real-time progress via a Nord-themed terminal
+scripts executable), and displaying real-time progress via a Nord-themed terminal
 interface with dynamic ASCII headers.
 
 Version: 2.0.0
@@ -73,7 +73,6 @@ try:
         BarColumn,
         TaskProgressColumn,
         TimeRemainingColumn,
-        DownloadColumn,
     )
     from rich.align import Align
     from rich.style import Style
@@ -110,6 +109,7 @@ class AppConfig:
 
     FILE_PERMISSIONS = 0o700  # rwx------
     DIR_PERMISSIONS = 0o700  # rwx------
+    # Only files ending with .py or .sh will be made executable
     EXECUTABLE_EXTENSIONS = [".py", ".sh"]
 
     try:
@@ -380,25 +380,23 @@ def get_file_hash(file_path: str) -> str:
         raise FileOperationError(f"Failed to calculate hash for {file_path}: {e}")
 
 
-def list_files(directory: str) -> List[str]:
+def list_all_files(directory: str) -> List[str]:
     """
-    List all files (non-recursively) in a directory.
+    Recursively list all files in a directory (including dotfiles).
+    Returns a list of file paths relative to the given directory.
     """
-    try:
-        if not os.path.exists(directory):
-            return []
-        return [
-            f
-            for f in os.listdir(directory)
-            if os.path.isfile(os.path.join(directory, f))
-        ]
-    except Exception as e:
-        raise FileOperationError(f"Failed to list files in {directory}: {e}")
+    file_paths = []
+    for root, _, files in os.walk(directory):
+        for f in files:
+            full_path = os.path.join(root, f)
+            rel_path = os.path.relpath(full_path, directory)
+            file_paths.append(rel_path)
+    return file_paths
 
 
 def is_executable_file(filename: str) -> bool:
     """
-    Check if a file should be made executable based on its extension.
+    Determine if a file should be made executable based on its extension.
     """
     _, ext = os.path.splitext(filename)
     return ext.lower() in AppConfig.EXECUTABLE_EXTENSIONS
@@ -479,38 +477,16 @@ def verify_paths() -> bool:
 
 def deploy_files() -> DeploymentResult:
     """
-    Deploy files from the source to destination directory.
+    Deploy files from the source to destination directory recursively.
+    Compares file hashes to update only modified files.
     """
     result = DeploymentResult()
     try:
-        source_files = list_files(AppConfig.SOURCE_DIR)
-        dest_files = list_files(AppConfig.DEST_DIR)
+        source_files = list_all_files(AppConfig.SOURCE_DIR)
     except FileOperationError as e:
         print_error(str(e))
         result.complete()
         return result
-
-    files_to_process = []
-    for file in source_files:
-        source_path = os.path.join(AppConfig.SOURCE_DIR, file)
-        dest_path = os.path.join(AppConfig.DEST_DIR, file)
-        if file not in dest_files:
-            files_to_process.append((source_path, dest_path, FileStatus.NEW))
-        else:
-            try:
-                source_hash = get_file_hash(source_path)
-                dest_hash = get_file_hash(dest_path)
-                if source_hash != dest_hash:
-                    files_to_process.append(
-                        (source_path, dest_path, FileStatus.UPDATED)
-                    )
-                else:
-                    files_to_process.append(
-                        (source_path, dest_path, FileStatus.UNCHANGED)
-                    )
-            except Exception as e:
-                print_warning(f"Error comparing file {file}: {e}")
-                files_to_process.append((source_path, dest_path, FileStatus.UPDATED))
 
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
@@ -524,26 +500,48 @@ def deploy_files() -> DeploymentResult:
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Deploying", total=len(files_to_process))
-        for source_path, dest_path, status in files_to_process:
+        task = progress.add_task("Deploying", total=len(source_files))
+        for rel_path in source_files:
+            source_path = os.path.join(AppConfig.SOURCE_DIR, rel_path)
+            dest_path = os.path.join(AppConfig.DEST_DIR, rel_path)
             filename = os.path.basename(source_path)
             is_exec = is_executable_file(filename)
             perm_changed = False
+
+            # Ensure destination subdirectory exists
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+            # Determine file status (NEW, UPDATED, or UNCHANGED)
+            if not os.path.exists(dest_path):
+                status = FileStatus.NEW
+            else:
+                try:
+                    source_hash = get_file_hash(source_path)
+                    dest_hash = get_file_hash(dest_path)
+                    status = (
+                        FileStatus.UPDATED
+                        if source_hash != dest_hash
+                        else FileStatus.UNCHANGED
+                    )
+                except Exception as e:
+                    print_warning(f"Error comparing file {filename}: {e}")
+                    status = FileStatus.UPDATED
+
             if status in (FileStatus.NEW, FileStatus.UPDATED):
                 try:
                     shutil.copy2(source_path, dest_path)
                     perm_changed = set_permissions(dest_path)
                     if is_exec:
                         make_executable(dest_path)
-                    result.add_file(filename, status, is_exec, perm_changed)
+                    result.add_file(rel_path, status, is_exec, perm_changed)
                 except Exception as e:
                     print_warning(f"Failed to copy file {filename}: {e}")
-                    result.add_file(filename, FileStatus.FAILED)
+                    result.add_file(rel_path, FileStatus.FAILED)
             else:  # UNCHANGED
                 perm_changed = set_permissions(dest_path)
                 if is_exec and not os.access(dest_path, os.X_OK):
                     make_executable(dest_path)
-                result.add_file(filename, status, is_exec, perm_changed)
+                result.add_file(rel_path, status, is_exec, perm_changed)
             progress.advance(task)
     result.complete()
     return result
