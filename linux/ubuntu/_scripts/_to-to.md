@@ -66,5 +66,5 @@ Make the script robust and user-friendly, leveraging Pyfiglet and Rich for an en
 
 
 
-rewrite (o3-mini-high)
+rewrite (claude 3.7 high)
 using new prompt
