@@ -20,6 +20,126 @@ Run with root privileges.
 """
 
 # ----------------------------------------------------------------
+# Initial bootstrapping and dependency check (no imports)
+# ----------------------------------------------------------------
+import os
+import sys
+import subprocess
+import tempfile
+import time
+
+
+def print_status(message, status="INFO"):
+    """Simple status printer for bootstrap phase (before Rich is available)"""
+    status_colors = {
+        "INFO": "\033[94m",  # Blue
+        "SUCCESS": "\033[92m",  # Green
+        "WARNING": "\033[93m",  # Yellow
+        "ERROR": "\033[91m",  # Red
+        "RESET": "\033[0m",  # Reset
+    }
+
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print(
+        f"{timestamp} {status_colors.get(status, status_colors['INFO'])}{status}{status_colors['RESET']}: {message}"
+    )
+
+
+def check_root():
+    """Check if script is run as root and exit if not"""
+    if os.geteuid() != 0:
+        print_status("This script must be run with root privileges!", "ERROR")
+        print_status("Run with: sudo ./debian_setup.py", "WARNING")
+        sys.exit(1)
+
+
+def install_system_dependencies():
+    """Install required system packages"""
+    print_status("Installing required system packages...")
+
+    # Update package index
+    try:
+        subprocess.run(["apt-get", "update", "-qq"], check=False)
+    except Exception as e:
+        print_status(f"Warning: apt-get update failed: {e}", "WARNING")
+
+    # Essential packages needed for the script to run
+    essential_packages = [
+        "python3-pip",
+        "python3-venv",
+        "python3-dev",
+        "python3-apt",
+        "wget",
+        "curl",
+        "git",
+    ]
+
+    # Try to install python3-rich from apt first
+    try:
+        print_status("Installing python3-rich from apt...")
+        subprocess.run(["apt-get", "install", "-y", "python3-rich"], check=False)
+    except Exception as e:
+        print_status(f"Warning: Failed to install python3-rich: {e}", "WARNING")
+
+    # Install essential packages
+    try:
+        print_status(f"Installing essential packages: {', '.join(essential_packages)}")
+        subprocess.run(["apt-get", "install", "-y"] + essential_packages, check=False)
+    except Exception as e:
+        print_status(
+            f"Warning: Some essential packages may not have installed: {e}", "WARNING"
+        )
+
+    return True
+
+
+def install_python_dependencies():
+    """Install required Python packages"""
+    print_status("Installing required Python packages...")
+
+    # List of required Python packages with minimum versions
+    python_packages = [
+        "rich>=13.3.0",  # Ensure Rich version is new enough to have rich.group
+        "pyfiglet>=0.8.post1",
+    ]
+
+    try:
+        # Use pip to install the packages
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade"] + python_packages,
+            check=True,
+        )
+        print_status("Python dependencies installed successfully", "SUCCESS")
+        return True
+    except subprocess.CalledProcessError as e:
+        print_status(f"Failed to install Python dependencies: {e}", "ERROR")
+
+        # Try installing one by one to get as many as possible
+        success = True
+        for package in python_packages:
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--upgrade", package],
+                    check=False,
+                )
+            except Exception:
+                success = False
+                print_status(f"Failed to install {package}", "WARNING")
+
+        return success
+
+
+def bootstrap():
+    """Perform initial bootstrapping before main script runs"""
+    check_root()
+    install_system_dependencies()
+    install_python_dependencies()
+
+
+# Run bootstrap before importing any non-standard libraries
+bootstrap()
+
+# ----------------------------------------------------------------
 # Dependency Check and Imports
 # ----------------------------------------------------------------
 import atexit
@@ -28,54 +148,18 @@ import filecmp
 import gzip
 import json
 import logging
-import os
 import platform
 import re
 import shutil
 import socket
-import subprocess
-import sys
-import tarfile
-import tempfile
-import time
 import signal
+import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Set
 
-
-def install_missing_packages() -> None:
-    """Automatically install required Python packages if missing."""
-    required_packages = ["rich", "pyfiglet"]
-    missing_packages = []
-
-    print("Checking dependencies...")
-    for package in required_packages:
-        try:
-            __import__(package)
-        except ImportError:
-            missing_packages.append(package)
-
-    if missing_packages:
-        print(f"Installing missing packages: {', '.join(missing_packages)}")
-        try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install"] + missing_packages,
-                check=True,
-                capture_output=True,
-            )
-            print("Required packages installed successfully. Restarting script...")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-        except Exception as e:
-            print(f"Failed to install packages: {e}")
-            sys.exit(1)
-    else:
-        print("All dependencies satisfied.")
-
-
-install_missing_packages()
-
+# Now import the packages we installed
 try:
     import pyfiglet
     from rich.console import Console
@@ -100,9 +184,60 @@ try:
     from rich.live import Live
     from rich.layout import Layout
     from rich.markdown import Markdown
+
+    # Import rich.group to verify it's available
+    from rich.group import Group
 except ImportError as e:
-    print(f"Error importing libraries: {e}")
-    sys.exit(1)
+    print_status(f"Error importing libraries after installation: {e}", "ERROR")
+    print_status("Attempting to fix via pip...", "WARNING")
+
+    # Try a more aggressive installation approach
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--force-reinstall",
+                "rich>=13.3.0",
+                "pyfiglet>=0.8.post1",
+            ],
+            check=True,
+        )
+
+        # Try importing again
+        import pyfiglet
+        from rich.console import Console
+        from rich.text import Text
+        from rich.table import Table
+        from rich.panel import Panel
+        from rich.progress import (
+            Progress,
+            SpinnerColumn,
+            TextColumn,
+            BarColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+            TaskProgressColumn,
+            DownloadColumn,
+        )
+        from rich.align import Align
+        from rich.style import Style
+        from rich.traceback import install as install_rich_traceback
+        from rich.theme import Theme
+        from rich.logging import RichHandler
+        from rich.live import Live
+        from rich.layout import Layout
+        from rich.markdown import Markdown
+        from rich.group import Group
+
+        print_status("Successfully fixed dependencies via pip reinstall", "SUCCESS")
+    except Exception as e:
+        print_status(
+            f"Fatal error: Could not install required dependencies: {e}", "ERROR"
+        )
+        sys.exit(1)
 
 # Install Rich traceback handler for better error display
 install_rich_traceback(show_locals=True)

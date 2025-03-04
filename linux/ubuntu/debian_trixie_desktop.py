@@ -34,35 +34,106 @@ from pathlib import Path
 
 def ensure_dependencies() -> bool:
     """
-    Ensure required Python packages are installed.
+    Ensure required Python packages are installed at the system level or via pip.
     Returns True if all dependencies are available or successfully installed.
     """
-    required_packages = ["rich", "pyfiglet"]
-    missing_packages = []
+    # Required packages and their corresponding apt packages if available
+    required_packages = {"rich": "python3-rich", "pyfiglet": "python3-pyfiglet"}
 
     print("Checking dependencies...")
-    for pkg in required_packages:
-        try:
-            __import__(pkg)
-        except ImportError:
-            missing_packages.append(pkg)
+    missing_packages = []
+    missing_modules = []
 
-    if missing_packages:
-        print(f"Installing missing packages: {', '.join(missing_packages)}")
+    # Check each package
+    for pkg_name in required_packages:
         try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install"] + missing_packages,
-                check=True,
-                capture_output=True,
-            )
-            print("Dependencies installed successfully.")
+            module = __import__(pkg_name)
+
+            # Check for rich.group specifically (it's in newer versions of rich)
+            if pkg_name == "rich":
+                try:
+                    __import__("rich.group")
+                except ImportError:
+                    missing_modules.append("rich.group")
+        except ImportError:
+            missing_packages.append(pkg_name)
+
+    # If any packages are missing, install them
+    if missing_packages or missing_modules:
+        print(
+            f"Installing missing packages: {', '.join(missing_packages + missing_modules)}"
+        )
+
+        # Try with apt-get first for system-wide installation
+        try:
+            apt_packages = [
+                required_packages[pkg]
+                for pkg in missing_packages
+                if pkg in required_packages
+            ]
+            if apt_packages:
+                print("Installing system packages using apt-get...")
+                # Make sure we're running with sudo
+                if os.geteuid() != 0:
+                    print(
+                        "Error: This script needs root privileges to install system packages."
+                    )
+                    print("Please run with sudo.")
+                    return False
+
+                subprocess.run(
+                    ["apt-get", "update"],
+                    check=True,
+                    capture_output=True,
+                )
+
+                subprocess.run(
+                    ["apt-get", "install", "-y"] + apt_packages,
+                    check=True,
+                    capture_output=True,
+                )
+                print("System packages installed successfully.")
+        except Exception as e:
+            print(f"Failed to install system packages: {e}")
+
+        # If rich.group is missing or we couldn't install with apt-get, use pip
+        try:
+            # For rich.group we need a newer version of rich
+            if "rich.group" in missing_modules or "rich" in missing_packages:
+                print(
+                    "Installing rich package with pip to ensure all required modules..."
+                )
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        "--upgrade",
+                        "rich>=13.0.0",
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+
+            # Install any other missing packages with pip
+            other_missing = [pkg for pkg in missing_packages if pkg != "rich"]
+            if other_missing:
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--upgrade"]
+                    + other_missing,
+                    check=True,
+                    capture_output=True,
+                )
+
+            print("Dependencies installed successfully using pip.")
 
             # Restart script to ensure dependencies are loaded properly
             os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
-            print(f"Failed to install required packages: {e}")
+            print(f"Failed to install required packages with pip: {e}")
             print("Please install the required packages manually:")
-            print(f"pip install {' '.join(missing_packages)}")
+            print(f"pip install {' '.join(missing_packages)} rich>=13.0.0")
             return False
 
     return True
@@ -113,6 +184,8 @@ from rich.live import Live
 from rich.layout import Layout
 from rich.prompt import Confirm
 from rich.syntax import Syntax
+from rich.group import Group
+from rich.box import ROUNDED
 
 
 # ----------------------------------------------------------------
