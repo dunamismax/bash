@@ -3,20 +3,22 @@
 Debian Trixie Server Setup & Hardening Utility (Unattended)
 ------------------------------------------------------------
 
-This fully automated utility performs preflight checks, system updates,
-package installations, user environment setup, security hardening,
-service installations, maintenance tasks, system tuning, and final
-health checks on a Debian Trixie server.
+This fully automated utility performs comprehensive system setup and hardening on a
+Debian Trixie server with zero user interaction. The utility combines robust error
+handling with a professional, visually appealing interface.
 
 Features:
-  • Fully unattended operation – no user interaction required
-  • Comprehensive system setup and hardening
-  • Beautiful Nord-themed terminal interface with Pyfiglet banner and Rich output
-  • Automatic APT repository configuration and self-healing package management
-  • Real-time progress tracking using spinners and progress bars
-  • Robust error handling and detailed logging
+  • Fully unattended operation – zero user interaction required
+  • Complete system setup and security hardening including firewall, SSH, and more
+  • Professional Nord-themed terminal interface with gradient-styled Pyfiglet banners
+  • Real-time operation status with dynamic progress tracking and spinners
+  • Comprehensive error handling with detailed logging and recovery mechanisms
+  • Self-healing package management with automatic retry strategies
+  • Graceful termination handling for unattended environments
+  • Detailed final system health assessment with visual reporting
 
-Run with root privileges.
+Requires root privileges.
+Version: 1.1.0
 """
 
 # ----------------------------------------------------------------
@@ -27,8 +29,20 @@ import sys
 import subprocess
 import tempfile
 import time
+import datetime
 import shutil
+import platform
+import socket
+import json
+import re
+import logging
+import tarfile
+import gzip
+import filecmp
+import atexit
+import signal
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, Callable
 
 
 def print_status(message: str, status: str = "INFO") -> None:
@@ -64,19 +78,22 @@ def check_root() -> None:
     print_status("Root privileges confirmed.", "SUCCESS")
 
 
-def install_system_dependencies() -> bool:
+def install_dependencies() -> bool:
     """
-    Install essential system packages required to run the script.
+    Install essential system and Python packages required to run the script.
 
     Returns:
-        True if the installation command executed (even if minor issues occurred).
+        True if the installation was successful, False otherwise.
     """
-    print_status("Installing required system packages...")
+    print_status("Installing required dependencies...")
+
+    # First try to update package lists
     try:
         subprocess.run(["apt-get", "update", "-qq"], check=False)
     except Exception as e:
         print_status(f"Warning: apt-get update failed: {e}", "WARNING")
 
+    # Install essential system packages
     essential_packages = [
         "python3-pip",
         "python3-venv",
@@ -87,261 +104,137 @@ def install_system_dependencies() -> bool:
         "curl",
         "git",
     ]
+
     try:
-        print_status(f"Installing essential packages: {', '.join(essential_packages)}")
-        subprocess.run(["apt-get", "install", "-y"] + essential_packages, check=False)
+        print_status(
+            f"Installing essential system packages: {', '.join(essential_packages)}"
+        )
+        subprocess.run(
+            ["apt-get", "install", "-y", "--no-install-recommends"]
+            + essential_packages,
+            check=False,
+        )
     except Exception as e:
         print_status(
             f"Warning: Some essential packages may not have installed: {e}", "WARNING"
         )
 
-    return True
-
-
-def install_python_dependencies() -> bool:
-    """
-    Ensure required Python packages (rich and pyfiglet) are installed.
-    Attempts multiple installation methods to overcome Debian's restrictions.
-
-    Returns:
-        True if all dependencies are available or successfully installed.
-    """
+    # Install Python dependencies
     print_status("Installing required Python packages...")
 
-    # Track dependency status.
-    rich_installed = False
-    pyfiglet_installed = False
+    # Try multiple installation methods for rich and pyfiglet
+    methods = [
+        # Method 1: System packages
+        lambda: subprocess.run(
+            ["apt-get", "install", "-y", "python3-rich", "python3-pyfiglet"],
+            check=False,
+        ),
+        # Method 2: Pip with --break-system-packages
+        lambda: subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--break-system-packages",
+                "--upgrade",
+                "rich>=13.0.0",
+                "pyfiglet",
+            ],
+            check=False,
+        ),
+        # Method 3: Pipx
+        lambda: subprocess.run(["pipx", "install", "rich>=13.0.0"], check=False)
+        and subprocess.run(["pipx", "install", "pyfiglet"], check=False),
+        # Method 4: Virtual environment
+        lambda: setup_venv_and_install(),
+    ]
 
-    # --- Method 1: System installation via apt-get ---
-    apt_packages = ["python3-rich", "python3-pyfiglet"]
-    print_status("Method 1: Installing via apt-get (system packages)")
-    try:
-        subprocess.run(["apt-get", "install", "-y"] + apt_packages, check=False)
-        import importlib
-
+    # Try each installation method until one succeeds
+    for i, method in enumerate(methods, 1):
+        print_status(f"Trying installation method {i}...")
         try:
-            # Instead of "rich.group", verify that 'Group' is in rich.console.
-            rich_console = importlib.import_module("rich.console")
-            if hasattr(rich_console, "Group"):
-                rich_installed = True
-                print_status("Successfully installed rich via apt-get", "SUCCESS")
-            else:
-                raise ImportError("rich.console.Group attribute missing")
-        except ImportError:
-            print_status(
-                "apt-get installed python3-rich but required rich components are missing",
-                "WARNING",
-            )
-        try:
-            importlib.import_module("pyfiglet")
-            pyfiglet_installed = True
-            print_status("Successfully installed pyfiglet via apt-get", "SUCCESS")
-        except ImportError:
-            print_status(
-                "apt-get installed python3-pyfiglet but import failed", "WARNING"
-            )
-    except Exception as e:
-        print_status(f"apt-get installation failed: {e}", "WARNING")
+            method()
+            # Check if packages are now importable
+            try:
+                import rich
+                import pyfiglet
 
-    # --- Recheck dependencies ---
-    still_missing = []
-    try:
-        import importlib
-
-        rich_console = importlib.import_module("rich.console")
-        if not hasattr(rich_console, "Group"):
-            still_missing.append("rich")
-    except ImportError:
-        still_missing.append("rich")
-    try:
-        __import__("pyfiglet")
-    except ImportError:
-        still_missing.append("pyfiglet")
-
-    if not still_missing:
-        return True
-    else:
-        print_status(
-            "Some packages are still missing: " + ", ".join(still_missing), "WARNING"
-        )
-
-    # --- Method 2: Installation using pip with --break-system-packages ---
-    print_status("Attempting installation with pip --break-system-packages...", "INFO")
-    try:
-        if "rich" in still_missing:
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--break-system-packages",
-                    "--upgrade",
-                    "rich>=13.0.0",
-                ],
-                check=True,
-                capture_output=True,
-            )
-        other = [pkg for pkg in still_missing if pkg != "rich"]
-        if other:
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--break-system-packages",
-                    "--upgrade",
-                ]
-                + other,
-                check=True,
-                capture_output=True,
-            )
-        print_status("Dependencies installed via pip.", "SUCCESS")
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        print_status(f"pip installation failed: {e}", "WARNING")
-
-    # --- Method 3: Installation using pipx ---
-    print_status("Attempting installation with pipx...", "INFO")
-    try:
-        try:
-            subprocess.run(["pipx", "--version"], check=True, capture_output=True)
-        except Exception:
-            if os.geteuid() == 0:
-                subprocess.run(
-                    ["apt-get", "install", "-y", "pipx"],
-                    check=True,
-                    capture_output=True,
+                print_status(
+                    f"Successfully installed dependencies using method {i}", "SUCCESS"
                 )
-            else:
-                subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "--user", "pipx"],
-                    check=True,
-                    capture_output=True,
+                return True
+            except ImportError:
+                print_status(
+                    f"Installation method {i} didn't make packages importable",
+                    "WARNING",
                 )
-            subprocess.run(["pipx", "ensurepath"], check=False, capture_output=True)
+        except Exception as e:
+            print_status(f"Installation method {i} failed: {e}", "WARNING")
 
-        if "rich" in still_missing:
-            subprocess.run(
-                ["pipx", "install", "rich>=13.0.0"], check=True, capture_output=True
-            )
-        for pkg in [p for p in still_missing if p != "rich"]:
-            subprocess.run(["pipx", "install", pkg], check=True, capture_output=True)
-        print_status("Dependencies installed using pipx.", "SUCCESS")
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        print_status(f"pipx installation failed: {e}", "WARNING")
+    print_status(
+        "Failed to install required dependencies after trying all methods", "ERROR"
+    )
+    return False
 
-    # --- Method 4: Installation using a virtual environment ---
-    print_status("Attempting installation using a virtual environment...", "INFO")
+
+def setup_venv_and_install() -> bool:
+    """
+    Set up a virtual environment and install dependencies in it.
+
+    Returns:
+        True if successful, False otherwise
+    """
+    venv_dir = os.path.join(tempfile.gettempdir(), "debian_setup_venv")
+
     try:
-        venv_dir = os.path.join(tempfile.gettempdir(), "debian_setup_venv")
         os.makedirs(venv_dir, exist_ok=True)
-        subprocess.run(
-            [sys.executable, "-m", "venv", venv_dir], check=True, capture_output=True
-        )
+        subprocess.run([sys.executable, "-m", "venv", venv_dir], check=True)
+
         venv_python = os.path.join(venv_dir, "bin", "python")
         venv_pip = os.path.join(venv_dir, "bin", "pip")
-        subprocess.run(
-            [venv_pip, "install", "--upgrade", "pip"], check=True, capture_output=True
-        )
-        if "rich" in still_missing:
-            subprocess.run(
-                [venv_pip, "install", "rich>=13.0.0"], check=True, capture_output=True
-            )
-        for pkg in [p for p in still_missing if p != "rich"]:
-            subprocess.run([venv_pip, "install", pkg], check=True, capture_output=True)
+
+        subprocess.run([venv_pip, "install", "--upgrade", "pip"], check=True)
+
+        subprocess.run([venv_pip, "install", "rich>=13.0.0", "pyfiglet"], check=True)
+
+        # Add to Python path
         site_packages = subprocess.check_output(
             [venv_python, "-c", "import site; print(site.getsitepackages()[0])"],
             text=True,
         ).strip()
+
         if site_packages not in sys.path:
             sys.path.insert(0, site_packages)
             print_status(
                 f"Added virtual environment site-packages to PYTHONPATH: {site_packages}",
                 "INFO",
             )
-        import importlib
 
-        if not rich_installed:
-            try:
-                if "rich" in sys.modules:
-                    importlib.reload(sys.modules["rich"])
-                rich_console = importlib.import_module("rich.console")
-                if hasattr(rich_console, "Group"):
-                    rich_installed = True
-                    print_status(
-                        "Successfully installed rich in virtual environment", "SUCCESS"
-                    )
-                else:
-                    raise ImportError("rich.console.Group attribute missing")
-            except ImportError:
-                print_status(
-                    "Virtual environment installation failed for rich", "WARNING"
-                )
-        if not pyfiglet_installed:
-            try:
-                if "pyfiglet" in sys.modules:
-                    importlib.reload(sys.modules["pyfiglet"])
-                importlib.import_module("pyfiglet")
-                pyfiglet_installed = True
-                print_status(
-                    "Successfully installed pyfiglet in virtual environment", "SUCCESS"
-                )
-            except ImportError:
-                print_status(
-                    "Virtual environment installation failed for pyfiglet", "WARNING"
-                )
-        else:
-            print_status("No additional packages needed in virtual environment", "INFO")
-        # At this point, if installation in venv succeeded, we inform the user.
-        print_status(
-            f"Dependencies installed in virtual environment at: {venv_dir}", "SUCCESS"
-        )
-        print("To run the script with the venv, use:")
-        print(f"  {venv_python} {' '.join(sys.argv)}")
-        return False
-    except Exception as e:
-        print_status(f"Virtual environment installation failed: {e}", "WARNING")
-
-    # Final check and instructions.
-    if rich_installed and pyfiglet_installed:
-        print_status("All required Python dependencies have been installed", "SUCCESS")
         return True
-    else:
-        missing = []
-        if not rich_installed:
-            missing.append("rich (rich.console.Group)")
-        if not pyfiglet_installed:
-            missing.append("pyfiglet")
-        print_status(
-            f"Failed to install required dependencies: {', '.join(missing)}", "ERROR"
-        )
+
+    except Exception as e:
+        print_status(f"Virtual environment setup failed: {e}", "WARNING")
         return False
 
 
 def bootstrap() -> None:
     """
     Perform initial bootstrapping before running the main script.
-    Exits the script if critical dependencies are missing.
+    Exits if critical dependencies can't be installed.
     """
     check_root()
-    if not install_system_dependencies():
-        print_status(
-            "Some system dependencies may not have installed properly", "WARNING"
-        )
-    if not install_python_dependencies():
-        print_status("Failed to install all required Python dependencies", "ERROR")
-        print_status(
-            "This script requires the 'rich' and 'pyfiglet' packages.", "ERROR"
-        )
+
+    if not install_dependencies():
+        print_status("Failed to install all required dependencies", "ERROR")
+        print_status("This script requires 'rich' and 'pyfiglet' packages", "ERROR")
         print_status("Please install them manually before running the script", "ERROR")
         sys.exit(1)
+
     print_status("Bootstrap completed successfully", "SUCCESS")
 
 
-# Run bootstrap before importing any non‑standard libraries.
+# Run bootstrap before importing any non-standard libraries
 bootstrap()
 
 # ----------------------------------------------------------------
@@ -349,28 +242,14 @@ bootstrap()
 # ----------------------------------------------------------------
 
 # Standard library imports
-import atexit
-import datetime
-import filecmp
-import gzip
-import json
-import logging
-import platform
-import re
-import shutil
-import socket
-import signal
-import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 # Third-party imports
 import pyfiglet
 from rich.align import Align
-from rich.box import ROUNDED
-from rich.console import Console, Group  # Group imported from rich.console
+from rich.box import ROUNDED, HEAVY, DOUBLE
+from rich.console import Console, Group
 from rich.live import Live
 from rich.layout import Layout
 from rich.logging import RichHandler
@@ -393,7 +272,7 @@ from rich.text import Text
 from rich.theme import Theme
 from rich.traceback import install as install_rich_traceback
 
-# Install Rich traceback handler for better error display.
+# Install Rich traceback handler for better error display
 install_rich_traceback(show_locals=True)
 
 
@@ -404,14 +283,17 @@ install_rich_traceback(show_locals=True)
 class AppConfig:
     """Global application configuration."""
 
-    VERSION: str = "1.0.0"
+    # Application info
+    VERSION: str = "1.1.0"
     APP_NAME: str = "Debian Trixie Setup"
     APP_SUBTITLE: str = "Server Setup & Hardening Utility"
 
+    # System info
     PLATFORM: str = platform.system().lower()
     IS_WINDOWS: bool = PLATFORM == "windows"
     IS_MACOS: bool = PLATFORM == "darwin"
     IS_LINUX: bool = PLATFORM == "linux"
+    HOSTNAME: str = socket.gethostname()
 
     # Debian-specific settings
     DEBIAN_VERSION: str = "trixie"
@@ -419,6 +301,7 @@ class AppConfig:
     DEBIAN_MIRROR: str = "deb.debian.org"
     DEBIAN_CDN: str = f"https://{DEBIAN_MIRROR}/debian"
 
+    # Paths and files
     LOG_FILE: str = "/var/log/debian_setup.log"
     MAX_LOG_SIZE: int = 10 * 1024 * 1024  # 10MB
     USERNAME: str = "sawyer"
@@ -426,16 +309,17 @@ class AppConfig:
     BACKUP_DIR: str = "/var/backups/debian_setup"
     TEMP_DIR: str = tempfile.gettempdir()
 
+    # Terminal dimensions
     TERM_WIDTH: int = shutil.get_terminal_size().columns
     TERM_HEIGHT: int = shutil.get_terminal_size().lines
     PROGRESS_WIDTH: int = min(50, TERM_WIDTH - 30)
 
+    # Security settings
     ALLOWED_PORTS: List[str] = field(
         default_factory=lambda: ["22", "80", "443", "32400"]
     )
 
-    HOSTNAME: str = socket.gethostname()
-
+    # Configuration files to manage
     CONFIG_FILES: List[str] = field(
         default_factory=lambda: [
             "/etc/ssh/sshd_config",
@@ -449,9 +333,14 @@ class AppConfig:
         ]
     )
 
+    # Operation settings
+    COMMAND_TIMEOUT: int = 300  # seconds
+    MAX_RETRIES: int = 3
+    MAX_WORKERS: int = max(2, min(os.cpu_count() or 4, 8))
+
     @classmethod
     def update_terminal_size(cls) -> None:
-        """Update terminal size information."""
+        """Update terminal size information dynamically."""
         try:
             cls.TERM_WIDTH = shutil.get_terminal_size().columns
             cls.TERM_HEIGHT = shutil.get_terminal_size().lines
@@ -477,7 +366,6 @@ PACKAGES: List[str] = [
     "btop",
     "tree",
     "ncdu",
-    # "neofetch" - removed due to availability issues
     # Build essentials and development tools
     "build-essential",
     "cmake",
@@ -517,7 +405,6 @@ PACKAGES: List[str] = [
     "libxmlsec1-dev",
     # Package management tools
     "ca-certificates",
-    # "software-properties-common" - removed due to availability issues
     "apt-transport-https",
     "gnupg",
     "lsb-release",
@@ -543,7 +430,6 @@ PACKAGES: List[str] = [
     "mtr",
     # System monitoring
     "iotop",
-    # "glances" - removed due to availability issues
     # Security tools
     "lynis",
     "fail2ban",
@@ -587,7 +473,7 @@ SETUP_STATUS: Dict[str, Dict[str, str]] = {
 # Nord-Themed Colors and Rich Console
 # ----------------------------------------------------------------
 class NordColors:
-    """Nord color palette for consistent theming."""
+    """Nord color palette for consistent theming throughout the application."""
 
     # Polar Night (dark background)
     POLAR_NIGHT_1: str = "#2E3440"
@@ -613,6 +499,26 @@ class NordColors:
     GREEN: str = "#A3BE8C"
     PURPLE: str = "#B48EAD"
 
+    @classmethod
+    def get_frost_gradient(cls, text_lines: List[str]) -> List[Tuple[str, str]]:
+        """
+        Create a gradient using Frost colors.
+
+        Args:
+            text_lines: List of text lines to apply gradient to
+
+        Returns:
+            List of (text, color) tuples
+        """
+        colors = [cls.FROST_1, cls.FROST_2, cls.FROST_3, cls.FROST_4]
+        gradient = []
+
+        for i, line in enumerate(text_lines):
+            color = colors[i % len(colors)]
+            gradient.append((line, color))
+
+        return gradient
+
 
 # Initialize Rich Console with Nord theme
 console = Console(
@@ -628,6 +534,7 @@ console = Console(
             "prompt": f"bold {NordColors.PURPLE}",
             "command": f"bold {NordColors.FROST_4}",
             "path": f"italic {NordColors.FROST_1}",
+            "highlight": f"bold {NordColors.SNOW_STORM_3}",
         }
     )
 )
@@ -672,6 +579,18 @@ class ValidationError(SetupError):
     pass
 
 
+class PermissionError(SetupError):
+    """Raised when insufficient permissions are detected."""
+
+    pass
+
+
+class RecoveryError(SetupError):
+    """Raised when recovery from previous error fails."""
+
+    pass
+
+
 # ----------------------------------------------------------------
 # Logging and Banner Helpers
 # ----------------------------------------------------------------
@@ -694,9 +613,9 @@ def setup_logging() -> logging.Logger:
             ):
                 shutil.copyfileobj(fin, fout)
             open(AppConfig.LOG_FILE, "w").close()
-            print(f"Rotated log file to {rotated}")
+            console.print(f"Rotated log file to [path]{rotated}[/path]")
         except Exception as e:
-            print(f"Failed to rotate log file: {e}")
+            console.print(f"[warning]Failed to rotate log file: {e}[/warning]")
 
     # Configure logging
     log_format = "%(asctime)s | %(levelname)s | %(message)s"
@@ -729,7 +648,7 @@ def create_header() -> Panel:
         Panel: A Rich Panel containing the styled header.
     """
     # Try different fonts until one works
-    fonts = ["slant", "big", "standard", "digital", "small"]
+    fonts = ["slant", "big", "standard", "digital", "doom", "small"]
     ascii_art = ""
 
     AppConfig.update_terminal_size()
@@ -768,7 +687,7 @@ def create_header() -> Panel:
         styled_text += f"[bold {color}]{escaped_line}[/]\n"
 
     # Add decorative borders
-    border = f"[{NordColors.FROST_3}]{'━' * min(50, adjusted_width - 10)}[/]"
+    border = f"[{NordColors.FROST_3}]{'━' * min(60, adjusted_width - 5)}[/]"
     full_text = f"{border}\n{styled_text}{border}"
 
     # Create panel with title and subtitle
@@ -776,6 +695,7 @@ def create_header() -> Panel:
         Text.from_markup(full_text),
         border_style=Style(color=NordColors.FROST_1),
         padding=(1, 2),
+        box=ROUNDED,
         title=f"[bold {NordColors.SNOW_STORM_2}]v{AppConfig.VERSION}[/]",
         title_align="right",
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{AppConfig.APP_SUBTITLE}[/]",
@@ -844,49 +764,61 @@ def print_error(text: str) -> None:
 
 def print_section(title: str) -> None:
     """
-    Print a section header using Pyfiglet small font.
+    Print a section header using Pyfiglet small font with decorative elements.
 
     Args:
         title: The section title to display
     """
     console.print()
+
     try:
+        # First try with Pyfiglet
         section_art = pyfiglet.figlet_format(title, font="small")
-        console.print(section_art, style="section")
+        console.print(section_art, style=f"bold {NordColors.FROST_2}")
     except Exception:
         # Fallback if Pyfiglet fails
-        console.print(f"[section]== {title.upper()} ==[/section]")
+        console.print(f"[bold {NordColors.FROST_1}]== {title.upper()} ==[/]")
 
-    console.print(f"[section]{'-' * 40}[/section]")
+    # Add decorative separator with Nord styling
+    separator = "─" * 60
+    console.print(f"[{NordColors.FROST_3}]{separator}[/]")
+
+    # Log the section for the log file
     logger.info(f"--- {title} ---")
 
 
 def status_report() -> None:
-    """Display a table reporting the status of all setup tasks."""
+    """Display a table reporting the status of all setup tasks with rich formatting."""
     print_section("Setup Status Report")
 
     # Status icons
     icons = {"success": "✓", "failed": "✗", "pending": "?", "in_progress": "⋯"}
 
-    # Create table
+    # Create table with Nord styling
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]Debian Trixie Setup Status[/]",
         border_style=NordColors.FROST_3,
+        box=ROUNDED,
+        title=f"[bold {NordColors.FROST_2}]Debian Trixie Setup Status[/]",
+        title_justify="center",
+        expand=True,
     )
 
     # Define columns
     table.add_column("Task", style=f"bold {NordColors.FROST_2}")
-    table.add_column("Status", style=f"bold {NordColors.FROST_3}")
-    table.add_column("Message", style=f"{NordColors.SNOW_STORM_1}")
+    table.add_column("Status", style=f"bold {NordColors.FROST_3}", justify="center")
+    table.add_column("Message", style=f"{NordColors.SNOW_STORM_1}", ratio=3)
+
+    # Count statuses for summary
+    status_counts = {"success": 0, "failed": 0, "pending": 0, "in_progress": 0}
 
     # Add rows for each task
     for task, data in SETUP_STATUS.items():
         st = data["status"]
         msg = data["message"]
         icon = icons.get(st, "?")
+        status_counts[st] = status_counts.get(st, 0) + 1
 
         # Set status style based on status value
         status_style = (
@@ -909,8 +841,32 @@ def status_report() -> None:
             msg,
         )
 
-    # Display table
-    console.print(table)
+    # Create summary panel
+    summary = Text()
+    summary.append("Status Summary: ", style=f"bold {NordColors.FROST_3}")
+    summary.append(
+        f"{status_counts['success']} Succeeded", style=f"bold {NordColors.GREEN}"
+    )
+    summary.append(" | ")
+    summary.append(f"{status_counts['failed']} Failed", style=f"bold {NordColors.RED}")
+    summary.append(" | ")
+    summary.append(
+        f"{status_counts['in_progress']} In Progress", style=f"bold {NordColors.YELLOW}"
+    )
+    summary.append(" | ")
+    summary.append(
+        f"{status_counts['pending']} Pending", style=f"bold {NordColors.POLAR_NIGHT_4}"
+    )
+
+    # Display table and summary
+    console.print(
+        Panel(
+            Group(table, Align.center(summary)),
+            border_style=Style(color=NordColors.FROST_4),
+            padding=(0, 1),
+            box=ROUNDED,
+        )
+    )
 
 
 # ----------------------------------------------------------------
@@ -921,11 +877,12 @@ def run_command(
     env: Optional[Dict[str, str]] = None,
     check: bool = True,
     capture_output: bool = True,
-    timeout: int = 300,
+    timeout: int = AppConfig.COMMAND_TIMEOUT,
     verbose: bool = False,
+    retry: int = 1,
 ) -> subprocess.CompletedProcess:
     """
-    Execute a system command and return the CompletedProcess.
+    Execute a system command with robust error handling and automatic retries.
 
     Args:
         cmd: Command to execute (list or string)
@@ -934,76 +891,99 @@ def run_command(
         capture_output: Whether to capture stdout/stderr
         timeout: Command timeout in seconds
         verbose: Whether to print the command being executed
+        retry: Number of retry attempts for transient failures
 
     Returns:
         subprocess.CompletedProcess object
 
     Raises:
-        ExecutionError: If command execution fails
+        ExecutionError: If command execution fails after all retries
     """
     cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
     logger.debug(f"Executing: {cmd_str}")
 
     if verbose:
-        print_step(f"Executing: {cmd_str[:80]}{'...' if len(cmd_str) > 80 else ''}")
+        # Truncate very long commands in display, but show full command in log
+        display_cmd = cmd_str[:80] + ("..." if len(cmd_str) > 80 else "")
+        print_step(f"Executing: {display_cmd}")
 
-    try:
-        if isinstance(cmd, str):
-            result = subprocess.run(
-                cmd,
-                env=env or os.environ.copy(),
-                check=check,
-                shell=True,
-                text=True,
-                capture_output=capture_output,
-                timeout=timeout,
-            )
-        else:
-            result = subprocess.run(
-                cmd,
-                env=env or os.environ.copy(),
-                check=check,
-                text=True,
-                capture_output=capture_output,
-                timeout=timeout,
-            )
+    # Initialize retry counter and result
+    attempts = 0
+    result = None
 
-        if verbose and result.stdout and len(result.stdout) > 0:
-            console.print(f"[dim]{result.stdout.strip()}[/dim]")
+    while attempts < retry:
+        attempts += 1
+        try:
+            if isinstance(cmd, str):
+                result = subprocess.run(
+                    cmd,
+                    env=env or os.environ.copy(),
+                    check=check,
+                    shell=True,
+                    text=True,
+                    capture_output=capture_output,
+                    timeout=timeout,
+                )
+            else:
+                result = subprocess.run(
+                    cmd,
+                    env=env or os.environ.copy(),
+                    check=check,
+                    text=True,
+                    capture_output=capture_output,
+                    timeout=timeout,
+                )
 
-        return result
+            # If we get here without an exception, command succeeded
+            if attempts > 1:
+                logger.info(f"Command succeeded on attempt {attempts}")
 
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Command failed: {cmd_str}"
-        if e.stdout:
-            error_msg += f"\nOutput: {e.stdout.strip()}"
-        if e.stderr:
-            error_msg += f"\nError: {e.stderr.strip()}"
+            if verbose and result.stdout and len(result.stdout) > 0:
+                console.print(f"[dim]{result.stdout.strip()}[/dim]")
 
-        print_error(error_msg)
-        logger.error(error_msg)
-        if check:
-            raise ExecutionError(error_msg)
-        return e
+            return result
 
-    except subprocess.TimeoutExpired:
-        error_msg = f"Command timed out after {timeout} seconds: {cmd_str}"
-        print_error(error_msg)
-        logger.error(error_msg)
-        raise ExecutionError(error_msg)
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Command failed (code {e.returncode}): {cmd_str}"
+            if e.stdout:
+                error_msg += f"\nOutput: {e.stdout.strip()}"
+            if e.stderr:
+                error_msg += f"\nError: {e.stderr.strip()}"
 
-    except Exception as e:
-        error_msg = f"Error executing command: {cmd_str}: {str(e)}"
-        print_error(error_msg)
-        logger.error(error_msg)
-        raise ExecutionError(error_msg)
+            if attempts < retry:
+                logger.warning(f"{error_msg}. Retrying ({attempts}/{retry})...")
+                time.sleep(1)  # Brief pause before retry
+                continue
+            else:
+                logger.error(f"{error_msg}. All {retry} attempts failed.")
+                if check:
+                    raise ExecutionError(error_msg)
+                return e
+
+        except subprocess.TimeoutExpired:
+            error_msg = f"Command timed out after {timeout} seconds: {cmd_str}"
+            if attempts < retry:
+                logger.warning(f"{error_msg}. Retrying ({attempts}/{retry})...")
+                continue
+            else:
+                logger.error(f"{error_msg}. All {retry} attempts failed.")
+                raise ExecutionError(error_msg)
+
+        except Exception as e:
+            error_msg = f"Error executing command: {cmd_str}: {str(e)}"
+            if attempts < retry:
+                logger.warning(f"{error_msg}. Retrying ({attempts}/{retry})...")
+                continue
+            else:
+                logger.error(f"{error_msg}. All {retry} attempts failed.")
+                raise ExecutionError(error_msg)
 
 
 def run_with_progress(
     desc: str, func: Callable, *args, task_name: Optional[str] = None, **kwargs
 ) -> Any:
     """
-    Run a function with a Rich spinner indicator.
+    Run a function with a Rich progress indicator and status tracking.
 
     Args:
         desc: Description of the task
@@ -1022,7 +1002,20 @@ def run_with_progress(
             "message": f"{desc} in progress...",
         }
 
-    with console.status(f"[section]{desc}...[/section]") as status:
+    with Progress(
+        SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+        TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+        BarColumn(
+            bar_width=AppConfig.PROGRESS_WIDTH,
+            style=NordColors.FROST_4,
+            complete_style=NordColors.FROST_2,
+        ),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        # Create an indeterminate progress task
+        task_id = progress.add_task(desc, total=None)
         start = time.time()
 
         try:
@@ -1032,8 +1025,103 @@ def run_with_progress(
 
                 # Poll until complete
                 while not future.done():
-                    time.sleep(0.5)
-                    status.update(f"[section]{desc}...[/section]")
+                    time.sleep(0.1)
+                    progress.update(task_id, description=f"{desc}...")
+
+                # Get result
+                result = future.result()
+
+            # Calculate elapsed time
+            elapsed = time.time() - start
+
+            # Success message
+            print_success(f"{desc} completed in {elapsed:.2f}s")
+
+            # Update status
+            if task_name:
+                SETUP_STATUS[task_name] = {
+                    "status": "success",
+                    "message": f"{desc} succeeded in {elapsed:.2f}s.",
+                }
+
+            return result
+
+        except Exception as e:
+            # Calculate elapsed time
+            elapsed = time.time() - start
+
+            # Error message
+            print_error(f"{desc} failed in {elapsed:.2f}s: {e}")
+
+            # Update status
+            if task_name:
+                SETUP_STATUS[task_name] = {
+                    "status": "failed",
+                    "message": f"{desc} failed: {e}",
+                }
+
+            # Re-raise exception
+            raise
+
+
+def run_with_detailed_progress(
+    desc: str,
+    func: Callable,
+    total: int,
+    *args,
+    task_name: Optional[str] = None,
+    **kwargs,
+) -> Any:
+    """
+    Run a function with a detailed progress bar showing completion percentage.
+
+    Args:
+        desc: Description of the task
+        func: Function to run with task_id and progress parameters
+        total: Total number of steps
+        *args: Arguments to pass to the function
+        task_name: Key in SETUP_STATUS to update
+        **kwargs: Keyword arguments to pass to the function
+
+    Returns:
+        The return value of the function
+    """
+    # Update status if task_name provided
+    if task_name:
+        SETUP_STATUS[task_name] = {
+            "status": "in_progress",
+            "message": f"{desc} in progress...",
+        }
+
+    with Progress(
+        SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+        TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+        BarColumn(
+            bar_width=AppConfig.PROGRESS_WIDTH,
+            style=NordColors.FROST_4,
+            complete_style=NordColors.FROST_2,
+        ),
+        TaskProgressColumn(),
+        TextColumn(f"[{NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        # Create a determinate progress task
+        task_id = progress.add_task(desc, total=total)
+        start = time.time()
+
+        try:
+            # Add progress to kwargs to be used by the function
+            kwargs["task_id"] = task_id
+            kwargs["progress"] = progress
+
+            # Run function in a separate thread
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(func, *args, **kwargs)
+
+                # Poll until complete
+                while not future.done():
+                    time.sleep(0.1)
 
                 # Get result
                 result = future.result()
@@ -1075,7 +1163,7 @@ def run_with_progress(
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform cleanup tasks before exit."""
+    """Perform cleanup tasks before exit with proper resource management."""
     logger.info("Performing cleanup tasks before exit.")
 
     # Clean up temporary files
@@ -1099,10 +1187,27 @@ def cleanup() -> None:
     # Final log message
     logger.info("Cleanup complete. Exiting.")
 
+    # Print goodbye message
+    try:
+        console.print()
+        console.print(
+            Panel(
+                Text(
+                    f"Debian Trixie Setup completed. See {AppConfig.LOG_FILE} for details.",
+                    style=f"bold {NordColors.FROST_2}",
+                ),
+                border_style=Style(color=NordColors.FROST_1),
+                box=ROUNDED,
+                padding=(1, 2),
+            )
+        )
+    except Exception:
+        pass
+
 
 def signal_handler(signum: int, frame: Optional[Any]) -> None:
     """
-    Gracefully handle termination signals.
+    Gracefully handle termination signals with proper resource cleanup.
 
     Args:
         signum: Signal number
@@ -1116,6 +1221,7 @@ def signal_handler(signum: int, frame: Optional[Any]) -> None:
         except ValueError:
             pass
 
+    console.print()
     print_message(f"Process interrupted by {sig_name}", NordColors.YELLOW, "⚠")
     logger.error(f"Interrupted by {sig_name}. Exiting.")
 
@@ -1126,7 +1232,7 @@ def signal_handler(signum: int, frame: Optional[Any]) -> None:
     sys.exit(128 + signum)
 
 
-# Register signal handlers
+# Register signal handlers for common termination signals
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     try:
         signal.signal(sig, signal_handler)
@@ -1249,6 +1355,61 @@ class Utils:
         else:
             return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
+    @staticmethod
+    def retry_operation(
+        operation: Callable,
+        max_attempts: int = AppConfig.MAX_RETRIES,
+        retry_delay: float = 1.0,
+        exponential_backoff: bool = True,
+        operation_name: str = "Operation",
+    ) -> Any:
+        """
+        Retry an operation with exponential backoff.
+
+        Args:
+            operation: Function to retry
+            max_attempts: Maximum number of attempts
+            retry_delay: Initial delay between retries in seconds
+            exponential_backoff: Whether to increase delay exponentially
+            operation_name: Name of the operation for logging
+
+        Returns:
+            Result of the operation if successful
+
+        Raises:
+            Exception: The last exception raised by the operation after all retries
+        """
+        attempt = 0
+        last_exception = None
+
+        while attempt < max_attempts:
+            try:
+                return operation()
+            except Exception as e:
+                attempt += 1
+                last_exception = e
+
+                if attempt < max_attempts:
+                    delay = retry_delay
+                    if exponential_backoff:
+                        delay = retry_delay * (2 ** (attempt - 1))
+
+                    logger.warning(
+                        f"{operation_name} failed (attempt {attempt}/{max_attempts}): {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        f"{operation_name} failed after {max_attempts} attempts: {e}"
+                    )
+
+        if last_exception:
+            raise last_exception
+
+        # This should never happen if max_attempts > 0
+        raise ValueError(f"{operation_name} failed without an exception")
+
 
 # ----------------------------------------------------------------
 # Preflight & Environment Checkers
@@ -1261,17 +1422,17 @@ class PreflightChecker:
         Ensure the script runs as root.
 
         Raises:
-            SetupError: If not running as root
+            PermissionError: If not running as root
         """
         if os.geteuid() != 0:
             print_error("This script must run with root privileges!")
             logger.error("Not running as root. Exiting.")
-            sys.exit(1)
+            raise PermissionError("This script must run with root privileges")
         logger.info("Root privileges confirmed.")
 
     def check_network(self) -> bool:
         """
-        Check for network connectivity.
+        Check for network connectivity using multiple hosts for redundancy.
 
         Returns:
             True if network is available, False otherwise
@@ -1279,28 +1440,48 @@ class PreflightChecker:
         logger.info("Checking network connectivity...")
 
         # Try multiple hosts for redundancy
-        test_hosts = ["google.com", "cloudflare.com", "1.1.1.1", "deb.debian.org"]
+        test_hosts = [
+            "google.com",
+            "cloudflare.com",
+            "1.1.1.1",
+            "deb.debian.org",
+            "8.8.8.8",
+        ]
 
-        for host in test_hosts:
-            try:
-                if (
-                    run_command(
-                        ["ping", "-c", "1", "-W", "5", host], check=False
-                    ).returncode
-                    == 0
-                ):
-                    logger.info(f"Network connectivity confirmed via {host}.")
-                    return True
-            except Exception as e:
-                logger.debug(f"Ping to {host} failed: {e}")
-                continue
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Checking network connectivity..."),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Checking...", total=len(test_hosts))
+
+            for host in test_hosts:
+                try:
+                    progress.update(task, description=f"Pinging {host}...")
+                    if (
+                        run_command(
+                            ["ping", "-c", "1", "-W", "5", host],
+                            check=False,
+                            verbose=False,
+                        ).returncode
+                        == 0
+                    ):
+                        logger.info(f"Network connectivity confirmed via {host}.")
+                        progress.update(task, completed=len(test_hosts))
+                        return True
+
+                    progress.advance(task)
+                except Exception as e:
+                    logger.debug(f"Ping to {host} failed: {e}")
+                    progress.advance(task)
+                    continue
 
         logger.error("Network check failed - could not reach any test hosts.")
         return False
 
     def check_os_version(self) -> Optional[Tuple[str, str]]:
         """
-        Check if the system is running Debian.
+        Check if the system is running Debian and identify version.
 
         Returns:
             Tuple of (os_id, version) if Debian, None otherwise
@@ -1312,21 +1493,30 @@ class PreflightChecker:
             return None
 
         os_info = {}
-        with open("/etc/os-release") as f:
-            for line in f:
-                if "=" in line:
-                    k, v = line.strip().split("=", 1)
-                    os_info[k] = v.strip('"')
+        try:
+            with open("/etc/os-release") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        os_info[k] = v.strip('"')
 
-        if os_info.get("ID") != "debian":
-            logger.warning(
-                f"Non-Debian system detected: {os_info.get('ID', 'unknown')}."
+            logger.info(
+                f"Detected OS: {os_info.get('ID', 'unknown')} {os_info.get('VERSION_ID', 'unknown')}"
             )
-            return None
 
-        ver = os_info.get("VERSION_ID", "")
-        logger.info(f"Detected Debian version: {ver}")
-        return ("debian", ver)
+            if os_info.get("ID") != "debian":
+                logger.warning(
+                    f"Non-Debian system detected: {os_info.get('ID', 'unknown')}."
+                )
+                return None
+
+            ver = os_info.get("VERSION_ID", "")
+            logger.info(f"Detected Debian version: {ver}")
+
+            return ("debian", ver)
+        except Exception as e:
+            logger.error(f"Failed to determine OS version: {e}")
+            return None
 
     def save_config_snapshot(self) -> Optional[str]:
         """
@@ -1378,12 +1568,72 @@ Files: {files_added}
             logger.warning(f"Snapshot creation failed: {e}")
             return None
 
+    def verify_system_requirements(self) -> bool:
+        """
+        Verify the system meets minimum requirements for setup.
+
+        Returns:
+            True if system meets requirements, False otherwise
+        """
+        logger.info("Verifying system requirements...")
+        requirements_met = True
+
+        # Check disk space
+        try:
+            stat = os.statvfs("/")
+            free_space_mb = (stat.f_bavail * stat.f_frsize) / (1024 * 1024)
+
+            if free_space_mb < 2000:  # 2GB minimum
+                logger.warning(
+                    f"Low disk space: {free_space_mb:.1f} MB available, 2000 MB recommended"
+                )
+                requirements_met = False
+            else:
+                logger.info(f"Disk space: {free_space_mb:.1f} MB available")
+        except Exception as e:
+            logger.warning(f"Could not check disk space: {e}")
+
+        # Check memory
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if "MemTotal" in line:
+                        mem_kb = int(line.split()[1])
+                        mem_mb = mem_kb / 1024
+
+                        if mem_mb < 1024:  # 1GB minimum
+                            logger.warning(
+                                f"Low memory: {mem_mb:.1f} MB available, 1024 MB recommended"
+                            )
+                            requirements_met = False
+                        else:
+                            logger.info(f"Memory: {mem_mb:.1f} MB available")
+                        break
+        except Exception as e:
+            logger.warning(f"Could not check memory: {e}")
+
+        # Check for essential commands
+        essential_commands = ["apt-get", "dpkg", "systemctl"]
+        missing_commands = []
+
+        for cmd in essential_commands:
+            if not Utils.command_exists(cmd):
+                missing_commands.append(cmd)
+
+        if missing_commands:
+            logger.warning(f"Missing essential commands: {', '.join(missing_commands)}")
+            requirements_met = False
+        else:
+            logger.info("All essential commands are available")
+
+        return requirements_met
+
 
 # ----------------------------------------------------------------
 # APT Repository Manager
 # ----------------------------------------------------------------
 class APTSourcesManager:
-    """Manages APT repository sources."""
+    """Manages APT repository sources with robust error handling."""
 
     def __init__(self) -> None:
         """Initialize APT sources manager."""
@@ -1420,7 +1670,7 @@ class APTSourcesManager:
 
     def add_debian_cdn_source(self) -> bool:
         """
-        Configure APT to use the Debian CDN repositories.
+        Configure APT to use the Debian CDN repositories with error handling.
 
         Returns:
             True if successful, False otherwise
@@ -1468,50 +1718,68 @@ class APTSourcesManager:
 # System Updater and Package Installer
 # ----------------------------------------------------------------
 class SystemUpdater:
-    """Handles system updates and package installation."""
+    """Handles system updates and package installation with retries and progress tracking."""
 
     def fix_package_issues(self) -> bool:
         """
-        Fix common package management issues.
+        Fix common package management issues with progress indication.
 
         Returns:
             True if issues fixed, False otherwise
         """
         logger.info("Fixing package issues...")
 
-        try:
-            # Try to fix any broken/interrupted package installations
-            run_command(["dpkg", "--configure", "-a"])
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Fixing package issues...", total=None)
 
-            # Check for held packages
-            held = run_command(["apt-mark", "showhold"], capture_output=True)
-            if held.stdout.strip():
-                print_warning(f"Found held packages: {held.stdout.strip()}")
-                for pkg in held.stdout.strip().splitlines():
-                    if pkg.strip():
-                        run_command(["apt-mark", "unhold", pkg.strip()], check=False)
+            try:
+                # Try to fix any broken/interrupted package installations
+                progress.update(task, description="Configuring pending packages...")
+                run_command(["dpkg", "--configure", "-a"])
 
-            # Attempt package repairs
-            run_command(["apt", "install", "-y"])
-            run_command(["apt", "clean"])
-            run_command(["apt", "autoclean", "-y"])
+                # Check for held packages
+                progress.update(task, description="Checking for held packages...")
+                held = run_command(["apt-mark", "showhold"], capture_output=True)
+                if held.stdout.strip():
+                    logger.warning(f"Found held packages: {held.stdout.strip()}")
+                    for pkg in held.stdout.strip().splitlines():
+                        if pkg.strip():
+                            progress.update(
+                                task, description=f"Releasing hold on {pkg.strip()}..."
+                            )
+                            run_command(
+                                ["apt-mark", "unhold", pkg.strip()], check=False
+                            )
 
-            # Verify package system integrity
-            check = run_command(["apt-get", "check"], capture_output=True)
-            if check.returncode != 0:
-                logger.error("Package system issues remain unresolved.")
+                # Attempt package repairs
+                progress.update(task, description="Running apt repairs...")
+                run_command(["apt", "install", "-y"])
+                run_command(["apt", "clean"])
+                run_command(["apt", "autoclean", "-y"])
+
+                # Verify package system integrity
+                progress.update(
+                    task, description="Checking package system integrity..."
+                )
+                check = run_command(["apt-get", "check"], capture_output=True)
+                if check.returncode != 0:
+                    logger.error("Package system issues remain unresolved.")
+                    return False
+
+                logger.info("Package issues fixed successfully.")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error fixing packages: {e}")
                 return False
-
-            logger.info("Package issues fixed successfully.")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error fixing packages: {e}")
-            return False
 
     def update_system(self, full_upgrade: bool = False) -> bool:
         """
-        Update system packages.
+        Update system packages with visual progress indicators.
 
         Args:
             full_upgrade: Whether to perform a full upgrade
@@ -1528,43 +1796,89 @@ class SystemUpdater:
                     "Proceeding with updates despite unresolved package issues."
                 )
 
-            # Try to use nala for update
-            try:
-                if Utils.command_exists("nala"):
-                    run_command(["nala", "update"])
-                else:
+            # Setup progress for apt operations
+            with Progress(
+                SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+                TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+                BarColumn(
+                    bar_width=AppConfig.PROGRESS_WIDTH,
+                    style=NordColors.FROST_4,
+                    complete_style=NordColors.FROST_2,
+                ),
+                TextColumn(
+                    f"[{NordColors.FROST_3}][{{task.completed}}/{{task.total}}]"
+                ),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                update_task = progress.add_task("Updating package lists...", total=100)
+
+                # Update package lists
+                try:
+                    if Utils.command_exists("nala"):
+                        progress.update(update_task, advance=25)
+                        run_command(["nala", "update"])
+                    else:
+                        progress.update(update_task, advance=25)
+                        run_command(["apt", "update"])
+                except Exception as e:
+                    logger.warning(f"Update failed: {e}; attempting apt update")
+                    progress.update(update_task, advance=25)
                     run_command(["apt", "update"])
-            except Exception as e:
-                logger.warning(f"Update failed: {e}; attempting apt update")
-                run_command(["apt", "update"])
 
-            # Perform upgrade
-            upgrade_cmd = []
-            if Utils.command_exists("nala"):
-                upgrade_cmd = (
-                    ["nala", "full-upgrade", "-y"]
-                    if full_upgrade
-                    else ["nala", "upgrade", "-y"]
-                )
-            else:
-                upgrade_cmd = (
-                    ["apt", "full-upgrade", "-y"]
-                    if full_upgrade
-                    else ["apt", "upgrade", "-y"]
-                )
+                progress.update(update_task, completed=100)
 
-            try:
-                run_command(upgrade_cmd)
-            except Exception as e:
-                logger.warning(
-                    f"Upgrade failed with {upgrade_cmd[0]}: {e}. Trying apt..."
-                )
-                alt_cmd = (
-                    ["apt", "full-upgrade", "-y"]
-                    if full_upgrade
-                    else ["apt", "upgrade", "-y"]
-                )
-                run_command(alt_cmd)
+                # Perform upgrade
+                upgrade_task = progress.add_task("Upgrading packages...", total=100)
+
+                upgrade_cmd = []
+                if Utils.command_exists("nala"):
+                    upgrade_cmd = (
+                        ["nala", "full-upgrade", "-y"]
+                        if full_upgrade
+                        else ["nala", "upgrade", "-y"]
+                    )
+                else:
+                    upgrade_cmd = (
+                        ["apt", "full-upgrade", "-y"]
+                        if full_upgrade
+                        else ["apt", "upgrade", "-y"]
+                    )
+
+                try:
+                    # Update progress as we go
+                    progress.update(
+                        upgrade_task,
+                        advance=30,
+                        description="Starting package upgrade...",
+                    )
+                    run_command(upgrade_cmd)
+                    progress.update(
+                        upgrade_task,
+                        advance=60,
+                        description="Package upgrade completed",
+                    )
+
+                except Exception as e:
+                    logger.warning(
+                        f"Upgrade failed with {upgrade_cmd[0]}: {e}. Trying apt..."
+                    )
+                    alt_cmd = (
+                        ["apt", "full-upgrade", "-y"]
+                        if full_upgrade
+                        else ["apt", "upgrade", "-y"]
+                    )
+                    progress.update(
+                        upgrade_task, advance=30, description="Retrying with apt..."
+                    )
+                    run_command(alt_cmd)
+                    progress.update(
+                        upgrade_task,
+                        advance=30,
+                        description="Package upgrade completed",
+                    )
+
+                progress.update(upgrade_task, completed=100)
 
             logger.info("System update completed successfully.")
             return True
@@ -1573,20 +1887,26 @@ class SystemUpdater:
             logger.error(f"System update error: {e}")
             return False
 
-    def install_packages(self, packages: Optional[List[str]] = None) -> bool:
+    def install_packages(
+        self,
+        packages: Optional[List[str]] = None,
+        task_id: Optional[int] = None,
+        progress: Optional[Progress] = None,
+    ) -> bool:
         """
-        Install missing packages from the given list.
+        Install missing packages from the given list with visual progress tracking.
 
         Args:
             packages: List of packages to install (defaults to PACKAGES)
+            task_id: Progress task ID if called from run_with_detailed_progress
+            progress: Progress instance if called from run_with_detailed_progress
 
         Returns:
             True if successful, False otherwise
         """
-        logger.info("Installing required packages...")
-
         # Use default package list if none provided
         packages = packages or PACKAGES
+        logger.info(f"Checking {len(packages)} packages for installation...")
 
         # Fix package issues first
         if not self.fix_package_issues():
@@ -1594,20 +1914,71 @@ class SystemUpdater:
 
         # Find missing packages
         missing = []
-        for pkg in packages:
-            try:
-                result = subprocess.run(
-                    ["dpkg", "-s", pkg],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                missing.append(pkg)
+        package_check_count = 0
+
+        check_progress = Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Checking package status..."),
+            BarColumn(
+                bar_width=AppConfig.PROGRESS_WIDTH,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.FROST_3}][{{task.completed}}/{{task.total}}]"),
+            console=console,
+        )
+
+        check_task = None
+        # Use provided progress if available, otherwise create our own
+        if progress and task_id:
+            progress.update(task_id, description="Checking package status...")
+            package_check_task = task_id
+            package_progress = progress
+        else:
+            with check_progress as cp:
+                check_task = cp.add_task("Checking packages...", total=len(packages))
+
+                for pkg in packages:
+                    try:
+                        result = subprocess.run(
+                            ["dpkg", "-s", pkg],
+                            check=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        missing.append(pkg)
+
+                    cp.update(check_task, advance=1)
+                    package_check_count += 1
+
+        # If outer progress is provided, update it
+        if progress and task_id:
+            for pkg in packages:
+                try:
+                    result = subprocess.run(
+                        ["dpkg", "-s", pkg],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    missing.append(pkg)
+
+                # Calculate progress percentage
+                package_check_count += 1
+                completed = int(
+                    (package_check_count / len(packages)) * 30
+                )  # Use 30% of progress bar for checking
+                progress.update(task_id, completed=completed)
 
         # Skip if all packages are already installed
         if not missing:
             logger.info("All packages already installed.")
+            if progress and task_id:
+                progress.update(
+                    task_id, completed=100, description="All packages already installed"
+                )
             return True
 
         logger.info(
@@ -1620,14 +1991,57 @@ class SystemUpdater:
         success = True
         install_cmd = "nala" if Utils.command_exists("nala") else "apt"
 
-        # Install in smaller batches to prevent failures
+        # Calculate total batches for progress tracking
         batch_size = 20
+        total_batches = (len(missing) + batch_size - 1) // batch_size
+        batch_num = 0
+        packages_installed = 0
+
+        # Setup installation progress (unless we're using an outer progress)
+        install_prog = None
+        install_task = None
+
+        if not (progress and task_id):
+            install_prog = Progress(
+                SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+                TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+                BarColumn(
+                    bar_width=AppConfig.PROGRESS_WIDTH,
+                    style=NordColors.FROST_4,
+                    complete_style=NordColors.FROST_2,
+                ),
+                TaskProgressColumn(),
+                TimeRemainingColumn(),
+                console=console,
+            )
+
+            install_prog.__enter__()
+            install_task = install_prog.add_task(
+                "Installing packages...", total=len(missing)
+            )
+
+        # Install in smaller batches to prevent failures
         for i in range(0, len(missing), batch_size):
+            batch_num += 1
             batch = missing[i : i + batch_size]
             try:
-                logger.info(
-                    f"Installing batch {i // batch_size + 1}/{(len(missing) + batch_size - 1) // batch_size}"
-                )
+                batch_desc = f"Installing batch {batch_num}/{total_batches}"
+                logger.info(batch_desc)
+
+                # Update progress
+                if progress and task_id:
+                    # Calculate progress for outer progress
+                    outer_completed = 30 + int(
+                        (batch_num / total_batches) * 70
+                    )  # 30% was for checking, 70% for installation
+                    progress.update(
+                        task_id, description=batch_desc, completed=outer_completed
+                    )
+                elif install_prog and install_task:
+                    # Update our own progress
+                    install_prog.update(
+                        install_task, description=batch_desc, advance=len(batch)
+                    )
 
                 run_command(
                     [install_cmd, "install", "-y", "--no-install-recommends"] + batch,
@@ -1643,6 +2057,7 @@ class SystemUpdater:
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                         )
+                        packages_installed += 1
                     except subprocess.CalledProcessError:
                         logger.warning(f"Package {pkg} failed to install")
                         success = False
@@ -1653,6 +2068,12 @@ class SystemUpdater:
                 # Try installing one by one if batch install fails
                 for pkg in batch:
                     try:
+                        inner_desc = f"Retrying package {pkg}"
+                        if progress and task_id:
+                            progress.update(task_id, description=inner_desc)
+                        elif install_prog and install_task:
+                            install_prog.update(install_task, description=inner_desc)
+
                         run_command(
                             [
                                 install_cmd,
@@ -1663,33 +2084,47 @@ class SystemUpdater:
                             ],
                             check=False,
                         )
+
+                        # Verify installation
+                        try:
+                            subprocess.run(
+                                ["dpkg", "-s", pkg],
+                                check=True,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                            packages_installed += 1
+                        except subprocess.CalledProcessError:
+                            pass
                     except Exception as pkg_e:
                         logger.warning(f"Failed to install {pkg}: {pkg_e}")
 
-        # Final check to see how many packages were actually installed
-        still_missing = 0
-        for pkg in missing:
-            try:
-                subprocess.run(
-                    ["dpkg", "-s", pkg],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except subprocess.CalledProcessError:
-                still_missing += 1
+        # Close our progress if we created it
+        if install_prog:
+            install_prog.update(
+                install_task,
+                description="Installation completed",
+                completed=len(missing),
+            )
+            install_prog.__exit__(None, None, None)
 
-        installed_count = len(missing) - still_missing
+        # Update outer progress to 100% if provided
+        if progress and task_id:
+            progress.update(
+                task_id, description="Package installation completed", completed=100
+            )
+
+        # Final report
         logger.info(
-            f"Successfully installed {installed_count} out of {len(missing)} packages"
+            f"Successfully installed {packages_installed} out of {len(missing)} packages"
         )
 
         # Consider it a success if we installed at least 75% of packages
-        if installed_count >= len(missing) * 0.75:
+        if packages_installed >= len(missing) * 0.75:
             return True
         else:
             logger.warning(
-                f"Only {installed_count}/{len(missing)} packages were installed"
+                f"Only {packages_installed}/{len(missing)} packages were installed"
             )
             return success
 
@@ -1787,7 +2222,7 @@ class UserEnvironment:
 
     def setup_repos(self) -> bool:
         """
-        Clone or update user repositories.
+        Clone or update user repositories with visual progress tracking.
 
         Returns:
             True if successful, False otherwise
@@ -1804,48 +2239,72 @@ class UserEnvironment:
         repos = ["bash", "windows", "web", "python", "go", "misc"]
         all_success = True
 
-        # Clone/update each repository
-        for repo in repos:
-            repo_dir = os.path.join(gh_dir, repo)
+        # Setup progress tracking
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            BarColumn(
+                bar_width=AppConfig.PROGRESS_WIDTH,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.FROST_3}][{{task.completed}}/{{task.total}}]"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Setting up repositories...", total=len(repos))
 
-            if os.path.isdir(os.path.join(repo_dir, ".git")):
-                # Update existing repository
-                try:
-                    run_command(["git", "-C", repo_dir, "pull"])
-                    logger.info(f"Updated repository: {repo}")
-                except Exception as e:
-                    logger.warning(f"Repository update failed for {repo}: {e}")
-                    all_success = False
-            else:
-                # Clone new repository
-                try:
-                    run_command(
-                        [
-                            "git",
-                            "clone",
-                            f"https://github.com/dunamismax/{repo}.git",
-                            repo_dir,
-                        ]
-                    )
-                    logger.info(f"Cloned repository: {repo}")
-                except Exception as e:
-                    logger.warning(f"Repository clone failed for {repo}: {e}")
-                    all_success = False
+            # Clone/update each repository
+            for repo in repos:
+                repo_dir = os.path.join(gh_dir, repo)
+                progress.update(task, description=f"Processing {repo} repository...")
 
-        # Fix ownership
-        try:
-            run_command(
-                ["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", gh_dir]
-            )
-        except Exception as e:
-            logger.warning(f"Ownership update failed for {gh_dir}: {e}")
-            all_success = False
+                if os.path.isdir(os.path.join(repo_dir, ".git")):
+                    # Update existing repository
+                    try:
+                        run_command(["git", "-C", repo_dir, "pull"])
+                        logger.info(f"Updated repository: {repo}")
+                    except Exception as e:
+                        logger.warning(f"Repository update failed for {repo}: {e}")
+                        all_success = False
+                else:
+                    # Clone new repository
+                    try:
+                        run_command(
+                            [
+                                "git",
+                                "clone",
+                                f"https://github.com/dunamismax/{repo}.git",
+                                repo_dir,
+                            ]
+                        )
+                        logger.info(f"Cloned repository: {repo}")
+                    except Exception as e:
+                        logger.warning(f"Repository clone failed for {repo}: {e}")
+                        all_success = False
+
+                progress.advance(task)
+
+            # Fix ownership
+            progress.update(task, description="Setting permissions...")
+            try:
+                run_command(
+                    [
+                        "chown",
+                        "-R",
+                        f"{AppConfig.USERNAME}:{AppConfig.USERNAME}",
+                        gh_dir,
+                    ]
+                )
+            except Exception as e:
+                logger.warning(f"Ownership update failed for {gh_dir}: {e}")
+                all_success = False
 
         return all_success
 
     def copy_shell_configs(self) -> bool:
         """
-        Copy shell configuration files to user and root directories.
+        Copy shell configuration files to user and root directories with progress tracking.
 
         Returns:
             True if successful, False otherwise
@@ -1853,7 +2312,7 @@ class UserEnvironment:
         logger.info("Copying shell configuration files...")
 
         # Files to copy
-        files = [".bashrc", ".profile"]
+        files = [".bashrc", ".profile", ".zshrc", ".bash_aliases"]
 
         # Try different source directories
         src_dir = os.path.join(
@@ -1873,50 +2332,80 @@ class UserEnvironment:
         dest_dirs = [AppConfig.USER_HOME, "/root"]
         all_success = True
 
-        # Copy each file to each destination
-        for file in files:
-            src = os.path.join(src_dir, file)
+        # Calculate total operations for progress tracking
+        total_operations = sum(
+            1
+            for file in files
+            for _ in dest_dirs
+            if os.path.isfile(os.path.join(src_dir, file))
+        )
 
-            if not os.path.isfile(src):
-                logger.debug(f"Source file {src} not found, skipping.")
-                continue
+        # Setup progress tracking
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            BarColumn(
+                bar_width=AppConfig.PROGRESS_WIDTH,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.FROST_3}][{{task.completed}}/{{task.total}}]"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Copying shell configurations...", total=total_operations
+            )
 
-            for d in dest_dirs:
-                dest = os.path.join(d, file)
+            # Copy each file to each destination
+            for file in files:
+                src = os.path.join(src_dir, file)
 
-                # Skip if files are identical
-                copy_needed = True
-                if os.path.isfile(dest) and filecmp.cmp(src, dest):
-                    logger.debug(f"File {dest} is already up to date.")
-                    copy_needed = False
+                if not os.path.isfile(src):
+                    logger.debug(f"Source file {src} not found, skipping.")
+                    continue
 
-                # Backup existing file if needed
-                if copy_needed and os.path.isfile(dest):
-                    Utils.backup_file(dest)
+                for d in dest_dirs:
+                    dest = os.path.join(d, file)
+                    progress.update(
+                        task,
+                        description=f"Processing {file} for {os.path.basename(d)}...",
+                    )
 
-                # Copy file
-                if copy_needed:
-                    try:
-                        shutil.copy2(src, dest)
+                    # Skip if files are identical
+                    copy_needed = True
+                    if os.path.isfile(dest) and filecmp.cmp(src, dest):
+                        logger.debug(f"File {dest} is already up to date.")
+                        copy_needed = False
 
-                        # Set correct ownership
-                        owner = (
-                            f"{AppConfig.USERNAME}:{AppConfig.USERNAME}"
-                            if d == AppConfig.USER_HOME
-                            else "root:root"
-                        )
-                        run_command(["chown", owner, dest])
+                    # Backup existing file if needed
+                    if copy_needed and os.path.isfile(dest):
+                        Utils.backup_file(dest)
 
-                        logger.info(f"Copied {src} to {dest}")
-                    except Exception as e:
-                        logger.warning(f"Failed to copy {src} to {dest}: {e}")
-                        all_success = False
+                    # Copy file
+                    if copy_needed:
+                        try:
+                            shutil.copy2(src, dest)
+
+                            # Set correct ownership
+                            owner = (
+                                f"{AppConfig.USERNAME}:{AppConfig.USERNAME}"
+                                if d == AppConfig.USER_HOME
+                                else "root:root"
+                            )
+                            run_command(["chown", owner, dest])
+
+                            logger.info(f"Copied {src} to {dest}")
+                        except Exception as e:
+                            logger.warning(f"Failed to copy {src} to {dest}: {e}")
+                            all_success = False
+
+                    progress.advance(task)
 
         return all_success
 
     def copy_config_folders(self) -> bool:
         """
-        Synchronize configuration folders to the user's .config directory.
+        Synchronize configuration folders to the user's .config directory with progress tracking.
 
         Returns:
             True if successful, False otherwise
@@ -1943,21 +2432,39 @@ class UserEnvironment:
             dest_dir, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}"
         )
 
-        try:
-            # Synchronize directories
-            run_command(["rsync", "-a", "--update", f"{src_dir}/", f"{dest_dir}/"])
-
-            # Fix ownership
-            run_command(
-                ["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", dest_dir]
+        # Track progress
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Synchronizing configuration folders...", total=None
             )
 
-            logger.info(f"Config folders synchronized to {dest_dir}")
-            return True
+            try:
+                # Synchronize directories
+                progress.update(task, description="Copying configuration files...")
+                run_command(["rsync", "-a", "--update", f"{src_dir}/", f"{dest_dir}/"])
 
-        except Exception as e:
-            logger.error(f"Error copying config folders: {e}")
-            return False
+                # Fix ownership
+                progress.update(task, description="Setting permissions...")
+                run_command(
+                    [
+                        "chown",
+                        "-R",
+                        f"{AppConfig.USERNAME}:{AppConfig.USERNAME}",
+                        dest_dir,
+                    ]
+                )
+
+                logger.info(f"Config folders synchronized to {dest_dir}")
+                return True
+
+            except Exception as e:
+                logger.error(f"Error copying config folders: {e}")
+                return False
 
     def set_default_shell(self) -> bool:
         """
@@ -2014,11 +2521,11 @@ class UserEnvironment:
 # Security Hardening
 # ----------------------------------------------------------------
 class SecurityHardener:
-    """Implements security hardening measures."""
+    """Implements security hardening measures with progress tracking."""
 
     def configure_ssh(self, port: int = 22) -> bool:
         """
-        Secure and configure the SSH service.
+        Secure and configure the SSH service with detailed progress tracking.
 
         Args:
             port: SSH port to use
@@ -2028,84 +2535,106 @@ class SecurityHardener:
         """
         logger.info("Configuring SSH service...")
 
-        # Enable SSH service
-        try:
-            run_command(["systemctl", "enable", "--now", "ssh"])
-        except Exception as e:
-            logger.error(f"Error enabling SSH service: {e}")
-            return False
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Configuring SSH...", total=None)
 
-        # Check SSH config file
-        sshd_config = "/etc/ssh/sshd_config"
-        if not os.path.isfile(sshd_config):
-            logger.error(f"{sshd_config} not found.")
-            return False
+            # Enable SSH service
+            try:
+                progress.update(task, description="Enabling SSH service...")
+                run_command(["systemctl", "enable", "--now", "ssh"])
+            except Exception as e:
+                logger.error(f"Error enabling SSH service: {e}")
+                return False
 
-        # Backup original config
-        Utils.backup_file(sshd_config)
+            # Check SSH config file
+            sshd_config = "/etc/ssh/sshd_config"
+            if not os.path.isfile(sshd_config):
+                logger.error(f"{sshd_config} not found.")
+                return False
 
-        # Security settings to apply
-        ssh_settings = {
-            "Port": str(port),
-            "PermitRootLogin": "no",
-            "PasswordAuthentication": "no",
-            "PermitEmptyPasswords": "no",
-            "ChallengeResponseAuthentication": "no",
-            "Protocol": "2",
-            "MaxAuthTries": "5",
-            "ClientAliveInterval": "600",
-            "ClientAliveCountMax": "48",
-            "X11Forwarding": "no",
-            "PermitUserEnvironment": "no",
-            "DebianBanner": "no",
-            "Banner": "none",
-            "LogLevel": "VERBOSE",
-            "StrictModes": "yes",
-            "AllowAgentForwarding": "yes",
-            "AllowTcpForwarding": "yes",
-        }
+            # Backup original config
+            progress.update(task, description="Backing up SSH configuration...")
+            Utils.backup_file(sshd_config)
 
-        try:
-            # Read existing config
-            with open(sshd_config) as f:
-                lines = f.readlines()
+            # Security settings to apply
+            ssh_settings = {
+                "Port": str(port),
+                "PermitRootLogin": "no",
+                "PasswordAuthentication": "no",
+                "PermitEmptyPasswords": "no",
+                "ChallengeResponseAuthentication": "no",
+                "Protocol": "2",
+                "MaxAuthTries": "5",
+                "ClientAliveInterval": "600",
+                "ClientAliveCountMax": "48",
+                "X11Forwarding": "no",
+                "PermitUserEnvironment": "no",
+                "DebianBanner": "no",
+                "Banner": "none",
+                "LogLevel": "VERBOSE",
+                "StrictModes": "yes",
+                "AllowAgentForwarding": "yes",
+                "AllowTcpForwarding": "yes",
+            }
 
-            # Update or add each setting
-            for key, value in ssh_settings.items():
-                updated = False
+            try:
+                progress.update(task, description="Updating SSH configuration...")
 
-                # Try to update existing setting
-                for i, line in enumerate(lines):
-                    if line.strip().startswith(key):
-                        lines[i] = f"{key} {value}\n"
-                        updated = True
-                        break
+                # Read existing config
+                with open(sshd_config) as f:
+                    lines = f.readlines()
 
-                # Add setting if not found
-                if not updated:
-                    lines.append(f"{key} {value}\n")
+                # Update or add each setting
+                for key, value in ssh_settings.items():
+                    updated = False
 
-            # Write updated config
-            with open(sshd_config, "w") as f:
-                f.writelines(lines)
+                    # Try to update existing setting
+                    for i, line in enumerate(lines):
+                        if line.strip().startswith(key):
+                            lines[i] = f"{key} {value}\n"
+                            updated = True
+                            break
 
-            logger.info("SSH configuration updated successfully.")
+                    # Add setting if not found
+                    if not updated:
+                        lines.append(f"{key} {value}\n")
 
-        except Exception as e:
-            logger.error(f"Error updating SSH config: {e}")
-            return False
+                # Write updated config
+                with open(sshd_config, "w") as f:
+                    f.writelines(lines)
 
-        # Restart SSH service
-        try:
-            run_command(["systemctl", "restart", "ssh"])
-            return True
-        except Exception as e:
-            logger.error(f"Error restarting SSH service: {e}")
-            return False
+                logger.info("SSH configuration updated successfully.")
+
+            except Exception as e:
+                logger.error(f"Error updating SSH config: {e}")
+                return False
+
+            # Restart SSH service
+            try:
+                progress.update(task, description="Restarting SSH service...")
+                run_command(["systemctl", "restart", "ssh"])
+
+                # Verify service is running
+                result = run_command(
+                    ["systemctl", "is-active", "ssh"], capture_output=True
+                )
+                if result.stdout.strip() == "active":
+                    logger.info("SSH service is active after configuration")
+                    return True
+                else:
+                    logger.warning("SSH service is not active after restart")
+                    return False
+            except Exception as e:
+                logger.error(f"Error restarting SSH service: {e}")
+                return False
 
     def setup_sudoers(self) -> bool:
         """
-        Configure sudoers for the designated user.
+        Configure sudoers for the designated user with proper error handling.
 
         Returns:
             True if successful, False otherwise
@@ -2160,7 +2689,7 @@ class SecurityHardener:
 
     def configure_firewall(self) -> bool:
         """
-        Configure the UFW firewall with allowed ports.
+        Configure the UFW firewall with allowed ports and detailed progress indicators.
 
         Returns:
             True if successful, False otherwise
@@ -2174,63 +2703,96 @@ class SecurityHardener:
             if not SystemUpdater().install_packages(["ufw"]):
                 return False
 
-        # Reset firewall rules
-        try:
-            run_command([ufw_cmd, "reset", "--force"], check=False)
-            logger.info("Reset firewall rules")
-        except Exception as e:
-            logger.warning(f"UFW reset failed: {e}, continuing anyway...")
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            BarColumn(
+                bar_width=AppConfig.PROGRESS_WIDTH,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.FROST_3}][{{task.completed}}/{{task.total}}]"),
+            console=console,
+        ) as progress:
+            # Calculate total steps
+            total_steps = (
+                3 + len(AppConfig.ALLOWED_PORTS) + 2
+            )  # reset + policies + ports + logging + enable
+            task = progress.add_task("Configuring firewall...", total=total_steps)
 
-        # Set default policies
-        for cmd in (
-            [ufw_cmd, "default", "deny", "incoming"],
-            [ufw_cmd, "default", "allow", "outgoing"],
-        ):
+            # Reset firewall rules
             try:
-                run_command(cmd)
+                progress.update(task, description="Resetting firewall rules...")
+                run_command([ufw_cmd, "reset", "--force"], check=False)
+                logger.info("Reset firewall rules")
+                progress.advance(task)
             except Exception as e:
-                logger.warning(f"UFW policy setting failed: {e}")
+                logger.warning(f"UFW reset failed: {e}, continuing anyway...")
+                progress.advance(task)
 
-        # Allow specific ports
-        for port in AppConfig.ALLOWED_PORTS:
+            # Set default policies
+            policies = [
+                ["default", "deny", "incoming"],
+                ["default", "allow", "outgoing"],
+            ]
+
+            for i, policy in enumerate(policies):
+                try:
+                    progress.update(
+                        task, description=f"Setting default policy {i + 1}/2..."
+                    )
+                    run_command([ufw_cmd] + policy)
+                    progress.advance(task)
+                except Exception as e:
+                    logger.warning(f"UFW policy setting failed: {e}")
+                    progress.advance(task)
+
+            # Allow specific ports
+            for i, port in enumerate(AppConfig.ALLOWED_PORTS):
+                try:
+                    progress.update(task, description=f"Allowing port {port}...")
+                    run_command([ufw_cmd, "allow", f"{port}/tcp"])
+                    logger.info(f"Allowed TCP port {port}")
+                    progress.advance(task)
+                except Exception as e:
+                    logger.warning(f"UFW rule addition failed for port {port}: {e}")
+                    progress.advance(task)
+
+            # Configure logging and enable firewall
             try:
-                run_command([ufw_cmd, "allow", f"{port}/tcp"])
-                logger.info(f"Allowed TCP port {port}")
+                progress.update(task, description="Enabling UFW logging...")
+                run_command([ufw_cmd, "logging", "on"])
+                progress.advance(task)
+
+                progress.update(task, description="Enabling UFW firewall...")
+                status = run_command([ufw_cmd, "status"], capture_output=True)
+                if "inactive" in status.stdout.lower():
+                    run_command([ufw_cmd, "--force", "enable"])
+                    logger.info("Enabled UFW firewall")
+                progress.advance(task)
+
+                # Configure service to start at boot
+                run_command(["systemctl", "enable", "ufw"])
+                run_command(["systemctl", "restart", "ufw"])
+
+                # Verify firewall is active
+                result = run_command(
+                    ["systemctl", "is-active", "ufw"], capture_output=True
+                )
+                if "active" in result.stdout:
+                    logger.info("UFW firewall configured and active")
+                    return True
+                else:
+                    logger.warning("UFW service is not active after configuration")
+                    return False
+
             except Exception as e:
-                logger.warning(f"UFW rule addition failed for port {port}: {e}")
-
-        # Enable firewall
-        try:
-            status = run_command([ufw_cmd, "status"], capture_output=True)
-            if "inactive" in status.stdout.lower():
-                run_command([ufw_cmd, "--force", "enable"])
-                logger.info("Enabled UFW firewall")
-        except Exception as e:
-            logger.error(f"UFW enable failed: {e}")
-            return False
-
-        # Configure logging and ensure service starts at boot
-        try:
-            run_command([ufw_cmd, "logging", "on"])
-            run_command(["systemctl", "enable", "ufw"])
-            run_command(["systemctl", "restart", "ufw"])
-
-            # Verify firewall is active
-            result = run_command(["systemctl", "is-active", "ufw"], capture_output=True)
-            if "active" in result.stdout:
-                logger.info("UFW firewall configured and active")
-                return True
-            else:
-                logger.warning("UFW service is not active after configuration")
+                logger.error(f"UFW service configuration failed: {e}")
                 return False
-
-        except Exception as e:
-            logger.error(f"UFW service configuration failed: {e}")
-            return False
 
     def configure_fail2ban(self) -> bool:
         """
-        Configure Fail2ban service to protect SSH.
+        Configure Fail2ban service to protect SSH with detailed progress tracking.
 
         Returns:
             True if successful, False otherwise
@@ -2243,53 +2805,69 @@ class SecurityHardener:
             if not SystemUpdater().install_packages(["fail2ban"]):
                 return False
 
-        # Path to jail configuration
-        jail = "/etc/fail2ban/jail.local"
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Configuring Fail2ban...", total=None)
 
-        # Fail2ban configuration
-        config = (
-            "[DEFAULT]\n"
-            "bantime  = 3600\n"
-            "findtime = 600\n"
-            "maxretry = 3\n"
-            "backend  = systemd\n"
-            "usedns   = warn\n\n"
-            "[sshd]\n"
-            "enabled  = true\n"
-            "port     = ssh\n"
-            "filter   = sshd\n"
-            "logpath  = /var/log/auth.log\n"
-            "maxretry = 3\n"
-        )
+            # Path to jail configuration
+            jail = "/etc/fail2ban/jail.local"
 
-        # Backup existing config if needed
-        if os.path.isfile(jail):
-            Utils.backup_file(jail)
-
-        try:
-            # Write configuration
-            with open(jail, "w") as f:
-                f.write(config)
-
-            # Enable and start Fail2ban
-            run_command(["systemctl", "enable", "fail2ban"])
-            run_command(["systemctl", "restart", "fail2ban"])
-
-            # Verify service is active
-            status = run_command(
-                ["systemctl", "is-active", "fail2ban"], capture_output=True
+            # Fail2ban configuration
+            config = (
+                "[DEFAULT]\n"
+                "bantime  = 3600\n"
+                "findtime = 600\n"
+                "maxretry = 3\n"
+                "backend  = systemd\n"
+                "usedns   = warn\n\n"
+                "[sshd]\n"
+                "enabled  = true\n"
+                "port     = ssh\n"
+                "filter   = sshd\n"
+                "logpath  = /var/log/auth.log\n"
+                "maxretry = 3\n"
             )
 
-            if status.stdout.strip() == "active":
-                logger.info("Fail2ban configured and running")
-                return True
-            else:
-                logger.warning("Fail2ban service not active after configuration")
-                return False
+            # Backup existing config if needed
+            if os.path.isfile(jail):
+                progress.update(
+                    task, description="Backing up existing configuration..."
+                )
+                Utils.backup_file(jail)
 
-        except Exception as e:
-            logger.error(f"Fail2ban configuration failed: {e}")
-            return False
+            try:
+                # Write configuration
+                progress.update(task, description="Writing Fail2ban configuration...")
+                with open(jail, "w") as f:
+                    f.write(config)
+
+                # Enable and start Fail2ban
+                progress.update(task, description="Enabling Fail2ban service...")
+                run_command(["systemctl", "enable", "fail2ban"])
+
+                progress.update(task, description="Starting Fail2ban service...")
+                run_command(["systemctl", "restart", "fail2ban"])
+
+                # Verify service is active
+                progress.update(task, description="Verifying Fail2ban service...")
+                status = run_command(
+                    ["systemctl", "is-active", "fail2ban"], capture_output=True
+                )
+
+                if status.stdout.strip() == "active":
+                    logger.info("Fail2ban configured and running")
+                    return True
+                else:
+                    logger.warning("Fail2ban service not active after configuration")
+                    return False
+
+            except Exception as e:
+                logger.error(f"Fail2ban configuration failed: {e}")
+                return False
 
     def configure_apparmor(self) -> bool:
         """
@@ -2300,49 +2878,65 @@ class SecurityHardener:
         """
         logger.info("Configuring AppArmor...")
 
-        try:
-            # Install AppArmor if missing
-            if not SystemUpdater().install_packages(["apparmor", "apparmor-utils"]):
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Configuring AppArmor...", total=None)
+
+            try:
+                # Install AppArmor if missing
+                progress.update(task, description="Installing AppArmor packages...")
+                if not SystemUpdater().install_packages(["apparmor", "apparmor-utils"]):
+                    return False
+
+                # Enable and start AppArmor
+                progress.update(task, description="Enabling AppArmor service...")
+                run_command(["systemctl", "enable", "apparmor"])
+
+                progress.update(task, description="Starting AppArmor service...")
+                run_command(["systemctl", "start", "apparmor"])
+
+                # Verify service is active
+                progress.update(task, description="Verifying AppArmor service...")
+                status = run_command(
+                    ["systemctl", "is-active", "apparmor"], capture_output=True
+                )
+
+                if status.stdout.strip() == "active":
+                    # Update profiles if possible
+                    if Utils.command_exists("aa-update-profiles"):
+                        try:
+                            progress.update(
+                                task, description="Updating AppArmor profiles..."
+                            )
+                            run_command(["aa-update-profiles"], check=False)
+                            logger.info("Updated AppArmor profiles")
+                        except Exception as e:
+                            logger.warning(f"AppArmor profile update failed: {e}")
+
+                    logger.info("AppArmor configured and running")
+                    return True
+                else:
+                    logger.warning("AppArmor service not active after configuration")
+                    return False
+
+            except Exception as e:
+                logger.error(f"AppArmor configuration failed: {e}")
                 return False
-
-            # Enable and start AppArmor
-            run_command(["systemctl", "enable", "apparmor"])
-            run_command(["systemctl", "start", "apparmor"])
-
-            # Verify service is active
-            status = run_command(
-                ["systemctl", "is-active", "apparmor"], capture_output=True
-            )
-
-            if status.stdout.strip() == "active":
-                # Update profiles if possible
-                if Utils.command_exists("aa-update-profiles"):
-                    try:
-                        run_command(["aa-update-profiles"], check=False)
-                        logger.info("Updated AppArmor profiles")
-                    except Exception as e:
-                        logger.warning(f"AppArmor profile update failed: {e}")
-
-                logger.info("AppArmor configured and running")
-                return True
-            else:
-                logger.warning("AppArmor service not active after configuration")
-                return False
-
-        except Exception as e:
-            logger.error(f"AppArmor configuration failed: {e}")
-            return False
 
 
 # ----------------------------------------------------------------
 # Service Installation and Configuration
 # ----------------------------------------------------------------
 class ServiceInstaller:
-    """Installs and configures system services."""
+    """Installs and configures system services with progress visualization."""
 
     def install_nala(self) -> bool:
         """
-        Install the Nala APT frontend.
+        Install the Nala APT frontend with robust error handling and retries.
 
         Returns:
             True if successful, False otherwise
@@ -2354,136 +2948,160 @@ class ServiceInstaller:
             logger.info("Nala is already installed.")
             return True
 
-        # Fix APT sources to temporarily bypass security repository error
-        try:
-            sources_list = "/etc/apt/sources.list"
-            if os.path.exists(sources_list):
-                # Create backup of original sources.list
-                backup_file = Utils.backup_file(sources_list)
-                logger.info(f"Backed up sources.list to {backup_file}")
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Installing Nala...", total=None)
 
-                # Read current content
-                with open(sources_list, "r") as f:
-                    content = f.readlines()
+            # Fix APT sources to temporarily bypass security repository error
+            try:
+                sources_list = "/etc/apt/sources.list"
+                if os.path.exists(sources_list):
+                    # Create backup of original sources.list
+                    progress.update(task, description="Backing up APT sources...")
+                    backup_file = Utils.backup_file(sources_list)
+                    logger.info(f"Backed up sources.list to {backup_file}")
 
-                # Comment out the problematic trixie-security line
-                with open(sources_list, "w") as f:
-                    for line in content:
-                        if "trixie-security" in line and not line.strip().startswith(
-                            "#"
-                        ):
-                            f.write(f"# {line}")
-                            logger.info(
-                                "Temporarily commented out trixie-security repository"
-                            )
-                        else:
-                            f.write(line)
+                    # Read current content
+                    with open(sources_list, "r") as f:
+                        content = f.readlines()
 
-            logger.info("Modified sources.list to avoid security repository errors")
-        except Exception as e:
-            logger.warning(f"Failed to modify sources.list: {e}")
+                    # Comment out the problematic trixie-security line
+                    progress.update(task, description="Adjusting APT sources...")
+                    with open(sources_list, "w") as f:
+                        for line in content:
+                            if (
+                                "trixie-security" in line
+                                and not line.strip().startswith("#")
+                            ):
+                                f.write(f"# {line}")
+                                logger.info(
+                                    "Temporarily commented out trixie-security repository"
+                                )
+                            else:
+                                f.write(line)
 
-        # Method 1: Install via APT
-        try:
-            # Update repositories (with reduced output to avoid errors)
-            result = run_command(["apt", "update", "-qq"], check=False)
-            if result.returncode != 0:
-                logger.warning(
-                    "APT update had errors, but continuing with installation"
+                logger.info("Modified sources.list to avoid security repository errors")
+            except Exception as e:
+                logger.warning(f"Failed to modify sources.list: {e}")
+
+            # Method 1: Install via APT
+            try:
+                # Update repositories (with reduced output to avoid errors)
+                progress.update(task, description="Updating APT repositories...")
+                result = run_command(["apt", "update", "-qq"], check=False)
+                if result.returncode != 0:
+                    logger.warning(
+                        "APT update had errors, but continuing with installation"
+                    )
+
+                # Install Nala with minimal dependencies
+                progress.update(task, description="Installing Nala package...")
+                run_command(["apt", "install", "nala", "-y", "--no-install-recommends"])
+
+                # Verify installation
+                if Utils.command_exists("nala"):
+                    logger.info("Nala installed successfully via apt")
+                    return True
+            except Exception as e:
+                logger.warning(f"Standard installation failed: {e}")
+
+            # Method 2: Direct download fallback
+            try:
+                progress.update(task, description="Trying direct download method...")
+                temp_dir = tempfile.mkdtemp(prefix="nala_install_")
+                temp_deb = os.path.join(temp_dir, "nala.deb")
+
+                # Download nala directly from Debian package repository
+                download_urls = [
+                    "http://ftp.us.debian.org/debian/pool/main/n/nala/nala_0.14.0_all.deb",
+                    "http://deb.debian.org/debian/pool/main/n/nala/nala_0.14.0_all.deb",
+                ]
+
+                for url in download_urls:
+                    try:
+                        progress.update(
+                            task, description=f"Downloading Nala from {url}..."
+                        )
+                        logger.info(f"Downloading Nala from {url}")
+                        run_command(["wget", "-q", url, "-O", temp_deb])
+                        if os.path.exists(temp_deb) and os.path.getsize(temp_deb) > 0:
+                            break
+                    except Exception:
+                        continue
+
+                if not os.path.exists(temp_deb) or os.path.getsize(temp_deb) == 0:
+                    raise Exception("Failed to download Nala package")
+
+                # Install dependencies
+                progress.update(task, description="Installing required dependencies...")
+                run_command(
+                    [
+                        "apt",
+                        "install",
+                        "-y",
+                        "--no-install-recommends",
+                        "python3-apt",
+                        "python3-debian",
+                        "apt-utils",
+                        "python3",
+                    ]
                 )
 
-            # Install Nala with minimal dependencies
-            run_command(["apt", "install", "nala", "-y", "--no-install-recommends"])
+                # Install the package
+                progress.update(task, description="Installing Nala package...")
+                run_command(["dpkg", "-i", temp_deb])
+                run_command(["apt", "install", "-f", "-y"])
 
-            # Verify installation
-            if Utils.command_exists("nala"):
-                logger.info("Nala installed successfully via apt")
-                return True
-        except Exception as e:
-            logger.warning(f"Standard installation failed: {e}")
-
-        # Method 2: Direct download fallback
-        try:
-            logger.info("Trying direct download method for Nala...")
-            temp_dir = tempfile.mkdtemp(prefix="nala_install_")
-            temp_deb = os.path.join(temp_dir, "nala.deb")
-
-            # Download nala directly from Debian package repository
-            download_urls = [
-                "http://ftp.us.debian.org/debian/pool/main/n/nala/nala_0.14.0_all.deb",
-                "http://deb.debian.org/debian/pool/main/n/nala/nala_0.14.0_all.deb",
-            ]
-
-            for url in download_urls:
-                try:
-                    logger.info(f"Downloading Nala from {url}")
-                    run_command(["wget", "-q", url, "-O", temp_deb])
-                    if os.path.exists(temp_deb) and os.path.getsize(temp_deb) > 0:
-                        break
-                except Exception:
-                    continue
-
-            if not os.path.exists(temp_deb) or os.path.getsize(temp_deb) == 0:
-                raise Exception("Failed to download Nala package")
-
-            # Install dependencies
-            run_command(
-                [
-                    "apt",
-                    "install",
-                    "-y",
-                    "--no-install-recommends",
-                    "python3-apt",
-                    "python3-debian",
-                    "apt-utils",
-                    "python3",
-                ]
-            )
-
-            # Install the package
-            run_command(["dpkg", "-i", temp_deb])
-            run_command(["apt", "install", "-y"])
-
-            # Clean up
-            shutil.rmtree(temp_dir, ignore_errors=True)
-
-            # Verify installation
-            if Utils.command_exists("nala"):
-                logger.info("Nala installed successfully via direct download")
-                return True
-            else:
-                logger.error("Nala installation failed after direct download")
-                return False
-
-        except Exception as e:
-            logger.error(f"Nala installation failed completely: {e}")
-
-            # Clean up any temp files
-            if "temp_dir" in locals():
+                # Clean up
+                progress.update(task, description="Cleaning up...")
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-            # Restore original sources.list if we modified it
-            try:
-                sources_backup = f"{sources_list}.bak."
-                newest_backup = None
-                newest_time = 0
+                # Verify installation
+                if Utils.command_exists("nala"):
+                    logger.info("Nala installed successfully via direct download")
+                    return True
+                else:
+                    logger.error("Nala installation failed after direct download")
+                    return False
 
-                # Find the most recent backup
-                for f in os.listdir(os.path.dirname(sources_list)):
-                    if f.startswith(os.path.basename(sources_list) + ".bak."):
-                        full_path = os.path.join(os.path.dirname(sources_list), f)
-                        file_time = os.path.getmtime(full_path)
-                        if file_time > newest_time:
-                            newest_time = file_time
-                            newest_backup = full_path
+            except Exception as e:
+                logger.error(f"Nala installation failed completely: {e}")
 
-                if newest_backup:
-                    shutil.copy2(newest_backup, sources_list)
-                    logger.info(f"Restored original sources.list from {newest_backup}")
-            except Exception as restore_err:
-                logger.warning(f"Failed to restore sources.list: {restore_err}")
+                # Clean up any temp files
+                if "temp_dir" in locals():
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
-            return False
+                # Restore original sources.list if we modified it
+                try:
+                    progress.update(
+                        task, description="Restoring original sources.list..."
+                    )
+                    sources_backup = f"{sources_list}.bak."
+                    newest_backup = None
+                    newest_time = 0
+
+                    # Find the most recent backup
+                    for f in os.listdir(os.path.dirname(sources_list)):
+                        if f.startswith(os.path.basename(sources_list) + ".bak."):
+                            full_path = os.path.join(os.path.dirname(sources_list), f)
+                            file_time = os.path.getmtime(full_path)
+                            if file_time > newest_time:
+                                newest_time = file_time
+                                newest_backup = full_path
+
+                    if newest_backup:
+                        shutil.copy2(newest_backup, sources_list)
+                        logger.info(
+                            f"Restored original sources.list from {newest_backup}"
+                        )
+                except Exception as restore_err:
+                    logger.warning(f"Failed to restore sources.list: {restore_err}")
+
+                return False
 
     def install_fastfetch(self) -> bool:
         """
@@ -2499,247 +3117,306 @@ class ServiceInstaller:
             logger.info("Fastfetch is already installed.")
             return True
 
-        # Download path
-        temp_deb = os.path.join(AppConfig.TEMP_DIR, "fastfetch-linux-amd64.deb")
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Installing Fastfetch...", total=None)
 
-        try:
-            # Download package
-            run_command(
-                [
-                    "curl",
-                    "-L",
-                    "-o",
-                    temp_deb,
-                    "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-linux-amd64.deb",
-                ]
-            )
+            # Download path
+            temp_deb = os.path.join(AppConfig.TEMP_DIR, "fastfetch-linux-amd64.deb")
 
-            # Install package
-            run_command(["dpkg", "-i", temp_deb])
+            try:
+                # Download package
+                progress.update(task, description="Downloading Fastfetch package...")
+                run_command(
+                    [
+                        "curl",
+                        "-L",
+                        "-o",
+                        temp_deb,
+                        "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-linux-amd64.deb",
+                    ]
+                )
 
-            # Fix dependencies
-            apt_cmd = Utils.get_apt_command()
-            run_command([apt_cmd, "install", "-f", "-y"])
+                # Install package
+                progress.update(task, description="Installing Fastfetch package...")
+                run_command(["dpkg", "-i", temp_deb])
 
-            # Clean up
-            if os.path.exists(temp_deb):
-                os.remove(temp_deb)
+                # Fix dependencies
+                progress.update(task, description="Resolving dependencies...")
+                apt_cmd = Utils.get_apt_command()
+                run_command([apt_cmd, "install", "-f", "-y"])
 
-            # Verify installation
-            success = Utils.command_exists("fastfetch")
+                # Clean up
+                if os.path.exists(temp_deb):
+                    os.remove(temp_deb)
 
-            if success:
-                logger.info("Fastfetch installed successfully")
-            else:
-                logger.error("Fastfetch installation failed")
+                # Verify installation
+                success = Utils.command_exists("fastfetch")
 
-            return success
+                if success:
+                    logger.info("Fastfetch installed successfully")
+                else:
+                    logger.error("Fastfetch installation failed")
 
-        except Exception as e:
-            logger.error(f"Fastfetch installation error: {e}")
-            return False
+                return success
+
+            except Exception as e:
+                logger.error(f"Fastfetch installation error: {e}")
+                if os.path.exists(temp_deb):
+                    os.remove(temp_deb)
+                return False
 
     def docker_config(self) -> bool:
         """
-        Install and configure Docker.
+        Install and configure Docker with detailed visual progress.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Configuring Docker...")
 
-        # Install Docker if missing
-        if not Utils.command_exists("docker"):
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Configuring Docker...", total=None)
+
+            # Install Docker if missing
+            if not Utils.command_exists("docker"):
+                try:
+                    # Use official install script
+                    progress.update(task, description="Installing Docker...")
+                    logger.info("Docker not found, installing...")
+                    script_path = os.path.join(AppConfig.TEMP_DIR, "get-docker.sh")
+
+                    run_command(
+                        ["curl", "-fsSL", "https://get.docker.com", "-o", script_path]
+                    )
+                    os.chmod(script_path, 0o755)
+                    run_command([script_path])
+                    os.remove(script_path)
+
+                    logger.info("Docker installed via official script")
+                except Exception as e:
+                    logger.warning(f"Docker script installation failed: {e}")
+                    progress.update(task, description="Trying package installation...")
+                    logger.info("Trying package installation...")
+
+                    # Fall back to package installation
+                    if not SystemUpdater().install_packages(["docker.io"]):
+                        return False
+
+            # Add user to docker group
             try:
-                # Use official install script
-                logger.info("Docker not found, installing...")
-                script_path = os.path.join(AppConfig.TEMP_DIR, "get-docker.sh")
+                progress.update(task, description="Configuring Docker permissions...")
+                groups = subprocess.check_output(
+                    ["id", "-nG", AppConfig.USERNAME], text=True
+                ).split()
 
-                run_command(
-                    ["curl", "-fsSL", "https://get.docker.com", "-o", script_path]
-                )
-                os.chmod(script_path, 0o755)
-                run_command([script_path])
-                os.remove(script_path)
-
-                logger.info("Docker installed via official script")
+                if "docker" not in groups:
+                    run_command(["usermod", "-aG", "docker", AppConfig.USERNAME])
+                    logger.info(f"Added {AppConfig.USERNAME} to docker group")
             except Exception as e:
-                logger.warning(f"Docker script installation failed: {e}")
-                logger.info("Trying package installation...")
+                logger.warning(f"Failed to update docker group: {e}")
 
-                # Fall back to package installation
-                if not SystemUpdater().install_packages(["docker.io"]):
-                    return False
+            # Configure daemon settings
+            progress.update(task, description="Configuring Docker daemon...")
+            daemon_json = "/etc/docker/daemon.json"
+            os.makedirs("/etc/docker", exist_ok=True)
 
-        # Add user to docker group
-        try:
-            groups = subprocess.check_output(
-                ["id", "-nG", AppConfig.USERNAME], text=True
-            ).split()
+            daemon_config = {
+                "log-driver": "json-file",
+                "log-opts": {"max-size": "10m", "max-file": "3"},
+                "exec-opts": ["native.cgroupdriver=systemd"],
+                "storage-driver": "overlay2",
+                "features": {"buildkit": True},
+                "default-address-pools": [{"base": "172.17.0.0/16", "size": 24}],
+            }
 
-            if "docker" not in groups:
-                run_command(["usermod", "-aG", "docker", AppConfig.USERNAME])
-                logger.info(f"Added {AppConfig.USERNAME} to docker group")
-        except Exception as e:
-            logger.warning(f"Failed to update docker group: {e}")
+            daemon_content = json.dumps(daemon_config, indent=4)
 
-        # Configure daemon settings
-        daemon_json = "/etc/docker/daemon.json"
-        os.makedirs("/etc/docker", exist_ok=True)
+            # Check if config update is needed
+            update_needed = True
+            if os.path.isfile(daemon_json):
+                try:
+                    with open(daemon_json) as f:
+                        existing = json.load(f)
 
-        daemon_config = {
-            "log-driver": "json-file",
-            "log-opts": {"max-size": "10m", "max-file": "3"},
-            "exec-opts": ["native.cgroupdriver=systemd"],
-            "storage-driver": "overlay2",
-            "features": {"buildkit": True},
-            "default-address-pools": [{"base": "172.17.0.0/16", "size": 24}],
-        }
+                    if existing == daemon_config:
+                        update_needed = False
+                        logger.info("Docker daemon config is already up to date")
+                    else:
+                        Utils.backup_file(daemon_json)
+                except Exception as e:
+                    logger.warning(f"Failed to read docker daemon config: {e}")
 
-        daemon_content = json.dumps(daemon_config, indent=4)
+            # Update config if needed
+            if update_needed:
+                try:
+                    with open(daemon_json, "w") as f:
+                        f.write(daemon_content)
+                    logger.info("Updated Docker daemon configuration")
+                except Exception as e:
+                    logger.warning(f"Failed to update docker daemon config: {e}")
 
-        # Check if config update is needed
-        update_needed = True
-        if os.path.isfile(daemon_json):
+            # Enable and restart Docker
             try:
-                with open(daemon_json) as f:
-                    existing = json.load(f)
+                progress.update(task, description="Enabling Docker service...")
+                run_command(["systemctl", "enable", "docker"])
 
-                if existing == daemon_config:
-                    update_needed = False
-                    logger.info("Docker daemon config is already up to date")
-                else:
-                    Utils.backup_file(daemon_json)
+                progress.update(task, description="Restarting Docker service...")
+                run_command(["systemctl", "restart", "docker"])
             except Exception as e:
-                logger.warning(f"Failed to read docker daemon config: {e}")
+                logger.error(f"Failed to restart Docker: {e}")
+                return False
 
-        # Update config if needed
-        if update_needed:
+            # Install docker-compose if missing
+            if not Utils.command_exists("docker-compose"):
+                try:
+                    progress.update(task, description="Installing Docker Compose...")
+                    apt_cmd = Utils.get_apt_command()
+                    run_command([apt_cmd, "install", "docker-compose-plugin", "-y"])
+                    logger.info("Docker Compose plugin installed")
+                except Exception as e:
+                    logger.warning(f"Docker Compose installation failed: {e}")
+
+            # Verify Docker is running
             try:
-                with open(daemon_json, "w") as f:
-                    f.write(daemon_content)
-                logger.info("Updated Docker daemon configuration")
+                progress.update(task, description="Verifying Docker installation...")
+                run_command(["docker", "info"], capture_output=True)
+                logger.info("Docker is configured and running")
+                return True
             except Exception as e:
-                logger.warning(f"Failed to update docker daemon config: {e}")
-
-        # Enable and restart Docker
-        try:
-            run_command(["systemctl", "enable", "docker"])
-            run_command(["systemctl", "restart", "docker"])
-        except Exception as e:
-            logger.error(f"Failed to restart Docker: {e}")
-            return False
-
-        # Install docker-compose if missing
-        if not Utils.command_exists("docker-compose"):
-            try:
-                apt_cmd = Utils.get_apt_command()
-                run_command([apt_cmd, "install", "docker-compose-plugin", "-y"])
-                logger.info("Docker Compose plugin installed")
-            except Exception as e:
-                logger.warning(f"Docker Compose installation failed: {e}")
-
-        # Verify Docker is running
-        try:
-            run_command(["docker", "info"], capture_output=True)
-            logger.info("Docker is configured and running")
-            return True
-        except Exception as e:
-            logger.error(f"Docker verification failed: {e}")
-            return False
+                logger.error(f"Docker verification failed: {e}")
+                return False
 
     def install_enable_tailscale(self) -> bool:
         """
-        Install and enable Tailscale.
+        Install and enable Tailscale with visual progress tracking.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Installing and enabling Tailscale...")
 
-        # Skip if already installed
-        if Utils.command_exists("tailscale"):
-            logger.info("Tailscale is already installed")
-        else:
-            try:
-                # Install using official script
-                run_command(
-                    ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]
-                )
-                logger.info("Tailscale installed")
-            except Exception as e:
-                logger.error(f"Tailscale installation failed: {e}")
-                return False
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Configuring Tailscale...", total=None)
 
-        # Enable and start service
-        try:
-            run_command(["systemctl", "enable", "tailscaled"])
-            run_command(["systemctl", "start", "tailscaled"])
-
-            # Verify service is running
-            status = run_command(
-                ["systemctl", "is-active", "tailscaled"], capture_output=True
-            )
-
-            if status.stdout.strip() == "active":
-                logger.info("Tailscale daemon is running")
-                return True
+            # Skip if already installed
+            if Utils.command_exists("tailscale"):
+                logger.info("Tailscale is already installed")
+                progress.update(task, description="Tailscale already installed")
             else:
-                logger.warning("Tailscale daemon is not active after configuration")
-                # Consider it success if the binary is available
-                return Utils.command_exists("tailscale")
+                try:
+                    # Install using official script
+                    progress.update(task, description="Installing Tailscale...")
+                    run_command(
+                        ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]
+                    )
+                    logger.info("Tailscale installed")
+                except Exception as e:
+                    logger.error(f"Tailscale installation failed: {e}")
+                    return False
 
-        except Exception as e:
-            logger.error(f"Tailscale service configuration failed: {e}")
-            return Utils.command_exists("tailscale")
+            # Enable and start service
+            try:
+                progress.update(task, description="Enabling Tailscale service...")
+                run_command(["systemctl", "enable", "tailscaled"])
+
+                progress.update(task, description="Starting Tailscale service...")
+                run_command(["systemctl", "start", "tailscaled"])
+
+                # Verify service is running
+                progress.update(task, description="Verifying Tailscale service...")
+                status = run_command(
+                    ["systemctl", "is-active", "tailscaled"], capture_output=True
+                )
+
+                if status.stdout.strip() == "active":
+                    logger.info("Tailscale daemon is running")
+                    return True
+                else:
+                    logger.warning("Tailscale daemon is not active after configuration")
+                    # Consider it success if the binary is available
+                    return Utils.command_exists("tailscale")
+
+            except Exception as e:
+                logger.error(f"Tailscale service configuration failed: {e}")
+                return Utils.command_exists("tailscale")
 
     def deploy_user_scripts(self) -> bool:
         """
-        Deploy user scripts to the user's bin directory.
+        Deploy user scripts to the user's bin directory with visual progress tracking.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Deploying user scripts...")
 
-        # Try different source directories
-        src = os.path.join(
-            AppConfig.USER_HOME, "github", "bash", "linux", "debian", "_scripts"
-        )
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Deploying user scripts...", total=None)
 
-        if not os.path.isdir(src):
+            # Try different source directories
             src = os.path.join(
-                AppConfig.USER_HOME, "github", "bash", "linux", "ubuntu", "_scripts"
+                AppConfig.USER_HOME, "github", "bash", "linux", "debian", "_scripts"
             )
 
-        if not os.path.isdir(src):
-            logger.warning("Scripts source directory not found")
-            return False
+            if not os.path.isdir(src):
+                src = os.path.join(
+                    AppConfig.USER_HOME, "github", "bash", "linux", "ubuntu", "_scripts"
+                )
 
-        # Target directory
-        tgt = os.path.join(AppConfig.USER_HOME, "bin")
+            if not os.path.isdir(src):
+                logger.warning("Scripts source directory not found")
+                return False
 
-        # Ensure target directory exists
-        Utils.ensure_directory(tgt, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}")
+            # Target directory
+            tgt = os.path.join(AppConfig.USER_HOME, "bin")
 
-        try:
-            # Synchronize scripts
-            run_command(["rsync", "-ah", "--delete", f"{src}/", f"{tgt}/"])
-
-            # Make scripts executable
-            run_command(["find", tgt, "-type", "f", "-exec", "chmod", "755", "{}", ";"])
-
-            # Fix ownership
-            run_command(
-                ["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", tgt]
+            # Ensure target directory exists
+            progress.update(task, description="Creating bin directory...")
+            Utils.ensure_directory(
+                tgt, owner=f"{AppConfig.USERNAME}:{AppConfig.USERNAME}"
             )
 
-            logger.info(f"User scripts deployed to {tgt}")
-            return True
+            try:
+                # Synchronize scripts
+                progress.update(task, description="Copying scripts...")
+                run_command(["rsync", "-ah", "--delete", f"{src}/", f"{tgt}/"])
 
-        except Exception as e:
-            logger.error(f"Failed to deploy user scripts: {e}")
-            return False
+                # Make scripts executable
+                progress.update(task, description="Setting permissions...")
+                run_command(
+                    ["find", tgt, "-type", "f", "-exec", "chmod", "755", "{}", ";"]
+                )
+
+                # Fix ownership
+                run_command(
+                    ["chown", "-R", f"{AppConfig.USERNAME}:{AppConfig.USERNAME}", tgt]
+                )
+
+                logger.info(f"User scripts deployed to {tgt}")
+                return True
+
+            except Exception as e:
+                logger.error(f"Failed to deploy user scripts: {e}")
+                return False
 
     def configure_unattended_upgrades(self) -> bool:
         """
@@ -2750,79 +3427,101 @@ class ServiceInstaller:
         """
         logger.info("Configuring unattended upgrades...")
 
-        try:
-            # Install required packages
-            apt_cmd = Utils.get_apt_command()
-            if not SystemUpdater().install_packages(
-                ["unattended-upgrades", "apt-listchanges"]
-            ):
-                return False
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Configuring unattended upgrades...", total=None)
 
-            # Configure automatic upgrades
-            auto_file = "/etc/apt/apt.conf.d/20auto-upgrades"
-            auto_content = (
-                'APT::Periodic::Update-Package-Lists "1";\n'
-                'APT::Periodic::Unattended-Upgrade "1";\n'
-                'APT::Periodic::AutocleanInterval "7";\n'
-                'APT::Periodic::Download-Upgradeable-Packages "1";\n'
-            )
+            try:
+                # Install required packages
+                progress.update(task, description="Installing required packages...")
+                apt_cmd = Utils.get_apt_command()
+                if not SystemUpdater().install_packages(
+                    ["unattended-upgrades", "apt-listchanges"]
+                ):
+                    return False
 
-            with open(auto_file, "w") as f:
-                f.write(auto_content)
-
-            # Configure unattended upgrades settings
-            unattended_file = "/etc/apt/apt.conf.d/50unattended-upgrades"
-
-            if os.path.isfile(unattended_file):
-                Utils.backup_file(unattended_file)
-
-            unattended_content = (
-                "Unattended-Upgrade::Allowed-Origins {\n"
-                '    "${distro_id}:${distro_codename}";\n'
-                '    "${distro_id}:${distro_codename}-security";\n'
-                '    "${distro_id}:${distro_codename}-updates";\n'
-                "};\n\n"
-                "Unattended-Upgrade::Package-Blacklist {\n"
-                "};\n\n"
-                'Unattended-Upgrade::DevRelease "false";\n'
-                'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";\n'
-                'Unattended-Upgrade::Remove-Unused-Dependencies "true";\n'
-                'Unattended-Upgrade::Automatic-Reboot "false";\n'
-                'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
-                'Unattended-Upgrade::SyslogEnable "true";\n'
-            )
-
-            with open(unattended_file, "w") as f:
-                f.write(unattended_content)
-
-            # Enable and start service
-            run_command(["systemctl", "enable", "unattended-upgrades"])
-            run_command(["systemctl", "restart", "unattended-upgrades"])
-
-            # Verify service is running
-            status = run_command(
-                ["systemctl", "is-active", "unattended-upgrades"], capture_output=True
-            )
-
-            if status.stdout.strip() == "active":
-                logger.info("Unattended upgrades configured and running")
-                return True
-            else:
-                logger.warning(
-                    "Unattended upgrades service not active after configuration"
+                # Configure automatic upgrades
+                progress.update(task, description="Configuring automatic upgrades...")
+                auto_file = "/etc/apt/apt.conf.d/20auto-upgrades"
+                auto_content = (
+                    'APT::Periodic::Update-Package-Lists "1";\n'
+                    'APT::Periodic::Unattended-Upgrade "1";\n'
+                    'APT::Periodic::AutocleanInterval "7";\n'
+                    'APT::Periodic::Download-Upgradeable-Packages "1";\n'
                 )
-                return False
 
-        except Exception as e:
-            logger.error(f"Unattended upgrades configuration failed: {e}")
-            return False
+                with open(auto_file, "w") as f:
+                    f.write(auto_content)
+
+                # Configure unattended upgrades settings
+                progress.update(
+                    task, description="Writing unattended upgrades configuration..."
+                )
+                unattended_file = "/etc/apt/apt.conf.d/50unattended-upgrades"
+
+                if os.path.isfile(unattended_file):
+                    Utils.backup_file(unattended_file)
+
+                unattended_content = (
+                    "Unattended-Upgrade::Allowed-Origins {\n"
+                    '    "${distro_id}:${distro_codename}";\n'
+                    '    "${distro_id}:${distro_codename}-security";\n'
+                    '    "${distro_id}:${distro_codename}-updates";\n'
+                    "};\n\n"
+                    "Unattended-Upgrade::Package-Blacklist {\n"
+                    "};\n\n"
+                    'Unattended-Upgrade::DevRelease "false";\n'
+                    'Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";\n'
+                    'Unattended-Upgrade::Remove-Unused-Dependencies "true";\n'
+                    'Unattended-Upgrade::Automatic-Reboot "false";\n'
+                    'Unattended-Upgrade::Automatic-Reboot-Time "02:00";\n'
+                    'Unattended-Upgrade::SyslogEnable "true";\n'
+                )
+
+                with open(unattended_file, "w") as f:
+                    f.write(unattended_content)
+
+                # Enable and start service
+                progress.update(
+                    task, description="Enabling unattended upgrades service..."
+                )
+                run_command(["systemctl", "enable", "unattended-upgrades"])
+
+                progress.update(
+                    task, description="Starting unattended upgrades service..."
+                )
+                run_command(["systemctl", "restart", "unattended-upgrades"])
+
+                # Verify service is running
+                progress.update(task, description="Verifying service status...")
+                status = run_command(
+                    ["systemctl", "is-active", "unattended-upgrades"],
+                    capture_output=True,
+                )
+
+                if status.stdout.strip() == "active":
+                    logger.info("Unattended upgrades configured and running")
+                    return True
+                else:
+                    logger.warning(
+                        "Unattended upgrades service not active after configuration"
+                    )
+                    return False
+
+            except Exception as e:
+                logger.error(f"Unattended upgrades configuration failed: {e}")
+                return False
 
 
 # ----------------------------------------------------------------
 # Maintenance Manager
 # ----------------------------------------------------------------
 class MaintenanceManager:
-    """Manages system maintenance tasks."""
+    """Manages system maintenance tasks with visual progress tracking."""
 
     def configure_periodic(self) -> bool:
         """
@@ -2833,24 +3532,33 @@ class MaintenanceManager:
         """
         logger.info("Setting up daily maintenance cron job...")
 
-        # Cron job file path
-        cron_file = "/etc/cron.daily/debian_maintenance"
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Setting up maintenance cron job...", total=None)
 
-        # Marker to identify our script
-        marker = "# Debian maintenance script"
+            # Cron job file path
+            cron_file = "/etc/cron.daily/debian_maintenance"
 
-        # Check if script already exists
-        if os.path.isfile(cron_file):
-            with open(cron_file) as f:
-                if marker in f.read():
-                    logger.info("Maintenance cron job already exists")
-                    return True
+            # Marker to identify our script
+            marker = "# Debian maintenance script"
 
-            # Backup existing file
-            Utils.backup_file(cron_file)
+            # Check if script already exists
+            if os.path.isfile(cron_file):
+                progress.update(task, description="Checking existing cron job...")
+                with open(cron_file) as f:
+                    if marker in f.read():
+                        logger.info("Maintenance cron job already exists")
+                        return True
 
-        # Script content
-        content = f"""#!/bin/sh
+                # Backup existing file
+                Utils.backup_file(cron_file)
+
+            # Script content
+            content = f"""#!/bin/sh
 {marker}
 LOG="/var/log/daily_maintenance.log"
 echo "--- Daily Maintenance $(date) ---" >> $LOG
@@ -2885,250 +3593,329 @@ free -h >> $LOG 2>&1
 echo "Maintenance completed $(date)" >> $LOG
 """
 
-        try:
-            # Write script
-            with open(cron_file, "w") as f:
-                f.write(content)
+            try:
+                # Write script
+                progress.update(task, description="Creating maintenance script...")
+                with open(cron_file, "w") as f:
+                    f.write(content)
 
-            # Make executable
-            os.chmod(cron_file, 0o755)
+                # Make executable
+                os.chmod(cron_file, 0o755)
 
-            logger.info("Daily maintenance cron job configured")
-            return True
+                logger.info("Daily maintenance cron job configured")
+                return True
 
-        except Exception as e:
-            logger.error(f"Failed to create maintenance cron job: {e}")
-            return False
+            except Exception as e:
+                logger.error(f"Failed to create maintenance cron job: {e}")
+                return False
 
     def backup_configs(self) -> bool:
         """
-        Backup important configuration files.
+        Backup important configuration files with visual progress tracking.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Backing up configuration files...")
 
-        # Create backup directory with timestamp
-        ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        backup_dir = os.path.join(AppConfig.BACKUP_DIR, f"debian_config_{ts}")
-        os.makedirs(backup_dir, exist_ok=True)
+        # Calculate total files for progress tracking
+        total_files = sum(1 for file in AppConfig.CONFIG_FILES if os.path.isfile(file))
 
-        success = True
-        files_backed_up = 0
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            BarColumn(
+                bar_width=AppConfig.PROGRESS_WIDTH,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.FROST_3}][{{task.completed}}/{{task.total}}]"),
+            console=console,
+        ) as progress:
+            # Create task first before trying to update it
+            task = progress.add_task("Creating backup directory...", total=total_files)
 
-        # Copy each config file
-        for file in AppConfig.CONFIG_FILES:
-            if os.path.isfile(file):
-                try:
-                    dest = os.path.join(backup_dir, os.path.basename(file))
-                    shutil.copy2(file, dest)
-                    files_backed_up += 1
-                except Exception as e:
-                    logger.warning(f"Backup failed for {file}: {e}")
-                    success = False
+            # Create backup directory with timestamp
+            ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            backup_dir = os.path.join(AppConfig.BACKUP_DIR, f"debian_config_{ts}")
 
-        try:
-            # Create manifest file
-            manifest = os.path.join(backup_dir, "MANIFEST.txt")
-            with open(manifest, "w") as f:
-                f.write("Debian Configuration Backup\n")
-                f.write(f"Created: {datetime.datetime.now()}\n")
-                f.write(f"Hostname: {AppConfig.HOSTNAME}\n\n")
-                f.write("Files:\n")
+            os.makedirs(backup_dir, exist_ok=True)
 
-                for file in AppConfig.CONFIG_FILES:
-                    if os.path.isfile(os.path.join(backup_dir, os.path.basename(file))):
-                        f.write(f"- {file}\n")
-        except Exception as e:
-            logger.warning(f"Failed to create backup manifest: {e}")
+            # Update task description for the next phase
+            progress.update(task, description="Backing up configuration files...")
 
-        logger.info(f"Backed up {files_backed_up} configuration files to {backup_dir}")
-        return success
+            success = True
+            files_backed_up = 0
+
+            # Copy each config file
+            for file in AppConfig.CONFIG_FILES:
+                if os.path.isfile(file):
+                    progress.update(
+                        task, description=f"Backing up {os.path.basename(file)}..."
+                    )
+                    try:
+                        dest = os.path.join(backup_dir, os.path.basename(file))
+                        shutil.copy2(file, dest)
+                        files_backed_up += 1
+                        progress.advance(task)
+                    except Exception as e:
+                        logger.warning(f"Backup failed for {file}: {e}")
+                        success = False
+                        progress.advance(task)
+
+            try:
+                # Create manifest file
+                progress.update(task, description="Creating backup manifest...")
+                manifest = os.path.join(backup_dir, "MANIFEST.txt")
+                with open(manifest, "w") as f:
+                    f.write("Debian Configuration Backup\n")
+                    f.write(f"Created: {datetime.datetime.now()}\n")
+                    f.write(f"Hostname: {AppConfig.HOSTNAME}\n\n")
+                    f.write("Files:\n")
+
+                    for file in AppConfig.CONFIG_FILES:
+                        if os.path.isfile(
+                            os.path.join(backup_dir, os.path.basename(file))
+                        ):
+                            f.write(f"- {file}\n")
+            except Exception as e:
+                logger.warning(f"Failed to create backup manifest: {e}")
+
+            logger.info(
+                f"Backed up {files_backed_up} configuration files to {backup_dir}"
+            )
+            return success
 
     def update_ssl_certificates(self) -> bool:
         """
-        Update SSL certificates using certbot.
+        Update SSL certificates using certbot with visual progress.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Updating SSL certificates...")
 
-        # Install certbot if missing
-        if not Utils.command_exists("certbot"):
-            logger.info("Certbot not found, installing...")
-            if not SystemUpdater().install_packages(["certbot"]):
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Updating SSL certificates...", total=None)
+
+            # Install certbot if missing
+            if not Utils.command_exists("certbot"):
+                progress.update(task, description="Installing certbot...")
+                logger.info("Certbot not found, installing...")
+                if not SystemUpdater().install_packages(["certbot"]):
+                    return False
+
+            try:
+                # Dry run to check for renewals
+                progress.update(
+                    task, description="Checking for certificate renewals..."
+                )
+                output = run_command(
+                    ["certbot", "renew", "--dry-run"], capture_output=True
+                ).stdout
+
+                # Perform actual renewal if needed
+                if "No renewals were attempted" not in output:
+                    progress.update(task, description="Renewing certificates...")
+                    logger.info("Certificate renewals needed, running certbot")
+                    run_command(["certbot", "renew"])
+                else:
+                    logger.info("No certificate renewals needed")
+
+                return True
+
+            except Exception as e:
+                logger.error(f"SSL certificate update failed: {e}")
                 return False
-
-        try:
-            # Dry run to check for renewals
-            output = run_command(
-                ["certbot", "renew", "--dry-run"], capture_output=True
-            ).stdout
-
-            # Perform actual renewal if needed
-            if "No renewals were attempted" not in output:
-                logger.info("Certificate renewals needed, running certbot")
-                run_command(["certbot", "renew"])
-            else:
-                logger.info("No certificate renewals needed")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"SSL certificate update failed: {e}")
-            return False
 
 
 # ----------------------------------------------------------------
 # System Tuning and Home Permissions
 # ----------------------------------------------------------------
 class SystemTuner:
-    """Tunes system parameters for optimal performance."""
+    """Tunes system parameters for optimal performance with visual feedback."""
 
     def tune_system(self) -> bool:
         """
-        Apply performance tuning settings to the system.
+        Apply performance tuning settings to the system with progress tracking.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Applying system tuning settings...")
 
-        # Path to sysctl config
-        sysctl_conf = "/etc/sysctl.conf"
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Tuning system parameters...", total=None)
 
-        # Backup original config
-        if os.path.isfile(sysctl_conf):
-            Utils.backup_file(sysctl_conf)
+            # Path to sysctl config
+            sysctl_conf = "/etc/sysctl.conf"
 
-        # Performance tuning settings
-        tuning = {
-            "net.core.somaxconn": "1024",
-            "net.core.netdev_max_backlog": "5000",
-            "net.ipv4.tcp_max_syn_backlog": "8192",
-            "net.ipv4.tcp_slow_start_after_idle": "0",
-            "net.ipv4.tcp_tw_reuse": "1",
-            "net.ipv4.ip_local_port_range": "1024 65535",
-            "net.ipv4.tcp_rmem": "4096 87380 16777216",
-            "net.ipv4.tcp_wmem": "4096 65536 16777216",
-            "net.ipv4.tcp_mtu_probing": "1",
-            "fs.file-max": "2097152",
-            "vm.swappiness": "10",
-            "vm.dirty_ratio": "60",
-            "vm.dirty_background_ratio": "2",
-            "kernel.sysrq": "0",
-            "kernel.core_uses_pid": "1",
-            "net.ipv4.conf.default.rp_filter": "1",
-            "net.ipv4.conf.all.rp_filter": "1",
-        }
+            # Backup original config
+            if os.path.isfile(sysctl_conf):
+                progress.update(task, description="Backing up sysctl configuration...")
+                Utils.backup_file(sysctl_conf)
 
-        try:
-            # Read existing config
-            with open(sysctl_conf) as f:
-                content = f.read()
+            # Performance tuning settings
+            tuning = {
+                "net.core.somaxconn": "1024",
+                "net.core.netdev_max_backlog": "5000",
+                "net.ipv4.tcp_max_syn_backlog": "8192",
+                "net.ipv4.tcp_slow_start_after_idle": "0",
+                "net.ipv4.tcp_tw_reuse": "1",
+                "net.ipv4.ip_local_port_range": "1024 65535",
+                "net.ipv4.tcp_rmem": "4096 87380 16777216",
+                "net.ipv4.tcp_wmem": "4096 65536 16777216",
+                "net.ipv4.tcp_mtu_probing": "1",
+                "fs.file-max": "2097152",
+                "vm.swappiness": "10",
+                "vm.dirty_ratio": "60",
+                "vm.dirty_background_ratio": "2",
+                "kernel.sysrq": "0",
+                "kernel.core_uses_pid": "1",
+                "net.ipv4.conf.default.rp_filter": "1",
+                "net.ipv4.conf.all.rp_filter": "1",
+            }
 
-            # Remove existing tuning section if present
-            marker = "# Performance tuning settings for Debian"
-            if marker in content:
-                content = re.split(marker, content)[0]
+            try:
+                # Read existing config
+                progress.update(task, description="Reading current configuration...")
+                with open(sysctl_conf) as f:
+                    content = f.read()
 
-            # Add new tuning section
-            content += f"\n{marker}\n" + "".join(
-                f"{k} = {v}\n" for k, v in tuning.items()
-            )
+                # Remove existing tuning section if present
+                marker = "# Performance tuning settings for Debian"
+                if marker in content:
+                    progress.update(task, description="Removing old tuning settings...")
+                    content = re.split(marker, content)[0]
 
-            # Write updated config
-            with open(sysctl_conf, "w") as f:
-                f.write(content)
+                # Add new tuning section
+                progress.update(
+                    task, description="Adding new performance tuning settings..."
+                )
+                content += f"\n{marker}\n" + "".join(
+                    f"{k} = {v}\n" for k, v in tuning.items()
+                )
 
-            # Apply settings
-            run_command(["sysctl", "-p"])
+                # Write updated config
+                with open(sysctl_conf, "w") as f:
+                    f.write(content)
 
-            logger.info("System tuning settings applied")
-            return True
+                # Apply settings
+                progress.update(task, description="Applying new settings...")
+                run_command(["sysctl", "-p"])
 
-        except Exception as e:
-            logger.error(f"System tuning failed: {e}")
-            return False
+                logger.info("System tuning settings applied")
+                return True
+
+            except Exception as e:
+                logger.error(f"System tuning failed: {e}")
+                return False
 
     def home_permissions(self) -> bool:
         """
-        Secure user home directory permissions.
+        Secure user home directory permissions with visual progress tracking.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info(f"Securing home directory for {AppConfig.USERNAME}...")
 
-        try:
-            # Set ownership
-            run_command(
-                [
-                    "chown",
-                    "-R",
-                    f"{AppConfig.USERNAME}:{AppConfig.USERNAME}",
-                    AppConfig.USER_HOME,
-                ]
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Securing home directory permissions...", total=None
             )
 
-            # Set base permission
-            run_command(["chmod", "750", AppConfig.USER_HOME])
-
-            # Set stricter permissions for sensitive directories
-            for secure_dir in [".ssh", ".gnupg", ".config"]:
-                dir_path = os.path.join(AppConfig.USER_HOME, secure_dir)
-                if os.path.isdir(dir_path):
-                    run_command(["chmod", "700", dir_path])
-                    logger.info(f"Secured {secure_dir} directory")
-
-            # Set group sticky bit on all directories (to maintain permissions)
-            run_command(
-                [
-                    "find",
-                    AppConfig.USER_HOME,
-                    "-type",
-                    "d",
-                    "-exec",
-                    "chmod",
-                    "g+s",
-                    "{}",
-                    ";",
-                ]
-            )
-
-            # Set default ACLs if available
-            if Utils.command_exists("setfacl"):
+            try:
+                # Set ownership
+                progress.update(task, description="Setting home directory ownership...")
                 run_command(
                     [
-                        "setfacl",
+                        "chown",
                         "-R",
-                        "-d",
-                        "-m",
-                        f"u:{AppConfig.USERNAME}:rwX,g:{AppConfig.USERNAME}:r-X,o::---",
+                        f"{AppConfig.USERNAME}:{AppConfig.USERNAME}",
                         AppConfig.USER_HOME,
                     ]
                 )
-                logger.info("Applied ACLs to home directory")
 
-            logger.info(f"Home directory permissions secured for {AppConfig.USERNAME}")
-            return True
+                # Set base permission
+                progress.update(task, description="Setting base permissions...")
+                run_command(["chmod", "750", AppConfig.USER_HOME])
 
-        except Exception as e:
-            logger.error(f"Failed to secure home directory: {e}")
-            return False
+                # Set stricter permissions for sensitive directories
+                for secure_dir in [".ssh", ".gnupg", ".config"]:
+                    dir_path = os.path.join(AppConfig.USER_HOME, secure_dir)
+                    if os.path.isdir(dir_path):
+                        progress.update(
+                            task, description=f"Securing {secure_dir} directory..."
+                        )
+                        run_command(["chmod", "700", dir_path])
+                        logger.info(f"Secured {secure_dir} directory")
+
+                # Set group sticky bit on all directories (to maintain permissions)
+                progress.update(task, description="Setting group sticky bits...")
+                run_command(
+                    [
+                        "find",
+                        AppConfig.USER_HOME,
+                        "-type",
+                        "d",
+                        "-exec",
+                        "chmod",
+                        "g+s",
+                        "{}",
+                        ";",
+                    ]
+                )
+
+                # Set default ACLs if available
+                if Utils.command_exists("setfacl"):
+                    progress.update(task, description="Setting default ACLs...")
+                    run_command(
+                        [
+                            "setfacl",
+                            "-R",
+                            "-d",
+                            "-m",
+                            f"u:{AppConfig.USERNAME}:rwX,g:{AppConfig.USERNAME}:r-X,o::---",
+                            AppConfig.USER_HOME,
+                        ]
+                    )
+                    logger.info("Applied ACLs to home directory")
+
+                logger.info(
+                    f"Home directory permissions secured for {AppConfig.USERNAME}"
+                )
+                return True
+
+            except Exception as e:
+                logger.error(f"Failed to secure home directory: {e}")
+                return False
 
 
 # ----------------------------------------------------------------
 # Final Health Check and Cleanup
 # ----------------------------------------------------------------
 class FinalChecker:
-    """Performs final system health checks and cleanup."""
+    """Performs final system health checks and cleanup with visual reporting."""
 
     def system_health_check(self) -> Dict[str, Any]:
         """
-        Perform a system health check and return details.
+        Perform a system health check and return details with visual progress.
 
         Returns:
             Dictionary containing health check results
@@ -3138,397 +3925,478 @@ class FinalChecker:
         # Initialize health information dictionary
         health: Dict[str, Any] = {}
 
-        try:
-            # Get uptime
-            uptime = subprocess.check_output(["uptime"], text=True).strip()
-            health["uptime"] = uptime
-            logger.info(f"System uptime: {uptime}")
-        except Exception as e:
-            logger.warning(f"Failed to get uptime: {e}")
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Checking system health...", total=None)
 
-        try:
-            # Check disk usage
-            df_lines = (
-                subprocess.check_output(["df", "-h", "/"], text=True)
-                .strip()
-                .splitlines()
-            )
-            if len(df_lines) >= 2:
-                data = df_lines[1].split()
-                health["disk"] = {
-                    "total": data[1],
-                    "used": data[2],
-                    "available": data[3],
-                    "percent_used": data[4],
-                }
-                logger.info(
-                    f"Disk usage: {data[4]} of {data[1]} used, {data[3]} available"
+            try:
+                # Get uptime
+                progress.update(task, description="Checking system uptime...")
+                uptime = subprocess.check_output(["uptime"], text=True).strip()
+                health["uptime"] = uptime
+                logger.info(f"System uptime: {uptime}")
+            except Exception as e:
+                logger.warning(f"Failed to get uptime: {e}")
+
+            try:
+                # Check disk usage
+                progress.update(task, description="Checking disk usage...")
+                df_lines = (
+                    subprocess.check_output(["df", "-h", "/"], text=True)
+                    .strip()
+                    .splitlines()
                 )
-        except Exception as e:
-            logger.warning(f"Failed to check disk usage: {e}")
-
-        try:
-            # Check memory usage
-            free_lines = (
-                subprocess.check_output(["free", "-h"], text=True).strip().splitlines()
-            )
-            for line in free_lines:
-                if line.startswith("Mem:"):
-                    parts = line.split()
-                    health["memory"] = {
-                        "total": parts[1],
-                        "used": parts[2],
-                        "free": parts[3],
+                if len(df_lines) >= 2:
+                    data = df_lines[1].split()
+                    health["disk"] = {
+                        "total": data[1],
+                        "used": data[2],
+                        "available": data[3],
+                        "percent_used": data[4],
                     }
                     logger.info(
-                        f"Memory usage: {parts[2]} of {parts[1]} used, {parts[3]} free"
+                        f"Disk usage: {data[4]} of {data[1]} used, {data[3]} available"
                     )
-                    break
-        except Exception as e:
-            logger.warning(f"Failed to check memory usage: {e}")
+            except Exception as e:
+                logger.warning(f"Failed to check disk usage: {e}")
 
-        try:
-            # Check system load
-            with open("/proc/loadavg") as f:
-                load = f.read().split()[:3]
-
-            health["load"] = {
-                "1min": float(load[0]),
-                "5min": float(load[1]),
-                "15min": float(load[2]),
-            }
-            logger.info(f"System load: {load[0]} (1m), {load[1]} (5m), {load[2]} (15m)")
-        except Exception as e:
-            logger.warning(f"Failed to check system load: {e}")
-
-        try:
-            # Check for kernel errors
-            dmesg_output = subprocess.check_output(
-                ["dmesg", "--level=err,crit,alert,emerg"],
-                text=True,
-                stderr=subprocess.DEVNULL,
-            ).strip()
-            health["kernel_errors"] = bool(dmesg_output)
-
-            if health["kernel_errors"]:
-                logger.warning("Kernel errors detected in dmesg output")
-            else:
-                logger.info("No kernel errors detected")
-        except Exception as e:
-            logger.warning(f"Failed to check kernel errors: {e}")
-
-        try:
-            # Check for available updates
-            apt_cmd = Utils.get_apt_command()
-            if apt_cmd == "nala":
-                updates = (
-                    subprocess.check_output(
-                        ["nala", "list", "--upgradable"],
-                        text=True,
-                        stderr=subprocess.DEVNULL,
-                    )
+            try:
+                # Check memory usage
+                progress.update(task, description="Checking memory usage...")
+                free_lines = (
+                    subprocess.check_output(["free", "-h"], text=True)
                     .strip()
                     .splitlines()
                 )
-            else:
-                updates = (
-                    subprocess.check_output(
-                        ["apt", "list", "--upgradable"],
-                        text=True,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    .strip()
-                    .splitlines()
+                for line in free_lines:
+                    if line.startswith("Mem:"):
+                        parts = line.split()
+                        health["memory"] = {
+                            "total": parts[1],
+                            "used": parts[2],
+                            "free": parts[3],
+                        }
+                        logger.info(
+                            f"Memory usage: {parts[2]} of {parts[1]} used, {parts[3]} free"
+                        )
+                        break
+            except Exception as e:
+                logger.warning(f"Failed to check memory usage: {e}")
+
+            try:
+                # Check system load
+                progress.update(task, description="Checking system load...")
+                with open("/proc/loadavg") as f:
+                    load = f.read().split()[:3]
+
+                health["load"] = {
+                    "1min": float(load[0]),
+                    "5min": float(load[1]),
+                    "15min": float(load[2]),
+                }
+                logger.info(
+                    f"System load: {load[0]} (1m), {load[1]} (5m), {load[2]} (15m)"
                 )
+            except Exception as e:
+                logger.warning(f"Failed to check system load: {e}")
 
-            # Count security updates and total updates
-            security_updates = sum(1 for line in updates if "security" in line.lower())
-            total_updates = max(0, len(updates) - 1)  # Subtract header line
+            try:
+                # Check for kernel errors
+                progress.update(task, description="Checking kernel logs...")
+                dmesg_output = subprocess.check_output(
+                    ["dmesg", "--level=err,crit,alert,emerg"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+                health["kernel_errors"] = bool(dmesg_output)
 
-            health["updates"] = {"total": total_updates, "security": security_updates}
-            logger.info(
-                f"Available updates: {total_updates} total, {security_updates} security"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to check for updates: {e}")
+                if health["kernel_errors"]:
+                    logger.warning("Kernel errors detected in dmesg output")
+                else:
+                    logger.info("No kernel errors detected")
+            except Exception as e:
+                logger.warning(f"Failed to check kernel errors: {e}")
+
+            try:
+                # Check for available updates
+                progress.update(task, description="Checking for package updates...")
+                apt_cmd = Utils.get_apt_command()
+                if apt_cmd == "nala":
+                    updates = (
+                        subprocess.check_output(
+                            ["nala", "list", "--upgradable"],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        .strip()
+                        .splitlines()
+                    )
+                else:
+                    updates = (
+                        subprocess.check_output(
+                            ["apt", "list", "--upgradable"],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        .strip()
+                        .splitlines()
+                    )
+
+                # Count security updates and total updates
+                security_updates = sum(
+                    1 for line in updates if "security" in line.lower()
+                )
+                total_updates = max(0, len(updates) - 1)  # Subtract header line
+
+                health["updates"] = {
+                    "total": total_updates,
+                    "security": security_updates,
+                }
+                logger.info(
+                    f"Available updates: {total_updates} total, {security_updates} security"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to check for updates: {e}")
 
         return health
 
     def verify_firewall_rules(self) -> bool:
         """
-        Verify that firewall rules are set correctly.
+        Verify that firewall rules are set correctly with visual progress.
 
         Returns:
             True if firewall is configured correctly, False otherwise
         """
         logger.info("Verifying firewall rules...")
 
-        try:
-            # Check UFW status
-            ufw_status = subprocess.check_output(["ufw", "status"], text=True).strip()
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            BarColumn(
+                bar_width=AppConfig.PROGRESS_WIDTH,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TextColumn(f"[{NordColors.FROST_3}][{{task.completed}}/{{task.total}}]"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Verifying firewall...", total=len(AppConfig.ALLOWED_PORTS) + 1
+            )
 
-            if "inactive" in ufw_status.lower():
-                logger.warning("UFW firewall is inactive")
-                return False
+            try:
+                # Check UFW status
+                progress.update(task, description="Checking firewall status...")
+                ufw_status = subprocess.check_output(
+                    ["ufw", "status"], text=True
+                ).strip()
+                progress.advance(task)
 
-            logger.info("UFW firewall is active")
+                if "inactive" in ufw_status.lower():
+                    logger.warning("UFW firewall is inactive")
+                    return False
 
-            # Check if allowed ports are accessible
-            port_status = []
+                logger.info("UFW firewall is active")
 
-            for port in AppConfig.ALLOWED_PORTS:
-                try:
-                    # Try netcat first
-                    result = subprocess.run(
-                        ["nc", "-z", "-w3", "127.0.0.1", port],
-                        check=False,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
+                # Check if allowed ports are accessible
+                port_status = []
 
-                    # Fall back to socket check
-                    if result.returncode != 0 and not Utils.is_port_open(int(port)):
-                        logger.warning(f"Port {port} is not accessible")
+                for port in AppConfig.ALLOWED_PORTS:
+                    progress.update(task, description=f"Checking port {port}...")
+                    try:
+                        # Try netcat first
+                        result = subprocess.run(
+                            ["nc", "-z", "-w3", "127.0.0.1", port],
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+
+                        # Fall back to socket check
+                        if result.returncode != 0 and not Utils.is_port_open(int(port)):
+                            logger.warning(f"Port {port} is not accessible")
+                            port_status.append(False)
+                        else:
+                            logger.info(f"Port {port} is correctly configured")
+                            port_status.append(True)
+                    except Exception as e:
+                        logger.warning(f"Failed to check port {port}: {e}")
                         port_status.append(False)
-                    else:
-                        logger.info(f"Port {port} is correctly configured")
-                        port_status.append(True)
-                except Exception as e:
-                    logger.warning(f"Failed to check port {port}: {e}")
-                    port_status.append(False)
 
-            # At least one port should be accessible
-            return any(port_status)
+                    progress.advance(task)
 
-        except Exception as e:
-            logger.error(f"Firewall verification failed: {e}")
-            return False
+                # At least one port should be accessible
+                return any(port_status)
+
+            except Exception as e:
+                logger.error(f"Firewall verification failed: {e}")
+                return False
 
     def final_checks(self) -> bool:
         """
-        Perform final system checks.
+        Perform final system checks with visual progress tracking.
 
         Returns:
             True if all checks pass, False otherwise
         """
         logger.info("Performing final system checks...")
-        all_passed = True
 
-        try:
-            # Check kernel version
-            kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
-            logger.info(f"Kernel version: {kernel}")
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Running final checks...", total=None)
+            all_passed = True
 
-            # Check disk usage
-            disk_line = subprocess.check_output(
-                ["df", "-h", "/"], text=True
-            ).splitlines()[1]
-            disk_percent = int(disk_line.split()[4].strip("%"))
+            try:
+                # Check kernel version
+                progress.update(task, description="Checking kernel version...")
+                kernel = subprocess.check_output(["uname", "-r"], text=True).strip()
+                logger.info(f"Kernel version: {kernel}")
 
-            if disk_percent > 90:
-                logger.warning(f"High disk usage: {disk_percent}%")
-                all_passed = False
-            else:
-                logger.info(f"Disk usage: {disk_percent}%")
+                # Check disk usage
+                progress.update(task, description="Checking disk usage...")
+                disk_line = subprocess.check_output(
+                    ["df", "-h", "/"], text=True
+                ).splitlines()[1]
+                disk_percent = int(disk_line.split()[4].strip("%"))
 
-            # Check system load
-            load_avg = open("/proc/loadavg").read().split()[:3]
-            cpu_count = os.cpu_count() or 1
-
-            if float(load_avg[1]) > cpu_count:
-                logger.warning(f"High system load: {load_avg[1]} (CPUs: {cpu_count})")
-                all_passed = False
-            else:
-                logger.info(f"System load: {load_avg[1]} (CPUs: {cpu_count})")
-
-            # Check critical services
-            services = [
-                "ssh",
-                "ufw",
-                "fail2ban",
-                "docker",
-                "tailscaled",
-                "unattended-upgrades",
-            ]
-
-            for svc in services:
-                status = subprocess.run(
-                    ["systemctl", "is-active", svc],
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
-
-                if status.stdout.strip() != "active" and svc in ["ssh", "ufw"]:
-                    logger.warning(f"Critical service not active: {svc}")
+                if disk_percent > 90:
+                    logger.warning(f"High disk usage: {disk_percent}%")
                     all_passed = False
                 else:
-                    logger.info(f"Service {svc}: {status.stdout.strip()}")
+                    logger.info(f"Disk usage: {disk_percent}%")
 
-            # Check for pending upgrades
-            try:
-                unattended_output = subprocess.check_output(
-                    ["unattended-upgrade", "--dry-run", "--debug"],
-                    text=True,
-                    stderr=subprocess.STDOUT,
-                )
+                # Check system load
+                progress.update(task, description="Checking system load...")
+                load_avg = open("/proc/loadavg").read().split()[:3]
+                cpu_count = os.cpu_count() or 1
 
-                if any(
-                    "Packages that will be upgraded:" in line
-                    and "0 upgrades" not in line
-                    for line in unattended_output.splitlines()
-                ):
-                    logger.warning("Pending upgrades detected")
+                if float(load_avg[1]) > cpu_count:
+                    logger.warning(
+                        f"High system load: {load_avg[1]} (CPUs: {cpu_count})"
+                    )
                     all_passed = False
+                else:
+                    logger.info(f"System load: {load_avg[1]} (CPUs: {cpu_count})")
+
+                # Check critical services
+                progress.update(task, description="Checking critical services...")
+                services = [
+                    "ssh",
+                    "ufw",
+                    "fail2ban",
+                    "docker",
+                    "tailscaled",
+                    "unattended-upgrades",
+                ]
+
+                for svc in services:
+                    status = subprocess.run(
+                        ["systemctl", "is-active", svc],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+
+                    if status.stdout.strip() != "active" and svc in ["ssh", "ufw"]:
+                        logger.warning(f"Critical service not active: {svc}")
+                        all_passed = False
+                    else:
+                        logger.info(f"Service {svc}: {status.stdout.strip()}")
+
+                # Check for pending upgrades
+                progress.update(task, description="Checking for pending upgrades...")
+                try:
+                    unattended_output = subprocess.check_output(
+                        ["unattended-upgrade", "--dry-run", "--debug"],
+                        text=True,
+                        stderr=subprocess.STDOUT,
+                    )
+
+                    if any(
+                        "Packages that will be upgraded:" in line
+                        and "0 upgrades" not in line
+                        for line in unattended_output.splitlines()
+                    ):
+                        logger.warning("Pending upgrades detected")
+                        all_passed = False
+                except Exception as e:
+                    logger.debug(f"Unattended upgrade check failed: {e}")
+
+                return all_passed
+
             except Exception as e:
-                logger.debug(f"Unattended upgrade check failed: {e}")
-
-            return all_passed
-
-        except Exception as e:
-            logger.error(f"Error during final checks: {e}")
-            return False
+                logger.error(f"Error during final checks: {e}")
+                return False
 
     def cleanup_system(self) -> bool:
         """
-        Perform system cleanup tasks.
+        Perform system cleanup tasks with visual progress tracking.
 
         Returns:
             True if successful, False otherwise
         """
         logger.info("Performing system cleanup...")
-        success = True
 
-        try:
-            # Clean up package cache
-            apt_cmd = Utils.get_apt_command()
-            if apt_cmd == "nala":
-                run_command(["nala", "autoremove", "-y"])
-                run_command(["nala", "clean"])
-                logger.info("Package cache cleaned with nala")
-            else:
-                run_command(["apt", "autoremove", "-y"])
-                run_command(["apt", "clean"])
-                logger.info("Package cache cleaned with apt")
+        with Progress(
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Cleaning up system...", total=None)
+            success = True
 
-            # Clean up old kernels
             try:
-                # Get current kernel
-                current_kernel = subprocess.check_output(
-                    ["uname", "-r"], text=True
-                ).strip()
+                # Clean up package cache
+                progress.update(task, description="Cleaning package cache...")
+                apt_cmd = Utils.get_apt_command()
+                if apt_cmd == "nala":
+                    run_command(["nala", "autoremove", "-y"])
+                    run_command(["nala", "clean"])
+                    logger.info("Package cache cleaned with nala")
+                else:
+                    run_command(["apt", "autoremove", "-y"])
+                    run_command(["apt", "clean"])
+                    logger.info("Package cache cleaned with apt")
 
-                # List installed kernels
-                installed = (
-                    subprocess.check_output(
-                        ["dpkg", "--list", "linux-image-*", "linux-headers-*"],
-                        text=True,
-                    )
-                    .strip()
-                    .splitlines()
-                )
-
-                # Find old kernels
-                old_kernels = [
-                    line.split()[1]
-                    for line in installed
-                    if line.startswith("ii")
-                    and line.split()[1]
-                    not in (
-                        f"linux-image-{current_kernel}",
-                        f"linux-headers-{current_kernel}",
-                    )
-                    and "generic" in line.split()[1]
-                ]
-
-                # Remove old kernels except the most recent one
-                if len(old_kernels) > 1:
-                    old_kernels.sort()
-                    to_remove = old_kernels[:-1]
-
-                    if to_remove:
-                        logger.info(f"Removing {len(to_remove)} old kernels")
-                        run_command([apt_cmd, "purge", "-y"] + to_remove)
-            except Exception as e:
-                logger.warning(f"Old kernel cleanup failed: {e}")
-                success = False
-
-            # Clean up journal logs
-            if Utils.command_exists("journalctl"):
-                run_command(["journalctl", "--vacuum-time=7d"])
-                logger.info("Journal logs cleaned up")
-
-            # Clean up old temporary files
-            for tmp in ["/tmp", "/var/tmp"]:
+                # Clean up old kernels
                 try:
-                    run_command(
-                        [
-                            "find",
-                            tmp,
-                            "-type",
-                            "f",
-                            "-atime",
-                            "+7",
-                            "-not",
-                            "-path",
-                            "*/\\.*",
-                            "-delete",
-                        ]
+                    # Get current kernel
+                    progress.update(task, description="Checking for old kernels...")
+                    current_kernel = subprocess.check_output(
+                        ["uname", "-r"], text=True
+                    ).strip()
+
+                    # List installed kernels
+                    installed = (
+                        subprocess.check_output(
+                            ["dpkg", "--list", "linux-image-*", "linux-headers-*"],
+                            text=True,
+                        )
+                        .strip()
+                        .splitlines()
                     )
-                    logger.info(f"Cleaned up old files in {tmp}")
+
+                    # Find old kernels
+                    old_kernels = [
+                        line.split()[1]
+                        for line in installed
+                        if line.startswith("ii")
+                        and line.split()[1]
+                        not in (
+                            f"linux-image-{current_kernel}",
+                            f"linux-headers-{current_kernel}",
+                        )
+                        and "generic" in line.split()[1]
+                    ]
+
+                    # Remove old kernels except the most recent one
+                    if len(old_kernels) > 1:
+                        old_kernels.sort()
+                        to_remove = old_kernels[:-1]
+
+                        if to_remove:
+                            progress.update(
+                                task,
+                                description=f"Removing {len(to_remove)} old kernels...",
+                            )
+                            logger.info(f"Removing {len(to_remove)} old kernels")
+                            run_command([apt_cmd, "purge", "-y"] + to_remove)
                 except Exception as e:
-                    logger.warning(f"Failed to clean {tmp}: {e}")
+                    logger.warning(f"Old kernel cleanup failed: {e}")
                     success = False
 
-            # Compress large log files
-            try:
-                log_files = (
-                    subprocess.check_output(
-                        ["find", "/var/log", "-type", "f", "-size", "+50M"], text=True
+                # Clean up journal logs
+                if Utils.command_exists("journalctl"):
+                    progress.update(task, description="Cleaning up journal logs...")
+                    run_command(["journalctl", "--vacuum-time=7d"])
+                    logger.info("Journal logs cleaned up")
+
+                # Clean up old temporary files
+                progress.update(task, description="Cleaning up old temporary files...")
+                for tmp in ["/tmp", "/var/tmp"]:
+                    try:
+                        run_command(
+                            [
+                                "find",
+                                tmp,
+                                "-type",
+                                "f",
+                                "-atime",
+                                "+7",
+                                "-not",
+                                "-path",
+                                "*/\\.*",
+                                "-delete",
+                            ]
+                        )
+                        logger.info(f"Cleaned up old files in {tmp}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean {tmp}: {e}")
+                        success = False
+
+                # Compress large log files
+                try:
+                    progress.update(task, description="Compressing large log files...")
+                    log_files = (
+                        subprocess.check_output(
+                            ["find", "/var/log", "-type", "f", "-size", "+50M"],
+                            text=True,
+                        )
+                        .strip()
+                        .splitlines()
                     )
-                    .strip()
-                    .splitlines()
-                )
 
-                for lf in log_files:
-                    logger.info(f"Compressing large log file: {lf}")
-                    with open(lf, "rb") as fin, gzip.open(f"{lf}.gz", "wb") as fout:
-                        shutil.copyfileobj(fin, fout)
-                    open(lf, "w").close()
+                    for lf in log_files:
+                        logger.info(f"Compressing large log file: {lf}")
+                        with open(lf, "rb") as fin, gzip.open(f"{lf}.gz", "wb") as fout:
+                            shutil.copyfileobj(fin, fout)
+                        open(lf, "w").close()
+                except Exception as e:
+                    logger.warning(f"Log file compression failed: {e}")
+                    success = False
+
+                return success
+
             except Exception as e:
-                logger.warning(f"Log file compression failed: {e}")
-                success = False
-
-            return success
-
-        except Exception as e:
-            logger.error(f"System cleanup failed: {e}")
-            return False
+                logger.error(f"System cleanup failed: {e}")
+                return False
 
     def auto_reboot(self) -> None:
         """
-        Automatically reboot the system after a delay.
+        Automatically reboot the system after a countdown with visual timer.
         """
         logger.info("Setup complete. Rebooting in 60 seconds.")
         print_success("Setup completed successfully. Rebooting in 60 seconds...")
 
         # Show countdown
         with Progress(
-            SpinnerColumn(spinner_name="dots"),
-            TextColumn("[bold green]Rebooting in"),
-            TimeElapsedColumn(
-                time_format="[bold]:ss[/bold]s", elapsed_when_stopped=False
+            SpinnerColumn(spinner_name="dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn(f"[bold {NordColors.GREEN}]Rebooting in"),
+            BarColumn(
+                bar_width=30, style=NordColors.FROST_4, complete_style=NordColors.RED
             ),
+            TextColumn(f"[bold {NordColors.YELLOW}]{{task.remaining}}s"),
             console=console,
         ) as progress:
+            # Count down from 60 seconds
             task = progress.add_task("Rebooting...", total=60)
 
             for i in range(60):
-                progress.update(task, completed=i)
                 time.sleep(1)
+                progress.update(task, advance=1)
 
         # Reboot
         try:
+            console.print(f"[bold {NordColors.GREEN}]Rebooting now...[/]")
             run_command(["shutdown", "-r", "now"])
         except Exception as e:
             logger.error(f"Reboot failed: {e}")
@@ -3538,7 +4406,7 @@ class FinalChecker:
 # Main Orchestration Class
 # ----------------------------------------------------------------
 class DebianServerSetup:
-    """Main orchestration class for Debian server setup."""
+    """Main orchestration class for Debian server setup with comprehensive progress tracking."""
 
     def __init__(self) -> None:
         """Initialize the setup orchestrator."""
@@ -3556,7 +4424,7 @@ class DebianServerSetup:
 
     def run(self) -> int:
         """
-        Run the complete Debian server setup and hardening process.
+        Run the complete Debian server setup and hardening process with detailed progress tracking.
 
         Returns:
             Exit code (0 for success, 1 for failure)
@@ -3582,7 +4450,7 @@ class DebianServerSetup:
                 logger.error("Network check failed.")
                 SETUP_STATUS["preflight"] = {
                     "status": "failed",
-                    "message": "Network check failed",
+                    "message": "Network check failed - cannot continue without connectivity",
                 }
                 print_error("Network check failed. Cannot continue setup.")
                 sys.exit(1)
@@ -3592,6 +4460,11 @@ class DebianServerSetup:
                 self.preflight.check_os_version,
             ):
                 logger.warning("OS check failed – proceeding with caution.")
+
+            run_with_progress(
+                "Verifying system requirements",
+                self.preflight.verify_system_requirements,
+            )
 
             run_with_progress(
                 "Saving configuration snapshot",
@@ -3628,37 +4501,16 @@ class DebianServerSetup:
             logger.error(f"Nala installation error: {e}")
             logger.warning("Will use apt instead of nala.")
 
-        # Phase 4: Fix broken packages
-        print_section("Fix Broken Packages")
+        # Phase 4: System Update & Basic Configuration
+        print_section("Phase 4: System Update & Basic Configuration")
+        try:
+            run_with_progress(
+                "Fixing broken packages",
+                self.updater.fix_package_issues,
+            )
+        except Exception as e:
+            logger.warning(f"Package fix error: {e}")
 
-        def fix_broken():
-            """Fix broken package installations."""
-            # Clean up old unattended upgrade backups
-            backup_dir = "/etc/apt/apt.conf.d/"
-            count = 0
-            for fname in os.listdir(backup_dir):
-                if fname.startswith("50unattended-upgrades.bak."):
-                    try:
-                        os.remove(os.path.join(backup_dir, fname))
-                        count += 1
-                    except Exception as e:
-                        logger.warning(f"Failed to remove {fname}: {e}")
-
-            if count > 0:
-                logger.info(f"Removed {count} old unattended-upgrades backup files")
-
-            # Fix broken packages with appropriate command
-            apt_cmd = Utils.get_apt_command()
-            return run_command([apt_cmd, "install", "-y"])
-
-        run_with_progress(
-            "Fixing broken packages",
-            fix_broken,
-            task_name="fix_broken",
-        )
-
-        # Phase 5: System Update & Basic Configuration
-        print_section("Phase 5: System Update & Basic Configuration")
         try:
             if not run_with_progress(
                 "Updating system packages",
@@ -3672,9 +4524,10 @@ class DebianServerSetup:
             self.success = False
 
         try:
-            if not run_with_progress(
+            if not run_with_detailed_progress(
                 "Installing required packages",
                 self.updater.install_packages,
+                total=100,
                 task_name="packages_install",
             ):
                 logger.warning("Package installation issues.")
@@ -3705,8 +4558,8 @@ class DebianServerSetup:
             logger.error(f"Locale error: {e}")
             self.success = False
 
-        # Phase 6: User Environment Setup
-        print_section("Phase 6: User Environment Setup")
+        # Phase 5: User Environment Setup
+        print_section("Phase 5: User Environment Setup")
         try:
             if not run_with_progress(
                 "Setting up user repositories",
@@ -3752,8 +4605,8 @@ class DebianServerSetup:
             logger.error(f"Default shell error: {e}")
             self.success = False
 
-        # Phase 7: Security & Hardening
-        print_section("Phase 7: Security & Hardening")
+        # Phase 6: Security & Hardening
+        print_section("Phase 6: Security & Hardening")
         try:
             if not run_with_progress(
                 "Configuring SSH server",
@@ -3810,8 +4663,8 @@ class DebianServerSetup:
             logger.error(f"AppArmor error: {e}")
             self.success = False
 
-        # Phase 8: Service Installations
-        print_section("Phase 8: Service Installations")
+        # Phase 7: Service Installations
+        print_section("Phase 7: Service Installations")
         try:
             if not run_with_progress(
                 "Installing Fastfetch",
@@ -3868,8 +4721,8 @@ class DebianServerSetup:
             logger.error(f"User scripts error: {e}")
             self.success = False
 
-        # Phase 9: Maintenance Tasks
-        print_section("Phase 9: Maintenance Tasks")
+        # Phase 8: Maintenance Tasks
+        print_section("Phase 8: Maintenance Tasks")
         try:
             if not run_with_progress(
                 "Configuring periodic maintenance",
@@ -3904,8 +4757,8 @@ class DebianServerSetup:
             logger.error(f"SSL certificate error: {e}")
             self.success = False
 
-        # Phase 10: System Tuning & Permissions
-        print_section("Phase 10: System Tuning & Permissions")
+        # Phase 9: System Tuning & Permissions
+        print_section("Phase 9: System Tuning & Permissions")
         try:
             if not run_with_progress(
                 "Applying system tuning",
@@ -3929,8 +4782,8 @@ class DebianServerSetup:
             logger.error(f"Home permissions error: {e}")
             self.success = False
 
-        # Phase 11: Final Checks & Cleanup
-        print_section("Phase 11: Final Checks & Cleanup")
+        # Phase 10: Final Checks & Cleanup
+        print_section("Phase 10: Final Checks & Cleanup")
         SETUP_STATUS["final"] = {
             "status": "in_progress",
             "message": "Running final checks...",
@@ -3999,6 +4852,25 @@ class DebianServerSetup:
 
         # Show status report
         status_report()
+
+        # Display detailed summary
+        print_section("Setup Summary")
+        console.print(
+            Panel(
+                Text.from_markup(
+                    f"[bold {NordColors.FROST_2}]Debian Trixie Setup Completed[/]\n\n"
+                    f"[bold {NordColors.FROST_3}]Total Duration:[/] {int(minutes)}m {int(seconds)}s\n"
+                    f"[bold {NordColors.FROST_3}]Status:[/] {'[bold green]SUCCESS' if self.success and final_result else '[bold red]COMPLETED WITH ISSUES'}[/]\n"
+                    f"[bold {NordColors.FROST_3}]Log File:[/] {AppConfig.LOG_FILE}\n\n"
+                    f"{'[bold green]✓ System is ready for use![/]' if self.success and final_result else '[bold yellow]⚠ Some issues were detected. Check the log for details.[/]'}"
+                ),
+                border_style=Style(color=NordColors.FROST_1),
+                box=ROUNDED,
+                padding=(1, 2),
+                title=f"[bold {NordColors.SNOW_STORM_2}]Debian Trixie[/]",
+                title_align="center",
+            )
+        )
 
         # Reboot if successful
         if self.success and final_result:
