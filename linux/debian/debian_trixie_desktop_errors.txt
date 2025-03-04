@@ -1,3 +1,27 @@
+Rewrite and enhance the following Python script following the Advanced Terminal Application guidelines for an unattended operation mode.
+Rewrite and improve the below Python script following your template / guide and make sure it is a fully automated unattended Debian system setup script:
+The updated version should:
+
+- Run fully autonomously while maintaining professional terminal output with Nord color theme
+- Display a dynamic ASCII banner using Pyfiglet with gradient styling at startup
+- Implement Rich library components for enhanced visual feedback:
+  - Progress bars with detailed statistics for tracking long-running operations
+  - Spinners with descriptive status messages for indeterminate processes
+  - Panels and styled text for clear section delineation and results reporting
+- Include comprehensive error handling with detailed logging and recovery mechanisms
+- Implement robust signal handling for graceful termination in unattended environments
+- Organize code with a modular structure and clearly commented sections
+- Use type annotations and appropriate data structures for improved maintainability
+- Ensure cross-platform compatibility with environment-aware operation
+- Implement proper resource management and cleanup procedures
+
+The script should maintain its core functionality while operating completely unattended without requiring user input, providing clear visual feedback about its operation status at all times.
+
+Rewrite and improve the below Python script following your template / guide and make sure it is a fully automated unattended Debian system setup script:
+
+
+
+
 Errors to fix:
 
 
