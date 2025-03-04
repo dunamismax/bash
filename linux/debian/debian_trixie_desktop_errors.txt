@@ -1,0 +1,49 @@
+Errors to fix:
+
+
+✗ Installing Flatpak applications failed in 14.18s: Only one live display may be active at once
+    Installing Flatpak applications                           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━                                 100%     0:00:00
+                    ERROR    [2025-03-04 15:51:04] [ERROR] Error in phase 'Additional Applications & Tools': Only one live display may be active at once
+Error in phase 'Additional Applications & Tools': Only one live display may be active at once
+
+
+INFO     [2025-03-04 15:50:49] [INFO] --- Brave Browser Installation ---
+                    DEBUG    [2025-03-04 15:50:49] [DEBUG] Executing: curl -fsSL
+                             https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg -o
+                             /etc/apt/keyrings/brave-browser-archive-keyring.gpg
+2025-03-04 15:50:50 DEBUG    [2025-03-04 15:50:50] [DEBUG] Replacing 'apt-get' with 'nala': nala update -qq
+                    DEBUG    [2025-03-04 15:50:50] [DEBUG] Executing: nala update -qq
+⠧   Installing Brave browser                         ━╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━                                          4%      0:00:20      Usage: nala update [OPTIONS]
+╭─ Error ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ No such option: -q                                                                                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                    ERROR    [2025-03-04 15:50:50] [ERROR] Failed to install Brave browser: Command '['nala', 'update', '-qq']' returned non-zero exit
+                             status 2.
+
+
+                             2025-03-04 15:50:15 INFO     [2025-03-04 15:50:15] [INFO] --- Firewall Rules Verification ---
+                    DEBUG    [2025-03-04 15:50:15] [DEBUG] Executing: ufw status
+                    INFO     [2025-03-04 15:50:15] [INFO] UFW is active.
+                    INFO     [2025-03-04 15:50:15] [INFO] Port 22 is accessible.
+                    WARNING  [2025-03-04 15:50:15] [WARNING] Port 80 is not accessible.
+                    WARNING  [2025-03-04 15:50:15] [WARNING] Port 443 is not accessible.
+                    WARNING  [2025-03-04 15:50:15] [WARNING] Port 32400 is not accessible.
+✓ Verifying firewall rules completed in 0.12s
+    Verifying firewall rules                         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━                                        100%      0:00:00
+Phase 'Maintenance & Monitoring' failed. Continuing with best effort...
+
+
+INFO     [2025-03-04 15:50:14] [INFO] --- Configuration Backups ---
+                    WARNING  [2025-03-04 15:50:14] [WARNING] Failed to backup configurations: Only one live display may be active at once
+✓ Backing up configuration files completed in 0.01s
+    Backing up configuration files
+
+
+
+2025-03-04 15:51:13 INFO     [2025-03-04 15:51:13] [INFO] --- Setup Summary ---
+                    ERROR    [2025-03-04 15:51:13] [ERROR] Error in phase 'Final Checks & Reboot': module 'box' has no attribute 'ROUNDED'
+Error in phase 'Final Checks & Reboot': module 'box' has no attribute 'ROUNDED'
+Continuing with next phase...
+
+Setup completed with some issues. Check the log for details: /var/log/debian_setup.log
+                    INFO     [2025-03-04 15:51:13] [INFO] Cleaning up temporary files.
