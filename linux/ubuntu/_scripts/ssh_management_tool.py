@@ -19,7 +19,8 @@ Core Features:
   [2] Push the SSH key to one or more client machines (using StrictHostKeyChecking=accept-new)
   [3] Fix permissions on the ~/.ssh folder
   [4] Establish Mutual SSH Trust (bidirectional key exchange)
-  [5] Exit gracefully
+  [5] Enable Key Authentication (disable password auth) on Ubuntu
+  [6] Exit gracefully
 
 Usage:
   Run the script:
@@ -258,9 +259,7 @@ def push_ssh_key(cfg: SSHManagerConfig) -> None:
     """
     Push the current SSH key to one or more client machines using ssh-copy-id.
     Uses the SSH option StrictHostKeyChecking=accept-new to automatically accept new host keys.
-
     Note: If a password is required, the ssh-copy-id command will prompt interactively.
-    Ensure the process is attached to a TTY so the prompt is visible.
     """
     if not os.path.isfile(cfg.key_path):
         console.print(
@@ -307,7 +306,6 @@ def push_ssh_key(cfg: SSHManagerConfig) -> None:
         ]
         console.print(f"[info]Pushing key to {full_target}...[/info]")
         try:
-            # Run ssh-copy-id so that password prompts are visible.
             subprocess.run(cmd, check=True)
             results_table.add_row(host, "[success]Success[/success]")
         except subprocess.CalledProcessError as e:
@@ -340,11 +338,11 @@ def fix_ssh_permissions(cfg: SSHManagerConfig) -> None:
 def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
     """
     Establish reciprocal SSH trust between the local machine and a remote machine.
-    This function performs the following steps:
-      1. Ensure the local SSH key exists (and creates one if missing).
-      2. Push the local public key to the remote host using ssh-copy-id.
-      3. Connect to the remote host to generate (if needed) and retrieve its public key.
-      4. Append the remote public key to the local authorized_keys file if not already present.
+    This function:
+      1. Ensures the local SSH key exists (and creates one if missing).
+      2. Pushes the local public key to the remote host using ssh-copy-id.
+      3. Connects to the remote host to generate (if needed) and retrieve its public key.
+      4. Appends the remote public key to the local authorized_keys file if not already present.
     """
     # Ensure local key exists
     if not os.path.isfile(cfg.key_path):
@@ -354,7 +352,6 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
             console.print("[danger]Failed to create local SSH key. Aborting.[/danger]")
             return
 
-    # Prompt for remote host details
     console.print("[info]Enter the remote host for mutual SSH trust:[/info]")
     remote_host = console.input("> ").strip()
     if not remote_host:
@@ -367,6 +364,16 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
         "[info]Enter the remote user (press Enter to use local username):[/info]"
     )
     remote_user = console.input("> ").strip() or cfg.user
+
+    console.print(
+        "[warning]Warning: This operation may trigger fail2ban on the remote host if password attempts fail repeatedly.[/warning]"
+    )
+    proceed = (
+        console.input("[info]Do you wish to continue? (y/n): [/info]").strip().lower()
+    )
+    if proceed not in ("y", "yes"):
+        console.print("[info]Aborting mutual trust setup.[/info]")
+        return
 
     # Step 1: Push local key to remote
     public_key_path = f"{cfg.key_path}.pub"
@@ -394,12 +401,11 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
         console.print(f"[danger]Failed to push local key: {e}[/danger]")
         return
 
-    # Step 2: Retrieve remote public key
+    # Step 2: Retrieve remote public key (using BatchMode to avoid hanging on password prompts)
     console.print(
         f"[info]Retrieving remote public key from {remote_user}@{remote_host}...[/info]"
     )
     try:
-        # Run a remote command that generates a key if needed and outputs the public key.
         remote_cmd = (
             "if [ ! -f ~/.ssh/id_rsa.pub ]; then "
             "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ''; "
@@ -408,6 +414,8 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
         result = subprocess.run(
             [
                 "ssh",
+                "-o",
+                "BatchMode=yes",
                 "-o",
                 "StrictHostKeyChecking=accept-new",
                 f"{remote_user}@{remote_host}",
@@ -430,14 +438,11 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
 
     # Step 3: Add remote public key to local authorized_keys
     local_auth_keys = os.path.join(cfg.ssh_dir, "authorized_keys")
-    # Ensure .ssh directory exists
     if not os.path.isdir(cfg.ssh_dir):
         os.makedirs(cfg.ssh_dir, mode=0o700, exist_ok=True)
-    # Create authorized_keys if it doesn't exist
     if not os.path.isfile(local_auth_keys):
         open(local_auth_keys, "a").close()
 
-    # Read current authorized_keys content
     try:
         with open(local_auth_keys, "r") as f:
             keys = f.read()
@@ -464,6 +469,69 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
     console.print("[success]Mutual SSH trust established successfully![/success]")
 
 
+def configure_sshd_for_key_auth() -> None:
+    """
+    Configure the SSH daemon to disable password authentication and enable key-based authentication.
+    This function backs up /etc/ssh/sshd_config, updates it, and restarts the SSH service.
+    NOTE: This requires root privileges.
+    """
+    if os.geteuid() != 0:
+        console.print(
+            "[danger]Root privileges are required to modify sshd configuration. Please run this function as root or use sudo.[/danger]"
+        )
+        return
+
+    config_file = "/etc/ssh/sshd_config"
+    backup_file = "/etc/ssh/sshd_config.bak"
+    try:
+        shutil.copy2(config_file, backup_file)
+        console.print(f"[info]Backup of sshd_config created at {backup_file}.[/info]")
+    except Exception as e:
+        console.print(f"[danger]Failed to backup sshd_config: {e}[/danger]")
+        return
+
+    try:
+        with open(config_file, "r") as f:
+            lines = f.readlines()
+    except Exception as e:
+        console.print(f"[danger]Failed to read sshd_config: {e}[/danger]")
+        return
+
+    new_lines = []
+    password_set = False
+    pubkey_set = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("PasswordAuthentication"):
+            new_lines.append("PasswordAuthentication no\n")
+            password_set = True
+        elif stripped.startswith("PubkeyAuthentication"):
+            new_lines.append("PubkeyAuthentication yes\n")
+            pubkey_set = True
+        else:
+            new_lines.append(line)
+
+    if not password_set:
+        new_lines.append("PasswordAuthentication no\n")
+    if not pubkey_set:
+        new_lines.append("PubkeyAuthentication yes\n")
+
+    try:
+        with open(config_file, "w") as f:
+            f.writelines(new_lines)
+        console.print("[success]sshd_config updated successfully.[/success]")
+    except Exception as e:
+        console.print(f"[danger]Failed to update sshd_config: {e}[/danger]")
+        return
+
+    try:
+        subprocess.run(["systemctl", "restart", "ssh"], check=True)
+        console.print("[success]SSH service restarted successfully.[/success]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[danger]Failed to restart SSH service: {e}[/danger]")
+
+
 # ------------------------------
 # 7. Main Interactive Menu Loop
 # ------------------------------
@@ -474,7 +542,8 @@ def main() -> None:
       [2] Pushing the SSH key to client(s)
       [3] Fixing SSH folder permissions
       [4] Establishing Mutual SSH Trust
-      [5] Exiting the application
+      [5] Enable Key Authentication (disable password auth)
+      [6] Exit
     """
     local_user = getpass.getuser()
     console.print(f"[info]Detected current user: {local_user}[/info]")
@@ -496,13 +565,14 @@ def main() -> None:
             "  [2] Push SSH key to client(s)\n"
             "  [3] Fix SSH permissions\n"
             "  [4] Establish Mutual SSH Trust\n"
-            "  [5] Exit\n"
+            "  [5] Enable Key Authentication (disable password auth)\n"
+            "  [6] Exit\n"
         )
         menu_panel = Panel.fit(
             Text(menu_text, style="info"), title="Main Menu", style="primary"
         )
         console.print(menu_panel)
-        choice = console.input("[info]Enter choice (1-5): [/info]").strip()
+        choice = console.input("[info]Enter choice (1-6): [/info]").strip()
         if choice == "1":
             create_ssh_key(cfg)
             console.print("[info]Press Enter to return to the menu[/info]")
@@ -520,6 +590,10 @@ def main() -> None:
             console.print("[info]Press Enter to return to the menu[/info]")
             console.input()
         elif choice == "5":
+            configure_sshd_for_key_auth()
+            console.print("[info]Press Enter to return to the menu[/info]")
+            console.input()
+        elif choice == "6":
             console.print("[warning]Exiting...[/warning]")
             sys.exit(0)
         else:
