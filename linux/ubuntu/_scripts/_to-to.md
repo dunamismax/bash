@@ -53,7 +53,7 @@ Here’s a cleaner, more concise, and refined version of your prompt:
 - **Type annotations & dataclasses** for readability.
 - **Modular architecture** with well-documented sections.  
 
-Maintain core functionality while implementing these enhancements for a **production-grade user experience**.
+Maintain core functionality while implementing these enhancements for a **production-grade user experience**. Do not implement argparse or CLI command line arguments and make sure the script works on Ubuntu.
 
 
 ---------------------------------------------------------------------------------------------
@@ -78,7 +78,7 @@ Here’s a cleaner and more concise version of your prompt:
 - Maintain a modular structure with clear comments and type annotations.
 - Handle resource management and cleanup properly.
 
-The final script should operate unattended, requiring no user input, and provide clear, real-time visual feedback.
+The final script should operate unattended, requiring no user input, and provide clear, real-time visual feedback. Do not implement argparse or CLI command line arguments and make sure the script works on Ubuntu.
 
 
 

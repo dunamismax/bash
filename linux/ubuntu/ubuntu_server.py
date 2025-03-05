@@ -11,8 +11,10 @@ system tuning, and final health checks on an Ubuntu server.
 Run with root privileges.
 """
 
+# ----------------------------------------------------------------
+# Dependencies and Imports
+# ----------------------------------------------------------------
 import atexit
-import argparse
 import datetime
 import filecmp
 import gzip
@@ -35,31 +37,63 @@ import pyfiglet
 from rich.console import Console
 from rich.theme import Theme
 from rich.logging import RichHandler
+from rich.panel import Panel
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TimeRemainingColumn,
+)
+from rich.text import Text
 
 # ----------------------------------------------------------------
-# Global Configuration & Constants
+# Nord Color Theme & Global Console
 # ----------------------------------------------------------------
+# Nord palette: Polar Nights, Snow Storms, Frost, and Accents.
+NORD_COLORS = {
+    "polar_night_1": "#2E3440",
+    "polar_night_2": "#3B4252",
+    "polar_night_3": "#434C5E",
+    "polar_night_4": "#4C566A",
+    "snow_storm_1": "#D8DEE9",
+    "snow_storm_2": "#E5E9F0",
+    "snow_storm_3": "#ECEFF4",
+    "frost_1": "#8FBCBB",
+    "frost_2": "#88C0D0",
+    "frost_3": "#81A1C1",
+    "frost_4": "#5E81AC",
+    "red": "#BF616A",
+    "orange": "#D08770",
+    "yellow": "#EBCB8B",
+    "green": "#A3BE8C",
+    "purple": "#B48EAD",
+}
+
+# Define a Rich theme using Nord colors.
 THEME = Theme(
     {
-        "header": "#88C0D0 bold",
-        "section": "#81A1C1 bold",
-        "step": "#88C0D0",
-        "success": "#A3BE8C bold",
-        "warning": "#EBCB8B bold",
-        "error": "#BF616A bold",
+        "header": f"{NORD_COLORS['frost_4']} bold",
+        "section": f"{NORD_COLORS['frost_3']} bold",
+        "step": f"{NORD_COLORS['frost_2']}",
+        "success": f"{NORD_COLORS['green']} bold",
+        "warning": f"{NORD_COLORS['yellow']} bold",
+        "error": f"{NORD_COLORS['red']} bold",
     }
 )
 console: Console = Console(theme=THEME)
 
-# Logging and backup settings
+# ----------------------------------------------------------------
+# Global Configuration & Constants
+# ----------------------------------------------------------------
 LOG_FILE: str = "/var/log/ubuntu_setup.log"
-MAX_LOG_SIZE: int = 10 * 1024 * 1024
+MAX_LOG_SIZE: int = 10 * 1024 * 1024  # 10 MB
 USERNAME: str = "sawyer"
 USER_HOME: str = f"/home/{USERNAME}"
 BACKUP_DIR: str = "/var/backups"
 TEMP_DIR: str = tempfile.gettempdir()
 
-# Package and service lists
+# Packages and allowed ports
 ALLOWED_PORTS: List[str] = ["22", "80", "443", "32400"]
 PACKAGES: List[str] = [
     "bash",
@@ -150,7 +184,6 @@ PACKAGES: List[str] = [
     "nala",
 ]
 
-# Files to backup
 CONFIG_FILES: List[str] = [
     "/etc/ssh/sshd_config",
     "/etc/ufw/user.rules",
@@ -162,7 +195,7 @@ CONFIG_FILES: List[str] = [
     "/etc/caddy/Caddyfile",
 ]
 
-# A status dictionary for reporting
+# Setup status dictionary for final report.
 SETUP_STATUS: Dict[str, Dict[str, str]] = {
     "preflight": {"status": "pending", "message": ""},
     "nala_install": {"status": "pending", "message": ""},
@@ -178,7 +211,7 @@ SETUP_STATUS: Dict[str, Dict[str, str]] = {
 
 
 # ----------------------------------------------------------------
-# Logging, Banner, and Console Helpers
+# Logging Setup
 # ----------------------------------------------------------------
 def setup_logging() -> logging.Logger:
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -206,33 +239,77 @@ def setup_logging() -> logging.Logger:
 logger: logging.Logger = setup_logging()
 
 
-def print_pyfiglet_header(text: str) -> None:
-    """Display a beautiful ASCII art header using pyfiglet."""
-    ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style="header")
+# ----------------------------------------------------------------
+# Dynamic ASCII Banner Helper
+# ----------------------------------------------------------------
+def create_ascii_banner(text: str) -> Text:
+    """
+    Generate a dynamic ASCII art banner with gradient styling.
+    The gradient is applied line by line using a cycle of Nord frost colors.
+    """
+    term_width, _ = shutil.get_terminal_size((80, 24))
+    # Select a font based on terminal width.
+    font = "slant" if term_width >= 80 else "small"
+    try:
+        fig = pyfiglet.Figlet(font=font, width=min(term_width - 10, 120))
+        ascii_art = fig.renderText(text)
+    except Exception:
+        ascii_art = text
+    lines = [line for line in ascii_art.splitlines() if line.strip()]
+    frost_colors = [
+        NORD_COLORS["frost_1"],
+        NORD_COLORS["frost_2"],
+        NORD_COLORS["frost_3"],
+        NORD_COLORS["frost_4"],
+    ]
+    banner = Text()
+    for idx, line in enumerate(lines):
+        color = frost_colors[idx % len(frost_colors)]
+        banner.append(line, style=f"bold {color}")
+        banner.append("\n")
+    return banner
 
 
+def print_banner(text: str) -> None:
+    banner = create_ascii_banner(text)
+    console.print(
+        Panel(
+            banner,
+            border_style=NORD_COLORS["frost_2"],
+            padding=(1, 2),
+            title=f"[bold {NORD_COLORS['snow_storm_2']}]Setup[/]",
+        )
+    )
+
+
+# ----------------------------------------------------------------
+# Console Section and Status Report Helpers
+# ----------------------------------------------------------------
 def print_section(title: str) -> None:
-    """Print a section header with a pyfiglet title and log the section."""
-    print_pyfiglet_header(title)
-    console.print(f"[section]{'-' * 40}[/section]")
+    """Print a section header with styled text and a divider panel."""
+    section_text = Text(title.upper(), style=f"bold {NORD_COLORS['frost_3']}")
+    console.print(Panel(section_text, border_style=NORD_COLORS["frost_3"]))
     logger.info(f"--- {title} ---")
 
 
-def print_step(text: str) -> None:
-    console.print(f"[step]• {text}[/step]")
+def print_step(message: str) -> None:
+    console.print(f"[step]• {message}[/step]")
+    logger.info(message)
 
 
-def print_success(text: str) -> None:
-    console.print(f"[success]✓ {text}[/success]")
+def print_success(message: str) -> None:
+    console.print(f"[success]✓ {message}[/success]")
+    logger.info(message)
 
 
-def print_warning(text: str) -> None:
-    console.print(f"[warning]⚠ {text}[/warning]")
+def print_warning(message: str) -> None:
+    console.print(f"[warning]⚠ {message}[/warning]")
+    logger.warning(message)
 
 
-def print_error(text: str) -> None:
-    console.print(f"[error]✗ {text}[/error]")
+def print_error(message: str) -> None:
+    console.print(f"[error]✗ {message}[/error]")
+    logger.error(message)
 
 
 def status_report() -> None:
@@ -241,13 +318,16 @@ def status_report() -> None:
     for task, data in SETUP_STATUS.items():
         st = data["status"]
         msg = data["message"]
+        style = (
+            "success" if st == "success" else "warning" if st == "failed" else "step"
+        )
         console.print(
-            f"[{'success' if st == 'success' else 'warning' if st == 'failed' else 'step'}]{icons.get(st, '?')} {task.upper()}: {st.upper()}[/] - {msg}"
+            f"[{style}]{icons.get(st, '?')} {task.upper()}: {st.upper()}[/] - {msg}"
         )
 
 
 # ----------------------------------------------------------------
-# Command Execution Helper
+# Command Execution Helpers
 # ----------------------------------------------------------------
 def run_command(cmd: Union[List[str], str], **kwargs) -> subprocess.CompletedProcess:
     cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
@@ -256,7 +336,7 @@ def run_command(cmd: Union[List[str], str], **kwargs) -> subprocess.CompletedPro
 
 
 def run_with_progress(
-    desc: str, func, *args, task_name: Optional[str] = None, **kwargs
+    desc: str, func: Any, *args, task_name: Optional[str] = None, **kwargs
 ) -> Any:
     if task_name:
         SETUP_STATUS[task_name] = {
@@ -295,6 +375,7 @@ def run_with_progress(
 # ----------------------------------------------------------------
 def cleanup() -> None:
     logger.info("Performing cleanup tasks before exit.")
+    # Remove temporary files that match a prefix.
     for fname in os.listdir(TEMP_DIR):
         if fname.startswith("ubuntu_setup_"):
             try:
@@ -313,12 +394,11 @@ def signal_handler(signum: int, frame: Optional[Any]) -> None:
 
 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(sig, signal_handler)
-
 atexit.register(cleanup)
 
 
 # ----------------------------------------------------------------
-# Utility Functions & Classes
+# Utility Functions and Classes
 # ----------------------------------------------------------------
 class Utils:
     @staticmethod
@@ -360,7 +440,7 @@ class Utils:
 
 
 # ----------------------------------------------------------------
-# Preflight & Environment Checkers
+# Preflight and Environment Checkers
 # ----------------------------------------------------------------
 class PreflightChecker:
     def check_root(self) -> None:
@@ -386,7 +466,7 @@ class PreflightChecker:
         if not os.path.isfile("/etc/os-release"):
             logger.warning("Missing /etc/os-release")
             return None
-        os_info = {}
+        os_info: Dict[str, str] = {}
         with open("/etc/os-release") as f:
             for line in f:
                 if "=" in line:
@@ -448,7 +528,7 @@ class SystemUpdater:
         try:
             if not self.fix_package_issues():
                 logger.warning("Proceeding despite package issues.")
-            # Try using nala first; fallback to apt if nala fails.
+            # Use nala if available, fallback to apt.
             try:
                 run_command(["nala", "update"])
             except Exception as e:
@@ -1114,7 +1194,7 @@ echo "Completed $(date)" >> $LOG
 
 
 # ----------------------------------------------------------------
-# System Tuning and Home Permissions (Automated)
+# System Tuner (Automated)
 # ----------------------------------------------------------------
 class SystemTuner:
     def tune_system(self) -> bool:
@@ -1186,7 +1266,7 @@ class SystemTuner:
 
 
 # ----------------------------------------------------------------
-# Final Health Check and Cleanup (Automated)
+# Final Health Checker and Cleanup (Automated)
 # ----------------------------------------------------------------
 class FinalChecker:
     def system_health_check(self) -> Dict[str, Any]:
@@ -1417,7 +1497,6 @@ class FinalChecker:
             return False
 
     def auto_reboot(self) -> None:
-        # For unattended mode, automatically reboot after a short delay if final checks passed.
         logger.info("Setup complete. System will reboot automatically in 60 seconds.")
         print_success("Setup completed successfully. Rebooting in 60 seconds...")
         time.sleep(60)
@@ -1428,12 +1507,12 @@ class FinalChecker:
 
 
 # ----------------------------------------------------------------
-# Main Orchestration
+# Main Orchestration Class
 # ----------------------------------------------------------------
 class UbuntuServerSetup:
     def __init__(self) -> None:
-        self.success = True
-        self.start_time = time.time()
+        self.success: bool = True
+        self.start_time: float = time.time()
         self.preflight = PreflightChecker()
         self.updater = SystemUpdater()
         self.user_env = UserEnvironment()
@@ -1445,7 +1524,7 @@ class UbuntuServerSetup:
 
     def run(self) -> int:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print_pyfiglet_header("Ubuntu Server Setup")
+        print_banner("Ubuntu Server Setup")
         console.print(f"[step]Starting setup at {now}[/step]")
         logger.info(f"Starting Ubuntu Server Setup at {now}")
 
@@ -1474,7 +1553,7 @@ class UbuntuServerSetup:
         # Fix broken packages
         print_section("Fixing Broken Packages")
 
-        def fix_broken():
+        def fix_broken() -> subprocess.CompletedProcess:
             backup_dir = "/etc/apt/apt.conf.d/"
             for fname in os.listdir(backup_dir):
                 if fname.startswith("50unattended-upgrades.bak."):
@@ -1777,7 +1856,7 @@ class UbuntuServerSetup:
             }
         status_report()
 
-        # For unattended mode, automatically reboot if all final checks passed.
+        # Automatically reboot if all final checks passed.
         if self.success and final_result:
             self.final_checker.auto_reboot()
         else:
@@ -1788,19 +1867,9 @@ class UbuntuServerSetup:
 
 
 # ----------------------------------------------------------------
-# Main Entry Point
+# Main Entry Point (Unattended Mode)
 # ----------------------------------------------------------------
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Ubuntu Server Initialization and Hardening Utility (Unattended)"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Perform a dry run without making changes",
-    )
-    args = parser.parse_args()
-    # In dry-run mode, we skip destructive actions (not implemented here for brevity)
     return UbuntuServerSetup().run()
 
 

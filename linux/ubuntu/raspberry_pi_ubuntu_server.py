@@ -5,14 +5,19 @@ Ubuntu Server Setup & Hardening Utility for ARM (Raspberry Pi)
 
 This fully automated utility performs preflight checks, system updates,
 package installations, user environment setup, security hardening, service
-installations, maintenance tasks, system tuning, and final health checks
-on an Ubuntu system running on a Raspberry Pi (aarch64).
+installations, maintenance tasks, system tuning, and final health checks on
+an Ubuntu system running on a Raspberry Pi (aarch64).
+
+The script runs completely unattended and provides real-time visual feedback
+using a Nord-themed interface.
 
 Run with root privileges.
 """
 
+# ----------------------------------------------------------------
+# Dependencies and Imports
+# ----------------------------------------------------------------
 import atexit
-import argparse
 import datetime
 import filecmp
 import gzip
@@ -32,15 +37,21 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pyfiglet
+from rich import box
+from rich.align import Align
 from rich.console import Console
-from rich.theme import Theme
 from rich.logging import RichHandler
+from rich.panel import Panel
+from rich.progress import Progress
+from rich.table import Table
+from rich.text import Text
+from rich.theme import Theme
 
 # ----------------------------------------------------------------
 # Global Configuration & Constants
 # ----------------------------------------------------------------
-# Custom theme for clear output
-THEME = Theme(
+# Nord-themed color palette and Rich theme for output
+NORD_THEME = Theme(
     {
         "header": "#88C0D0 bold",
         "section": "#81A1C1 bold",
@@ -50,11 +61,14 @@ THEME = Theme(
         "error": "#BF616A bold",
     }
 )
-console: Console = Console(theme=THEME)
+console: Console = Console(theme=NORD_THEME)
+
+# Application version
+VERSION: str = "6.0.0"
 
 # Logging, backup, and user settings
 LOG_FILE: str = "/var/log/ubuntu_setup.log"
-MAX_LOG_SIZE: int = 10 * 1024 * 1024
+MAX_LOG_SIZE: int = 10 * 1024 * 1024  # 10 MB
 USERNAME: str = "sawyer"
 USER_HOME: str = f"/home/{USERNAME}"
 BACKUP_DIR: str = "/var/backups"
@@ -171,9 +185,10 @@ SETUP_STATUS: Dict[str, Dict[str, str]] = {
 
 
 # ----------------------------------------------------------------
-# Logging, Banner, and Console Helpers
+# Logging, Dynamic Banner, and Console Helpers
 # ----------------------------------------------------------------
 def setup_logging() -> logging.Logger:
+    """Set up logging with RichHandler and file logging with rotation."""
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > MAX_LOG_SIZE:
         ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -199,15 +214,40 @@ def setup_logging() -> logging.Logger:
 logger: logging.Logger = setup_logging()
 
 
-def print_pyfiglet_header(text: str) -> None:
-    """Display a large ASCII art header using pyfiglet."""
-    ascii_art = pyfiglet.figlet_format(text, font="slant")
-    console.print(ascii_art, style="header")
+def display_dynamic_banner(text: str) -> None:
+    """
+    Display a dynamic ASCII art banner using Pyfiglet with a gradient
+    using the Nord color palette.
+    """
+    term_width, _ = shutil.get_terminal_size((80, 24))
+    # Choose font based on terminal width
+    font = "slant" if term_width >= 80 else "small"
+    try:
+        fig = pyfiglet.Figlet(font=font, width=min(term_width - 10, 120))
+        ascii_art = fig.renderText(text)
+    except Exception:
+        ascii_art = text
+    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
+    nord_gradient = ["#8FBCBB", "#88C0D0", "#81A1C1", "#5E81AC"]
+    combined_text = Text()
+    for i, line in enumerate(ascii_lines):
+        color = nord_gradient[i % len(nord_gradient)]
+        combined_text.append(line, style=f"bold {color}")
+        combined_text.append("\n")
+    panel = Panel(
+        combined_text,
+        border_style="#81A1C1",
+        padding=(1, 2),
+        title=Text(f"v{VERSION}", style="bold #E5E9F0"),
+        title_align="right",
+        box=box.ROUNDED,
+    )
+    console.print(panel)
 
 
 def print_section(text: str) -> None:
-    """Print a section header with pyfiglet style and log it."""
-    print_pyfiglet_header(text)
+    """Print a section header with styled text and log the section."""
+    display_dynamic_banner(text)
     console.print(f"[section]{'-' * 40}[/section]")
     logger.info(f"--- {text} ---")
 
@@ -229,19 +269,17 @@ def print_error(text: str) -> None:
 
 
 def status_report() -> None:
-    """Display a summary of setup task statuses."""
+    """Display a summary of all setup task statuses."""
     print_section("Setup Status Report")
-    icons = {
-        "success": "✓",
-        "failed": "✗",
-        "pending": "?",
-        "in_progress": "⋯",
-    }
+    icons = {"success": "✓", "failed": "✗", "pending": "?", "in_progress": "⋯"}
     for task, data in SETUP_STATUS.items():
         st = data["status"]
         msg = data["message"]
+        style = (
+            "success" if st == "success" else "warning" if st == "failed" else "step"
+        )
         console.print(
-            f"[{'success' if st == 'success' else 'warning' if st == 'failed' else 'step'}]{icons.get(st, '?')} {task.upper()}: {st.upper()}[/] - {msg}"
+            f"[{style}]{icons.get(st, '?')} {task.upper()}: {st.upper()}[/] - {msg}"
         )
 
 
@@ -288,7 +326,9 @@ def run_with_progress(
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
+    """Perform cleanup tasks before exit."""
     logger.info("Performing cleanup tasks before exit.")
+    # Remove temporary files created by the setup (files starting with "ubuntu_setup_")
     for fname in os.listdir(TEMP_DIR):
         if fname.startswith("ubuntu_setup_"):
             try:
@@ -299,6 +339,7 @@ def cleanup() -> None:
 
 
 def signal_handler(signum: int, frame: Optional[Any]) -> None:
+    """Handle termination signals gracefully."""
     sig_name = f"signal {signum}"
     logger.error(f"Interrupted by {sig_name}. Exiting.")
     try:
@@ -308,9 +349,9 @@ def signal_handler(signum: int, frame: Optional[Any]) -> None:
     sys.exit(128 + signum)
 
 
+# Register signal handlers for graceful termination
 for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
     signal.signal(s, signal_handler)
-
 atexit.register(cleanup)
 
 
@@ -326,6 +367,7 @@ class Utils:
         text: bool = True,
         **kwargs,
     ) -> subprocess.CompletedProcess:
+        """Execute a command and return the completed process; log errors."""
         cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
         logger.debug(f"Executing: {cmd_str}")
         try:
@@ -334,7 +376,7 @@ class Utils:
             )
         except subprocess.CalledProcessError as e:
             logger.error(f"Command failed: {cmd_str} (exit {e.returncode})")
-            logger.debug(f"Error: {getattr(e, 'stderr', 'N/A')}")
+            logger.debug(f"Error output: {getattr(e, 'stderr', 'N/A')}")
             raise
 
     @staticmethod
@@ -343,6 +385,7 @@ class Utils:
 
     @staticmethod
     def backup_file(fp: str) -> Optional[str]:
+        """Backup the given file if it exists."""
         if os.path.isfile(fp):
             ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             backup = f"{fp}.bak.{ts}"
@@ -360,6 +403,7 @@ class Utils:
     def ensure_directory(
         path: str, owner: Optional[str] = None, mode: int = 0o755
     ) -> bool:
+        """Ensure the specified directory exists with correct ownership and mode."""
         try:
             os.makedirs(path, mode=mode, exist_ok=True)
             if owner:
@@ -372,6 +416,7 @@ class Utils:
 
     @staticmethod
     def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
+        """Check if the specified TCP port is open."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(2)
             return s.connect_ex((host, port)) == 0
@@ -382,12 +427,14 @@ class Utils:
 # ----------------------------------------------------------------
 class PreflightChecker:
     def check_root(self) -> None:
+        """Ensure the script is running with root privileges."""
         if os.geteuid() != 0:
             print_error("Must run as root!")
             sys.exit(1)
         logger.info("Root privileges confirmed.")
 
     def check_network(self) -> bool:
+        """Check network connectivity using a series of hosts."""
         logger.info("Checking network connectivity...")
         for host in ["google.com", "cloudflare.com", "1.1.1.1"]:
             try:
@@ -402,11 +449,12 @@ class PreflightChecker:
                     logger.info(f"Network OK via {host}.")
                     return True
             except Exception as e:
-                logger.debug(f"Ping {host} failed: {e}")
+                logger.debug(f"Ping to {host} failed: {e}")
         logger.error("Network check failed.")
         return False
 
     def check_os_version(self) -> Optional[Tuple[str, str]]:
+        """Check that the operating system is Ubuntu and return its version."""
         logger.info("Checking OS version...")
         if not os.path.isfile("/etc/os-release"):
             logger.warning("Missing /etc/os-release")
@@ -427,6 +475,7 @@ class PreflightChecker:
         return ("ubuntu", ver)
 
     def save_config_snapshot(self) -> Optional[str]:
+        """Save a snapshot of important configuration files to a backup archive."""
         logger.info("Saving configuration snapshot...")
         ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -449,6 +498,7 @@ class PreflightChecker:
 # ----------------------------------------------------------------
 class SystemUpdater:
     def fix_package_issues(self) -> bool:
+        """Attempt to fix any broken package installations."""
         logger.info("Fixing package issues...")
         try:
             dpkg_status = Utils.run_command(
@@ -492,6 +542,7 @@ class SystemUpdater:
             return False
 
     def update_system(self, full_upgrade: bool = False) -> bool:
+        """Update the system packages and perform a full upgrade if specified."""
         logger.info("Updating system...")
         try:
             if not self.fix_package_issues():
@@ -519,6 +570,7 @@ class SystemUpdater:
             return False
 
     def install_packages(self, packages: Optional[List[str]] = None) -> bool:
+        """Install any missing packages from the specified list."""
         logger.info("Installing packages...")
         packages = packages or PACKAGES
         if not self.fix_package_issues():
@@ -546,6 +598,7 @@ class SystemUpdater:
             return False
 
     def configure_timezone(self, tz: str = "America/New_York") -> bool:
+        """Configure the system timezone."""
         logger.info(f"Setting timezone to {tz}...")
         tz_file = f"/usr/share/zoneinfo/{tz}"
         if not os.path.isfile(tz_file):
@@ -567,6 +620,7 @@ class SystemUpdater:
             return False
 
     def configure_locale(self, locale: str = "en_US.UTF-8") -> bool:
+        """Configure the system locale settings."""
         logger.info(f"Setting locale to {locale}...")
         try:
             Utils.run_command(["locale-gen", locale])
@@ -598,6 +652,7 @@ class SystemUpdater:
 # ----------------------------------------------------------------
 class UserEnvironment:
     def setup_repos(self) -> bool:
+        """Clone or update Git repositories into the user's home."""
         logger.info(f"Setting up repositories for {USERNAME}...")
         gh_dir = os.path.join(USER_HOME, "github")
         Utils.ensure_directory(gh_dir, owner=f"{USERNAME}:{USERNAME}")
@@ -633,6 +688,7 @@ class UserEnvironment:
         return all_success
 
     def copy_shell_configs(self) -> bool:
+        """Copy shell configuration files from a central repository to user directories."""
         logger.info("Copying shell configuration files...")
         files = [".bashrc", ".profile"]
         src_dir = os.path.join(
@@ -667,6 +723,7 @@ class UserEnvironment:
         return all_success
 
     def copy_config_folders(self) -> bool:
+        """Synchronize configuration folders from the repository to the user's .config directory."""
         logger.info("Synchronizing configuration folders...")
         src_dir = os.path.join(
             USER_HOME, "github", "bash", "linux", "ubuntu", "dotfiles"
@@ -692,6 +749,7 @@ class UserEnvironment:
             return False
 
     def set_bash_shell(self) -> bool:
+        """Ensure the default shell for the user is set to /bin/bash."""
         logger.info("Setting default shell to /bin/bash...")
         if not Utils.command_exists("bash"):
             if not SystemUpdater().install_packages(["bash"]):
@@ -720,6 +778,7 @@ class UserEnvironment:
 # ----------------------------------------------------------------
 class SecurityHardener:
     def configure_ssh(self, port: int = 22) -> bool:
+        """Configure SSH settings for improved security."""
         logger.info("Configuring SSH service...")
         try:
             Utils.run_command(["systemctl", "enable", "--now", "ssh"])
@@ -775,6 +834,7 @@ class SecurityHardener:
             return False
 
     def setup_sudoers(self) -> bool:
+        """Configure sudoers file for the specified user."""
         logger.info(f"Configuring sudoers for {USERNAME}...")
         try:
             Utils.run_command(["id", USERNAME], capture_output=True)
@@ -802,6 +862,7 @@ class SecurityHardener:
             return False
 
     def configure_firewall(self) -> bool:
+        """Set up the UFW firewall with default rules and allowed ports."""
         logger.info("Configuring UFW firewall...")
         ufw_cmd = "/usr/sbin/ufw"
         if not (os.path.isfile(ufw_cmd) and os.access(ufw_cmd, os.X_OK)):
@@ -844,6 +905,7 @@ class SecurityHardener:
             return False
 
     def configure_fail2ban(self) -> bool:
+        """Install and configure Fail2ban for SSH and other services."""
         logger.info("Configuring Fail2ban...")
         if not Utils.command_exists("fail2ban-server"):
             if not SystemUpdater().install_packages(["fail2ban"]):
@@ -874,6 +936,7 @@ class SecurityHardener:
             return False
 
     def configure_apparmor(self) -> bool:
+        """Install and enable AppArmor along with updating profiles."""
         logger.info("Configuring AppArmor...")
         try:
             if not SystemUpdater().install_packages(["apparmor", "apparmor-utils"]):
@@ -903,6 +966,7 @@ class SecurityHardener:
 # ----------------------------------------------------------------
 class ServiceInstaller:
     def install_fastfetch(self) -> bool:
+        """Download and install Fastfetch for system information."""
         logger.info("Installing Fastfetch...")
         if Utils.command_exists("fastfetch"):
             return True
@@ -918,6 +982,7 @@ class ServiceInstaller:
             return False
 
     def docker_config(self) -> bool:
+        """Install Docker (or docker.io) and configure daemon settings."""
         logger.info("Configuring Docker...")
         if not Utils.command_exists("docker"):
             try:
@@ -984,6 +1049,7 @@ class ServiceInstaller:
             return False
 
     def install_configure_caddy(self) -> bool:
+        """Install and configure Caddy web server with default settings."""
         logger.info("Installing and configuring Caddy...")
         caddy_installed = Utils.command_exists("caddy")
         if not caddy_installed:
@@ -1053,6 +1119,7 @@ class ServiceInstaller:
             return caddy_installed
 
     def install_nala(self) -> bool:
+        """Install Nala if it is not already installed."""
         logger.info("Installing Nala...")
         if Utils.command_exists("nala"):
             return True
@@ -1072,6 +1139,7 @@ class ServiceInstaller:
             return False
 
     def install_enable_tailscale(self) -> bool:
+        """Install and enable Tailscale for secure network connectivity."""
         logger.info("Installing and enabling Tailscale...")
         if not Utils.command_exists("tailscale"):
             try:
@@ -1094,6 +1162,7 @@ class ServiceInstaller:
             return Utils.command_exists("tailscale")
 
     def deploy_user_scripts(self) -> bool:
+        """Deploy user scripts from a central repository to the user's bin directory."""
         logger.info("Deploying user scripts...")
         src = os.path.join(USER_HOME, "github", "bash", "linux", "ubuntu", "_scripts")
         tgt = os.path.join(USER_HOME, "bin")
@@ -1111,6 +1180,7 @@ class ServiceInstaller:
             return False
 
     def configure_unattended_upgrades(self) -> bool:
+        """Configure the system for unattended upgrades."""
         logger.info("Configuring unattended upgrades...")
         try:
             if not SystemUpdater().install_packages(
@@ -1166,6 +1236,7 @@ class ServiceInstaller:
 # ----------------------------------------------------------------
 class MaintenanceManager:
     def configure_periodic(self) -> bool:
+        """Set up a daily maintenance cron job."""
         logger.info("Setting up daily maintenance cron job...")
         cron_file = "/etc/cron.daily/ubuntu_maintenance"
         marker = "# Ubuntu maintenance script"
@@ -1194,6 +1265,7 @@ echo "Completed $(date)" >> $LOG
             return False
 
     def backup_configs(self) -> bool:
+        """Backup critical configuration files."""
         logger.info("Backing up configuration files...")
         ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         backup_dir = os.path.join(BACKUP_DIR, f"ubuntu_config_{ts}")
@@ -1220,6 +1292,7 @@ echo "Completed $(date)" >> $LOG
         return success
 
     def update_ssl_certificates(self) -> bool:
+        """Renew SSL certificates using certbot."""
         logger.info("Updating SSL certificates...")
         if not Utils.command_exists("certbot"):
             if not SystemUpdater().install_packages(["certbot"]):
@@ -1240,6 +1313,7 @@ echo "Completed $(date)" >> $LOG
 # ----------------------------------------------------------------
 class SystemTuner:
     def tune_system(self) -> bool:
+        """Apply kernel and system tuning parameters."""
         logger.info("Applying system tuning settings...")
         sysctl_conf = "/etc/sysctl.conf"
         if os.path.isfile(sysctl_conf):
@@ -1280,6 +1354,7 @@ class SystemTuner:
             return False
 
     def home_permissions(self) -> bool:
+        """Secure user home directory permissions."""
         logger.info(f"Securing home directory for {USERNAME}...")
         try:
             Utils.run_command(["chown", "-R", f"{USERNAME}:{USERNAME}", USER_HOME])
@@ -1312,6 +1387,7 @@ class SystemTuner:
 # ----------------------------------------------------------------
 class FinalChecker:
     def system_health_check(self) -> Dict[str, Any]:
+        """Perform a basic system health check."""
         logger.info("Performing system health check...")
         health: Dict[str, Any] = {}
         try:
@@ -1386,6 +1462,7 @@ class FinalChecker:
         return health
 
     def verify_firewall_rules(self) -> bool:
+        """Verify that UFW is active and allowed ports are open."""
         logger.info("Verifying firewall rules...")
         try:
             ufw_status = subprocess.check_output(["ufw", "status"], text=True).strip()
@@ -1408,6 +1485,7 @@ class FinalChecker:
         return True
 
     def final_checks(self) -> bool:
+        """Run final system checks and return overall pass status."""
         logger.info("Performing final system checks...")
         all_passed = True
         try:
@@ -1459,6 +1537,7 @@ class FinalChecker:
             return False
 
     def cleanup_system(self) -> bool:
+        """Perform system cleanup tasks to free resources and remove old files."""
         logger.info("Performing system cleanup...")
         success = True
         try:
@@ -1539,6 +1618,7 @@ class FinalChecker:
             return False
 
     def auto_reboot(self) -> None:
+        """Reboot the system automatically after a successful setup."""
         logger.info("Setup complete. System will reboot automatically in 60 seconds.")
         print_success("Setup completed successfully. Rebooting in 60 seconds...")
         time.sleep(60)
@@ -1553,8 +1633,8 @@ class FinalChecker:
 # ----------------------------------------------------------------
 class UbuntuServerSetup:
     def __init__(self) -> None:
-        self.success = True
-        self.start_time = time.time()
+        self.success: bool = True
+        self.start_time: float = time.time()
         self.preflight = PreflightChecker()
         self.updater = SystemUpdater()
         self.user_env = UserEnvironment()
@@ -1566,9 +1646,9 @@ class UbuntuServerSetup:
 
     def run(self) -> int:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print_pyfiglet_header("Ubuntu Server Setup for ARM")
+        display_dynamic_banner("Ubuntu Server Setup for ARM")
         console.print(f"[step]{'-' * 40}[/step]")
-        console.print(f"[step]  Starting Setup (v6.0.0) at {now}[/step]")
+        console.print(f"[step]  Starting Setup (v{VERSION}) at {now}[/step]")
         console.print(f"[step]{'-' * 40}[/step]")
         logger.info(f"Starting Ubuntu Server Setup for ARM at {now}")
 
@@ -1909,7 +1989,7 @@ class UbuntuServerSetup:
             }
         status_report()
 
-        # For unattended mode, automatically reboot if all checks passed.
+        # In unattended mode, automatically reboot if all checks passed.
         if self.success and final_result:
             self.final_checker.auto_reboot()
         else:
@@ -1920,18 +2000,9 @@ class UbuntuServerSetup:
 
 
 # ----------------------------------------------------------------
-# Main Entry Point
+# Main Entry Point (No CLI arguments, runs unattended)
 # ----------------------------------------------------------------
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Ubuntu Server Initialization and Hardening Utility for ARM (Raspberry Pi)"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Perform a dry run without making changes",
-    )
-    args = parser.parse_args()
     return UbuntuServerSetup().run()
 
 
