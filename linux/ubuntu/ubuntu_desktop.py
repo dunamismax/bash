@@ -2017,7 +2017,7 @@ class UbuntuDesktopSetup:
             return False
 
     # ----------------------------------------------------------------
-    # Phase 13: Final Checks & Reboot
+    # Phase 13: Final Checks (No Auto-Reboot)
     # ----------------------------------------------------------------
     def phase_final_checks(self) -> bool:
         self.print_section("Final System Checks")
@@ -2032,12 +2032,11 @@ class UbuntuDesktopSetup:
 
 Kernel Version: {info.get("kernel", "Unknown")}
 
-The system will automatically reboot in 10 seconds to apply all changes.
+No automatic reboot is scheduled.
 """
         display_panel(summary, style=NordColors.GREEN, title="Success")
         print_status_report()
-        self.logger.info("Scheduling automatic reboot in 10 seconds...")
-        self.run_command(["shutdown", "-r", "+1"], check=False)
+        self.logger.info("Final system checks completed. No reboot scheduled.")
         return True
 
     def final_checks(self) -> Dict[str, str]:
@@ -2081,6 +2080,7 @@ def main() -> None:
         setup = UbuntuDesktopSetup()
         global setup_instance
         setup_instance = setup
+
         # Execute phases sequentially:
         setup.check_root()
         setup.phase_install_nala()
@@ -2096,7 +2096,8 @@ def main() -> None:
         setup.phase_additional_apps()
         setup.phase_automatic_updates_security()
         setup.phase_cleanup_final()
-        setup.phase_final_checks()
+        setup.phase_final_checks()  # Final checks without rebooting
+
     except KeyboardInterrupt:
         console.print("\n[warning]Setup interrupted by user.[/warning]")
         try:
@@ -2116,7 +2117,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     try:
-        setup_instance = None
+        setup_instance = None  # Initialize global instance variable
         main()
     except Exception as e:
         console.print_exception()
