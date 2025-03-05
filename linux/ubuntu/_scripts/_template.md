@@ -87,27 +87,15 @@ SSH Connection Manager (Advanced Terminal Application)
 ---------------------------------------------------------
 
 A professional-grade terminal application for managing SSH connections with a
-Nord-themed interface. This version provides an interactive, menu-driven interface,
-real-time progress tracking, and robust error handling—all without auto-completion
-or dynamic machine-editing features. The device lists are statically configured.
-
-Features:
-  • Dynamic ASCII banners with gradient styling via Pyfiglet
-  • Interactive numbered menus using Rich prompts
-  • Real-time progress tracking and spinners with Rich
-  • Comprehensive error handling with color-coded messages and recovery suggestions
-  • Graceful signal handling for SIGINT and SIGTERM
-  • Type annotations and dataclasses for improved readability
-  • System-wide dependency management via Nala for python3-rich and python3-pyfiglet
+Nord-themed interface. This version provides a fully interactive, menu-driven
+experience with dynamic ASCII banners, real-time progress tracking, and robust
+error handling.
 
 Usage:
   Run the script and use the numbered menu options to select a device:
     - Numbers 1-N: Connect to a Tailscale device by number
     - L1-LN:      Connect to a Local device by number
     - r:          Refresh device status
-    - c:          Configure SSH options
-    - s:          Search for devices
-    - h:          Show help information
     - q:          Quit the application
 
 Version: 8.5.0
@@ -129,13 +117,13 @@ import traceback
 import json
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     import pyfiglet
     from rich import box
     from rich.align import Align
-    from rich.console import Console, ConsoleRenderable
+    from rich.console import Console
     from rich.panel import Panel
     from rich.progress import (
         Progress,
@@ -144,7 +132,6 @@ try:
         BarColumn,
         TaskProgressColumn,
         TimeRemainingColumn,
-        TaskID,
     )
     from rich.prompt import Prompt, Confirm
     from rich.table import Table
@@ -156,10 +143,10 @@ except ImportError:
     )
     sys.exit(1)
 
-# Enable rich traceback for debugging
+# Enable rich traceback for debugging with local variables
 install_rich_traceback(show_locals=True)
 
-# Initialize global Rich Console
+# Global Rich Console
 console: Console = Console()
 
 # ----------------------------------------------------------------
@@ -171,14 +158,13 @@ VERSION: str = "8.5.0"
 HOSTNAME: str = socket.gethostname()
 DEFAULT_USERNAME: str = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
 SSH_COMMAND: str = "ssh"
-PING_TIMEOUT: float = 1.5  # seconds
+PING_TIMEOUT: float = 1.5  # seconds for ping operations
 PING_COUNT: int = 1
-OPERATION_TIMEOUT: int = 30  # seconds
+OPERATION_TIMEOUT: int = 30  # seconds for commands
 DEFAULT_SSH_PORT: int = 22
-MAX_PARALLEL_PINGS: int = min(20, os.cpu_count() or 4)
-TRANSITION_DELAY: float = 0.3  # seconds
+TRANSITION_DELAY: float = 0.3  # delay for UI transitions
 
-# Configuration file for SSH options (stored in user config directory)
+# Directory and file for configuration
 CONFIG_DIR: str = os.path.expanduser("~/.config/ssh_manager")
 CONFIG_FILE: str = os.path.join(CONFIG_DIR, "config.json")
 
@@ -208,9 +194,13 @@ class NordColors:
 
     @classmethod
     def get_frost_gradient(cls, steps: int = 4) -> List[str]:
-        """Returns a gradient of frost colors"""
+        """Returns a gradient of frost colors (cycled if more steps are needed)"""
         frosts = [cls.FROST_1, cls.FROST_2, cls.FROST_3, cls.FROST_4]
-        return frosts[:steps]
+        return (
+            frosts[:steps]
+            if steps <= len(frosts)
+            else frosts * ((steps // len(frosts)) + 1)
+        )
 
 
 # ----------------------------------------------------------------
@@ -220,58 +210,38 @@ class NordColors:
 class Device:
     """
     Represents an SSH-accessible device with connection details.
-
-    Attributes:
-        name: The device's display name.
-        ip_address: IP address used for SSH connection.
-        device_type: "tailscale" or "local".
-        description: A short description (e.g. OS, version).
-        port: SSH port number.
-        username: Optional default username for the device.
-        status: True if online, False if offline, None if unknown.
-        last_ping_time: Timestamp of the last ping check.
-        response_time: Ping response time in milliseconds.
     """
 
     name: str
     ip_address: str
-    device_type: str = "local"  # "tailscale" or "local"
+    device_type: str = "local"  # Either "tailscale" or "local"
     description: Optional[str] = None
     port: int = DEFAULT_SSH_PORT
     username: Optional[str] = None
-    status: Optional[bool] = None
+    status: Optional[bool] = None  # True for online, False for offline, None unknown
     last_ping_time: float = field(default_factory=time.time)
     response_time: Optional[float] = None
 
     def get_connection_string(self, username: Optional[str] = None) -> str:
-        """Generate SSH connection string with username"""
+        """Generate an SSH connection string with username and auto-accept host keys."""
         user = username or self.username or DEFAULT_USERNAME
         if self.port == DEFAULT_SSH_PORT:
             return f"{user}@{self.ip_address}"
         return f"{user}@{self.ip_address} -p {self.port}"
 
     def get_status_indicator(self) -> Text:
-        """Generate a formatted status indicator with Rich Text"""
+        """Return a formatted status indicator as a Rich Text object."""
         if self.status is True:
             return Text("● ONLINE", style=f"bold {NordColors.GREEN}")
         elif self.status is False:
             return Text("● OFFLINE", style=f"bold {NordColors.RED}")
-        else:
-            return Text("○ UNKNOWN", style=f"dim {NordColors.POLAR_NIGHT_4}")
+        return Text("○ UNKNOWN", style=f"dim {NordColors.POLAR_NIGHT_4}")
 
 
 @dataclass
 class AppConfig:
     """
-    Application configuration for SSH options.
-
-    Attributes:
-        default_username: Default SSH username.
-        ssh_options: Dictionary of SSH options with (value, description).
-        last_refresh: Timestamp of the last device status refresh.
-        device_check_interval: Seconds between automatic status checks.
-        terminal_width: Last known terminal width.
-        terminal_height: Last known terminal height.
+    Configuration for SSH options.
     """
 
     default_username: str = DEFAULT_USERNAME
@@ -280,38 +250,31 @@ class AppConfig:
             "ServerAliveInterval": ("30", "Interval (sec) to send keepalive packets"),
             "ServerAliveCountMax": ("3", "Packets to send before disconnecting"),
             "ConnectTimeout": ("10", "Timeout (sec) for establishing connection"),
-            "StrictHostKeyChecking": ("accept-new", "Host key verification behavior"),
+            "StrictHostKeyChecking": ("accept-new", "Auto-accept new host keys"),
             "Compression": ("yes", "Enable compression"),
             "LogLevel": ("ERROR", "SSH logging verbosity"),
         }
     )
     last_refresh: float = field(default_factory=time.time)
-    device_check_interval: int = 300  # seconds
+    device_check_interval: int = 300  # seconds between automatic checks
     terminal_width: int = 80
     terminal_height: int = 24
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary for serialization"""
+        """Convert configuration to dictionary for JSON serialization."""
         return asdict(self)
 
 
 # ----------------------------------------------------------------
 # Static Device Lists
 # ----------------------------------------------------------------
-# Tailscale Devices
+# Preconfigured Tailscale Devices
 STATIC_TAILSCALE_DEVICES: List[Device] = [
     Device(
-        name="raspberrypi-3",
-        ip_address="100.116.191.42",
+        name="ubuntu-server",
+        ip_address="100.109.43.88",
         device_type="tailscale",
-        description="Raspberry Pi 3",
-        username="sawyer",
-    ),
-    Device(
-        name="raspberrypi-5",
-        ip_address="100.105.117.18",
-        device_type="tailscale",
-        description="Raspberry Pi 5",
+        description="Main Server",
         username="sawyer",
     ),
     Device(
@@ -322,10 +285,17 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
         username="sawyer",
     ),
     Device(
-        name="ubuntu-server",
-        ip_address="100.109.43.88",
+        name="raspberrypi-5",
+        ip_address="100.105.117.18",
         device_type="tailscale",
-        description="Main Server",
+        description="Raspberry Pi 5",
+        username="sawyer",
+    ),
+    Device(
+        name="raspberrypi-3",
+        ip_address="100.116.191.42",
+        device_type="tailscale",
+        description="Raspberry Pi 3",
         username="sawyer",
     ),
     Device(
@@ -356,16 +326,9 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
         description="VM 04",
         username="sawyer",
     ),
-    Device(
-        name="ubuntu-server-windows-11-ent-ltsc-vm",
-        ip_address="100.66.128.35",
-        device_type="tailscale",
-        description="Windows 11 VM",
-        username="sawyer",
-    ),
 ]
 
-# Local Devices
+# Preconfigured Local Devices
 STATIC_LOCAL_DEVICES: List[Device] = [
     Device(
         name="ubuntu-server",
@@ -374,16 +337,16 @@ STATIC_LOCAL_DEVICES: List[Device] = [
         description="Main Server",
     ),
     Device(
-        name="raspberrypi-5",
-        ip_address="192.168.0.40",
-        device_type="local",
-        description="Raspberry Pi 5",
-    ),
-    Device(
         name="ubuntu-lenovo",
         ip_address="192.168.0.45",
         device_type="local",
         description="Lenovo Laptop",
+    ),
+    Device(
+        name="raspberrypi-5",
+        ip_address="192.168.0.40",
+        device_type="local",
+        description="Raspberry Pi 5",
     ),
     Device(
         name="raspberrypi-3",
@@ -393,15 +356,15 @@ STATIC_LOCAL_DEVICES: List[Device] = [
     ),
 ]
 
-# Combined static device list
+# Combined Device List
 DEVICES: List[Device] = STATIC_TAILSCALE_DEVICES + STATIC_LOCAL_DEVICES
 
 
 # ----------------------------------------------------------------
-# File System Operations (for SSH configuration)
+# File System Operations (SSH Configuration)
 # ----------------------------------------------------------------
 def ensure_config_directory() -> None:
-    """Create configuration directory if it doesn't exist"""
+    """Ensure the configuration directory exists."""
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
     except Exception as e:
@@ -409,7 +372,7 @@ def ensure_config_directory() -> None:
 
 
 def save_config(config: AppConfig) -> bool:
-    """Save configuration to JSON file"""
+    """Save the application configuration to a JSON file."""
     ensure_config_directory()
     try:
         with open(CONFIG_FILE, "w") as f:
@@ -421,7 +384,7 @@ def save_config(config: AppConfig) -> bool:
 
 
 def load_config() -> AppConfig:
-    """Load configuration from JSON file or create default"""
+    """Load configuration from JSON file or return default config."""
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
@@ -436,20 +399,18 @@ def load_config() -> AppConfig:
 # UI Helper Functions
 # ----------------------------------------------------------------
 def clear_screen() -> None:
-    """Clear the terminal screen"""
+    """Clear the terminal display."""
     console.clear()
 
 
 def create_header() -> Panel:
     """
-    Create a dynamic ASCII art header using Pyfiglet.
-    The header adapts to terminal width.
+    Generate a dynamic ASCII art header using Pyfiglet.
+    The header adapts to terminal width and applies a frost gradient.
     """
     term_width, _ = shutil.get_terminal_size((80, 24))
     fonts = ["slant", "small", "mini", "digital"]
     font_to_use = fonts[0]
-
-    # Select appropriate font based on terminal width
     if term_width < 60:
         font_to_use = fonts[1]
     elif term_width < 40:
@@ -459,24 +420,14 @@ def create_header() -> Panel:
         fig = pyfiglet.Figlet(font=font_to_use, width=min(term_width - 10, 120))
         ascii_art = fig.renderText(APP_NAME)
     except Exception:
-        # Fallback if Pyfiglet fails
         ascii_art = f"  {APP_NAME}  "
 
-    # Create a gradient effect with the ASCII art without using Rich markup
     ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
     colors = NordColors.get_frost_gradient(len(ascii_lines))
-
-    # Build rich Text objects directly without markup
-    text_lines = []
-    for i, line in enumerate(ascii_lines):
-        color = colors[i % len(colors)]
-        text_lines.append(Text(line, style=f"bold {color}"))
-
-    # Combine all lines
     combined_text = Text()
-    for i, line in enumerate(text_lines):
-        combined_text.append(line)
-        if i < len(text_lines) - 1:
+    for i, line in enumerate(ascii_lines):
+        combined_text.append(Text(line, style=f"bold {colors[i % len(colors)]}"))
+        if i < len(ascii_lines) - 1:
             combined_text.append("\n")
 
     return Panel(
@@ -492,32 +443,32 @@ def create_header() -> Panel:
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """Print a formatted message with a prefix"""
+    """Print a formatted message with a prefix."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def print_success(message: str) -> None:
-    """Print a success message"""
+    """Print a success message."""
     print_message(message, NordColors.GREEN, "✓")
 
 
 def print_warning(message: str) -> None:
-    """Print a warning message"""
+    """Print a warning message."""
     print_message(message, NordColors.YELLOW, "⚠")
 
 
 def print_error(message: str) -> None:
-    """Print an error message"""
+    """Print an error message."""
     print_message(message, NordColors.RED, "✗")
 
 
 def print_step(message: str) -> None:
-    """Print a step message (for procedural tasks)"""
+    """Print a step message for procedural instructions."""
     print_message(message, NordColors.FROST_2, "→")
 
 
 def print_section(title: str) -> None:
-    """Print a section header"""
+    """Print a section header."""
     console.print()
     console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
     console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
@@ -527,7 +478,7 @@ def print_section(title: str) -> None:
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """Display a formatted panel with a message"""
+    """Display a formatted panel with a title and message."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=style,
@@ -538,37 +489,8 @@ def display_panel(
     console.print(panel)
 
 
-def show_help() -> None:
-    """Display help information with available commands"""
-    help_text = f"""
-[bold]Available Commands:[/]
-
-[bold {NordColors.FROST_2}]1-N[/]:       Connect to a Tailscale device by number
-[bold {NordColors.FROST_2}]L1-LN[/]:     Connect to a Local device by number
-[bold {NordColors.FROST_2}]r[/]:         Refresh device status
-[bold {NordColors.FROST_2}]c[/]:         Configure SSH options
-[bold {NordColors.FROST_2}]s[/]:         Search for devices
-[bold {NordColors.FROST_2}]h[/]:         Show help information
-[bold {NordColors.FROST_2}]q[/]:         Quit the application
-
-[bold {NordColors.FROST_2}]Options:[/]   
-  Enter your choice and press Enter. For numeric options,
-  just type the number and press Enter. For letter options,
-  type the letter and press Enter.
-"""
-    console.print(
-        Panel(
-            Text.from_markup(help_text),
-            title=f"[bold {NordColors.FROST_1}]Help & Commands[/]",
-            border_style=NordColors.FROST_3,
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-    )
-
-
 def display_system_info() -> None:
-    """Display system information in the header"""
+    """Display system information (time, host, platform) in the header."""
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     info = (
         f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/] | "
@@ -589,7 +511,7 @@ def run_command(
     capture_output: bool = True,
     timeout: int = OPERATION_TIMEOUT,
 ) -> subprocess.CompletedProcess:
-    """Execute a command and return the results with error handling"""
+    """Execute a shell command with error handling and return the result."""
     try:
         result = subprocess.run(
             cmd,
@@ -619,22 +541,20 @@ def run_command(
 # Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform cleanup operations before exiting"""
+    """Perform cleanup operations before application exit."""
     try:
         print_message("Cleaning up session resources...", NordColors.FROST_3)
-        # Additional cleanup operations could be added here
     except Exception as e:
         print_error(f"Error during cleanup: {e}")
 
 
 def signal_handler(sig: int, frame: Any) -> None:
-    """Handle interruption signals gracefully"""
+    """Handle interruption signals (SIGINT, SIGTERM) gracefully."""
     try:
         sig_name = signal.Signals(sig).name
         print_warning(f"Process interrupted by {sig_name}")
     except (ValueError, AttributeError):
         print_warning(f"Process interrupted by signal {sig}")
-
     cleanup()
     sys.exit(128 + sig)
 
@@ -650,8 +570,8 @@ atexit.register(cleanup)
 # ----------------------------------------------------------------
 def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
     """
-    Ping a device to check connectivity and measure response time
-    Returns a tuple of (success, response_time_ms)
+    Ping a device to check connectivity and measure response time.
+    Returns a tuple: (is_successful, response_time_in_ms)
     """
     start_time = time.time()
     try:
@@ -680,7 +600,7 @@ def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
             timeout=PING_TIMEOUT + 1,
         )
         end_time = time.time()
-        response_time = (end_time - start_time) * 1000  # in ms
+        response_time = (end_time - start_time) * 1000  # in milliseconds
         return (
             result.returncode == 0
         ), response_time if result.returncode == 0 else None
@@ -692,8 +612,8 @@ def check_device_statuses(
     devices: List[Device], progress_callback: Optional[Callable[[int], None]] = None
 ) -> None:
     """
-    Check connectivity status for all devices
-    If progress_callback is provided, it will be called with the index of each device
+    Check connectivity status for a list of devices.
+    Calls an optional progress_callback after each device check.
     """
 
     def check_single(device: Device, index: int) -> None:
@@ -709,12 +629,11 @@ def check_device_statuses(
 
 
 # ----------------------------------------------------------------
-# UI Components
+# UI Components for Device Display
 # ----------------------------------------------------------------
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
     """
-    Create a compact rich table with simplified device information
-    Optimized for space and readability
+    Create a Rich table displaying device details in a compact format.
     """
     table = Table(
         show_header=True,
@@ -726,8 +645,6 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
         box=box.ROUNDED,
         padding=(0, 1),
     )
-
-    # Define columns with optimized widths
     table.add_column("#", style=f"bold {NordColors.FROST_4}", justify="right", width=3)
     table.add_column("Name", style=f"bold {NordColors.FROST_1}", width=20, no_wrap=True)
     table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}", width=15)
@@ -735,11 +652,7 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
     table.add_column(
         "Label", style=f"dim {NordColors.SNOW_STORM_1}", width=15, no_wrap=True
     )
-
-    # Count online devices for the summary
     online_count = sum(1 for d in devices if d.status is True)
-
-    # Add rows for each device
     for idx, device in enumerate(devices, 1):
         table.add_row(
             f"{prefix}{idx}",
@@ -748,25 +661,19 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
             device.get_status_indicator(),
             Text(device.description or "", overflow="ellipsis"),
         )
-
-    # Add footer with summary
     if devices:
         footer = Text.from_markup(
             f"[{NordColors.FROST_3}]{online_count}/{len(devices)} online[/]"
         )
         table.caption = footer
-
     return table
-
-
-# Command display options have been removed as requested
 
 
 # ----------------------------------------------------------------
 # SSH Connection Functions
 # ----------------------------------------------------------------
 def get_username(default_username: str) -> str:
-    """Prompt for username with a default value"""
+    """Prompt the user for a username with a default suggestion."""
     return Prompt.ask(
         f"Username for SSH connection [{default_username}]: ", default=default_username
     )
@@ -774,29 +681,22 @@ def get_username(default_username: str) -> str:
 
 def connect_to_device(device: Device, username: Optional[str] = None) -> None:
     """
-    Establish an SSH connection to the selected device
-    Displays a connection panel with status updates
+    Establish an SSH connection to the chosen device.
+    Uses a progress spinner and builds the SSH command to include auto-accept keys.
+    Always uses the Ubuntu ssh key located at /home/sawyer/.ssh/id_rsa.
     """
     clear_screen()
     console.print(create_header())
-
-    # Use provided username or device username or default
     effective_username = username or device.username or DEFAULT_USERNAME
-
-    # Prepare connection information for display
     connection_info = (
         f"\n[bold {NordColors.FROST_2}]Device:[/] [bold {NordColors.SNOW_STORM_2}]{device.name}[/]\n"
         f"[bold {NordColors.FROST_2}]Address:[/] [bold {NordColors.SNOW_STORM_2}]{device.ip_address}[/]\n"
         f"[bold {NordColors.FROST_2}]User:[/] [bold {NordColors.SNOW_STORM_2}]{effective_username}[/]\n"
     )
-
     if device.description:
         connection_info += f"[bold {NordColors.FROST_2}]Description:[/] [bold {NordColors.SNOW_STORM_2}]{device.description}[/]\n"
-
     if device.port != DEFAULT_SSH_PORT:
         connection_info += f"[bold {NordColors.FROST_2}]Port:[/] [bold {NordColors.SNOW_STORM_2}]{device.port}[/]\n"
-
-    # Display connection information
     console.print(
         Panel(
             Text.from_markup(connection_info),
@@ -806,9 +706,7 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
             box=box.ROUNDED,
         )
     )
-
     try:
-        # Show progress with animated spinner during connection
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn("{task.description}"),
@@ -818,40 +716,31 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
                 "[bold]Initializing secure channel...", total=None
             )
             time.sleep(0.4)
-
             progress.update(
                 task_id, description=f"[bold]Negotiating encryption parameters..."
             )
             time.sleep(0.4)
-
             progress.update(
                 task_id,
                 description=f"[bold]Establishing SSH tunnel to {device.ip_address}...",
             )
             time.sleep(0.4)
-
             progress.update(
                 task_id,
                 description=f"[bold {NordColors.GREEN}]Connection established. Launching secure shell...",
             )
             time.sleep(0.4)
-
-        # Build SSH command with options
-        ssh_args = [SSH_COMMAND]
+        # Build SSH command with options from configuration.
+        # Always include the Ubuntu key with -i /home/sawyer/.ssh/id_rsa.
+        ssh_args = [SSH_COMMAND, "-i", "/home/sawyer/.ssh/id_rsa"]
         config = load_config()
-
         for option, (value, _) in config.ssh_options.items():
             ssh_args.extend(["-o", f"{option}={value}"])
-
         if device.port != DEFAULT_SSH_PORT:
             ssh_args.extend(["-p", str(device.port)])
-
         ssh_args.append(f"{effective_username}@{device.ip_address}")
-
-        # Execute SSH command (replaces current process)
         os.execvp(SSH_COMMAND, ssh_args)
     except Exception as e:
-        # Handle connection errors with useful troubleshooting information
         console.print(
             Panel(
                 Text.from_markup(
@@ -863,30 +752,26 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
                 box=box.ROUNDED,
             )
         )
-
         print_section("Troubleshooting Tips")
-        print_step("Check that the device is online and SSH is properly configured")
-        print_step("Verify that SSH is installed and running on the target device")
-        print_step("Ensure the correct username and IP address were used")
-        print_step("Try connecting manually with 'ssh -v' for verbose output")
-
+        print_step("Check that the device is online and SSH is properly configured.")
+        print_step("Verify that SSH is installed and running on the target device.")
+        print_step("Ensure the correct username and IP address were used.")
+        print_step("Try connecting manually with 'ssh -v' for verbose output.")
         Prompt.ask("Press Enter to return to the main menu")
 
 
 # ----------------------------------------------------------------
-# Device Status Refresh and SSH Option Configuration
+# Device Status Refresh
 # ----------------------------------------------------------------
 def refresh_device_statuses(devices: List[Device]) -> None:
-    """Refresh the status of all devices with progress indicator"""
+    """Refresh the status of all devices with a progress indicator."""
     clear_screen()
     console.print(create_header())
-
     display_panel(
         "Checking connectivity status of all devices",
         style=NordColors.FROST_3,
         title="Network Scan",
     )
-
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("Pinging devices"),
@@ -903,206 +788,6 @@ def refresh_device_statuses(devices: List[Device]) -> None:
             progress.advance(scan_task)
 
         check_device_statuses(devices, update_progress)
-
-    Prompt.ask("Press Enter to return to the main menu")
-
-
-def configure_ssh_options() -> None:
-    """Configure SSH options interactively"""
-    clear_screen()
-    console.print(create_header())
-    print_section("SSH Configuration Options")
-
-    config = load_config()
-
-    # Create table of current SSH options
-    table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]Current SSH Options[/]",
-        border_style=NordColors.FROST_3,
-        box=box.ROUNDED,
-    )
-
-    table.add_column("Option", style=f"bold {NordColors.FROST_3}")
-    table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
-
-    for option, (value, description) in config.ssh_options.items():
-        table.add_row(option, value, description)
-
-    console.print(table)
-    print_message(
-        "These options will be applied to all SSH connections", NordColors.FROST_2
-    )
-
-    # Configuration menu
-    choices = [
-        "1. Modify an option",
-        "2. Add a new option",
-        "3. Reset to defaults",
-        "4. Change default username",
-        "5. Return to main menu",
-    ]
-
-    for choice in choices:
-        console.print(f"[{NordColors.FROST_2}]{choice}[/]")
-
-    selected = Prompt.ask(
-        "Select an option", choices=["1", "2", "3", "4", "5"], default="5"
-    )
-
-    if selected == "1":
-        # Modify existing option
-        option_keys = list(config.ssh_options.keys())
-        if not option_keys:
-            print_error("No options to modify")
-        else:
-            console.print("Available Options:")
-            for i, key in enumerate(option_keys, 1):
-                console.print(f"[bold]{i}[/]: {key}")
-
-            option_num = Prompt.ask("Enter option number to modify", default="1")
-            try:
-                idx = int(option_num) - 1
-                if 0 <= idx < len(option_keys):
-                    key = option_keys[idx]
-                    current_value, description = config.ssh_options[key]
-                    new_value = Prompt.ask(
-                        f"New value for {key}", default=current_value
-                    )
-                    config.ssh_options[key] = (new_value, description)
-                    save_config(config)
-                    print_success(f"Updated {key} to: {new_value}")
-                else:
-                    print_error("Invalid option number")
-            except ValueError:
-                print_error("Invalid input")
-
-    elif selected == "2":
-        # Add new option
-        new_key = Prompt.ask("Option name")
-        new_value = Prompt.ask("Option value")
-        description = Prompt.ask("Option description", default="Custom SSH option")
-        config.ssh_options[new_key] = (new_value, description)
-        save_config(config)
-        print_success(f"Added new option: {new_key}={new_value}")
-
-    elif selected == "3":
-        # Reset to defaults
-        if Confirm.ask("Reset all SSH options to defaults?", default=False):
-            config.ssh_options = {
-                "ServerAliveInterval": (
-                    "30",
-                    "Interval (sec) to send keepalive packets",
-                ),
-                "ServerAliveCountMax": ("3", "Packets to send before disconnecting"),
-                "ConnectTimeout": ("10", "Timeout (sec) for establishing connection"),
-                "StrictHostKeyChecking": (
-                    "accept-new",
-                    "Host key verification behavior",
-                ),
-                "Compression": ("yes", "Enable compression"),
-                "LogLevel": ("ERROR", "SSH logging verbosity"),
-            }
-            save_config(config)
-            print_success("SSH options reset to defaults")
-
-    elif selected == "4":
-        # Change default username
-        current = config.default_username
-        new_username = Prompt.ask("New default username", default=current)
-        config.default_username = new_username
-        save_config(config)
-        print_success(f"Default username changed to: {new_username}")
-
-    Prompt.ask("Press Enter to return to the main menu")
-
-
-def search_for_devices(devices: List[Device]) -> None:
-    """Search for devices by name, IP, or description"""
-    clear_screen()
-    console.print(create_header())
-
-    search_term = Prompt.ask("Enter search term (name, IP, or label)")
-    if not search_term:
-        return
-
-    term = search_term.lower()
-    matching = [
-        d
-        for d in devices
-        if term in d.name.lower()
-        or term in d.ip_address.lower()
-        or (d.description and term in d.description.lower())
-    ]
-
-    print_section(f"Search Results for '{search_term}'")
-
-    if not matching:
-        display_panel(
-            f"No devices found matching '{search_term}'",
-            style=NordColors.YELLOW,
-            title="No Results",
-        )
-    else:
-        # Create table of matching devices
-        table = Table(
-            show_header=True,
-            header_style=f"bold {NordColors.FROST_1}",
-            expand=False,
-            title=f"[bold {NordColors.FROST_2}]Matching Devices ({len(matching)})[/]",
-            border_style=NordColors.FROST_3,
-            box=box.ROUNDED,
-            padding=(0, 1),
-        )
-
-        # Define compact columns
-        table.add_column(
-            "#", style=f"bold {NordColors.FROST_4}", justify="right", width=3
-        )
-        table.add_column("Type", style=f"bold {NordColors.FROST_4}", width=9)
-        table.add_column(
-            "Name", style=f"bold {NordColors.FROST_1}", width=20, no_wrap=True
-        )
-        table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}", width=15)
-        table.add_column("Status", justify="center", width=12)
-        table.add_column(
-            "Label", style=f"dim {NordColors.SNOW_STORM_1}", width=15, no_wrap=True
-        )
-
-        for idx, d in enumerate(matching, 1):
-            dev_type = "Tailscale" if d.device_type == "tailscale" else "Local"
-            table.add_row(
-                f"{idx}",
-                dev_type,
-                Text(d.name, overflow="ellipsis"),
-                d.ip_address,
-                d.get_status_indicator(),
-                Text(d.description or "", overflow="ellipsis"),
-            )
-
-        console.print(table)
-
-        # Prompt to connect to found device
-        choice = Prompt.ask(
-            "Connect to a device? Enter its number or 'n' to cancel", default="n"
-        )
-
-        if choice.lower() != "n":
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(matching):
-                    selected_device = matching[idx]
-                    uname = get_username(selected_device.username or DEFAULT_USERNAME)
-                    connect_to_device(selected_device, uname)
-                    return
-                else:
-                    print_error(f"Invalid device number: {choice}")
-            except ValueError:
-                print_error(f"Invalid choice: {choice}")
-
     Prompt.ask("Press Enter to return to the main menu")
 
 
@@ -1110,14 +795,10 @@ def search_for_devices(devices: List[Device]) -> None:
 # Main Interactive Menu Loop
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main application entry point and interactive loop"""
-    # Initialize configuration
+    """Main entry point and interactive menu loop."""
     ensure_config_directory()
     config = load_config()
-
-    # Use static device list
     devices = DEVICES
-
     try:
         # Initial network scan
         clear_screen()
@@ -1127,7 +808,6 @@ def main() -> None:
             style=NordColors.FROST_3,
             title="Initialization",
         )
-
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn("Pinging devices"),
@@ -1146,51 +826,30 @@ def main() -> None:
                 progress.advance(scan_task)
 
             check_device_statuses(devices, update_progress)
-
         time.sleep(0.5)
-
         # Main application loop
         while True:
             term_width, term_height = shutil.get_terminal_size((80, 24))
             config.terminal_width = term_width
             config.terminal_height = term_height
-
             clear_screen()
             console.print(create_header())
             display_system_info()
-
-            # Split devices by type
             tailscale_devices = [d for d in devices if d.device_type == "tailscale"]
             local_devices = [d for d in devices if d.device_type == "local"]
-
-            # Create device tables
             tailscale_table = create_device_table(
                 tailscale_devices, "", "Tailscale Devices"
             )
             local_table = create_device_table(local_devices, "L", "Local Devices")
-
-            # Display tables side by side if terminal is wide enough
             if term_width >= 120:
                 from rich.columns import Columns
 
-                console.print(
-                    Columns(
-                        [
-                            tailscale_table,
-                            local_table,
-                        ],
-                        padding=(0, 2),
-                    )
-                )
+                console.print(Columns([tailscale_table, local_table], padding=(0, 2)))
             else:
-                # Display tables one after another with minimal padding
                 console.print(tailscale_table)
                 console.print()
                 console.print(local_table)
-
             console.print()
-
-            # Get user choice
             choice = (
                 Prompt.ask(
                     "Enter choice (number for Tailscale, L# for Local, r:refresh, q:quit)"
@@ -1198,9 +857,6 @@ def main() -> None:
                 .strip()
                 .lower()
             )
-
-            # Process user command
-            # Process user command - simplified to only needed options
             if choice in ("q", "quit", "exit"):
                 clear_screen()
                 console.print(
@@ -1215,7 +871,6 @@ def main() -> None:
             elif choice in ("r", "refresh"):
                 refresh_device_statuses(devices)
             elif choice.startswith("l"):
-                # Handle local device selection
                 try:
                     idx = int(choice[1:]) - 1
                     if 0 <= idx < len(local_devices):
@@ -1240,7 +895,6 @@ def main() -> None:
                     )
                     Prompt.ask("Press Enter to continue")
             else:
-                # Handle Tailscale device selection
                 try:
                     idx = int(choice) - 1
                     if 0 <= idx < len(tailscale_devices):
@@ -1265,15 +919,12 @@ def main() -> None:
                     )
                     Prompt.ask("Press Enter to continue")
     except Exception as e:
-        # Handle unhandled exceptions gracefully
         error_msg = str(e)
         tb_str = traceback.format_exc()
-
         console.print(
             Panel(
                 Text.from_markup(
-                    f"[bold {NordColors.RED}]An unexpected error occurred:[/]\n\n{error_msg}\n\n"
-                    f"[dim]{tb_str}[/dim]"
+                    f"[bold {NordColors.RED}]An unexpected error occurred:[/]\n\n{error_msg}\n\n[dim]{tb_str}[/dim]"
                 ),
                 border_style=NordColors.RED,
                 title="Unhandled Error",
@@ -1281,7 +932,6 @@ def main() -> None:
                 box=box.ROUNDED,
             )
         )
-
         sys.exit(1)
 
 
