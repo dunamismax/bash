@@ -401,7 +401,7 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
         console.print(f"[danger]Failed to push local key: {e}[/danger]")
         return
 
-    # Step 2: Retrieve remote public key (using BatchMode to avoid hanging on password prompts)
+    # Step 2: Retrieve remote public key
     console.print(
         f"[info]Retrieving remote public key from {remote_user}@{remote_host}...[/info]"
     )
@@ -411,11 +411,12 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
             "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ''; "
             "fi; cat ~/.ssh/id_rsa.pub"
         )
+        # Modified options: use PreferredAuthentications=publickey instead of BatchMode=yes
         result = subprocess.run(
             [
                 "ssh",
                 "-o",
-                "BatchMode=yes",
+                "PreferredAuthentications=publickey",
                 "-o",
                 "StrictHostKeyChecking=accept-new",
                 f"{remote_user}@{remote_host}",
