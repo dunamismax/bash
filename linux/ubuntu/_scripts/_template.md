@@ -1321,4 +1321,4 @@ Clear section delimiters and explanatory comments
 Contextual help embedded within the application
 Appropriate input validation with user guidance
 
-By following these guidelines, you'll create terminal applications that combine professional architecture with exceptional user experience, adapted specifically to each user's requirements.
+By following these guidelines, you'll create terminal applications that combine professional architecture with exceptional user experience, adapted specifically to each user's requirements. Do not use argparse or implement any command line arguments.
