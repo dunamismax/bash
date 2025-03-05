@@ -8,23 +8,11 @@ Nord-themed interface. This version provides a fully interactive, menu-driven
 experience with dynamic ASCII banners, real-time progress tracking, and robust
 error handling.
 
-Features:
-  • Dynamic ASCII banners with gradient styling via Pyfiglet
-  • Interactive numbered menus with validation using Rich prompts
-  • Real-time progress tracking, spinners, and tables using Rich
-  • Comprehensive error handling with color-coded messages and recovery tips
-  • Graceful signal handling for SIGINT and SIGTERM
-  • Type annotations and dataclasses for improved readability
-  • SSH connections built with auto-accept new keys ("StrictHostKeyChecking=accept-new")
-
 Usage:
   Run the script and use the numbered menu options to select a device:
     - Numbers 1-N: Connect to a Tailscale device by number
     - L1-LN:      Connect to a Local device by number
     - r:          Refresh device status
-    - c:          Configure SSH options
-    - s:          Search for devices
-    - h:          Show help information
     - q:          Quit the application
 
 Version: 8.5.0
@@ -154,7 +142,6 @@ class Device:
     def get_connection_string(self, username: Optional[str] = None) -> str:
         """Generate an SSH connection string with username and auto-accept host keys."""
         user = username or self.username or DEFAULT_USERNAME
-        # The SSH options from configuration always include auto acceptance.
         if self.port == DEFAULT_SSH_PORT:
             return f"{user}@{self.ip_address}"
         return f"{user}@{self.ip_address} -p {self.port}"
@@ -201,17 +188,10 @@ class AppConfig:
 # Preconfigured Tailscale Devices
 STATIC_TAILSCALE_DEVICES: List[Device] = [
     Device(
-        name="raspberrypi-3",
-        ip_address="100.116.191.42",
+        name="ubuntu-server",
+        ip_address="100.109.43.88",
         device_type="tailscale",
-        description="Raspberry Pi 3",
-        username="sawyer",
-    ),
-    Device(
-        name="raspberrypi-5",
-        ip_address="100.105.117.18",
-        device_type="tailscale",
-        description="Raspberry Pi 5",
+        description="Main Server",
         username="sawyer",
     ),
     Device(
@@ -222,10 +202,17 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
         username="sawyer",
     ),
     Device(
-        name="ubuntu-server",
-        ip_address="100.109.43.88",
+        name="raspberrypi-5",
+        ip_address="100.105.117.18",
         device_type="tailscale",
-        description="Main Server",
+        description="Raspberry Pi 5",
+        username="sawyer",
+    ),
+    Device(
+        name="raspberrypi-3",
+        ip_address="100.116.191.42",
+        device_type="tailscale",
+        description="Raspberry Pi 3",
         username="sawyer",
     ),
     Device(
@@ -256,13 +243,6 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
         description="VM 04",
         username="sawyer",
     ),
-    Device(
-        name="ubuntu-server-windows-11-ent-ltsc-vm",
-        ip_address="100.66.128.35",
-        device_type="tailscale",
-        description="Windows 11 VM",
-        username="sawyer",
-    ),
 ]
 
 # Preconfigured Local Devices
@@ -274,16 +254,16 @@ STATIC_LOCAL_DEVICES: List[Device] = [
         description="Main Server",
     ),
     Device(
-        name="raspberrypi-5",
-        ip_address="192.168.0.40",
-        device_type="local",
-        description="Raspberry Pi 5",
-    ),
-    Device(
         name="ubuntu-lenovo",
         ip_address="192.168.0.45",
         device_type="local",
         description="Lenovo Laptop",
+    ),
+    Device(
+        name="raspberrypi-5",
+        ip_address="192.168.0.40",
+        device_type="local",
+        description="Raspberry Pi 5",
     ),
     Device(
         name="raspberrypi-3",
@@ -426,30 +406,6 @@ def display_panel(
     console.print(panel)
 
 
-def show_help() -> None:
-    """Display help information with available commands."""
-    help_text = f"""
-[bold]Available Commands:[/]
-
-[bold {NordColors.FROST_2}]1-N[/]:       Connect to a Tailscale device by number
-[bold {NordColors.FROST_2}]L1-LN[/]:     Connect to a Local device by number
-[bold {NordColors.FROST_2}]r[/]:         Refresh device status
-[bold {NordColors.FROST_2}]c[/]:         Configure SSH options
-[bold {NordColors.FROST_2}]s[/]:         Search for devices
-[bold {NordColors.FROST_2}]h[/]:         Show help information
-[bold {NordColors.FROST_2}]q[/]:         Quit the application
-"""
-    console.print(
-        Panel(
-            Text.from_markup(help_text),
-            title=f"[bold {NordColors.FROST_1}]Help & Commands[/]",
-            border_style=NordColors.FROST_3,
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
-    )
-
-
 def display_system_info() -> None:
     """Display system information (time, host, platform) in the header."""
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -505,7 +461,6 @@ def cleanup() -> None:
     """Perform cleanup operations before application exit."""
     try:
         print_message("Cleaning up session resources...", NordColors.FROST_3)
-        # Additional cleanup can be added here if needed.
     except Exception as e:
         print_error(f"Error during cleanup: {e}")
 
@@ -721,7 +676,7 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
 
 
 # ----------------------------------------------------------------
-# Device Status Refresh and SSH Option Configuration
+# Device Status Refresh
 # ----------------------------------------------------------------
 def refresh_device_statuses(devices: List[Device]) -> None:
     """Refresh the status of all devices with a progress indicator."""
@@ -748,169 +703,6 @@ def refresh_device_statuses(devices: List[Device]) -> None:
             progress.advance(scan_task)
 
         check_device_statuses(devices, update_progress)
-    Prompt.ask("Press Enter to return to the main menu")
-
-
-def configure_ssh_options() -> None:
-    """Interactively configure SSH options."""
-    clear_screen()
-    console.print(create_header())
-    print_section("SSH Configuration Options")
-    config = load_config()
-    table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
-        title=f"[bold {NordColors.FROST_2}]Current SSH Options[/]",
-        border_style=NordColors.FROST_3,
-        box=box.ROUNDED,
-    )
-    table.add_column("Option", style=f"bold {NordColors.FROST_3}")
-    table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
-    for option, (value, description) in config.ssh_options.items():
-        table.add_row(option, value, description)
-    console.print(table)
-    print_message(
-        "These options will be applied to all SSH connections", NordColors.FROST_2
-    )
-    choices = [
-        "1. Modify an option",
-        "2. Add a new option",
-        "3. Reset to defaults",
-        "4. Change default username",
-        "5. Return to main menu",
-    ]
-    for choice in choices:
-        console.print(f"[{NordColors.FROST_2}]{choice}[/]")
-    selected = Prompt.ask(
-        "Select an option", choices=["1", "2", "3", "4", "5"], default="5"
-    )
-    if selected == "1":
-        option_keys = list(config.ssh_options.keys())
-        if not option_keys:
-            print_error("No options to modify")
-        else:
-            console.print("Available Options:")
-            for i, key in enumerate(option_keys, 1):
-                console.print(f"[bold]{i}[/]: {key}")
-            option_num = Prompt.ask("Enter option number to modify", default="1")
-            try:
-                idx = int(option_num) - 1
-                if 0 <= idx < len(option_keys):
-                    key = option_keys[idx]
-                    current_value, description = config.ssh_options[key]
-                    new_value = Prompt.ask(
-                        f"New value for {key}", default=current_value
-                    )
-                    config.ssh_options[key] = (new_value, description)
-                    save_config(config)
-                    print_success(f"Updated {key} to: {new_value}")
-                else:
-                    print_error("Invalid option number")
-            except ValueError:
-                print_error("Invalid input")
-    elif selected == "2":
-        new_key = Prompt.ask("Option name")
-        new_value = Prompt.ask("Option value")
-        description = Prompt.ask("Option description", default="Custom SSH option")
-        config.ssh_options[new_key] = (new_value, description)
-        save_config(config)
-        print_success(f"Added new option: {new_key}={new_value}")
-    elif selected == "3":
-        if Confirm.ask("Reset all SSH options to defaults?", default=False):
-            config.ssh_options = {
-                "ServerAliveInterval": (
-                    "30",
-                    "Interval (sec) to send keepalive packets",
-                ),
-                "ServerAliveCountMax": ("3", "Packets to send before disconnecting"),
-                "ConnectTimeout": ("10", "Timeout (sec) for establishing connection"),
-                "StrictHostKeyChecking": ("accept-new", "Auto-accept new host keys"),
-                "Compression": ("yes", "Enable compression"),
-                "LogLevel": ("ERROR", "SSH logging verbosity"),
-            }
-            save_config(config)
-            print_success("SSH options reset to defaults")
-    elif selected == "4":
-        current = config.default_username
-        new_username = Prompt.ask("New default username", default=current)
-        config.default_username = new_username
-        save_config(config)
-        print_success(f"Default username changed to: {new_username}")
-    Prompt.ask("Press Enter to return to the main menu")
-
-
-def search_for_devices(devices: List[Device]) -> None:
-    """Search for devices by name, IP, or description and optionally connect."""
-    clear_screen()
-    console.print(create_header())
-    search_term = Prompt.ask("Enter search term (name, IP, or label)")
-    if not search_term:
-        return
-    term = search_term.lower()
-    matching = [
-        d
-        for d in devices
-        if term in d.name.lower()
-        or term in d.ip_address.lower()
-        or (d.description and term in d.description.lower())
-    ]
-    print_section(f"Search Results for '{search_term}'")
-    if not matching:
-        display_panel(
-            f"No devices found matching '{search_term}'",
-            style=NordColors.YELLOW,
-            title="No Results",
-        )
-    else:
-        table = Table(
-            show_header=True,
-            header_style=f"bold {NordColors.FROST_1}",
-            expand=False,
-            title=f"[bold {NordColors.FROST_2}]Matching Devices ({len(matching)})[/]",
-            border_style=NordColors.FROST_3,
-            box=box.ROUNDED,
-            padding=(0, 1),
-        )
-        table.add_column(
-            "#", style=f"bold {NordColors.FROST_4}", justify="right", width=3
-        )
-        table.add_column("Type", style=f"bold {NordColors.FROST_4}", width=9)
-        table.add_column(
-            "Name", style=f"bold {NordColors.FROST_1}", width=20, no_wrap=True
-        )
-        table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}", width=15)
-        table.add_column("Status", justify="center", width=12)
-        table.add_column(
-            "Label", style=f"dim {NordColors.SNOW_STORM_1}", width=15, no_wrap=True
-        )
-        for idx, d in enumerate(matching, 1):
-            dev_type = "Tailscale" if d.device_type == "tailscale" else "Local"
-            table.add_row(
-                f"{idx}",
-                dev_type,
-                Text(d.name, overflow="ellipsis"),
-                d.ip_address,
-                d.get_status_indicator(),
-                Text(d.description or "", overflow="ellipsis"),
-            )
-        console.print(table)
-        choice = Prompt.ask(
-            "Connect to a device? Enter its number or 'n' to cancel", default="n"
-        )
-        if choice.lower() != "n":
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(matching):
-                    selected_device = matching[idx]
-                    uname = get_username(selected_device.username or DEFAULT_USERNAME)
-                    connect_to_device(selected_device, uname)
-                    return
-                else:
-                    print_error(f"Invalid device number: {choice}")
-            except ValueError:
-                print_error(f"Invalid choice: {choice}")
     Prompt.ask("Press Enter to return to the main menu")
 
 
@@ -975,7 +767,7 @@ def main() -> None:
             console.print()
             choice = (
                 Prompt.ask(
-                    "Enter choice (number for Tailscale, L# for Local, r:refresh, c:configure, s:search, h:help, q:quit)"
+                    "Enter choice (number for Tailscale, L# for Local, r:refresh, q:quit)"
                 )
                 .strip()
                 .lower()
@@ -993,13 +785,6 @@ def main() -> None:
                 break
             elif choice in ("r", "refresh"):
                 refresh_device_statuses(devices)
-            elif choice in ("c", "configure"):
-                configure_ssh_options()
-            elif choice in ("s", "search"):
-                search_for_devices(devices)
-            elif choice in ("h", "help"):
-                show_help()
-                Prompt.ask("Press Enter to return to the main menu")
             elif choice.startswith("l"):
                 try:
                     idx = int(choice[1:]) - 1
