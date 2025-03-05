@@ -4,7 +4,7 @@ SSH Management Tool
 -------------------
 
 An advanced, production-grade terminal application for managing SSH keys and permissions
-on the main Ubuntu server. This tool provides a Nord-themed, interactive menu with:
+on Ubuntu. This tool provides a Nord-themed, interactive menu with:
 
   • Dynamic ASCII banners with gradient styling via Pyfiglet (adapting to terminal width)
   • A fully interactive, numbered menu-driven interface with input validation
@@ -15,7 +15,7 @@ on the main Ubuntu server. This tool provides a Nord-themed, interactive menu wi
   • Modular architecture with well-documented sections
 
 Core Features:
-  [1] Create a new SSH key on the main server
+  [1] Create a new SSH key on the local machine
   [2] Push the SSH key to one or more client machines (using StrictHostKeyChecking=accept-new)
   [3] Fix permissions on the ~/.ssh folder
   [4] Establish Mutual SSH Trust (bidirectional key exchange)
@@ -87,9 +87,6 @@ class SSHManagerConfig:
 # 3. Signal Handling for Graceful Termination
 # ------------------------------
 def handle_signal(signum: int, frame) -> None:
-    """
-    Gracefully handle termination signals.
-    """
     console.print(f"[danger]\nReceived signal {signum}. Exiting gracefully...[/danger]")
     sys.exit(0)
 
@@ -102,10 +99,6 @@ signal.signal(signal.SIGTERM, handle_signal)
 # 4. Dynamic ASCII Banner with Gradient Styling
 # ------------------------------
 def print_banner() -> None:
-    """
-    Render a dynamic ASCII banner using Pyfiglet.
-    The banner font is chosen based on terminal width, and each line is rendered in a gradient.
-    """
     term_width, _ = shutil.get_terminal_size((80, 24))
     font = "slant" if term_width >= 80 else "small"
     fig = Figlet(font=font, width=term_width - 10)
@@ -132,9 +125,6 @@ def print_banner() -> None:
 # 5. Utility / Helper Functions
 # ------------------------------
 def get_user_ids(user: str) -> Optional[Tuple[int, int]]:
-    """
-    Retrieve the UID and GID for the specified user.
-    """
     try:
         pw_record = pwd.getpwnam(user)
         return pw_record.pw_uid, pw_record.pw_gid
@@ -144,9 +134,6 @@ def get_user_ids(user: str) -> Optional[Tuple[int, int]]:
 
 
 def remove_acl(path: str) -> None:
-    """
-    Remove any extended ACL entries from a given file or directory.
-    """
     try:
         subprocess.run(
             ["setfacl", "-b", path],
@@ -160,13 +147,6 @@ def remove_acl(path: str) -> None:
 
 
 def set_permissions_recursive(ssh_dir: str, uid: int, gid: int) -> None:
-    """
-    Recursively set the correct permissions for the .ssh directory and its contents.
-      - Directories: 0700
-      - Public key files (*.pub): 0644
-      - Other files: 0600
-    Also removes any ACL entries.
-    """
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -211,9 +191,6 @@ def set_permissions_recursive(ssh_dir: str, uid: int, gid: int) -> None:
 # 6. Core SSH Key Management Functions
 # ------------------------------
 def create_ssh_key(cfg: SSHManagerConfig) -> None:
-    """
-    Interactively create a new SSH key for the specified user.
-    """
     if not os.path.isdir(cfg.ssh_dir):
         try:
             os.makedirs(cfg.ssh_dir, mode=0o700, exist_ok=True)
@@ -256,11 +233,6 @@ def create_ssh_key(cfg: SSHManagerConfig) -> None:
 
 
 def push_ssh_key(cfg: SSHManagerConfig) -> None:
-    """
-    Push the current SSH key to one or more client machines using ssh-copy-id.
-    Uses the SSH option StrictHostKeyChecking=accept-new to automatically accept new host keys.
-    Note: If a password is required, the ssh-copy-id command will prompt interactively.
-    """
     if not os.path.isfile(cfg.key_path):
         console.print(
             f"[danger]No private key found at {cfg.key_path}. Please create a key first.[/danger]"
@@ -314,9 +286,6 @@ def push_ssh_key(cfg: SSHManagerConfig) -> None:
 
 
 def fix_ssh_permissions(cfg: SSHManagerConfig) -> None:
-    """
-    Fix SSH folder permissions for the user's ~/.ssh directory.
-    """
     if not os.path.isdir(cfg.ssh_dir):
         console.print(
             f"[danger]No .ssh directory found for user '{cfg.user}' at {cfg.ssh_dir}[/danger]"
@@ -338,13 +307,15 @@ def fix_ssh_permissions(cfg: SSHManagerConfig) -> None:
 def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
     """
     Establish reciprocal SSH trust between the local machine and a remote machine.
-    This function:
-      1. Ensures the local SSH key exists (and creates one if missing).
-      2. Pushes the local public key to the remote host using ssh-copy-id.
-      3. Connects to the remote host to generate (if needed) and retrieve its public key.
-      4. Appends the remote public key to the local authorized_keys file if not already present.
+    Revised for better handling on machines (such as your Lenovo) where repeated password prompts may trigger fail2ban.
+    Steps:
+      1. Ensure local SSH key exists (and create one if missing).
+      2. Push the local public key to the remote host (password prompt allowed once).
+      3. Test passwordless connection using BatchMode to avoid repeated prompts.
+      4. If successful, retrieve the remote public key (using BatchMode so it fails fast if not allowed).
+      5. Append the remote public key to the local authorized_keys if not already present.
     """
-    # Ensure local key exists
+    # Step 1: Ensure local key exists
     if not os.path.isfile(cfg.key_path):
         console.print("[info]Local SSH key not found. Generating one...[/info]")
         create_ssh_key(cfg)
@@ -366,16 +337,10 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
     remote_user = console.input("> ").strip() or cfg.user
 
     console.print(
-        "[warning]Warning: This operation may trigger fail2ban on the remote host if password attempts fail repeatedly.[/warning]"
+        "[warning]Note: The local key will be pushed first; if passwordless login fails, mutual trust cannot be established automatically.[/warning]"
     )
-    proceed = (
-        console.input("[info]Do you wish to continue? (y/n): [/info]").strip().lower()
-    )
-    if proceed not in ("y", "yes"):
-        console.print("[info]Aborting mutual trust setup.[/info]")
-        return
 
-    # Step 1: Push local key to remote
+    # Step 2: Push local key to remote
     public_key_path = f"{cfg.key_path}.pub"
     if not os.path.isfile(public_key_path):
         console.print(
@@ -385,7 +350,7 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
 
     console.print(f"[info]Pushing local key to {remote_user}@{remote_host}...[/info]")
     try:
-        cmd = [
+        push_cmd = [
             "ssh-copy-id",
             "-o",
             "StrictHostKeyChecking=accept-new",
@@ -393,7 +358,7 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
             public_key_path,
             f"{remote_user}@{remote_host}",
         ]
-        subprocess.run(cmd, check=True)
+        subprocess.run(push_cmd, check=True)
         console.print(
             f"[success]Local key pushed to {remote_user}@{remote_host} successfully.[/success]"
         )
@@ -401,31 +366,47 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
         console.print(f"[danger]Failed to push local key: {e}[/danger]")
         return
 
-    # Step 2: Retrieve remote public key
+    # Step 3: Test passwordless connection (fail fast if not yet accepted)
+    console.print(
+        f"[info]Testing passwordless SSH connection to {remote_user}@{remote_host}...[/info]"
+    )
+    try:
+        test_cmd = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            f"{remote_user}@{remote_host}",
+            "echo CONNECTION_OK",
+        ]
+        result = subprocess.run(test_cmd, capture_output=True, text=True, check=True)
+        if "CONNECTION_OK" not in result.stdout:
+            raise subprocess.CalledProcessError(1, test_cmd)
+        console.print("[success]Passwordless SSH connection verified.[/success]")
+    except subprocess.CalledProcessError:
+        console.print(
+            "[danger]Passwordless SSH connection failed. Ensure your key was correctly pushed and that remote host allows key authentication.[/danger]"
+        )
+        return
+
+    # Step 4: Retrieve remote public key using BatchMode to avoid extra password prompts
     console.print(
         f"[info]Retrieving remote public key from {remote_user}@{remote_host}...[/info]"
     )
     try:
-        remote_cmd = (
-            "if [ ! -f ~/.ssh/id_rsa.pub ]; then "
-            "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ''; "
-            "fi; cat ~/.ssh/id_rsa.pub"
-        )
-        # Modified options: use PreferredAuthentications=publickey instead of BatchMode=yes
-        result = subprocess.run(
-            [
-                "ssh",
-                "-o",
-                "PreferredAuthentications=publickey",
-                "-o",
-                "StrictHostKeyChecking=accept-new",
-                f"{remote_user}@{remote_host}",
-                remote_cmd,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        # We assume that once key authentication is working, the remote public key is in ~/.ssh/id_rsa.pub
+        remote_cmd = "cat ~/.ssh/id_rsa.pub"
+        get_key_cmd = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            f"{remote_user}@{remote_host}",
+            remote_cmd,
+        ]
+        result = subprocess.run(get_key_cmd, capture_output=True, text=True, check=True)
         remote_pub_key = result.stdout.strip()
         if not remote_pub_key:
             console.print(
@@ -437,7 +418,7 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
         console.print(f"[danger]Error retrieving remote public key: {e}[/danger]")
         return
 
-    # Step 3: Add remote public key to local authorized_keys
+    # Step 5: Add remote public key to local authorized_keys
     local_auth_keys = os.path.join(cfg.ssh_dir, "authorized_keys")
     if not os.path.isdir(cfg.ssh_dir):
         os.makedirs(cfg.ssh_dir, mode=0o700, exist_ok=True)
@@ -471,11 +452,6 @@ def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
 
 
 def configure_sshd_for_key_auth() -> None:
-    """
-    Configure the SSH daemon to disable password authentication and enable key-based authentication.
-    This function backs up /etc/ssh/sshd_config, updates it, and restarts the SSH service.
-    NOTE: This requires root privileges.
-    """
     if os.geteuid() != 0:
         console.print(
             "[danger]Root privileges are required to modify sshd configuration. Please run this function as root or use sudo.[/danger]"
@@ -537,15 +513,6 @@ def configure_sshd_for_key_auth() -> None:
 # 7. Main Interactive Menu Loop
 # ------------------------------
 def main() -> None:
-    """
-    Main entry point presenting an interactive, numbered menu for:
-      [1] Creating a new SSH key
-      [2] Pushing the SSH key to client(s)
-      [3] Fixing SSH folder permissions
-      [4] Establishing Mutual SSH Trust
-      [5] Enable Key Authentication (disable password auth)
-      [6] Exit
-    """
     local_user = getpass.getuser()
     console.print(f"[info]Detected current user: {local_user}[/info]")
     console.print(

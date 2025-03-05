@@ -600,6 +600,7 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
     """
     Establish an SSH connection to the chosen device.
     Uses a progress spinner and builds the SSH command to include auto-accept keys.
+    Always uses the Ubuntu ssh key located at /home/sawyer/.ssh/id_rsa.
     """
     clear_screen()
     console.print(create_header())
@@ -646,8 +647,9 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
                 description=f"[bold {NordColors.GREEN}]Connection established. Launching secure shell...",
             )
             time.sleep(0.4)
-        # Build SSH command with options from configuration. This includes auto-accepting new keys.
-        ssh_args = [SSH_COMMAND]
+        # Build SSH command with options from configuration.
+        # Always include the Ubuntu key with -i /home/sawyer/.ssh/id_rsa.
+        ssh_args = [SSH_COMMAND, "-i", "/home/sawyer/.ssh/id_rsa"]
         config = load_config()
         for option, (value, _) in config.ssh_options.items():
             ssh_args.extend(["-o", f"{option}={value}"])
