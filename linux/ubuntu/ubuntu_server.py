@@ -50,7 +50,6 @@ from rich.text import Text
 # ----------------------------------------------------------------
 # Nord Color Theme & Global Console
 # ----------------------------------------------------------------
-# Nord palette: Polar Nights, Snow Storms, Frost, and Accents.
 NORD_COLORS = {
     "polar_night_1": "#2E3440",
     "polar_night_2": "#3B4252",
@@ -70,11 +69,10 @@ NORD_COLORS = {
     "purple": "#B48EAD",
 }
 
-# Define a Rich theme using Nord colors.
 THEME = Theme(
     {
         "header": f"{NORD_COLORS['frost_4']} bold",
-        "section": f"{NORD_COLORS['frost_3']} bold",
+        "phase": f"{NORD_COLORS['frost_3']} bold",
         "step": f"{NORD_COLORS['frost_2']}",
         "success": f"{NORD_COLORS['green']} bold",
         "warning": f"{NORD_COLORS['yellow']} bold",
@@ -93,7 +91,6 @@ USER_HOME: str = f"/home/{USERNAME}"
 BACKUP_DIR: str = "/var/backups"
 TEMP_DIR: str = tempfile.gettempdir()
 
-# Packages and allowed ports
 ALLOWED_PORTS: List[str] = ["22", "80", "443", "32400"]
 PACKAGES: List[str] = [
     "bash",
@@ -195,7 +192,6 @@ CONFIG_FILES: List[str] = [
     "/etc/caddy/Caddyfile",
 ]
 
-# Setup status dictionary for final report.
 SETUP_STATUS: Dict[str, Dict[str, str]] = {
     "preflight": {"status": "pending", "message": ""},
     "nala_install": {"status": "pending", "message": ""},
@@ -240,7 +236,7 @@ logger: logging.Logger = setup_logging()
 
 
 # ----------------------------------------------------------------
-# Dynamic ASCII Banner Helper
+# Dynamic ASCII Banner Helpers
 # ----------------------------------------------------------------
 def create_ascii_banner(text: str) -> Text:
     """
@@ -248,7 +244,6 @@ def create_ascii_banner(text: str) -> Text:
     The gradient is applied line by line using a cycle of Nord frost colors.
     """
     term_width, _ = shutil.get_terminal_size((80, 24))
-    # Select a font based on terminal width.
     font = "slant" if term_width >= 80 else "small"
     try:
         fig = pyfiglet.Figlet(font=font, width=min(term_width - 10, 120))
@@ -282,13 +277,9 @@ def print_banner(text: str) -> None:
     )
 
 
-# ----------------------------------------------------------------
-# Console Section and Status Report Helpers
-# ----------------------------------------------------------------
-def print_section(title: str) -> None:
-    """Print a section header with styled text and a divider panel."""
-    section_text = Text(title.upper(), style=f"bold {NORD_COLORS['frost_3']}")
-    console.print(Panel(section_text, border_style=NORD_COLORS["frost_3"]))
+def print_phase(title: str) -> None:
+    """Print a phase header using a pyfiglet banner."""
+    print_banner(title.upper())
     logger.info(f"--- {title} ---")
 
 
@@ -313,7 +304,7 @@ def print_error(message: str) -> None:
 
 
 def status_report() -> None:
-    print_section("Setup Status Report")
+    print_phase("Setup Status Report")
     icons = {"success": "✓", "failed": "✗", "pending": "?", "in_progress": "⋯"}
     for task, data in SETUP_STATUS.items():
         st = data["status"]
@@ -330,24 +321,33 @@ def status_report() -> None:
 # Command Execution Helpers
 # ----------------------------------------------------------------
 def run_command(cmd: Union[List[str], str], **kwargs) -> subprocess.CompletedProcess:
+    """
+    Execute a shell command with robust error handling.
+    If not specified, capture_output and text mode are enabled by default.
+    """
     cmd_str = " ".join(cmd) if isinstance(cmd, list) else cmd
     logger.debug(f"Executing: {cmd_str}")
-    return subprocess.run(cmd, check=True, capture_output=True, text=True, **kwargs)
+    kwargs.setdefault("capture_output", True)
+    kwargs.setdefault("text", True)
+    return subprocess.run(cmd, check=True, **kwargs)
 
 
 def run_with_progress(
     desc: str, func: Any, *args, task_name: Optional[str] = None, **kwargs
 ) -> Any:
+    """
+    Run a function with a Rich spinner and update the setup status.
+    """
     if task_name:
         SETUP_STATUS[task_name] = {
             "status": "in_progress",
             "message": f"{desc} in progress...",
         }
-    with console.status(f"[section]{desc}...[/section]"):
+    with console.status(f"[phase]{desc}...[/phase]"):
         start = time.time()
         try:
-            with ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(func, *args, **kwargs)
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(func, *args, **kwargs)
                 while not future.done():
                     time.sleep(0.5)
                 result = future.result()
@@ -375,7 +375,7 @@ def run_with_progress(
 # ----------------------------------------------------------------
 def cleanup() -> None:
     logger.info("Performing cleanup tasks before exit.")
-    # Remove temporary files that match a prefix.
+    # Remove temporary files with a specific prefix.
     for fname in os.listdir(TEMP_DIR):
         if fname.startswith("ubuntu_setup_"):
             try:
@@ -505,7 +505,7 @@ class SystemUpdater:
         logger.info("Fixing package issues...")
         try:
             run_command(["dpkg", "--configure", "-a"])
-            held = run_command(["apt-mark", "showhold"], capture_output=True)
+            held = run_command(["apt-mark", "showhold"])
             if held.stdout.strip():
                 for pkg in held.stdout.strip().splitlines():
                     if pkg.strip():
@@ -513,7 +513,7 @@ class SystemUpdater:
             run_command(["apt", "--fix-broken", "install", "-y"])
             run_command(["apt", "clean"])
             run_command(["apt", "autoclean", "-y"])
-            check = run_command(["apt-get", "check"], capture_output=True)
+            check = run_command(["apt-get", "check"])
             if check.returncode != 0:
                 logger.error("Package issues unresolved.")
                 return False
@@ -528,7 +528,6 @@ class SystemUpdater:
         try:
             if not self.fix_package_issues():
                 logger.warning("Proceeding despite package issues.")
-            # Use nala if available, fallback to apt.
             try:
                 run_command(["nala", "update"])
             except Exception as e:
@@ -807,7 +806,7 @@ class SecurityHardener:
     def setup_sudoers(self) -> bool:
         logger.info(f"Configuring sudoers for {USERNAME}...")
         try:
-            run_command(["id", USERNAME], capture_output=True)
+            run_command(["id", USERNAME])
         except Exception:
             logger.error(f"User {USERNAME} not found.")
             return False
@@ -855,7 +854,7 @@ class SecurityHardener:
             except Exception:
                 pass
         try:
-            status = run_command([ufw_cmd, "status"], capture_output=True)
+            status = run_command([ufw_cmd, "status"])
             if "inactive" in status.stdout.lower():
                 run_command([ufw_cmd, "--force", "enable"])
         except Exception:
@@ -895,9 +894,7 @@ class SecurityHardener:
                 f.write(config)
             run_command(["systemctl", "enable", "fail2ban"])
             run_command(["systemctl", "restart", "fail2ban"])
-            status = run_command(
-                ["systemctl", "is-active", "fail2ban"], capture_output=True
-            )
+            status = run_command(["systemctl", "is-active", "fail2ban"])
             return status.stdout.strip() == "active"
         except Exception:
             return False
@@ -909,9 +906,7 @@ class SecurityHardener:
                 return False
             run_command(["systemctl", "enable", "apparmor"])
             run_command(["systemctl", "start", "apparmor"])
-            status = run_command(
-                ["systemctl", "is-active", "apparmor"], capture_output=True
-            )
+            status = run_command(["systemctl", "is-active", "apparmor"])
             if status.stdout.strip() == "active" and Utils.command_exists(
                 "aa-update-profiles"
             ):
@@ -1032,7 +1027,7 @@ class ServiceInstaller:
             except Exception:
                 return False
         try:
-            run_command(["docker", "info"], capture_output=True)
+            run_command(["docker", "info"])
             return True
         except Exception:
             return False
@@ -1049,9 +1044,7 @@ class ServiceInstaller:
         try:
             run_command(["systemctl", "enable", "tailscaled"])
             run_command(["systemctl", "start", "tailscaled"])
-            status = run_command(
-                ["systemctl", "is-active", "tailscaled"], capture_output=True
-            )
+            status = run_command(["systemctl", "is-active", "tailscaled"])
             return status.stdout.strip() == "active"
         except Exception:
             return Utils.command_exists("tailscale")
@@ -1111,9 +1104,7 @@ class ServiceInstaller:
                 f.write(unattended_content)
             run_command(["systemctl", "enable", "unattended-upgrades"])
             run_command(["systemctl", "restart", "unattended-upgrades"])
-            status = run_command(
-                ["systemctl", "is-active", "unattended-upgrades"], capture_output=True
-            )
+            status = run_command(["systemctl", "is-active", "unattended-upgrades"])
             return status.stdout.strip() == "active"
         except Exception:
             return False
@@ -1183,9 +1174,7 @@ echo "Completed $(date)" >> $LOG
             if not SystemUpdater().install_packages(["certbot"]):
                 return False
         try:
-            output = run_command(
-                ["certbot", "renew", "--dry-run"], capture_output=True
-            ).stdout
+            output = run_command(["certbot", "renew", "--dry-run"]).stdout
             if "No renewals were attempted" not in output:
                 run_command(["certbot", "renew"])
             return True
@@ -1529,7 +1518,7 @@ class UbuntuServerSetup:
         logger.info(f"Starting Ubuntu Server Setup at {now}")
 
         # Phase 1: Pre-flight Checks
-        print_section("Phase 1: Pre-flight Checks")
+        print_phase("Phase 1: Pre-flight Checks")
         try:
             run_with_progress(
                 "Checking root privileges",
@@ -1551,7 +1540,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Fix broken packages
-        print_section("Fixing Broken Packages")
+        print_phase("Fixing Broken Packages")
 
         def fix_broken() -> subprocess.CompletedProcess:
             backup_dir = "/etc/apt/apt.conf.d/"
@@ -1568,7 +1557,7 @@ class UbuntuServerSetup:
         )
 
         # Phase 2: Installing Nala
-        print_section("Phase 2: Installing Nala")
+        print_phase("Phase 2: Installing Nala")
         try:
             if not run_with_progress(
                 "Installing Nala", self.services.install_nala, task_name="nala_install"
@@ -1580,7 +1569,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Phase 3: System Update & Basic Configuration
-        print_section("Phase 3: System Update & Basic Configuration")
+        print_phase("Phase 3: System Update & Basic Configuration")
         try:
             if not run_with_progress(
                 "Updating system", self.updater.update_system, task_name="system_update"
@@ -1621,7 +1610,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Phase 4: User Environment Setup
-        print_section("Phase 4: User Environment Setup")
+        print_phase("Phase 4: User Environment Setup")
         try:
             if not run_with_progress(
                 "Setting up user repositories",
@@ -1662,7 +1651,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Phase 5: Security & Access Hardening
-        print_section("Phase 5: Security & Access Hardening")
+        print_phase("Phase 5: Security & Access Hardening")
         try:
             if not run_with_progress(
                 "Configuring SSH", self.security.configure_ssh, task_name="security"
@@ -1710,7 +1699,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Phase 6: Service Installations
-        print_section("Phase 6: Service Installations")
+        print_phase("Phase 6: Service Installations")
         try:
             if not run_with_progress(
                 "Installing Fastfetch",
@@ -1759,7 +1748,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Phase 7: Maintenance Tasks
-        print_section("Phase 7: Maintenance Tasks")
+        print_phase("Phase 7: Maintenance Tasks")
         try:
             if not run_with_progress(
                 "Configuring periodic maintenance",
@@ -1791,7 +1780,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Phase 8: System Tuning & Permissions
-        print_section("Phase 8: System Tuning & Permissions")
+        print_phase("Phase 8: System Tuning & Permissions")
         try:
             if not run_with_progress(
                 "Applying system tuning", self.tuner.tune_system, task_name="tuning"
@@ -1812,7 +1801,7 @@ class UbuntuServerSetup:
             self.success = False
 
         # Phase 9: Final Checks & Cleanup
-        print_section("Phase 9: Final Checks & Cleanup")
+        print_phase("Phase 9: Final Checks & Cleanup")
         SETUP_STATUS["final"] = {
             "status": "in_progress",
             "message": "Running final checks...",
