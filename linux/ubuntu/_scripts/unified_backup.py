@@ -2,13 +2,12 @@
 """
 Unified Restic Backup Manager
 --------------------------------------------------
-
 A streamlined terminal interface for managing Restic backups with Backblaze B2 integration.
 Features include backup management for system, virtual machines, and Plex Media Server with
 real-time progress tracking, snapshot management, and retention policy application.
 
 Usage:
-  Run the script with root privileges and select an option from the interactive menu.
+  Run the script with appropriate privileges and select an option from the interactive menu.
 
 Version: 2.0.0
 """
@@ -26,7 +25,6 @@ import socket
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -53,10 +51,18 @@ try:
         TaskProgressColumn,
     )
     from rich.traceback import install as install_rich_traceback
+
+    # prompt_toolkit integration for enhanced input
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.history import InMemoryHistory
+    from prompt_toolkit.styles import Style as PtStyle
 except ImportError:
-    print("Missing required packages. Please install with: pip install rich pyfiglet")
+    print(
+        "Missing required packages. Please install with: pip install rich pyfiglet prompt_toolkit"
+    )
     sys.exit(1)
 
+# Enable rich traceback for better error diagnostics
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
@@ -67,7 +73,7 @@ VERSION: str = "2.0.0"
 APP_NAME: str = "Restic Backup Manager"
 APP_SUBTITLE: str = "Secure Backup Solution"
 
-# --- Backblaze B2 and Restic Credentials ---
+# --- Backblaze B2 and Restic Credentials (update with your credentials) ---
 B2_ACCOUNT_ID: str = "YOUR_B2_ACCOUNT_ID"
 B2_ACCOUNT_KEY: str = "YOUR_B2_ACCOUNT_KEY"
 B2_BUCKET: str = "your-backup-bucket"
@@ -134,8 +140,8 @@ BACKUP_CONFIGS: Dict[str, Dict[str, Any]] = {
 RETENTION_POLICY: str = "7d"
 LOG_DIR: str = "/var/log/backup"
 LOG_FILE: str = f"{LOG_DIR}/backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-OPERATION_TIMEOUT: int = 300  # 5 minutes for long operations
-COMMAND_TIMEOUT: int = 30  # 30 seconds for standard commands
+OPERATION_TIMEOUT: int = 300  # seconds for long operations
+COMMAND_TIMEOUT: int = 30  # seconds for standard commands
 
 
 # ----------------------------------------------------------------
@@ -171,13 +177,16 @@ console: Console = Console()
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Generate an ASCII art header using Pyfiglet and apply Nord-themed colors.
+    Generate an ASCII art header using Pyfiglet and apply a Nord-themed gradient.
+    The header dynamically adjusts to terminal width.
     """
+    term_width = shutil.get_terminal_size().columns
+    max_width = min(term_width - 4, 80)
     fonts = ["slant", "small", "digital", "banner3", "smslant"]
     ascii_art = ""
     for font in fonts:
         try:
-            fig = pyfiglet.Figlet(font=font, width=60)
+            fig = pyfiglet.Figlet(font=font, width=max_width)
             ascii_art = fig.renderText(APP_NAME)
             if ascii_art.strip():
                 break
@@ -186,7 +195,7 @@ def create_header() -> Panel:
     if not ascii_art.strip():
         ascii_art = APP_NAME
 
-    # Apply a color gradient
+    # Apply gradient styling using Nord colors
     colors = [
         NordColors.FROST_1,
         NordColors.FROST_2,
@@ -198,9 +207,8 @@ def create_header() -> Panel:
         color = colors[i % len(colors)]
         styled_lines.append(f"[bold {color}]{line}[/]")
     header_text = "\n".join(styled_lines)
-    border_top = f"[{NordColors.FROST_3}]╭{'─' * 58}╮[/]"
-    border_bottom = f"[{NordColors.FROST_3}]╰{'─' * 58}╯[/]"
-    content = f"{border_top}\n{header_text}\n{border_bottom}"
+    border = f"[{NordColors.FROST_3}]" + "─" * (max_width) + "[/]"
+    content = f"{border}\n{header_text}\n{border}"
     return Panel(
         Text.from_markup(content),
         border_style=Style(color=NordColors.FROST_1),
@@ -245,8 +253,18 @@ def display_panel(
     console.print(panel)
 
 
+# ----------------------------------------------------------------
+# prompt_toolkit Input Helper
+# ----------------------------------------------------------------
 def get_user_input(prompt_text: str, default: Optional[str] = None) -> str:
-    return Prompt.ask(f"[bold {NordColors.FROST_2}]{prompt_text}[/]", default=default)
+    """
+    Get user input using prompt_toolkit for enhanced features like command history and styling.
+    """
+    pt_style = PtStyle.from_dict({"prompt": f"bold {NordColors.PURPLE}"})
+    history = InMemoryHistory()
+    return pt_prompt(
+        f"{prompt_text} ", default=default, style=pt_style, history=history
+    )
 
 
 def get_user_confirmation(prompt_text: str, default: bool = True) -> bool:
@@ -606,7 +624,6 @@ def list_snapshots(service: str) -> bool:
     env = os.environ.copy()
     env.update({"RESTIC_PASSWORD": RESTIC_PASSWORD})
     try:
-        # Ensure repository exists
         try:
             run_command(
                 ["restic", "--repo", repo, "snapshots", "--compact"],
@@ -690,7 +707,7 @@ def backup_all_services() -> Dict[str, bool]:
     for svc in BACKUP_CONFIGS.keys():
         print_message(f"Processing {BACKUP_CONFIGS[svc]['name']}...")
         results[svc] = backup_service(svc)
-    # Summary table
+    # Display summary table
     console.print("\n")
     display_panel(
         "Backup Results Summary", NordColors.FROST_3, title="Completion Status"
@@ -765,7 +782,7 @@ def get_restic_version() -> str:
 
 def create_menu_panel() -> Panel:
     menu_text = Text()
-    # Backup operations
+    # Backup Operations
     menu_text.append("┌── ", style=NordColors.FROST_3)
     menu_text.append("Backup Operations", style=f"bold {NordColors.FROST_2}")
     menu_text.append(" ───────────────┐\n", style=NordColors.FROST_3)
@@ -779,7 +796,7 @@ def create_menu_panel() -> Panel:
     menu_text.append("Backup All Services\n", style=NordColors.SNOW_STORM_1)
     menu_text.append("└─────────────────────────────┘\n", style=NordColors.FROST_3)
     menu_text.append("\n")
-    # Snapshot operations
+    # Snapshot Operations
     menu_text.append("┌── ", style=NordColors.FROST_3)
     menu_text.append("Snapshot Operations", style=f"bold {NordColors.FROST_2}")
     menu_text.append(" ─────────────┐\n", style=NordColors.FROST_3)
@@ -789,7 +806,7 @@ def create_menu_panel() -> Panel:
     menu_text.append("List All Snapshots\n", style=NordColors.SNOW_STORM_1)
     menu_text.append("└─────────────────────────────┘\n", style=NordColors.FROST_3)
     menu_text.append("\n")
-    # System operations
+    # System Operations
     menu_text.append("┌── ", style=NordColors.FROST_3)
     menu_text.append("System Operations", style=f"bold {NordColors.FROST_2}")
     menu_text.append(" ──────────────┐\n", style=NordColors.FROST_3)
@@ -842,7 +859,8 @@ def interactive_menu() -> None:
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         console.print(
             Align.center(
-                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | [{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/]"
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | "
+                f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/]"
             )
         )
         console.print()
