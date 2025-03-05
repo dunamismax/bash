@@ -277,7 +277,6 @@ class Config:
             "tv.plex.PlexDesktop",
             "org.filezillaproject.Filezilla",
             "com.github.k4zmu2a.spacecadetpinball",
-            "org.virt_manager.virt-manager",
             "org.raspberrypi.rpi-imager",
         ]
     )
