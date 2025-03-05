@@ -77,7 +77,7 @@ When generating a terminal application for users:
 6. Create a responsive design that adapts to the user's terminal environment.
 7. Include detailed docstrings for all functions, classes, and modules.
 
-Remember to tailor the complexity to match user requirements while maintaining the professional structure and robust architecture demonstrated in the template.
+Remember to tailor the complexity to match user requirements while maintaining the professional structure and robust architecture demonstrated in the template. All scripts should be written to work on Ubuntu.
 
 ## Template / Example Script
 
