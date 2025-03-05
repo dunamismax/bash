@@ -340,34 +340,35 @@ atexit.register(cleanup_temp_files)
 
 
 # ----------------------------------------------------------------
-# Download Helper (using a simple spinner to avoid nested live displays)
+# Download Helper (avoiding nested live displays)
 # ----------------------------------------------------------------
 def download_file(url: str, dest: Union[str, Path], timeout: int = 300) -> None:
+    """
+    Download a file from the given URL to the destination.
+    This version logs progress without invoking a live display,
+    thus avoiding nested live display errors.
+    """
     dest = Path(dest)
-    if dest.exists():
-        logging.getLogger("ubuntu_setup").info(
-            f"File {dest} already exists; skipping download."
-        )
-        return
     logger = logging.getLogger("ubuntu_setup")
+    if dest.exists():
+        logger.info(f"File {dest} already exists; skipping download.")
+        return
     logger.info(f"Downloading {url} to {dest}...")
-    with console.status(f"Downloading {Path(url).name}...", spinner="dots") as status:
-        try:
-            # Prefer wget or curl if available; else use urllib
-            if shutil.which("wget"):
-                subprocess.run(
-                    ["wget", "-q", "--show-progress", url, "-O", str(dest)], check=True
-                )
-            elif shutil.which("curl"):
-                subprocess.run(["curl", "-L", "-o", str(dest), url], check=True)
-            else:
-                import urllib.request
+    try:
+        if shutil.which("wget"):
+            subprocess.run(
+                ["wget", "-q", "--show-progress", url, "-O", str(dest)], check=True
+            )
+        elif shutil.which("curl"):
+            subprocess.run(["curl", "-L", "-o", str(dest), url], check=True)
+        else:
+            import urllib.request
 
-                urllib.request.urlretrieve(url, dest)
-            logger.info(f"Download complete: {dest}")
-        except Exception as e:
-            logger.error(f"Download failed: {e}")
-            raise
+            urllib.request.urlretrieve(url, dest)
+        logger.info(f"Download complete: {dest}")
+    except Exception as e:
+        logger.error(f"Download failed: {e}")
+        raise
 
 
 # ----------------------------------------------------------------
@@ -1127,6 +1128,8 @@ class UbuntuDesktopSetup:
         if not self.command_exists("docker-compose"):
             try:
                 dest = Path("/usr/local/bin/docker-compose")
+                # Note: shell substitutions in URL may not resolve as expected;
+                # consider using a fixed URL if needed.
                 download_file(
                     "https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-$(uname -s)-$(uname -m)",
                     dest,
