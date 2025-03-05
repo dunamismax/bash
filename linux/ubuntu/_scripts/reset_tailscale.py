@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-Automated Tailscale Reset Utility
+Automated Tailscale Reset Utility (Unattended Mode)
 --------------------------------------------------
 
-A beautiful, non-interactive terminal utility for automatically resetting Tailscale
-on Ubuntu systems. This script performs the following steps sequentially:
-  • Uninstalls Tailscale (stops and disables the tailscaled service, removes packages and configuration)
+A fully autonomous terminal utility for automatically resetting Tailscale
+on Ubuntu systems. The script performs the following steps sequentially:
+  • Installs Nala (if not already installed) and uses it for all package operations
+  • Uninstalls Tailscale (stops/disables tailscaled, removes packages and configuration)
   • Installs Tailscale via the official install script
   • Enables and starts the tailscaled service
   • Runs 'tailscale up'
-  • Displays the final status
+  • Checks and displays the final status
 
-No user interaction is required – all actions run automatically.
+No user interaction is required. All actions run automatically with detailed
+visual feedback, logging, and robust error & signal handling.
 
-Version: 3.0.0
+Version: 3.1.0
 """
 
+# ----------------------------------------------------------------
+# Dependency Check and Imports
+# ----------------------------------------------------------------
 import atexit
 import datetime
 import logging
@@ -29,16 +34,12 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-# ----------------------------------------------------------------
-# Dependency Check and Imports
-# ----------------------------------------------------------------
 try:
     import pyfiglet
     from rich.align import Align
     from rich.console import Console
-    from rich.live import Live
     from rich.panel import Panel
     from rich.progress import (
         Progress,
@@ -59,19 +60,19 @@ except ImportError:
     )
     sys.exit(1)
 
-# Install rich traceback handler for improved error reporting
+# Install rich traceback for improved error reporting
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
 APP_NAME: str = "Tailscale Reset Utility"
-APP_SUBTITLE: str = "Automated System Management"
-VERSION: str = "3.0.0"
+APP_SUBTITLE: str = "Automated System Management (Unattended)"
+VERSION: str = "3.1.0"
 HOSTNAME: str = socket.gethostname()
 USERNAME: str = os.environ.get("USER", os.environ.get("USERNAME", "Unknown"))
-OPERATION_TIMEOUT: int = 120  # seconds
-TRANSITION_DELAY: float = 0.5  # seconds between operations
+OPERATION_TIMEOUT: int = 120  # seconds for command timeouts
+TRANSITION_DELAY: float = 0.5  # seconds delay between operations
 LOG_FILE: str = os.path.expanduser("~/tailscale_reset_logs/tailscale_reset.log")
 TAILSCALE_INSTALL_URL: str = "https://tailscale.com/install.sh"
 TAILSCALE_PATHS: List[str] = [
@@ -98,10 +99,10 @@ class NordColors:
     FROST_2 = "#88C0D0"
     FROST_3 = "#81A1C1"
     FROST_4 = "#5E81AC"
-    RED = "#BF616A"  # Errors and critical issues
+    RED = "#BF616A"  # Critical errors
     ORANGE = "#D08770"  # Warnings
     YELLOW = "#EBCB8B"  # Cautions
-    GREEN = "#A3BE8C"  # Success indicators
+    GREEN = "#A3BE8C"  # Success messages
     PURPLE = "#B48EAD"  # Special highlights
 
 
@@ -135,7 +136,7 @@ def setup_logging() -> None:
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Create a dynamic ASCII art header with gradient styling.
+    Create a dynamic ASCII art header with gradient styling using Pyfiglet.
     """
     fonts = ["slant", "small", "digital", "mini"]
     ascii_art = ""
@@ -161,12 +162,12 @@ def create_header() -> Panel:
     for i, line in enumerate(lines):
         color = colors[i % len(colors)]
         styled += f"[bold {color}]{line}[/]\n"
-    border = f"[{NordColors.FROST_3}]" + "━" * 30 + "[/]"
+    border = f"[{NordColors.FROST_3}]" + "━" * 60 + "[/]"
     styled = border + "\n" + styled + border
     return Panel(
         Text.from_markup(styled),
         border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 1),
+        padding=(1, 2),
         title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
         title_align="right",
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
@@ -220,61 +221,31 @@ def format_time(seconds: float) -> str:
         return f"{seconds / 3600:.1f}h"
 
 
-# ----------------------------------------------------------------
-# Command Execution Helper
-# ----------------------------------------------------------------
-def run_command(
-    cmd: List[str] or str,
-    env: Optional[Dict[str, str]] = None,
-    shell: bool = False,
-    check: bool = True,
-    capture_output: bool = True,
-    timeout: int = OPERATION_TIMEOUT,
-    verbose: bool = False,
-) -> subprocess.CompletedProcess:
-    """
-    Execute a system command and return the CompletedProcess.
-    """
-    cmd_display = cmd if isinstance(cmd, str) else " ".join(cmd)
-    if verbose:
-        print_message(f"Executing: {cmd_display}", NordColors.FROST_3)
-    try:
-        result = subprocess.run(
-            cmd,
-            env=env or os.environ.copy(),
-            shell=shell,
-            check=check,
-            text=True,
-            capture_output=capture_output,
-            timeout=timeout,
-        )
-        return result
-    except subprocess.CalledProcessError as e:
-        print_message(f"Command failed: {cmd_display}", NordColors.RED, "✗")
-        if e.stdout:
-            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if e.stderr:
-            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
-        raise
-    except subprocess.TimeoutExpired:
-        print_message(f"Command timed out after {timeout} seconds", NordColors.RED, "✗")
-        raise
-    except Exception as e:
-        print_message(f"Error executing command: {e}", NordColors.RED, "✗")
-        raise
+def display_system_info() -> None:
+    """Display basic system information."""
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sys_info = (
+        f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]User: {USERNAME}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]Root: {'Yes' if check_root() else 'No'}[/]"
+    )
+    console.print(Align.center(sys_info))
+    console.print()
 
 
 # ----------------------------------------------------------------
-# Signal Handling and Cleanup
+# Logging & Signal Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
     """Perform cleanup tasks before exit."""
     print_message("Cleaning up resources...", NordColors.FROST_3)
+    logging.info("Cleanup complete.")
 
 
 def signal_handler(sig: int, frame: Any) -> None:
     """Handle termination signals gracefully."""
-    sig_name = getattr(signal, "Signals", lambda x: f"signal {x}")(sig)
     print_message(f"Process interrupted by signal {sig}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
@@ -291,6 +262,7 @@ atexit.register(cleanup)
 class ProgressManager:
     """
     Provides a unified Rich progress tracking system.
+    Ensures that only one live progress display is active at a time.
     """
 
     def __init__(self):
@@ -350,8 +322,7 @@ class Spinner:
             with self._lock:
                 console.print(
                     f"\r[{NordColors.FROST_1}]{self.spinner_chars[self.current]}[/] "
-                    f"[{NordColors.FROST_2}]{self.message}[/] "
-                    f"[dim]elapsed: {time_str}[/dim]",
+                    f"[{NordColors.FROST_2}]{self.message}[/] [dim]elapsed: {time_str}[/dim]",
                     end="",
                 )
                 self.current = (self.current + 1) % len(self.spinner_chars)
@@ -367,23 +338,23 @@ class Spinner:
     def stop(self, success: bool = True) -> None:
         with self._lock:
             self.spinning = False
-            if self.thread:
-                self.thread.join()
-            elapsed = time.time() - self.start_time
-            time_str = format_time(elapsed)
-            console.print("\r" + " " * 80, end="\r")
-            if success:
-                console.print(
-                    f"[{NordColors.GREEN}]✓[/] [{NordColors.FROST_2}]{self.message}[/] "
-                    f"[{NordColors.GREEN}]completed[/] in {time_str}"
-                )
-                logging.info(f"COMPLETED: {self.message} in {time_str}")
-            else:
-                console.print(
-                    f"[{NordColors.RED}]✗[/] [{NordColors.FROST_2}]{self.message}[/] "
-                    f"[{NordColors.RED}]failed[/] after {time_str}"
-                )
-                logging.error(f"FAILED: {self.message} after {time_str}")
+        if self.thread:
+            self.thread.join()
+        elapsed = time.time() - self.start_time
+        time_str = format_time(elapsed)
+        console.print("\r" + " " * 80, end="\r")
+        if success:
+            console.print(
+                f"[{NordColors.GREEN}]✓[/] [{NordColors.FROST_2}]{self.message}[/] "
+                f"[{NordColors.GREEN}]completed[/] in {time_str}"
+            )
+            logging.info(f"COMPLETED: {self.message} in {time_str}")
+        else:
+            console.print(
+                f"[{NordColors.RED}]✗[/] [{NordColors.FROST_2}]{self.message}[/] "
+                f"[{NordColors.RED}]failed[/] after {time_str}"
+            )
+            logging.error(f"FAILED: {self.message} after {time_str}")
 
     def __enter__(self):
         self.start()
@@ -415,7 +386,8 @@ def ensure_root() -> bool:
 
 def check_system_compatibility() -> bool:
     """
-    Check if the system is Linux and has apt-get available.
+    Check if the system is Linux and has a package manager.
+    Since this script will use Nala, verify its availability.
     """
     if platform.system().lower() != "linux":
         print_message(
@@ -425,9 +397,9 @@ def check_system_compatibility() -> bool:
         )
         return False
     try:
-        result = run_command(["which", "apt-get"], check=False)
+        result = run_command(["which", "nala"], check=False)
         if result.returncode != 0:
-            print_message("apt-get not found.", NordColors.YELLOW, "⚠")
+            print_message("Nala not found.", NordColors.YELLOW, "⚠")
             return False
     except Exception:
         print_message(
@@ -437,39 +409,94 @@ def check_system_compatibility() -> bool:
     return True
 
 
-def display_system_info() -> None:
-    """Display basic system information."""
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sys_info = (
-        f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]User: {USERNAME}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Root: {'Yes' if check_root() else 'No'}[/]"
-    )
-    console.print(Align.center(sys_info))
-    console.print()
+def install_nala() -> bool:
+    """
+    Install Nala if it is not already installed.
+    Uses apt-get for the installation, then subsequent commands will use nala.
+    """
+    if shutil.which("nala"):
+        print_message("Nala is already installed.", NordColors.GREEN, "✓")
+        return True
+    print_section("Installing Nala")
+    try:
+        # Update package lists and install Nala (using apt-get since Nala isn't available yet)
+        run_command(["apt-get", "update"])
+        run_command(["apt-get", "install", "nala", "-y"])
+        if shutil.which("nala"):
+            print_message("Nala installed successfully.", NordColors.GREEN, "✓")
+            return True
+        else:
+            print_message("Nala installation failed.", NordColors.RED, "✗")
+            return False
+    except Exception as e:
+        print_message(f"Error installing Nala: {e}", NordColors.RED, "✗")
+        return False
 
 
 # ----------------------------------------------------------------
-# Tailscale Operation Functions
+# Command Execution Helper
+# ----------------------------------------------------------------
+def run_command(
+    cmd: Union[List[str], str],
+    env: Optional[Dict[str, str]] = None,
+    shell: bool = False,
+    check: bool = True,
+    capture_output: bool = True,
+    timeout: int = OPERATION_TIMEOUT,
+    verbose: bool = False,
+) -> subprocess.CompletedProcess:
+    """
+    Execute a system command and return the CompletedProcess.
+    """
+    cmd_display = cmd if isinstance(cmd, str) else " ".join(cmd)
+    if verbose:
+        print_message(f"Executing: {cmd_display}", NordColors.FROST_3)
+    try:
+        result = subprocess.run(
+            cmd,
+            env=env or os.environ.copy(),
+            shell=shell,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        print_message(f"Command failed: {cmd_display}", NordColors.RED, "✗")
+        if e.stdout:
+            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
+        if e.stderr:
+            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
+        raise
+    except subprocess.TimeoutExpired:
+        print_message(f"Command timed out after {timeout} seconds", NordColors.RED, "✗")
+        raise
+    except Exception as e:
+        print_message(f"Error executing command: {e}", NordColors.RED, "✗")
+        raise
+
+
+# ----------------------------------------------------------------
+# Tailscale Operation Functions (Using Nala)
 # ----------------------------------------------------------------
 def uninstall_tailscale() -> bool:
     """
-    Stop tailscaled, disable its service, remove the Tailscale package,
+    Stop tailscaled, disable its service, remove the Tailscale package using Nala,
     and delete configuration directories.
     """
     if not ensure_root():
         return False
     print_section("Uninstalling Tailscale")
+    # Note: using 'nala' instead of 'apt-get'
     steps = [
         ("Stopping tailscaled service", ["systemctl", "stop", "tailscaled"]),
         ("Disabling tailscaled service", ["systemctl", "disable", "tailscaled"]),
         (
             "Removing tailscale package",
-            ["apt-get", "remove", "--purge", "tailscale", "-y"],
+            ["nala", "remove", "--purge", "tailscale", "-y"],
         ),
-        ("Autoremoving unused packages", ["apt-get", "autoremove", "-y"]),
+        ("Autoremoving unused packages", ["nala", "autoremove", "-y"]),
     ]
     success = True
     with ProgressManager() as progress:
@@ -739,7 +766,12 @@ def main() -> None:
         console.print(create_header())
         display_system_info()
         setup_logging()
+
         print_section("System Compatibility Check")
+        # First, ensure Nala is installed
+        if not install_nala():
+            print_message("Nala installation failed. Exiting.", NordColors.RED, "✗")
+            sys.exit(1)
         if not check_system_compatibility():
             print_message(
                 "System compatibility issues detected. Proceeding anyway.",

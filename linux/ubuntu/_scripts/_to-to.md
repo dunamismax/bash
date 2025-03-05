@@ -3,7 +3,6 @@
     *└── _bashrc_cheat_sheet.md
     *└── _template.md
     *└── _to-to.md
-    *└── .env
     └── deploy_scripts.py
     └── file_toolkit.py
     └── hacker_toolkit.py
@@ -15,9 +14,9 @@
     └── owncloud_setup.py
     └── python_dev_setup.py
     └── raspberry_pi_5_overclocking_utility.py
-    └── reset_tailscale.py
+    *└── reset_tailscale.py
     └── secure_disk_eraser.py
-    *└── sftp_toolkit.py
+    └── sftp_toolkit.py
     └── ssh_machine_selector.py
     └── system_monitor.py
     └── ubuntu_voip_setup.py
@@ -50,7 +49,7 @@ Rewrite and enhance the following Python script following the Advanced Terminal 
 - Cross-platform compatibility with appropriate environment detection
 - Modular organization with clearly commented sections and separation of concerns
 
-Ensure the script maintains its core functionality while implementing these enhancements for a production-grade, professional user experience. The application should be purely interactive with no command-line argument parsing.
+Ensure the script maintains its core functionality while implementing these enhancements for a production-grade, professional user experience. The application should be purely interactive with no command-line argument parsing. Use prompt_toolkit for any cli input or user prompting if needed and use Rich and Pyfiglet throughout.
 
 ---------------------------------------------------------------------------------------------
 
@@ -71,7 +70,9 @@ Rewrite and enhance the following Python script following the Advanced Terminal 
 - Ensure cross-platform compatibility with environment-aware operation
 - Implement proper resource management and cleanup procedures
 
-The script should maintain its core functionality while operating completely unattended without requiring user input, providing clear visual feedback about its operation status at all times. Also make sure to install Nala first at the start of the script and then use nala instead of apt for all commands throughout the rest of the script:
+The script should maintain its core functionality while operating completely unattended without requiring user input, providing clear visual feedback about its operation status at all times. The application should just run fully unattended with no command-line argument parsing.
+
+
 
 Nala commands:
 
