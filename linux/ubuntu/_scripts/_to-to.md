@@ -156,5 +156,5 @@ The final script should operate unattended, requiring no user input, and provide
 
 ---------------------------------------------------------------------------------------------
 
-rewrite (Claude 3.7 high)
+rewrite (ChatGPT o3-mini-high)
 using new prompt
