@@ -12,6 +12,9 @@ systemd service to maintain configuration.
 Version: 2.0.0
 """
 
+# ----------------------------------------------------------------
+# Standard Libraries & Dependency Management
+# ----------------------------------------------------------------
 import atexit
 import datetime
 import grp
@@ -30,9 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-# ----------------------------------------------------------------
-# Dependency Check and Imports
-# ----------------------------------------------------------------
+# Automatically install missing packages (rich, pyfiglet)
 def install_missing_packages() -> None:
     """Automatically install required Python packages if missing."""
     required_packages = ["rich", "pyfiglet"]
@@ -85,25 +86,25 @@ install_rich_traceback(show_locals=True)
 
 
 # ----------------------------------------------------------------
-# Configuration & Constants
+# Application Configuration & Constants
 # ----------------------------------------------------------------
 class AppConfig:
-    VERSION = "2.0.0"
-    APP_NAME = "VirtSetup"
-    APP_SUBTITLE = "Enhanced Virtualization Environment"
+    VERSION: str = "2.0.0"
+    APP_NAME: str = "VirtSetup"
+    APP_SUBTITLE: str = "Enhanced Virtualization Environment"
     try:
-        HOSTNAME = socket.gethostname()
+        HOSTNAME: str = socket.gethostname()
     except Exception:
         HOSTNAME = "Unknown"
     try:
-        TERM_WIDTH = shutil.get_terminal_size().columns
+        TERM_WIDTH: int = shutil.get_terminal_size().columns
     except Exception:
         TERM_WIDTH = 80
-    PROGRESS_WIDTH = min(50, TERM_WIDTH - 30)
-    DEFAULT_TIMEOUT = 300  # seconds
+    PROGRESS_WIDTH: int = min(50, TERM_WIDTH - 30)
+    DEFAULT_TIMEOUT: int = 300  # seconds for command operations
 
     # Virtualization settings
-    VIRTUALIZATION_PACKAGES = [
+    VIRTUALIZATION_PACKAGES: List[str] = [
         "qemu-kvm",
         "qemu-utils",
         "libvirt-daemon-system",
@@ -116,14 +117,14 @@ class AppConfig:
         "libguestfs-tools",
         "virt-top",
     ]
-    VIRTUALIZATION_SERVICES = ["libvirtd", "virtlogd"]
-    VM_STORAGE_PATHS = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
-    VM_OWNER = "root"
-    VM_GROUP = "libvirt-qemu"
-    VM_DIR_MODE = 0o2770
-    VM_FILE_MODE = 0o0660
-    LIBVIRT_USER_GROUP = "libvirt"
-    DEFAULT_NETWORK_XML = """<network>
+    VIRTUALIZATION_SERVICES: List[str] = ["libvirtd", "virtlogd"]
+    VM_STORAGE_PATHS: List[str] = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
+    VM_OWNER: str = "root"
+    VM_GROUP: str = "libvirt-qemu"
+    VM_DIR_MODE: int = 0o2770
+    VM_FILE_MODE: int = 0o0660
+    LIBVIRT_USER_GROUP: str = "libvirt"
+    DEFAULT_NETWORK_XML: str = """<network>
   <name>default</name>
   <forward mode='nat'/>
   <bridge name='virbr0' stp='on' delay='0'/>
@@ -134,8 +135,8 @@ class AppConfig:
   </ip>
 </network>
 """
-    SERVICE_PATH = Path("/etc/systemd/system/virtualization_setup.service")
-    SERVICE_CONTENT = """[Unit]
+    SERVICE_PATH: Path = Path("/etc/systemd/system/virtualization_setup.service")
+    SERVICE_CONTENT: str = """[Unit]
 Description=Virtualization Setup Service
 After=network.target
 
@@ -150,7 +151,7 @@ WantedBy=multi-user.target
 
 
 # ----------------------------------------------------------------
-# Nord-Themed Colors and Console Setup
+# Nord-Themed Colors & Console Setup
 # ----------------------------------------------------------------
 class NordColors:
     POLAR_NIGHT_1 = "#2E3440"
@@ -195,7 +196,7 @@ class CommandError(VirtualizationSetupError):
 
 
 # ----------------------------------------------------------------
-# Data Structures
+# Data Structures for Virtualization State
 # ----------------------------------------------------------------
 class VMState(Enum):
     RUNNING = auto()
@@ -228,7 +229,7 @@ class VirtualMachine:
     autostart: Optional[bool] = None
     state: VMState = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.state = VMState.from_libvirt_state(self.state_text)
 
     @property
@@ -245,14 +246,18 @@ class TaskResult:
 
 
 # ----------------------------------------------------------------
-# Console Helpers
+# Console Helper Functions (Dynamic ASCII banners, Panels, Messages)
 # ----------------------------------------------------------------
 def create_header() -> Panel:
+    """
+    Generate a dynamic ASCII art header using Pyfiglet with gradient styling.
+    This header is used at startup and before major processing steps.
+    """
     fonts = ["slant", "small", "standard", "digital", "big"]
-    ascii_art = ""
+    ascii_art: str = ""
     for font in fonts:
         try:
-            fig = pyfiglet.Figlet(font=font, width=60)
+            fig = pyfiglet.Figlet(font=font, width=AppConfig.TERM_WIDTH - 10)
             ascii_art = fig.renderText(AppConfig.APP_NAME)
             if ascii_art.strip():
                 break
@@ -271,7 +276,7 @@ def create_header() -> Panel:
     for i, line in enumerate(ascii_lines):
         color = colors[i % len(colors)]
         styled_text += f"[bold {color}]{line}[/]\n"
-    border = f"[{NordColors.FROST_3}]{'━' * 50}[/]"
+    border = f"[{NordColors.FROST_3}]{'━' * (AppConfig.TERM_WIDTH - 4)}[/]"
     styled_text = border + "\n" + styled_text + border
     return Panel(
         Text.from_markup(styled_text),
@@ -284,15 +289,26 @@ def create_header() -> Panel:
     )
 
 
+def create_section_header(title: str) -> Panel:
+    """Return a styled panel to serve as a section header."""
+    return Panel(
+        Text(title, style=f"bold {NordColors.FROST_1}"),
+        border_style=Style(color=NordColors.FROST_3),
+        padding=(0, 2),
+    )
+
+
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
+    """Print a formatted message with a prefix using the Rich console."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
+    """Display a panel with a message and optional title."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
@@ -302,16 +318,8 @@ def display_panel(
     console.print(panel)
 
 
-def create_section_header(title: str) -> Panel:
-    return Panel(
-        Text(title, style=f"bold {NordColors.FROST_1}"),
-        border_style=Style(color=NordColors.FROST_3),
-        padding=(0, 2),
-    )
-
-
 # ----------------------------------------------------------------
-# Command Execution Helpers
+# Command Execution Helper (with robust error handling)
 # ----------------------------------------------------------------
 def run_command(
     cmd: List[str],
@@ -321,6 +329,10 @@ def run_command(
     timeout: int = AppConfig.DEFAULT_TIMEOUT,
     verbose: bool = False,
 ) -> subprocess.CompletedProcess:
+    """
+    Execute a shell command with error handling and return the result.
+    Raises CommandError on failure.
+    """
     try:
         if verbose:
             print_message(f"Executing: {' '.join(cmd)}", NordColors.FROST_3, "➜")
@@ -345,23 +357,25 @@ def run_command(
 
 
 # ----------------------------------------------------------------
-# Signal Handling and Cleanup
+# Signal Handling & Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    print_message("Cleaning up...", NordColors.FROST_3)
+    """Perform cleanup operations before application exit."""
+    print_message("Cleaning up resources...", NordColors.FROST_3)
 
 
 def signal_handler(sig: int, frame: Any) -> None:
-    sig_name = str(sig)
+    """Handle interruption signals gracefully."""
     try:
         sig_name = signal.Signals(sig).name
     except Exception:
-        pass
+        sig_name = str(sig)
     print_message(f"Interrupted by signal {sig_name}", NordColors.YELLOW, "⚠")
     cleanup()
     sys.exit(128 + sig)
 
 
+# Register signal handlers
 for s in [signal.SIGINT, signal.SIGTERM]:
     try:
         signal.signal(s, signal_handler)
@@ -401,7 +415,7 @@ def install_virtualization_packages(packages: List[str]) -> TaskResult:
             name="package_install", success=True, message="No packages specified"
         )
     total = len(packages)
-    failed = []
+    failed: List[str] = []
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -458,7 +472,7 @@ def manage_virtualization_services(services: List[str]) -> TaskResult:
             name="services", success=True, message="No services specified"
         )
     total = len(services) * 2
-    failed = []
+    failed: List[str] = []
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -608,6 +622,7 @@ def configure_default_network() -> TaskResult:
 
 
 def get_virtual_machines() -> List[VirtualMachine]:
+    """Retrieve list of virtual machines via virsh."""
     vms: List[VirtualMachine] = []
     try:
         with console.status(
@@ -648,8 +663,8 @@ def set_vm_autostart(vms: List[VirtualMachine]) -> TaskResult:
         return TaskResult(
             name="vm_autostart", success=True, message="No VMs found to configure"
         )
-    failed = []
-    success_count = 0
+    failed: List[str] = []
+    success_count: int = 0
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -728,8 +743,8 @@ def start_virtual_machines(vms: List[VirtualMachine]) -> TaskResult:
         print_message(
             "Default network not active; VM start may fail", NordColors.RED, "✗"
         )
-    failed = []
-    success_count = 0
+    failed: List[str] = []
+    success_count: int = 0
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -741,7 +756,7 @@ def start_virtual_machines(vms: List[VirtualMachine]) -> TaskResult:
         task = progress.add_task("Starting VMs", total=len(to_start))
         for vm in to_start:
             progress.update(task, description=f"Starting {vm.name}")
-            success = False
+            success: bool = False
             for attempt in range(1, 4):
                 try:
                     result = run_command(["virsh", "start", vm.name], check=False)
@@ -808,8 +823,8 @@ def fix_storage_permissions(paths: List[str]) -> TaskResult:
         return TaskResult(
             name="storage", success=False, message=f"User/group error: {e}"
         )
-    fixed_paths = []
-    failed_paths = []
+    fixed_paths: List[str] = []
+    failed_paths: List[str] = []
     for path_str in paths:
         path = Path(path_str)
         print_message(f"Processing {path}", NordColors.FROST_3)
@@ -958,8 +973,8 @@ def verify_virtualization_setup() -> TaskResult:
         ("KVM Modules", "lsmod | grep kvm", "kvm"),
         ("Default Network", "virsh net-list", "default"),
     ]
-    results = []
-    details = {}
+    results: List[bool] = []
+    details: Dict[str, Any] = {}
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -1104,6 +1119,7 @@ def install_and_enable_service() -> TaskResult:
 # ----------------------------------------------------------------
 def main() -> None:
     console.clear()
+    # Display dynamic header banner at startup
     console.print(create_header())
     console.print(
         Align.center(
@@ -1112,6 +1128,8 @@ def main() -> None:
         )
     )
     console.print()
+
+    # Ensure the script is run as root
     if os.geteuid() != 0:
         display_panel(
             "This script must be run as root (e.g., using sudo)",
@@ -1119,6 +1137,8 @@ def main() -> None:
             "Permission Error",
         )
         sys.exit(1)
+
+    # Overview panel (no user input required)
     display_panel(
         "This utility will automatically set up a complete virtualization environment on Ubuntu.\n"
         "It will install packages, configure networks, fix permissions, and start VMs.\n"
@@ -1127,12 +1147,14 @@ def main() -> None:
         "Setup Overview",
     )
     console.print()
-    results = []
+
+    results: List[TaskResult] = []
     results.append(update_system_packages())
     results.append(install_virtualization_packages(AppConfig.VIRTUALIZATION_PACKAGES))
     results.append(manage_virtualization_services(AppConfig.VIRTUALIZATION_SERVICES))
     results.append(install_and_enable_service())
-    net_result = None
+
+    net_result: Optional[TaskResult] = None
     for attempt in range(1, 4):
         print_message(f"Network configuration attempt {attempt}", NordColors.FROST_3)
         net_result = configure_default_network()
@@ -1145,8 +1167,10 @@ def main() -> None:
         )
         net_result = recreate_default_network()
     results.append(net_result)
+
     results.append(fix_storage_permissions(AppConfig.VM_STORAGE_PATHS))
     results.append(configure_user_groups())
+
     vms = get_virtual_machines()
     if vms:
         print_message(f"Found {len(vms)} virtual machine(s)", NordColors.GREEN, "✓")
@@ -1160,8 +1184,10 @@ def main() -> None:
         results.append(
             TaskResult(name="vm_start", success=True, message="No VMs found")
         )
+
     results.append(verify_virtualization_setup())
     console.print()
+
     # Display summary table
     table = Table(
         show_header=True,
@@ -1184,6 +1210,7 @@ def main() -> None:
     console.print(
         Panel(table, border_style=Style(color=NordColors.FROST_4), padding=(0, 1))
     )
+
     success_count = sum(1 for res in results if res.success)
     total_tasks = len(results)
     if success_count == total_tasks:

@@ -29,7 +29,7 @@
     └── update_dns_records.py
     └── update_plex.py
     └── upgrade_debian_to_trixie_stable.py
-    └── virtualization_setup.py
+    *└── virtualization_setup.py
     └── vm_manager.py
     └── vscode_wayland_setup.py
     └── zfs_setup.py
@@ -46,7 +46,7 @@ Here’s a cleaner, more concise, and refined version of your prompt:
 
 - **Professional UI** with a **Nord color theme** across all elements.  
 - **Fully interactive, menu-driven interface** with numbered options and validation.  
-- **Dynamic ASCII banners** via Pyfiglet, with gradient styling adapting to terminal width.  
+- **Dynamic ASCII banners** via Pyfiglet, with gradient styling adapting to terminal width at startup and for each major step of progress if it is a large script with multiple long running phases.
 - **Rich library integration** for panels, tables, spinners, and real-time progress tracking.
 - **Comprehensive error handling** with color-coded messaging and recovery mechanisms.  
 - **Signal handling** for graceful termination (SIGINT, SIGTERM).  
@@ -68,7 +68,7 @@ Here’s a cleaner and more concise version of your prompt:
 **Enhance and rewrite the following Python script to align with the Advanced Terminal Application guidelines for unattended operation. The updated version should:**
 
 - Run fully autonomously with professional terminal output using the Nord color theme.
-- Display a dynamic ASCII banner with Pyfiglet (gradient styling) at startup.
+- Display a dynamic ASCII banner with Pyfiglet (gradient styling) at startup and for each major step of progress if it is a large script with multiple long running phases.
 - Use the Rich library for visual feedback, including:
   - Progress bars for long-running operations
   - Spinners with status messages
