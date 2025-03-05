@@ -36,47 +36,71 @@
 
 Prompt 1 (Interactive CLI):
 
-Rewrite and enhance the following Python script following the Advanced Terminal Application guidelines. The updated version should feature:
+Here’s a cleaner, more concise, and refined version of your prompt:
 
-- Professional UI Implementation with a Nord color theme throughout all interface elements
-- A fully interactive, menu-driven interface with numbered options and validation
-- Dynamic ASCII banner using Pyfiglet with gradient styling that adapts to terminal width
-- Rich library integration for panels, tables, spinners, and progress tracking with real-time statistics
-- prompt_toolkit integration for tab completion, command history, and enhanced user input
-- Comprehensive error handling with color-coded messaging and recovery mechanisms
-- Signal handling for graceful termination (SIGINT, SIGTERM)
-- Type annotations and dataclasses for improved code readability
-- Cross-platform compatibility with appropriate environment detection
-- Modular organization with clearly commented sections and separation of concerns
+---
 
-Ensure the script maintains its core functionality while implementing these enhancements for a production-grade, professional user experience. The application should be purely interactive with no command-line argument parsing. Use prompt_toolkit for any cli input or user prompting if needed and use Rich and Pyfiglet throughout. The script should also install all python / pip dependencies before executing the normal part of the script and it should try to install them system wide using Nala with "nala install python3-rich, and nala install python3-pyfiglet" etc and also try installing them as the standard non root user using pip (all the scripts are run as sudo so keep that in mind for this part) also install Nala at the start of the script and then use Nala instead of Apt for all subsequent apt commands ("apt install nala" is how you install it)
+**Rewrite and enhance the following Python script** to align with **Advanced Terminal Application** standards. The upgraded version must include:  
+
+- **Professional UI** with a **Nord color theme** across all elements.  
+- **Fully interactive, menu-driven interface** with numbered options and validation.  
+- **Dynamic ASCII banners** via Pyfiglet, with gradient styling adapting to terminal width.  
+- **Rich library integration** for panels, tables, spinners, and real-time progress tracking.  
+- **prompt_toolkit support** for tab completion, command history, and enhanced input.  
+- **Comprehensive error handling** with color-coded messaging and recovery mechanisms.  
+- **Signal handling** for graceful termination (SIGINT, SIGTERM).  
+- **Type annotations & dataclasses** for readability.
+- **Modular architecture** with well-documented sections.  
+
+**Dependency Management:**
+
+- **Use Nala (not Apt) for system-wide installations.** Install it first via `apt install nala`.  
+- **Ensure necessary Python tools** (`python3-pip`, etc.) are installed via Nala.  
+- **Use Nala for Rich & Pyfiglet** (`nala install python3-rich python3-pyfiglet`).  
+- **Use Pipx for other system-wide dependencies.** Do not use `pip install`.  
+- **No command-line argument parsing.** The script must be fully interactive.  
+
+Maintain core functionality while implementing these enhancements for a **production-grade user experience**.
+
 
 ---------------------------------------------------------------------------------------------
 
+
 Prompt 2 (Unattended/Automated Script):
 
-Rewrite and enhance the following Python script following the Advanced Terminal Application guidelines for an unattended operation mode. The updated version should:
+Here’s a cleaner and more concise version of your prompt:
 
-- Run fully autonomously while maintaining professional terminal output with Nord color theme
-- Display a dynamic ASCII banner using Pyfiglet with gradient styling at startup
-- Implement Rich library components for enhanced visual feedback:
-  - Progress bars with detailed statistics for tracking long-running operations
-  - Spinners with descriptive status messages for indeterminate processes
-  - Panels and styled text for clear section delineation and results reporting
-- Include comprehensive error handling with detailed logging and recovery mechanisms
-- Implement robust signal handling for graceful termination in unattended environments
-- Organize code with a modular structure and clearly commented sections
-- Use type annotations and appropriate data structures for improved maintainability
-- Ensure cross-platform compatibility with environment-aware operation
-- Implement proper resource management and cleanup procedures
+---
 
-The script should maintain its core functionality while operating completely unattended without requiring user input, providing clear visual feedback about its operation status at all times. The application should just run fully unattended with no command-line argument parsing. The script should also install all python / pip dependencies before executing the normal part of the script and it should try to install them system wide using Nala with "nala install python3-rich, and nala install python3-pyfiglet" etc and also try installing them as the standard non root user using pip (all the scripts are run as sudo so keep that in mind for this part) also install Nala at the start of the script and then use Nala instead of Apt for all subsequent apt commands ("apt install nala" is how you install it)
+**Enhance and rewrite the following Python script to align with the Advanced Terminal Application guidelines for unattended operation. The updated version should:**
+
+- Run fully autonomously with professional terminal output using the Nord color theme.
+- Display a dynamic ASCII banner with Pyfiglet (gradient styling) at startup.
+- Use the Rich library for visual feedback, including:
+  - Progress bars for long-running operations
+  - Spinners with status messages
+  - Panels and styled text for clear sectioning and results reporting
+- Include robust error handling, detailed logging, and recovery mechanisms.
+- Implement signal handling for graceful termination in unattended environments.
+- Maintain a modular structure with clear comments and type annotations.
+- Handle resource management and cleanup properly.
+
+**Dependency Management:**
+
+- Use `nala` (not `apt`) for system-wide installations (`nala install python3-rich`, `nala install python3-pyfiglet`, etc.).
+- Install `nala` first (`apt install nala`), followed by `python3-pip` for `pipx` support.
+- Use `pipx` only for additional dependencies that cannot be installed with `nala`.
+- Do **not** use `pip install` under any circumstances.
+- Ensure all dependencies are installed system-wide before executing the script.
+
+The final script should operate unattended, requiring no user input, and provide clear, real-time visual feedback.
 
 
 
 **Nala Command Cheat Sheet**
 
 ### Basic Usage
+
 - **Install Packages:**  
   `nala install [--options] PKGS ...`  
   _Example:_ `nala install tmux`

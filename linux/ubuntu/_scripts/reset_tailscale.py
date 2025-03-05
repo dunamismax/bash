@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """
 Automated Tailscale Reset Utility (Unattended Mode)
---------------------------------------------------
+----------------------------------------------------
 
 A fully autonomous terminal utility for automatically resetting Tailscale
 on Ubuntu systems. The script performs the following steps sequentially:
   • Installs Nala (if not already installed) using apt and then uses Nala for all package operations.
-  • Installs required Python dependencies system wide via Nala and also for the non-root user via pip.
-  • Uninstalls Tailscale (stops/disables tailscaled, removes packages and configuration).
+  • Installs python3-pip, python3-rich, and python3-pyfiglet system wide via Nala.
+  • Installs pipx (via Nala) and then uses pipx to install additional Python libraries
+    (ensuring they are available system wide, even for root).
+  • Uninstalls Tailscale (stopping/disabling tailscaled, removing packages and configuration).
   • Installs Tailscale via the official install script.
   • Enables and starts the tailscaled service.
   • Runs 'tailscale up' and checks the final status.
 
-No user interaction is required. All actions run automatically with detailed
-visual feedback, logging, and robust error & signal handling.
+All operations run automatically with detailed visual feedback, logging,
+and robust error & signal handling.
 
 Version: 3.1.0
 """
 
 # ----------------------------------------------------------------
-# Dependency Check and Imports
+# Dependencies and Imports
 # ----------------------------------------------------------------
 import atexit
 import datetime
@@ -34,10 +36,9 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-# The following imports are assumed to be available. In case they are missing,
-# the installation process below (system-wide via Nala and user pip) will install them.
+# Attempt to import required libraries; if missing, they will be installed automatically.
 try:
     import pyfiglet
     from rich.align import Align
@@ -56,11 +57,9 @@ try:
     from rich.traceback import install as install_rich_traceback
     from rich.style import Style
 except ImportError:
-    print("Missing required Python packages. They will be installed automatically.")
-    # We continue execution since the installation functions below will handle it.
     pass
 
-# Install rich traceback for improved error reporting
+# Enable rich traceback for improved error reporting.
 install_rich_traceback(show_locals=True)
 
 # ----------------------------------------------------------------
@@ -72,7 +71,7 @@ VERSION: str = "3.1.0"
 HOSTNAME: str = socket.gethostname()
 USERNAME: str = os.environ.get("USER", os.environ.get("USERNAME", "Unknown"))
 OPERATION_TIMEOUT: int = 120  # seconds for command timeouts
-TRANSITION_DELAY: float = 0.5  # seconds delay between operations
+TRANSITION_DELAY: float = 0.5  # delay between operations (seconds)
 LOG_FILE: str = os.path.expanduser("~/tailscale_reset_logs/tailscale_reset.log")
 TAILSCALE_INSTALL_URL: str = "https://tailscale.com/install.sh"
 TAILSCALE_PATHS: List[str] = [
@@ -86,7 +85,7 @@ TAILSCALE_PATHS: List[str] = [
 # Nord-Themed Colors
 # ----------------------------------------------------------------
 class NordColors:
-    """Nord color palette for consistent theming throughout the application."""
+    """Nord color palette for consistent theming."""
 
     POLAR_NIGHT_1 = "#2E3440"
     POLAR_NIGHT_2 = "#3B4252"
@@ -106,7 +105,7 @@ class NordColors:
     PURPLE = "#B48EAD"  # Special highlights
 
 
-# Create a Rich Console instance
+# Create a global Rich Console instance.
 console: Console = Console()
 
 
@@ -114,7 +113,7 @@ console: Console = Console()
 # Logging Setup
 # ----------------------------------------------------------------
 def setup_logging() -> None:
-    """Configure file logging for the utility."""
+    """Configure logging to file."""
     try:
         log_dir = os.path.dirname(LOG_FILE)
         if log_dir and not os.path.exists(log_dir):
@@ -139,7 +138,7 @@ def create_header() -> Panel:
     Create a dynamic ASCII art header with gradient styling using Pyfiglet.
     """
     fonts = ["slant", "small", "digital", "mini"]
-    ascii_art = ""
+    ascii_art: str = ""
     for font in fonts:
         try:
             fig = pyfiglet.Figlet(font=font, width=60)
@@ -150,7 +149,6 @@ def create_header() -> Panel:
             continue
     if not ascii_art.strip():
         ascii_art = APP_NAME
-
     lines = [line for line in ascii_art.split("\n") if line.strip()]
     colors = [
         NordColors.FROST_1,
@@ -158,7 +156,7 @@ def create_header() -> Panel:
         NordColors.FROST_3,
         NordColors.FROST_2,
     ]
-    styled = ""
+    styled: str = ""
     for i, line in enumerate(lines):
         color = colors[i % len(colors)]
         styled += f"[bold {color}]{line}[/]\n"
@@ -184,7 +182,7 @@ def print_message(
 
 
 def print_section(title: str) -> None:
-    """Print a section header with decorative borders."""
+    """Print a decorated section header."""
     border = "═" * 60
     console.print("\n" + f"[bold {NordColors.FROST_3}]{border}[/]")
     console.print(f"[bold {NordColors.FROST_2}]  {title}[/]")
@@ -195,7 +193,7 @@ def print_section(title: str) -> None:
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """Display a message inside a Rich panel."""
+    """Display a message in a styled Rich panel."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
@@ -209,16 +207,6 @@ def display_panel(
 def clear_screen() -> None:
     """Clear the terminal screen."""
     console.clear()
-
-
-def format_time(seconds: float) -> str:
-    """Format a time duration into a human-readable string."""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    elif seconds < 3600:
-        return f"{seconds / 60:.1f}m"
-    else:
-        return f"{seconds / 3600:.1f}h"
 
 
 def display_system_info() -> None:
@@ -236,10 +224,10 @@ def display_system_info() -> None:
 
 
 # ----------------------------------------------------------------
-# Logging & Signal Cleanup
+# Logging and Signal Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform cleanup tasks before exit."""
+    """Perform cleanup tasks before exiting."""
     print_message("Cleaning up resources...", NordColors.FROST_3)
     logging.info("Cleanup complete.")
 
@@ -261,11 +249,11 @@ atexit.register(cleanup)
 # ----------------------------------------------------------------
 class ProgressManager:
     """
-    Provides a unified Rich progress tracking system.
+    Unified Rich progress tracking system.
     Ensures that only one live progress display is active at a time.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.progress = Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn("[bold {task.fields[color]}]{task.description}"),
@@ -280,11 +268,11 @@ class ProgressManager:
             expand=True,
         )
 
-    def __enter__(self):
+    def __enter__(self) -> "ProgressManager":
         self.progress.start()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.progress.stop()
 
     def add_task(
@@ -297,16 +285,16 @@ class ProgressManager:
             status=f"[{NordColors.FROST_3}]starting",
         )
 
-    def update(self, task_id: TaskID, advance: float = 0, **kwargs) -> None:
+    def update(self, task_id: TaskID, advance: float = 0, **kwargs: Any) -> None:
         self.progress.update(task_id, advance=advance, **kwargs)
 
 
 class Spinner:
     """
-    A thread-safe spinner for operations with unknown duration.
+    Thread-safe spinner for indeterminate-duration operations.
     """
 
-    def __init__(self, message: str):
+    def __init__(self, message: str) -> None:
         self.message = message
         self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
         self.current = 0
@@ -318,7 +306,7 @@ class Spinner:
     def _spin(self) -> None:
         while self.spinning:
             elapsed = time.time() - self.start_time
-            time_str = format_time(elapsed)
+            time_str = f"{elapsed:.1f}s"
             with self._lock:
                 console.print(
                     f"\r[{NordColors.FROST_1}]{self.spinner_chars[self.current]}[/] "
@@ -341,7 +329,7 @@ class Spinner:
         if self.thread:
             self.thread.join()
         elapsed = time.time() - self.start_time
-        time_str = format_time(elapsed)
+        time_str = f"{elapsed:.1f}s"
         console.print("\r" + " " * 80, end="\r")
         if success:
             console.print(
@@ -356,11 +344,11 @@ class Spinner:
             )
             logging.error(f"FAILED: {self.message} after {time_str}")
 
-    def __enter__(self):
+    def __enter__(self) -> "Spinner":
         self.start()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         self.stop(success=exc_type is None)
 
 
@@ -408,76 +396,8 @@ def check_system_compatibility() -> bool:
     return True
 
 
-def install_nala() -> bool:
-    """
-    Install Nala if it is not already installed.
-    Uses apt to install Nala system wide.
-    """
-    if shutil.which("nala"):
-        print_message("Nala is already installed.", NordColors.GREEN, "✓")
-        return True
-    print_section("Installing Nala")
-    try:
-        run_command(["apt", "install", "nala", "-y"])
-        if shutil.which("nala"):
-            print_message("Nala installed successfully.", NordColors.GREEN, "✓")
-            return True
-        else:
-            print_message("Nala installation failed.", NordColors.RED, "✗")
-            return False
-    except Exception as e:
-        print_message(f"Error installing Nala: {e}", NordColors.RED, "✗")
-        return False
-
-
-def install_python_dependencies() -> bool:
-    """
-    Install required Python dependencies system wide using Nala and then
-    install pip packages for the non-root user.
-    """
-    success = True
-    # Install system-wide packages using Nala
-    try:
-        print_section("Installing Python Dependencies (System-wide)")
-        cmd = ["nala", "install", "python3-rich", "python3-pyfiglet", "-y"]
-        run_command(cmd)
-        print_message(
-            "System-wide Python dependencies installed.", NordColors.GREEN, "✓"
-        )
-    except Exception as e:
-        print_message(
-            f"Failed to install system Python dependencies: {e}", NordColors.RED, "✗"
-        )
-        success = False
-
-    # Install pip packages for the non-root user
-    sudo_user = os.environ.get("SUDO_USER")
-    if sudo_user:
-        try:
-            print_section("Installing Python Dependencies for Non-root User")
-            pip_cmd = ["pip", "install", "--user", "rich", "pyfiglet"]
-            run_command(["sudo", "-u", sudo_user] + pip_cmd)
-            print_message(
-                "Non-root user Python dependencies installed.", NordColors.GREEN, "✓"
-            )
-        except Exception as e:
-            print_message(
-                f"Failed to install non-root Python dependencies: {e}",
-                NordColors.RED,
-                "✗",
-            )
-            success = False
-    else:
-        print_message(
-            "SUDO_USER not defined. Skipping non-root pip installation.",
-            NordColors.YELLOW,
-            "⚠",
-        )
-    return success
-
-
 # ----------------------------------------------------------------
-# Command Execution Helper
+# Dependency Installation Functions
 # ----------------------------------------------------------------
 def run_command(
     cmd: Union[List[str], str],
@@ -520,6 +440,106 @@ def run_command(
         raise
 
 
+def install_nala() -> bool:
+    """
+    Install Nala if it is not already installed.
+    Uses apt to install Nala system wide.
+    """
+    if shutil.which("nala"):
+        print_message("Nala is already installed.", NordColors.GREEN, "✓")
+        return True
+    print_section("Installing Nala")
+    try:
+        run_command(["apt", "install", "nala", "-y"])
+        if shutil.which("nala"):
+            print_message("Nala installed successfully.", NordColors.GREEN, "✓")
+            return True
+        else:
+            print_message("Nala installation failed.", NordColors.RED, "✗")
+            return False
+    except Exception as e:
+        print_message(f"Error installing Nala: {e}", NordColors.RED, "✗")
+        return False
+
+
+def install_pip() -> bool:
+    """
+    Ensure python3-pip is installed using Nala.
+    """
+    if shutil.which("pip3"):
+        print_message("pip3 is already installed.", NordColors.GREEN, "✓")
+        return True
+    print_section("Installing python3-pip")
+    try:
+        run_command(["nala", "install", "python3-pip", "-y"])
+        if shutil.which("pip3"):
+            print_message("pip3 installed successfully.", NordColors.GREEN, "✓")
+            return True
+        else:
+            print_message("pip3 installation failed.", NordColors.RED, "✗")
+            return False
+    except Exception as e:
+        print_message(f"Error installing pip3: {e}", NordColors.RED, "✗")
+        return False
+
+
+def install_python_dependencies_system() -> bool:
+    """
+    Install required Python dependencies system wide using Nala.
+    """
+    try:
+        print_section("Installing Python Dependencies (System-wide via Nala)")
+        cmd = ["nala", "install", "python3-rich", "python3-pyfiglet", "-y"]
+        run_command(cmd)
+        print_message(
+            "System-wide Python dependencies installed.", NordColors.GREEN, "✓"
+        )
+        return True
+    except Exception as e:
+        print_message(
+            f"Failed to install system Python dependencies: {e}", NordColors.RED, "✗"
+        )
+        return False
+
+
+def install_pipx() -> bool:
+    """
+    Install pipx if not already available.
+    """
+    if shutil.which("pipx"):
+        print_message("pipx is already installed.", NordColors.GREEN, "✓")
+        return True
+    print_section("Installing pipx")
+    try:
+        run_command(["nala", "install", "pipx", "-y"])
+        if shutil.which("pipx"):
+            print_message("pipx installed successfully.", NordColors.GREEN, "✓")
+            return True
+        else:
+            print_message("pipx installation failed.", NordColors.RED, "✗")
+            return False
+    except Exception as e:
+        print_message(f"Error installing pipx: {e}", NordColors.RED, "✗")
+        return False
+
+
+def install_system_dependencies() -> bool:
+    """
+    Install all necessary system dependencies: Nala, pip3, system Python packages,
+    pipx, and then install Python libraries via pipx.
+    """
+    overall_success = True
+    if not install_nala():
+        overall_success = False
+    if not install_pip():
+        overall_success = False
+    if not install_python_dependencies_system():
+        overall_success = False
+    if not install_pipx():
+        overall_success = False
+    return overall_success
+
+
 # ----------------------------------------------------------------
 # Tailscale Operation Functions (Using Nala)
 # ----------------------------------------------------------------
@@ -531,7 +551,7 @@ def uninstall_tailscale() -> bool:
     if not ensure_root():
         return False
     print_section("Uninstalling Tailscale")
-    steps = [
+    steps: List[Tuple[str, List[str]]] = [
         ("Stopping tailscaled service", ["systemctl", "stop", "tailscaled"]),
         ("Disabling tailscaled service", ["systemctl", "disable", "tailscaled"]),
         (
@@ -609,7 +629,7 @@ def start_tailscale_service() -> bool:
     if not ensure_root():
         return False
     print_section("Starting Tailscale Service")
-    steps = [
+    steps: List[Tuple[str, List[str]]] = [
         ("Enabling tailscaled service", ["systemctl", "enable", "tailscaled"]),
         ("Starting tailscaled service", ["systemctl", "start", "tailscaled"]),
     ]
@@ -720,7 +740,7 @@ def reset_tailscale() -> bool:
     if not ensure_root():
         return False
     print_section("Complete Tailscale Reset")
-    steps = [
+    steps: List[Tuple[str, Any]] = [
         ("Uninstall", uninstall_tailscale),
         ("Install", install_tailscale),
         ("Service Start", start_tailscale_service),
@@ -728,8 +748,7 @@ def reset_tailscale() -> bool:
         ("Status Check", check_tailscale_status),
     ]
     overall_success = True
-    results = []
-    # Use a single outer progress manager to track each reset step
+    results: List[Tuple[str, bool]] = []
     with ProgressManager() as progress:
         task = progress.add_task("Resetting Tailscale", total=len(steps))
         for label, func in steps:
@@ -746,7 +765,6 @@ def reset_tailscale() -> bool:
                 )
                 overall_success = False
             time.sleep(TRANSITION_DELAY)
-    # Display summary table
     print_section("Reset Process Summary")
     table = Table(
         title="Tailscale Reset Results",
@@ -781,22 +799,24 @@ def reset_tailscale() -> bool:
 # Main Entry Point
 # ----------------------------------------------------------------
 def main() -> None:
-    """Main function that performs all reset operations automatically."""
+    """
+    Main function that performs all reset operations automatically.
+    Installs system dependencies, checks compatibility, and then resets Tailscale.
+    """
     try:
         clear_screen()
         console.print(create_header())
         display_system_info()
         setup_logging()
 
-        print_section("System Compatibility Check")
-        # Ensure Nala is installed
-        if not install_nala():
-            print_message("Nala installation failed. Exiting.", NordColors.RED, "✗")
+        print_section("System Dependency Installation")
+        if not install_system_dependencies():
+            print_message(
+                "Dependency installation failed. Exiting.", NordColors.RED, "✗"
+            )
             sys.exit(1)
 
-        # Install required Python dependencies (system-wide and for non-root user)
-        install_python_dependencies()
-
+        print_section("System Compatibility Check")
         if not check_system_compatibility():
             print_message(
                 "System compatibility issues detected. Proceeding anyway.",
@@ -805,13 +825,15 @@ def main() -> None:
             )
         else:
             print_message("System compatibility check passed.", NordColors.GREEN, "✓")
-        if not check_root():
+
+        if not ensure_root():
             print_message(
                 "This utility requires root privileges. Please run with sudo.",
                 NordColors.RED,
                 "✗",
             )
             sys.exit(1)
+
         print_message(
             "Beginning automated Tailscale reset process...", NordColors.FROST_2, "▶"
         )
