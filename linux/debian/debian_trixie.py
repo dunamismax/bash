@@ -279,7 +279,7 @@ def install_dependencies() -> bool:
         ),
         # Method 3: Try direct pip with options
         lambda: subprocess.run(
-            ["pip3", "install", "--break-system-packages", "rich>=13.0.0", "pyfiglet"],
+            ["pip", "install", "--break-system-packages", "rich>=13.0.0", "pyfiglet"],
             check=False,
         ),
         # Method 4: Virtual environment

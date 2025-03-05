@@ -374,9 +374,9 @@ def install_b2_cli() -> bool:
     if shutil.which("b2"):
         print_success("B2 CLI tool already installed")
         return True
-    print_warning("B2 CLI tool not found. Attempting to install via pip3...")
+    print_warning("B2 CLI tool not found. Attempting to install via pip...")
     try:
-        run_command(["pip3", "install", "--upgrade", "b2"])
+        run_command(["pip", "install", "--upgrade", "b2"])
         b2_path = shutil.which("b2")
         if b2_path:
             run_command(["chmod", "+x", b2_path])

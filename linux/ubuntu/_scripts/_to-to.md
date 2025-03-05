@@ -49,7 +49,7 @@ Rewrite and enhance the following Python script following the Advanced Terminal 
 - Cross-platform compatibility with appropriate environment detection
 - Modular organization with clearly commented sections and separation of concerns
 
-Ensure the script maintains its core functionality while implementing these enhancements for a production-grade, professional user experience. The application should be purely interactive with no command-line argument parsing. Use prompt_toolkit for any cli input or user prompting if needed and use Rich and Pyfiglet throughout.
+Ensure the script maintains its core functionality while implementing these enhancements for a production-grade, professional user experience. The application should be purely interactive with no command-line argument parsing. Use prompt_toolkit for any cli input or user prompting if needed and use Rich and Pyfiglet throughout. The script should also install all python / pip dependencies before executing the normal part of the script and it should try to install them system wide using Nala with "nala install python3-rich, and nala install python3-pyfiglet" etc and also try installing them as the standard non root user using pip (all the scripts are run as sudo so keep that in mind for this part) also install Nala at the start of the script and then use Nala instead of Apt for all subsequent apt commands ("apt install nala" is how you install it)
 
 ---------------------------------------------------------------------------------------------
 
@@ -70,208 +70,84 @@ Rewrite and enhance the following Python script following the Advanced Terminal 
 - Ensure cross-platform compatibility with environment-aware operation
 - Implement proper resource management and cleanup procedures
 
-The script should maintain its core functionality while operating completely unattended without requiring user input, providing clear visual feedback about its operation status at all times. The application should just run fully unattended with no command-line argument parsing.
+The script should maintain its core functionality while operating completely unattended without requiring user input, providing clear visual feedback about its operation status at all times. The application should just run fully unattended with no command-line argument parsing. The script should also install all python / pip dependencies before executing the normal part of the script and it should try to install them system wide using Nala with "nala install python3-rich, and nala install python3-pyfiglet" etc and also try installing them as the standard non root user using pip (all the scripts are run as sudo so keep that in mind for this part) also install Nala at the start of the script and then use Nala instead of Apt for all subsequent apt commands ("apt install nala" is how you install it)
+
+
+
+**Nala Command Cheat Sheet**
+
+### Basic Usage
+- **Install Packages:**  
+  `nala install [--options] PKGS ...`  
+  _Example:_ `nala install tmux`
+
+- **Install Specific Version:**  
+  `nala install pkg=version`  
+  _Example:_ `nala install tmux=3.3a-3~bpo11+1`
+
+- **Install from URL:**  
+  `nala install <URL>`  
+  _Example:_ `nala install https://example.org/path/to/pkg.deb`
+
+---
+
+### Common Options
+
+- **General:**
+  - `-h, --help`  
+    Show help/man page.
+  - `--debug`  
+    Print debug information for troubleshooting.
+  - `-v, --verbose`  
+    Disable scrolling text & show extra details.
+  - `-o, --option <option>`  
+    Pass options to apt/nala/dpkg.  
+    _Examples:_  
+    `nala install --option Dpkg::Options::="--force-confnew"`  
+    `nala install --option Nala::scrolling_text="false"`
+
+- **Transaction Control:**
+  - `--purge`  
+    Purge packages that would be removed during the transaction.
+  - `-d, --download-only`  
+    Only download packages (do not unpack/install).
+  - `--remove-essential`  
+    Allow removal of essential packages (use with caution).
+
+- **Release & Updates:**
+  - `-t, --target-release <release>`  
+    Install from a specific release.  
+    _Example:_ `nala install --target-release testing neofetch`
+  - `--update` / `--no-update`  
+    Update package list before operation.  
+    _Example:_ `nala install --update neofetch`
+
+- **Prompt Options:**
+  - `-y, --assume-yes`  
+    Automatically answer "yes" to prompts.
+  - `-n, --assume-no`  
+    Automatically answer "no" to prompts.
+
+- **Display & Output:**
+  - `--simple` / `--no-simple`  
+    Toggle between a simple (condensed) or detailed transaction summary.
+  - `--raw-dpkg`  
+    Disable dpkg output formatting (no progress bar; output as in apt).
+
+- **Dependency Management:**
+  - `--autoremove` / `--no-autoremove`  
+    Automatically remove unneeded packages (default is autoremove).
+  - `--install-recommends` / `--no-install-recommends`  
+    Toggle installation of recommended packages (default installs them).
+  - `--install-suggests` / `--no-install-suggests`  
+    Toggle installation of suggested packages (default installs them).
+  - `--fix-broken` / `--no-fix-broken`  
+    Attempt to fix broken packages (default is to fix).  
+    _Tip:_ Run `nala install --fix-broken` if you encounter issues.
 
-
-
-Nala commands:
-
-NAME
-nala-install - install packages
-
-SYNOPSIS
-nala install [--options] PKGS ...
-
-DESCRIPTION
-Install works similar to the way it does in apt.
-nala takes multiple packages as arguments and will install all of them.
-
-To install a specific version of a package you may use the = sign as below
-
-nala install tmux=3.3a-3~bpo11+1
-
-Nala can also install packages directly from a URL such as:
-
-nala install https://example.org/path/to/pkg.deb
-
-
-
-OPTIONS
-
---purge
-Purge any packages that would removed during the transaction.
---debug
-Print helpful information for solving issues.
-If you're submitting a bug report try running the command again with --debug
-and providing the output to the devs, it may be helpful.
---raw-dpkg
-
-Force nala not to format dpkg output.
-This disables all formatting and it would look as if you were using apt.
-A more indepth explanation for what this switch does,
-nala will fork a tty instead of a pty for dpkg.
-nala will also not display a progress bar for dpkg with this turned on.
-Additionally the language of the output will not be forced into English for this mode.
-
-
--d, --download-only
-
-Packages are only retrieved, not unpacked or installed.
-
--t, --target-release
-
-
-Set the release in which Nala will install packages from
-Example: Install neofetch from the testing repo:
-
-nala install --target-release testing neofetch
-
-
---remove-essential
-
-Allow the removal of essential packages.
-This is very dangerous, but we thought you should have the option.
-
-
---assume-yes, --assume-no
-
--y, --assume-yes
-
-Automatically select yes for any prompts which may need your input.
-If the configuration option assume_yes is true, this switch will
-set it back to default behavior
-
--n, --assume-no
-
-Automatically select no for any prompts which may need your input.
-
---simple, --no-simple
-
---simple
-
-Show a more simple and condensed transaction summary.
---no-simple
-
-Show the standard table transatction summary with more information.
-This variant is the default
-
-
-
-
--o, --option
-
-
-Set options to pass through to apt, nala, or dpkg.
-
-Example:
-
-Force dpkg to install new config files without prompting:
-
-nala install --option Dpkg::Options::="--force-confnew"
-
-Disable scrolling text for nala
-
-nala install --option Nala::scrolling_text="false"
-
-Allow nala to update unauthenticated repositories:
-
-nala install --option* APT::Get::AllowUnauthenticated="true"
-
-
-
-
-
--v, --verbose
-
-Disable scrolling text and print extra information
-
--h, --help
-
-Shows this man page.
-
---autoremove, --no-autoremove
-
-
---autoremove
-
-Automatically remove any packages that are no longer needed.
-This variant is the default
-
---no-autoremove
-
-Do NOT Automatically remove any packages
-
-
---update, --no-update
-
-
---update
-
-Update the package list before the requested operation.
-Example:
-
-nala install --update neofetch
-is equivalent to
-apt update && apt install neofetch
-
-[Default for: upgrade]
-
---no-update
-
-Do NOT update the package list before the requested operation.
-[Default for: install, remove, purge, autoremove, autopurge]
-
-
-
---install-recommends, --no-install-recommends
-
-
---install-recommends
-
-Recommended packages will be installed.
-This variant is the default unless changed with the apt config.
-
---no-install-recommends
-
-Recommended package will NOT be installed.
-If this option is selected nala will display the recommended packages that will not be installed.
-
-
-
---install-suggests, --no-install-suggests
-
-
---install-suggests
-
-Suggested packages will be installed.
-This variant is the default
-
---no-install-suggests
-
-This variant is the default unless changed with the apt config.
-If this option is selected nala will display the suggested packages that will not be installed.
-
-
-
---fix-broken, --no-fix-broken
-
-
---fix-broken
-
-Attempts to fix broken packages.
-This variant is the default
-
---no-fix-broken
-
-Stops nala from performing extra checks.
-This can result in a broken install!
-
-If you just want to fix broken packages:
-
-nala install --fix-broken
 
 
 ---------------------------------------------------------------------------------------------
 
-rewrite (claude 3.7 high)
+rewrite (o3-mini-high)
 using new prompt

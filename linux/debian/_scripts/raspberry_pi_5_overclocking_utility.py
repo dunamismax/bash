@@ -45,7 +45,7 @@ try:
 except ImportError:
     print("This script requires the 'rich' and 'pyfiglet' libraries.")
     print("Installing required dependencies...")
-    subprocess.run(["pip3", "install", "rich", "pyfiglet"], check=False)
+    subprocess.run(["pip", "install", "rich", "pyfiglet"], check=False)
     print("Please restart the script after installation.")
     sys.exit(1)
 
