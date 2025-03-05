@@ -3,7 +3,8 @@
     *└── _bashrc_cheat_sheet.md
     *└── _template.md
     *└── _to-to.md
-    └── deploy_scripts.py
+    *└── deploy_scripts.py
+    *└── fail2ban_toolkit.py
     └── file_toolkit.py
     └── hacker_toolkit.py
     └── hacking_tools.py
@@ -18,6 +19,7 @@
     └── secure_disk_eraser.py
     └── sftp_toolkit.py
     *└── ssh_machine_selector.py
+    *└── ssh_management_tool.py
     └── system_monitor.py
     └── ubuntu_voip_setup.py
     └── unified_backup_restore_deployment.py
