@@ -7,7 +7,7 @@ An advanced, production-grade terminal application for managing SSH keys and per
 on the main Ubuntu server. This tool provides a Nord-themed, interactive menu with:
 
   • Dynamic ASCII banners with gradient styling via Pyfiglet (adapting to terminal width)
-  • Fully interactive, numbered menu-driven interface with input validation
+  • A fully interactive, numbered menu-driven interface with input validation
   • Rich library integration for panels, tables, spinners, and real-time progress tracking
   • Comprehensive error handling with color-coded messages and recovery suggestions
   • Signal handling for graceful termination (SIGINT, SIGTERM)
@@ -16,7 +16,7 @@ on the main Ubuntu server. This tool provides a Nord-themed, interactive menu wi
 
 Core Features:
   [1] Create a new SSH key on the main server
-  [2] Push the SSH key to one or more client machines (using pexpect)
+  [2] Push the SSH key to one or more client machines (using StrictHostKeyChecking=accept-new)
   [3] Fix permissions on the ~/.ssh folder
   [4] Exit gracefully
 
@@ -35,7 +35,6 @@ import shutil
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 
-import pexpect  # For interactive ssh-copy-id handling
 from pyfiglet import Figlet
 from rich.console import Console
 from rich.theme import Theme
@@ -78,7 +77,7 @@ class SSHManagerConfig:
     def __post_init__(self) -> None:
         self.home_dir = f"/home/{self.user}"
         self.ssh_dir = os.path.join(self.home_dir, ".ssh")
-        # Default key file is 'id_rsa'; can be updated when a new key is created.
+        # Default key file is 'id_rsa'; this can be updated when a new key is created.
         self.key_path = os.path.join(self.ssh_dir, "id_rsa")
 
 
@@ -106,11 +105,9 @@ def print_banner() -> None:
     The banner font is chosen based on terminal width, and each line is rendered in a gradient.
     """
     term_width, _ = shutil.get_terminal_size((80, 24))
-    # Choose a font based on terminal width
     font = "slant" if term_width >= 80 else "small"
     fig = Figlet(font=font, width=term_width - 10)
     banner_text = fig.renderText("SSH Manager")
-    # Split the banner into lines and apply a gradient by cycling through frost colors
     frost_colors = ["frost1", "frost2", "frost3", "frost4"]
     banner_lines = banner_text.splitlines()
     styled_lines = []
@@ -246,9 +243,7 @@ def create_ssh_key(cfg: SSHManagerConfig) -> None:
         task_id = progress.add_task("Generating SSH key...", total=None)
         cmd = ["ssh-keygen", "-t", "rsa", "-b", "4096", "-f", key_full_path, "-N", ""]
         try:
-            subprocess.run(
-                cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
+            subprocess.run(cmd, check=True)
             progress.update(task_id, description="Key generation completed!")
             console.print(f"[success]SSH key generated at {key_full_path}[/success]")
         except subprocess.CalledProcessError as e:
@@ -260,8 +255,11 @@ def create_ssh_key(cfg: SSHManagerConfig) -> None:
 
 def push_ssh_key(cfg: SSHManagerConfig) -> None:
     """
-    Push the current SSH key to one or more client machines using ssh-copy-id,
-    handling interactive prompts (host trust and password) with pexpect.
+    Push the current SSH key to one or more client machines using ssh-copy-id.
+    Uses the SSH option StrictHostKeyChecking=accept-new to automatically accept new host keys.
+
+    Note: If a password is required, the ssh-copy-id command will prompt interactively.
+    Ensure the process is attached to a TTY so the prompt is visible.
     """
     if not os.path.isfile(cfg.key_path):
         console.print(
@@ -296,52 +294,23 @@ def push_ssh_key(cfg: SSHManagerConfig) -> None:
     results_table.add_column("Host", justify="left")
     results_table.add_column("Status", justify="left")
 
-    # For each host, use pexpect to handle the interactive ssh-copy-id process.
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True,
-    ) as progress:
-        task_id = progress.add_task("Pushing keys...", total=len(hosts))
-        for host in hosts:
-            target = f"{remote_user}@{host}"
-            cmd = f"ssh-copy-id -i {public_key_path} {target}"
-            try:
-                child = pexpect.spawn(cmd, timeout=60)
-                # Uncomment the following line to see real-time interaction (optional):
-                # child.logfile = sys.stdout.buffer
-
-                while True:
-                    idx = child.expect(
-                        [
-                            r"Are you sure you want to continue connecting",
-                            r"[Pp]assword:",
-                            pexpect.EOF,
-                            pexpect.TIMEOUT,
-                        ]
-                    )
-                    if idx == 0:
-                        # Prompt to trust the host key
-                        child.sendline("yes")
-                    elif idx == 1:
-                        # Prompt for password
-                        password = getpass.getpass(f"Enter password for {target}: ")
-                        child.sendline(password)
-                    elif idx == 2:
-                        # End-of-file reached; break out of loop
-                        break
-                    elif idx == 3:
-                        raise pexpect.TIMEOUT(f"Timeout while pushing key to {host}")
-                child.close()
-                if child.exitstatus == 0:
-                    results_table.add_row(host, "[success]Success[/success]")
-                else:
-                    results_table.add_row(host, "[danger]Failed[/danger]")
-            except Exception as e:
-                results_table.add_row(host, f"[danger]Error: {str(e)}[/danger]")
-            progress.advance(task_id, 1)
-
+    for host in hosts:
+        full_target = f"{remote_user}@{host}"
+        cmd = [
+            "ssh-copy-id",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-i",
+            public_key_path,
+            full_target,
+        ]
+        console.print(f"[info]Pushing key to {full_target}...[/info]")
+        try:
+            # Run ssh-copy-id without redirecting input/output so that password prompts are visible.
+            subprocess.run(cmd, check=True)
+            results_table.add_row(host, "[success]Success[/success]")
+        except subprocess.CalledProcessError as e:
+            results_table.add_row(host, f"[danger]Failed: {e}[/danger]")
     console.print(results_table)
 
 
