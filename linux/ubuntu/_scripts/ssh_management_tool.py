@@ -18,7 +18,8 @@ Core Features:
   [1] Create a new SSH key on the main server
   [2] Push the SSH key to one or more client machines (using StrictHostKeyChecking=accept-new)
   [3] Fix permissions on the ~/.ssh folder
-  [4] Exit gracefully
+  [4] Establish Mutual SSH Trust (bidirectional key exchange)
+  [5] Exit gracefully
 
 Usage:
   Run the script:
@@ -306,7 +307,7 @@ def push_ssh_key(cfg: SSHManagerConfig) -> None:
         ]
         console.print(f"[info]Pushing key to {full_target}...[/info]")
         try:
-            # Run ssh-copy-id without redirecting input/output so that password prompts are visible.
+            # Run ssh-copy-id so that password prompts are visible.
             subprocess.run(cmd, check=True)
             results_table.add_row(host, "[success]Success[/success]")
         except subprocess.CalledProcessError as e:
@@ -336,6 +337,133 @@ def fix_ssh_permissions(cfg: SSHManagerConfig) -> None:
     )
 
 
+def establish_mutual_ssh_trust(cfg: SSHManagerConfig) -> None:
+    """
+    Establish reciprocal SSH trust between the local machine and a remote machine.
+    This function performs the following steps:
+      1. Ensure the local SSH key exists (and creates one if missing).
+      2. Push the local public key to the remote host using ssh-copy-id.
+      3. Connect to the remote host to generate (if needed) and retrieve its public key.
+      4. Append the remote public key to the local authorized_keys file if not already present.
+    """
+    # Ensure local key exists
+    if not os.path.isfile(cfg.key_path):
+        console.print("[info]Local SSH key not found. Generating one...[/info]")
+        create_ssh_key(cfg)
+        if not os.path.isfile(cfg.key_path):
+            console.print("[danger]Failed to create local SSH key. Aborting.[/danger]")
+            return
+
+    # Prompt for remote host details
+    console.print("[info]Enter the remote host for mutual SSH trust:[/info]")
+    remote_host = console.input("> ").strip()
+    if not remote_host:
+        console.print(
+            "[warning]No remote host provided. Aborting mutual trust setup.[/warning]"
+        )
+        return
+
+    console.print(
+        "[info]Enter the remote user (press Enter to use local username):[/info]"
+    )
+    remote_user = console.input("> ").strip() or cfg.user
+
+    # Step 1: Push local key to remote
+    public_key_path = f"{cfg.key_path}.pub"
+    if not os.path.isfile(public_key_path):
+        console.print(
+            f"[danger]Local public key not found at {public_key_path}. Aborting.[/danger]"
+        )
+        return
+
+    console.print(f"[info]Pushing local key to {remote_user}@{remote_host}...[/info]")
+    try:
+        cmd = [
+            "ssh-copy-id",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-i",
+            public_key_path,
+            f"{remote_user}@{remote_host}",
+        ]
+        subprocess.run(cmd, check=True)
+        console.print(
+            f"[success]Local key pushed to {remote_user}@{remote_host} successfully.[/success]"
+        )
+    except subprocess.CalledProcessError as e:
+        console.print(f"[danger]Failed to push local key: {e}[/danger]")
+        return
+
+    # Step 2: Retrieve remote public key
+    console.print(
+        f"[info]Retrieving remote public key from {remote_user}@{remote_host}...[/info]"
+    )
+    try:
+        # Run a remote command that generates a key if needed and outputs the public key.
+        remote_cmd = (
+            "if [ ! -f ~/.ssh/id_rsa.pub ]; then "
+            "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ''; "
+            "fi; cat ~/.ssh/id_rsa.pub"
+        )
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                f"{remote_user}@{remote_host}",
+                remote_cmd,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        remote_pub_key = result.stdout.strip()
+        if not remote_pub_key:
+            console.print(
+                "[danger]No remote public key retrieved. Aborting mutual trust setup.[/danger]"
+            )
+            return
+        console.print("[success]Remote public key retrieved successfully.[/success]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[danger]Error retrieving remote public key: {e}[/danger]")
+        return
+
+    # Step 3: Add remote public key to local authorized_keys
+    local_auth_keys = os.path.join(cfg.ssh_dir, "authorized_keys")
+    # Ensure .ssh directory exists
+    if not os.path.isdir(cfg.ssh_dir):
+        os.makedirs(cfg.ssh_dir, mode=0o700, exist_ok=True)
+    # Create authorized_keys if it doesn't exist
+    if not os.path.isfile(local_auth_keys):
+        open(local_auth_keys, "a").close()
+
+    # Read current authorized_keys content
+    try:
+        with open(local_auth_keys, "r") as f:
+            keys = f.read()
+    except Exception as e:
+        console.print(f"[danger]Error reading {local_auth_keys}: {e}[/danger]")
+        return
+
+    if remote_pub_key in keys:
+        console.print(
+            "[info]Remote public key is already in local authorized_keys.[/info]"
+        )
+    else:
+        try:
+            with open(local_auth_keys, "a") as f:
+                f.write("\n" + remote_pub_key + "\n")
+            os.chmod(local_auth_keys, 0o600)
+            console.print(
+                "[success]Remote public key added to local authorized_keys successfully.[/success]"
+            )
+        except Exception as e:
+            console.print(f"[danger]Failed to update {local_auth_keys}: {e}[/danger]")
+            return
+
+    console.print("[success]Mutual SSH trust established successfully![/success]")
+
+
 # ------------------------------
 # 7. Main Interactive Menu Loop
 # ------------------------------
@@ -345,7 +473,8 @@ def main() -> None:
       [1] Creating a new SSH key
       [2] Pushing the SSH key to client(s)
       [3] Fixing SSH folder permissions
-      [4] Exiting the application
+      [4] Establishing Mutual SSH Trust
+      [5] Exiting the application
     """
     local_user = getpass.getuser()
     console.print(f"[info]Detected current user: {local_user}[/info]")
@@ -366,13 +495,14 @@ def main() -> None:
             "  [1] Create a new SSH key\n"
             "  [2] Push SSH key to client(s)\n"
             "  [3] Fix SSH permissions\n"
-            "  [4] Exit\n"
+            "  [4] Establish Mutual SSH Trust\n"
+            "  [5] Exit\n"
         )
         menu_panel = Panel.fit(
             Text(menu_text, style="info"), title="Main Menu", style="primary"
         )
         console.print(menu_panel)
-        choice = console.input("[info]Enter choice (1-4): [/info]").strip()
+        choice = console.input("[info]Enter choice (1-5): [/info]").strip()
         if choice == "1":
             create_ssh_key(cfg)
             console.print("[info]Press Enter to return to the menu[/info]")
@@ -386,6 +516,10 @@ def main() -> None:
             console.print("[info]Press Enter to return to the menu[/info]")
             console.input()
         elif choice == "4":
+            establish_mutual_ssh_trust(cfg)
+            console.print("[info]Press Enter to return to the menu[/info]")
+            console.input()
+        elif choice == "5":
             console.print("[warning]Exiting...[/warning]")
             sys.exit(0)
         else:
