@@ -82,7 +82,7 @@ console: Console = Console()
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-APP_NAME: str = "SSH Connection Manager"
+APP_NAME: str = "SSH Connector"
 APP_SUBTITLE: str = "Professional Network Access Solution"
 VERSION: str = "8.5.0"
 HOSTNAME: str = socket.gethostname()
@@ -170,10 +170,7 @@ class Device:
     def get_status_indicator(self) -> Text:
         """Generate a formatted status indicator with Rich Text"""
         if self.status is True:
-            text = "● ONLINE"
-            if self.response_time is not None:
-                text += f" ({self.response_time:.0f}ms)"
-            return Text(text, style=f"bold {NordColors.GREEN}")
+            return Text("● ONLINE", style=f"bold {NordColors.GREEN}")
         elif self.status is False:
             return Text("● OFFLINE", style=f"bold {NordColors.RED}")
         else:
@@ -224,64 +221,64 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
         name="raspberrypi-3",
         ip_address="100.116.191.42",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.2 | Linux 6.11.0-1008-raspi | Mar 3, 1:44 PM EST",
-        username="dunamismax@github",
+        description="Raspberry Pi 3",
+        username="sawyer",
     ),
     Device(
         name="raspberrypi-5",
         ip_address="100.105.117.18",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.2 | Linux 6.11.0-1008-raspi | Mar 3, 1:44 PM EST",
-        username="dunamismax@github",
+        description="Raspberry Pi 5",
+        username="sawyer",
     ),
     Device(
         name="ubuntu-lenovo",
         ip_address="100.88.172.104",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.3 | Linux 6.11.0-19-generic | Connected",
-        username="dunamismax@github",
+        description="Lenovo Laptop",
+        username="sawyer",
     ),
     Device(
         name="ubuntu-server",
         ip_address="100.109.43.88",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
-        username="dunamismax@github",
+        description="Main Server",
+        username="sawyer",
     ),
     Device(
         name="ubuntu-server-vm-01",
         ip_address="100.84.119.114",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
-        username="dunamismax@github",
+        description="VM 01",
+        username="sawyer",
     ),
     Device(
         name="ubuntu-server-vm-02",
         ip_address="100.122.237.56",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
-        username="dunamismax@github",
+        description="VM 02",
+        username="sawyer",
     ),
     Device(
         name="ubuntu-server-vm-03",
         ip_address="100.97.229.120",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
-        username="dunamismax@github",
+        description="VM 03",
+        username="sawyer",
     ),
     Device(
         name="ubuntu-server-vm-04",
         ip_address="100.73.171.7",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
-        username="dunamismax@github",
+        description="VM 04",
+        username="sawyer",
     ),
     Device(
         name="ubuntu-server-windows-11-ent-ltsc-vm",
         ip_address="100.66.128.35",
         device_type="tailscale",
-        description="dunamismax@github | v1.80.2 | Windows 11 24H2 | Connected",
-        username="dunamismax@github",
+        description="Windows 11 VM",
+        username="sawyer",
     ),
 ]
 
@@ -291,25 +288,25 @@ STATIC_LOCAL_DEVICES: List[Device] = [
         name="ubuntu-server",
         ip_address="192.168.0.73",
         device_type="local",
-        description="MAC: 6C-1F-F7-04-59-50 | Reserved IP: 192.168.0.73",
+        description="Main Server",
     ),
     Device(
         name="raspberrypi-5",
         ip_address="192.168.0.40",
         device_type="local",
-        description="MAC: 2C-CF-67-59-0E-03 | Reserved IP: 192.168.0.40",
+        description="Raspberry Pi 5",
     ),
     Device(
         name="ubuntu-lenovo",
         ip_address="192.168.0.45",
         device_type="local",
-        description="MAC: 6C-1F-F7-1A-0B-28 | Reserved IP: 192.168.0.45",
+        description="Lenovo Laptop",
     ),
     Device(
         name="raspberrypi-3",
         ip_address="192.168.0.100",
         device_type="local",
-        description="MAC: B8-27-EB-3A-11-89 | Reserved IP: 192.168.0.100",
+        description="Raspberry Pi 3",
     ),
 ]
 
@@ -362,7 +359,7 @@ def clear_screen() -> None:
 
 def create_header() -> Panel:
     """
-    Create a dynamic ASCII art header with a gradient using Pyfiglet.
+    Create a dynamic ASCII art header using Pyfiglet.
     The header adapts to terminal width.
     """
     term_width, _ = shutil.get_terminal_size((80, 24))
@@ -382,26 +379,30 @@ def create_header() -> Panel:
         # Fallback if Pyfiglet fails
         ascii_art = f"  {APP_NAME}  "
 
-    # Create a gradient effect with the ASCII art
+    # Create a gradient effect with the ASCII art without using Rich markup
     ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
     colors = NordColors.get_frost_gradient(len(ascii_lines))
-    styled_text = ""
 
+    # Build rich Text objects directly without markup
+    text_lines = []
     for i, line in enumerate(ascii_lines):
         color = colors[i % len(colors)]
-        styled_text += f"[bold {color}]{line}[/]\n"
+        text_lines.append(Text(line, style=f"bold {color}"))
 
-    border = f"[{NordColors.FROST_3}]{'━' * min(term_width - 4, 80)}[/]"
-    styled_text = border + "\n" + styled_text + border
+    # Combine all lines
+    combined_text = Text()
+    for i, line in enumerate(text_lines):
+        combined_text.append(line)
+        if i < len(text_lines) - 1:
+            combined_text.append("\n")
 
     return Panel(
-        Text.from_markup(styled_text),
+        combined_text,
         border_style=NordColors.FROST_1,
         padding=(1, 2),
-        title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
+        title=Text(f"v{VERSION}", style=f"bold {NordColors.SNOW_STORM_2}"),
         title_align="right",
-        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
-        subtitle_align="center",
+        box=box.ROUNDED,
     )
 
 
@@ -629,74 +630,53 @@ def check_device_statuses(
 # ----------------------------------------------------------------
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
     """
-    Create a rich table with device information
-    Adapts to terminal width for responsive display
+    Create a compact rich table with simplified device information
+    Optimized for space and readability
     """
-    term_width, _ = shutil.get_terminal_size((80, 24))
-    compact_mode = term_width < 100
-
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
-        expand=True,
+        expand=False,
         title=f"[bold {NordColors.FROST_2}]{title}[/]",
         border_style=NordColors.FROST_3,
         title_justify="center",
         box=box.ROUNDED,
+        padding=(0, 1),
     )
 
-    # Define columns
-    table.add_column("#", style=f"bold {NordColors.FROST_4}", justify="right", width=4)
-    table.add_column("Name", style=f"bold {NordColors.FROST_1}")
-    table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}")
-    table.add_column("Status", justify="center")
-
-    if not compact_mode:
-        table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
+    # Define columns with optimized widths
+    table.add_column("#", style=f"bold {NordColors.FROST_4}", justify="right", width=3)
+    table.add_column("Name", style=f"bold {NordColors.FROST_1}", width=20, no_wrap=True)
+    table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}", width=15)
+    table.add_column("Status", justify="center", width=12)
+    table.add_column(
+        "Label", style=f"dim {NordColors.SNOW_STORM_1}", width=15, no_wrap=True
+    )
 
     # Count online devices for the summary
     online_count = sum(1 for d in devices if d.status is True)
 
     # Add rows for each device
     for idx, device in enumerate(devices, 1):
-        if compact_mode:
-            table.add_row(
-                f"{prefix}{idx}",
-                device.name,
-                device.ip_address,
-                device.get_status_indicator(),
-            )
-        else:
-            table.add_row(
-                f"{prefix}{idx}",
-                device.name,
-                device.ip_address,
-                device.get_status_indicator(),
-                device.description or "",
-            )
+        table.add_row(
+            f"{prefix}{idx}",
+            Text(device.name, overflow="ellipsis"),
+            device.ip_address,
+            device.get_status_indicator(),
+            Text(device.description or "", overflow="ellipsis"),
+        )
 
     # Add footer with summary
     if devices:
         footer = Text.from_markup(
-            f"[{NordColors.FROST_3}]{online_count}/{len(devices)} devices online[/]"
+            f"[{NordColors.FROST_3}]{online_count}/{len(devices)} online[/]"
         )
         table.caption = footer
 
     return table
 
 
-def create_commands_panel() -> Panel:
-    """Create a panel with available commands for quick reference"""
-    command_text = (
-        f"[{NordColors.FROST_3}]Commands: [bold]1-N[/] Tailscale | [bold]L1-LN[/] Local | "
-        f"[bold]r[/] Refresh | [bold]c[/] Config | [bold]s[/] Search | [bold]h[/] Help | [bold]q[/] Quit"
-    )
-    return Panel(
-        Align.center(Text.from_markup(command_text)),
-        border_style=NordColors.FROST_4,
-        padding=(1, 2),
-        box=box.ROUNDED,
-    )
+# Command display options have been removed as requested
 
 
 # ----------------------------------------------------------------
@@ -962,7 +942,7 @@ def search_for_devices(devices: List[Device]) -> None:
     clear_screen()
     console.print(create_header())
 
-    search_term = Prompt.ask("Enter search term (name, IP, or description)")
+    search_term = Prompt.ask("Enter search term (name, IP, or label)")
     if not search_term:
         return
 
@@ -988,26 +968,36 @@ def search_for_devices(devices: List[Device]) -> None:
         table = Table(
             show_header=True,
             header_style=f"bold {NordColors.FROST_1}",
-            expand=True,
+            expand=False,
             title=f"[bold {NordColors.FROST_2}]Matching Devices ({len(matching)})[/]",
             border_style=NordColors.FROST_3,
             box=box.ROUNDED,
+            padding=(0, 1),
         )
 
-        table.add_column("Type", style=f"bold {NordColors.FROST_4}")
-        table.add_column("Name", style=f"bold {NordColors.FROST_1}")
-        table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}")
-        table.add_column("Status", justify="center")
-        table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
+        # Define compact columns
+        table.add_column(
+            "#", style=f"bold {NordColors.FROST_4}", justify="right", width=3
+        )
+        table.add_column("Type", style=f"bold {NordColors.FROST_4}", width=9)
+        table.add_column(
+            "Name", style=f"bold {NordColors.FROST_1}", width=20, no_wrap=True
+        )
+        table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}", width=15)
+        table.add_column("Status", justify="center", width=12)
+        table.add_column(
+            "Label", style=f"dim {NordColors.SNOW_STORM_1}", width=15, no_wrap=True
+        )
 
         for idx, d in enumerate(matching, 1):
             dev_type = "Tailscale" if d.device_type == "tailscale" else "Local"
             table.add_row(
+                f"{idx}",
                 dev_type,
-                d.name,
+                Text(d.name, overflow="ellipsis"),
                 d.ip_address,
                 d.get_status_indicator(),
-                d.description or "",
+                Text(d.description or "", overflow="ellipsis"),
             )
 
         console.print(table)
@@ -1097,62 +1087,42 @@ def main() -> None:
             local_table = create_device_table(local_devices, "L", "Local Devices")
 
             # Display tables side by side if terminal is wide enough
-            if term_width >= 160:
+            if term_width >= 120:
                 from rich.columns import Columns
 
                 console.print(
                     Columns(
                         [
-                            Panel(
-                                tailscale_table,
-                                border_style=NordColors.FROST_4,
-                                padding=(0, 1),
-                                box=box.ROUNDED,
-                            ),
-                            Panel(
-                                local_table,
-                                border_style=NordColors.FROST_4,
-                                padding=(0, 1),
-                                box=box.ROUNDED,
-                            ),
-                        ]
+                            tailscale_table,
+                            local_table,
+                        ],
+                        padding=(0, 2),
                     )
                 )
             else:
-                # Display tables one after another
-                console.print(
-                    Panel(
-                        tailscale_table,
-                        border_style=NordColors.FROST_4,
-                        padding=(0, 1),
-                        box=box.ROUNDED,
-                    )
-                )
-                console.print(
-                    Panel(
-                        local_table,
-                        border_style=NordColors.FROST_4,
-                        padding=(0, 1),
-                        box=box.ROUNDED,
-                    )
-                )
+                # Display tables one after another with minimal padding
+                console.print(tailscale_table)
+                console.print()
+                console.print(local_table)
 
-            console.print()
-            console.print(create_commands_panel())
             console.print()
 
             # Get user choice
-            choice = Prompt.ask("Enter your choice").strip().lower()
+            choice = (
+                Prompt.ask(
+                    "Enter choice (number for Tailscale, L# for Local, r:refresh, q:quit)"
+                )
+                .strip()
+                .lower()
+            )
 
             # Process user command
+            # Process user command - simplified to only needed options
             if choice in ("q", "quit", "exit"):
                 clear_screen()
                 console.print(
                     Panel(
-                        Text.from_markup(
-                            f"Thank you for using {APP_NAME}!",
-                            style=f"bold {NordColors.FROST_2}",
-                        ),
+                        Text("Goodbye!", style=f"bold {NordColors.FROST_2}"),
                         border_style=NordColors.FROST_1,
                         padding=(1, 2),
                         box=box.ROUNDED,
@@ -1161,13 +1131,6 @@ def main() -> None:
                 break
             elif choice in ("r", "refresh"):
                 refresh_device_statuses(devices)
-            elif choice in ("h", "help"):
-                show_help()
-                Prompt.ask("Press Enter to continue")
-            elif choice in ("c", "config", "configure"):
-                configure_ssh_options()
-            elif choice in ("s", "search"):
-                search_for_devices(devices)
             elif choice.startswith("l"):
                 # Handle local device selection
                 try:
@@ -1183,7 +1146,7 @@ def main() -> None:
                         connect_to_device(device, uname)
                     else:
                         display_panel(
-                            f"Invalid local device number: {choice}",
+                            f"Invalid device number: {choice}",
                             style=NordColors.RED,
                             title="Error",
                         )
