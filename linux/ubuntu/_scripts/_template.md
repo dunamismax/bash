@@ -83,32 +83,40 @@ Remember to tailor the complexity to match user requirements while maintaining t
 ```python
 #!/usr/bin/env python3
 """
-Automated Tailscale Reset Utility (Unattended Mode)
-----------------------------------------------------
+SSH Connection Manager (Advanced Terminal Application)
+---------------------------------------------------------
 
-A fully autonomous terminal utility for automatically resetting Tailscale
-on Ubuntu systems. The script performs the following steps sequentially:
-  • Installs Nala (if not already installed) using apt and then uses Nala for all package operations.
-  • Installs python3-pip, python3-rich, and python3-pyfiglet system wide via Nala.
-  • Installs pipx (via Nala) and then uses pipx to install additional Python libraries
-    (ensuring they are available system wide, even for root).
-  • Uninstalls Tailscale (stopping/disabling tailscaled, removing packages and configuration).
-  • Installs Tailscale via the official install script.
-  • Enables and starts the tailscaled service.
-  • Runs 'tailscale up' and checks the final status.
+A professional-grade terminal application for managing SSH connections with a
+Nord-themed interface. This version provides an interactive, menu-driven interface,
+real-time progress tracking, and robust error handling—all without auto-completion or
+machine-editing features. The device lists are statically configured.
 
-All operations run automatically with detailed visual feedback, logging,
-and robust error & signal handling.
+Features:
+  • Dynamic ASCII banners with gradient styling via Pyfiglet
+  • Interactive numbered menus using Rich prompts
+  • Real-time progress tracking and spinners with Rich
+  • Comprehensive error handling with color-coded messages and recovery suggestions
+  • Graceful signal handling for SIGINT and SIGTERM
+  • Type annotations and dataclasses for improved readability
+  • System-wide dependency management via Nala (for python3-rich and python3-pyfiglet)
 
-Version: 3.1.0
+Usage:
+  Run the script and use the numbered menu options to select a device:
+    - Numbers 1-N: Connect to a Tailscale device
+    - L1-LN:      Connect to a local device
+    - r:          Refresh device status
+    - c:          Configure SSH options
+    - s:          Search for devices
+    - h:          Show help information
+    - q:          Quit the application
+
+Version: 8.0.0
 """
 
 # ----------------------------------------------------------------
 # Dependencies and Imports
 # ----------------------------------------------------------------
 import atexit
-import datetime
-import logging
 import os
 import platform
 import shutil
@@ -116,138 +124,343 @@ import signal
 import socket
 import subprocess
 import sys
-import threading
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-# Attempt to import required libraries; if missing, they will be installed automatically.
 try:
     import pyfiglet
+    from rich import box
     from rich.align import Align
     from rich.console import Console
     from rich.panel import Panel
     from rich.progress import (
         Progress,
         SpinnerColumn,
-        BarColumn,
         TextColumn,
+        BarColumn,
+        TaskProgressColumn,
         TimeRemainingColumn,
-        TaskID,
     )
+    from rich.prompt import Prompt, Confirm
     from rich.table import Table
     from rich.text import Text
     from rich.traceback import install as install_rich_traceback
-    from rich.style import Style
 except ImportError:
-    pass
+    print(
+        "Required libraries not found. Please install python3-rich and python3-pyfiglet using Nala."
+    )
+    sys.exit(1)
 
-# Enable rich traceback for improved error reporting.
+# Enable rich traceback for debugging
 install_rich_traceback(show_locals=True)
+
+# Initialize global Rich Console
+console: Console = Console()
 
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-APP_NAME: str = "Tailscale Reset Utility"
-APP_SUBTITLE: str = "Automated System Management (Unattended)"
-VERSION: str = "3.1.0"
+APP_NAME: str = "SSH Connection Manager"
+APP_SUBTITLE: str = "Professional Network Access Solution"
+VERSION: str = "8.0.0"
 HOSTNAME: str = socket.gethostname()
-USERNAME: str = os.environ.get("USER", os.environ.get("USERNAME", "Unknown"))
-OPERATION_TIMEOUT: int = 120  # seconds for command timeouts
-TRANSITION_DELAY: float = 0.5  # delay between operations (seconds)
-LOG_FILE: str = os.path.expanduser("~/tailscale_reset_logs/tailscale_reset.log")
-TAILSCALE_INSTALL_URL: str = "https://tailscale.com/install.sh"
-TAILSCALE_PATHS: List[str] = [
-    "/var/lib/tailscale",
-    "/etc/tailscale",
-    "/usr/share/tailscale",
-]
+DEFAULT_USERNAME: str = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
+SSH_COMMAND: str = "ssh"
+PING_TIMEOUT: float = 1.5  # seconds
+PING_COUNT: int = 1
+OPERATION_TIMEOUT: int = 30  # seconds
+DEFAULT_SSH_PORT: int = 22
+MAX_PARALLEL_PINGS: int = min(20, os.cpu_count() or 4)
+TRANSITION_DELAY: float = 0.3  # seconds
+
+# Configuration file for SSH options (stored in user config directory)
+CONFIG_DIR: str = os.path.expanduser("~/.config/ssh_manager")
+CONFIG_FILE: str = os.path.join(CONFIG_DIR, "config.json")
 
 
 # ----------------------------------------------------------------
 # Nord-Themed Colors
 # ----------------------------------------------------------------
 class NordColors:
-    """Nord color palette for consistent theming."""
+    POLAR_NIGHT_1: str = "#2E3440"
+    POLAR_NIGHT_2: str = "#3B4252"
+    POLAR_NIGHT_3: str = "#434C5E"
+    POLAR_NIGHT_4: str = "#4C566A"
+    SNOW_STORM_1: str = "#D8DEE9"
+    SNOW_STORM_2: str = "#E5E9F0"
+    SNOW_STORM_3: str = "#ECEFF4"
+    FROST_1: str = "#8FBCBB"
+    FROST_2: str = "#88C0D0"
+    FROST_3: str = "#81A1C1"
+    FROST_4: str = "#5E81AC"
+    RED: str = "#BF616A"
+    ORANGE: str = "#D08770"
+    YELLOW: str = "#EBCB8B"
+    GREEN: str = "#A3BE8C"
+    PURPLE: str = "#B48EAD"
 
-    POLAR_NIGHT_1 = "#2E3440"
-    POLAR_NIGHT_2 = "#3B4252"
-    POLAR_NIGHT_3 = "#434C5E"
-    POLAR_NIGHT_4 = "#4C566A"
-    SNOW_STORM_1 = "#D8DEE9"
-    SNOW_STORM_2 = "#E5E9F0"
-    SNOW_STORM_3 = "#ECEFF4"
-    FROST_1 = "#8FBCBB"
-    FROST_2 = "#88C0D0"
-    FROST_3 = "#81A1C1"
-    FROST_4 = "#5E81AC"
-    RED = "#BF616A"  # Critical errors
-    ORANGE = "#D08770"  # Warnings
-    YELLOW = "#EBCB8B"  # Cautions
-    GREEN = "#A3BE8C"  # Success messages
-    PURPLE = "#B48EAD"  # Special highlights
-
-
-# Create a global Rich Console instance.
-console: Console = Console()
+    @classmethod
+    def get_frost_gradient(cls, steps: int = 4) -> List[str]:
+        frosts = [cls.FROST_1, cls.FROST_2, cls.FROST_3, cls.FROST_4]
+        return frosts[:steps]
 
 
 # ----------------------------------------------------------------
-# Logging Setup
+# Data Structures
 # ----------------------------------------------------------------
-def setup_logging() -> None:
-    """Configure logging to file."""
+@dataclass
+class Device:
+    """
+    Represents an SSH-accessible device with connection details.
+
+    Attributes:
+        name: The device's display name.
+        ip_address: IP address used for SSH connection.
+        device_type: "tailscale" or "local".
+        description: A short description (e.g. OS, version).
+        port: SSH port number.
+        username: Optional default username for the device.
+        status: True if online, False if offline, None if unknown.
+        last_ping_time: Timestamp of the last ping check.
+        response_time: Ping response time in milliseconds.
+    """
+
+    name: str
+    ip_address: str
+    device_type: str = "local"  # "tailscale" or "local"
+    description: Optional[str] = None
+    port: int = DEFAULT_SSH_PORT
+    username: Optional[str] = None
+    status: Optional[bool] = None
+    last_ping_time: float = field(default_factory=time.time)
+    response_time: Optional[float] = None
+
+    def get_connection_string(self, username: Optional[str] = None) -> str:
+        user = username or self.username or DEFAULT_USERNAME
+        if self.port == DEFAULT_SSH_PORT:
+            return f"{user}@{self.ip_address}"
+        return f"{user}@{self.ip_address} -p {self.port}"
+
+    def get_status_indicator(self) -> Text:
+        if self.status is True:
+            text = "● ONLINE"
+            if self.response_time is not None:
+                text += f" ({self.response_time:.0f}ms)"
+            return Text(text, style=f"bold {NordColors.GREEN}")
+        elif self.status is False:
+            return Text("● OFFLINE", style=f"bold {NordColors.RED}")
+        else:
+            return Text("○ UNKNOWN", style=f"dim {NordColors.POLAR_NIGHT_4}")
+
+
+@dataclass
+class AppConfig:
+    """
+    Application configuration for SSH options.
+
+    Attributes:
+        default_username: Default SSH username.
+        ssh_options: Dictionary of SSH options with (value, description).
+        last_refresh: Timestamp of the last device status refresh.
+        device_check_interval: Seconds between automatic status checks.
+        terminal_width: Last known terminal width.
+        terminal_height: Last known terminal height.
+    """
+
+    default_username: str = DEFAULT_USERNAME
+    ssh_options: Dict[str, Tuple[str, str]] = field(
+        default_factory=lambda: {
+            "ServerAliveInterval": ("30", "Interval (sec) to send keepalive packets"),
+            "ServerAliveCountMax": ("3", "Packets to send before disconnecting"),
+            "ConnectTimeout": ("10", "Timeout (sec) for establishing connection"),
+            "StrictHostKeyChecking": ("accept-new", "Host key verification behavior"),
+            "Compression": ("yes", "Enable compression"),
+            "LogLevel": ("ERROR", "SSH logging verbosity"),
+        }
+    )
+    last_refresh: float = field(default_factory=time.time)
+    device_check_interval: int = 300  # seconds
+    terminal_width: int = 80
+    terminal_height: int = 24
+
+
+# ----------------------------------------------------------------
+# Static Device Lists
+# ----------------------------------------------------------------
+# Tailscale Devices
+STATIC_TAILSCALE_DEVICES: List[Device] = [
+    Device(
+        name="raspberrypi-3",
+        ip_address="100.116.191.42",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.2 | Linux 6.11.0-1008-raspi | Mar 3, 1:44 PM EST",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="raspberrypi-5",
+        ip_address="100.105.117.18",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.2 | Linux 6.11.0-1008-raspi | Mar 3, 1:44 PM EST",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="ubuntu-lenovo",
+        ip_address="100.88.172.104",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.3 | Linux 6.11.0-19-generic | Connected",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="ubuntu-server",
+        ip_address="100.109.43.88",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="ubuntu-server-vm-01",
+        ip_address="100.84.119.114",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="ubuntu-server-vm-02",
+        ip_address="100.122.237.56",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="ubuntu-server-vm-03",
+        ip_address="100.97.229.120",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="ubuntu-server-vm-04",
+        ip_address="100.73.171.7",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.3 | Linux 6.11.0-18-generic | Connected",
+        username="dunamismax@github",
+    ),
+    Device(
+        name="ubuntu-server-windows-11-ent-ltsc-vm",
+        ip_address="100.66.128.35",
+        device_type="tailscale",
+        description="dunamismax@github | v1.80.2 | Windows 11 24H2 | Connected",
+        username="dunamismax@github",
+    ),
+]
+
+# Local Devices
+STATIC_LOCAL_DEVICES: List[Device] = [
+    Device(
+        name="ubuntu-server",
+        ip_address="192.168.0.73",
+        device_type="local",
+        description="MAC: 6C-1F-F7-04-59-50 | Reserved IP: 192.168.0.73",
+    ),
+    Device(
+        name="raspberrypi-5",
+        ip_address="192.168.0.40",
+        device_type="local",
+        description="MAC: 2C-CF-67-59-0E-03 | Reserved IP: 192.168.0.40",
+    ),
+    Device(
+        name="ubuntu-lenovo",
+        ip_address="192.168.0.45",
+        device_type="local",
+        description="MAC: 6C-1F-F7-1A-0B-28 | Reserved IP: 192.168.0.45",
+    ),
+    Device(
+        name="raspberrypi-3",
+        ip_address="192.168.0.100",
+        device_type="local",
+        description="MAC: B8-27-EB-3A-11-89 | Reserved IP: 192.168.0.100",
+    ),
+]
+
+# Combined static device list
+DEVICES: List[Device] = STATIC_TAILSCALE_DEVICES + STATIC_LOCAL_DEVICES
+
+
+# ----------------------------------------------------------------
+# File System Operations (for SSH configuration)
+# ----------------------------------------------------------------
+def ensure_config_directory() -> None:
     try:
-        log_dir = os.path.dirname(LOG_FILE)
-        if log_dir and not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        logging.basicConfig(
-            filename=LOG_FILE,
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        print_message(f"Logging configured to: {LOG_FILE}", NordColors.FROST_3)
+        os.makedirs(CONFIG_DIR, exist_ok=True)
     except Exception as e:
-        print_message(f"Logging setup failed: {e}", NordColors.YELLOW, "⚠")
-        print_message("Continuing without file logging...", NordColors.FROST_3)
+        print_error(f"Could not create config directory: {e}")
+
+
+def save_config(config: AppConfig) -> bool:
+    ensure_config_directory()
+    try:
+        import json
+
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config.__dict__, f, indent=2)
+        return True
+    except Exception as e:
+        print_error(f"Failed to save configuration: {e}")
+        return False
+
+
+def load_config() -> AppConfig:
+    try:
+        import json
+
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+            config = AppConfig(**data)
+            # Rebuild ssh_options with descriptions if necessary
+            return config
+    except Exception as e:
+        print_error(f"Failed to load configuration: {e}")
+    return AppConfig()
 
 
 # ----------------------------------------------------------------
 # UI Helper Functions
 # ----------------------------------------------------------------
+def clear_screen() -> None:
+    console.clear()
+
+
 def create_header() -> Panel:
     """
-    Create a dynamic ASCII art header with gradient styling using Pyfiglet.
+    Create a dynamic ASCII art header with a gradient using Pyfiglet.
+    The header adapts to terminal width.
     """
-    fonts = ["slant", "small", "digital", "mini"]
-    ascii_art: str = ""
-    for font in fonts:
-        try:
-            fig = pyfiglet.Figlet(font=font, width=60)
-            ascii_art = fig.renderText(APP_NAME)
-            if ascii_art.strip():
-                break
-        except Exception:
-            continue
-    if not ascii_art.strip():
-        ascii_art = APP_NAME
-    lines = [line for line in ascii_art.split("\n") if line.strip()]
-    colors = [
-        NordColors.FROST_1,
-        NordColors.FROST_2,
-        NordColors.FROST_3,
-        NordColors.FROST_2,
-    ]
-    styled: str = ""
-    for i, line in enumerate(lines):
+    term_width, _ = shutil.get_terminal_size((80, 24))
+    fonts = ["slant", "small", "mini", "digital"]
+    font_to_use = fonts[0]
+    if term_width < 60:
+        font_to_use = fonts[1]
+    elif term_width < 40:
+        font_to_use = fonts[2]
+    try:
+        fig = pyfiglet.Figlet(font=font_to_use, width=min(term_width - 10, 120))
+        ascii_art = fig.renderText(APP_NAME)
+    except Exception:
+        ascii_art = f"  {APP_NAME}  "
+    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
+    colors = NordColors.get_frost_gradient(len(ascii_lines))
+    styled_text = ""
+    for i, line in enumerate(ascii_lines):
         color = colors[i % len(colors)]
-        styled += f"[bold {color}]{line}[/]\n"
-    border = f"[{NordColors.FROST_3}]" + "━" * 60 + "[/]"
-    styled = border + "\n" + styled + border
+        styled_text += f"[bold {color}]{line}[/]\n"
+    border = f"[{NordColors.FROST_3}]{'━' * min(term_width - 4, 80)}[/]"
+    styled_text = border + "\n" + styled_text + border
     return Panel(
-        Text.from_markup(styled),
-        border_style=Style(color=NordColors.FROST_1),
+        Text.from_markup(styled_text),
+        border_style=NordColors.FROST_1,
         padding=(1, 2),
         title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
         title_align="right",
@@ -259,65 +472,128 @@ def create_header() -> Panel:
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """Print a styled message to the console and log it."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
-    logging.info(f"{prefix} {text}")
+
+
+def print_success(message: str) -> None:
+    print_message(message, NordColors.GREEN, "✓")
+
+
+def print_warning(message: str) -> None:
+    print_message(message, NordColors.YELLOW, "⚠")
+
+
+def print_error(message: str) -> None:
+    print_message(message, NordColors.RED, "✗")
+
+
+def print_step(message: str) -> None:
+    print_message(message, NordColors.FROST_2, "→")
 
 
 def print_section(title: str) -> None:
-    """Print a decorated section header."""
-    border = "═" * 60
-    console.print("\n" + f"[bold {NordColors.FROST_3}]{border}[/]")
-    console.print(f"[bold {NordColors.FROST_2}]  {title}[/]")
-    console.print(f"[bold {NordColors.FROST_3}]{border}[/]\n")
-    logging.info(f"SECTION: {title}")
+    console.print()
+    console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
+    console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
+    console.print()
 
 
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """Display a message in a styled Rich panel."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
-        border_style=Style(color=style),
+        border_style=style,
         padding=(1, 2),
         title=f"[bold {style}]{title}[/]" if title else None,
+        box=box.ROUNDED,
     )
     console.print(panel)
-    logging.info(f"PANEL ({title if title else 'Untitled'}): {message}")
 
 
-def clear_screen() -> None:
-    """Clear the terminal screen."""
-    console.clear()
+def show_help() -> None:
+    help_text = f"""
+[bold]Available Commands:[/]
+
+[bold {NordColors.FROST_2}]1-N[/]:       Connect to a Tailscale device by number
+[bold {NordColors.FROST_2}]L1-LN[/]:     Connect to a Local device by number
+[bold {NordColors.FROST_2}]r[/]:         Refresh device status
+[bold {NordColors.FROST_2}]c[/]:         Configure SSH options
+[bold {NordColors.FROST_2}]s[/]:         Search for devices
+[bold {NordColors.FROST_2}]h[/]:         Show help information
+[bold {NordColors.FROST_2}]q[/]:         Quit the application
+"""
+    console.print(
+        Panel(
+            Text.from_markup(help_text),
+            title=f"[bold {NordColors.FROST_1}]Help & Commands[/]",
+            border_style=NordColors.FROST_3,
+            padding=(1, 2),
+            box=box.ROUNDED,
+        )
+    )
 
 
 def display_system_info() -> None:
-    """Display basic system information."""
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sys_info = (
-        f"[{NordColors.SNOW_STORM_1}]System: {platform.system()} {platform.release()}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]User: {USERNAME}[/] | "
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    info = (
         f"[{NordColors.SNOW_STORM_1}]Time: {current_time}[/] | "
-        f"[{NordColors.SNOW_STORM_1}]Root: {'Yes' if check_root() else 'No'}[/]"
+        f"[{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/] | "
+        f"[{NordColors.SNOW_STORM_1}]Platform: {platform.system()}[/]"
     )
-    console.print(Align.center(sys_info))
+    console.print(Align.center(info))
     console.print()
 
 
 # ----------------------------------------------------------------
-# Logging and Signal Cleanup
+# Command Execution Helper
+# ----------------------------------------------------------------
+def run_command(
+    cmd: List[str],
+    env: Optional[Dict[str, str]] = None,
+    check: bool = True,
+    capture_output: bool = True,
+    timeout: int = OPERATION_TIMEOUT,
+) -> subprocess.CompletedProcess:
+    try:
+        result = subprocess.run(
+            cmd,
+            env=env or os.environ.copy(),
+            check=check,
+            text=True,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        print_error(f"Command failed: {' '.join(cmd)}")
+        if e.stdout:
+            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
+        if e.stderr:
+            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
+        raise
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout} seconds")
+        raise
+    except Exception as e:
+        print_error(f"Error executing command: {e}")
+        raise
+
+
+# ----------------------------------------------------------------
+# Signal Handling and Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform cleanup tasks before exiting."""
-    print_message("Cleaning up resources...", NordColors.FROST_3)
-    logging.info("Cleanup complete.")
+    print_message("Cleaning up session resources...", NordColors.FROST_3)
+    # Additional cleanup tasks can be added here.
 
 
 def signal_handler(sig: int, frame: Any) -> None:
-    """Handle termination signals gracefully."""
-    print_message(f"Process interrupted by signal {sig}", NordColors.YELLOW, "⚠")
+    try:
+        sig_name = signal.Signals(sig).name
+        print_warning(f"Process interrupted by {sig_name}")
+    except Exception:
+        print_warning(f"Process interrupted by signal {sig}")
     cleanup()
     sys.exit(128 + sig)
 
@@ -328,622 +604,575 @@ atexit.register(cleanup)
 
 
 # ----------------------------------------------------------------
-# Progress and Spinner Classes
+# Device Status Functions
 # ----------------------------------------------------------------
-class ProgressManager:
-    """
-    Unified Rich progress tracking system.
-    Ensures that only one live progress display is active at a time.
-    """
-
-    def __init__(self) -> None:
-        self.progress = Progress(
-            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
-            TextColumn("[bold {task.fields[color]}]{task.description}"),
-            BarColumn(
-                bar_width=40,
-                style=NordColors.FROST_4,
-                complete_style=NordColors.FROST_2,
-            ),
-            TextColumn("[bold {task.percentage:>3.0f}]%"),
-            TimeRemainingColumn(),
-            console=console,
-            expand=True,
-        )
-
-    def __enter__(self) -> "ProgressManager":
-        self.progress.start()
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        self.progress.stop()
-
-    def add_task(
-        self, description: str, total: float, color: str = NordColors.FROST_2
-    ) -> TaskID:
-        return self.progress.add_task(
-            description,
-            total=total,
-            color=color,
-            status=f"[{NordColors.FROST_3}]starting",
-        )
-
-    def update(self, task_id: TaskID, advance: float = 0, **kwargs: Any) -> None:
-        self.progress.update(task_id, advance=advance, **kwargs)
-
-
-class Spinner:
-    """
-    Thread-safe spinner for indeterminate-duration operations.
-    """
-
-    def __init__(self, message: str) -> None:
-        self.message = message
-        self.spinner_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-        self.current = 0
-        self.spinning = False
-        self.thread: Optional[threading.Thread] = None
-        self.start_time = 0
-        self._lock = threading.Lock()
-
-    def _spin(self) -> None:
-        while self.spinning:
-            elapsed = time.time() - self.start_time
-            time_str = f"{elapsed:.1f}s"
-            with self._lock:
-                console.print(
-                    f"\r[{NordColors.FROST_1}]{self.spinner_chars[self.current]}[/] "
-                    f"[{NordColors.FROST_2}]{self.message}[/] [dim]elapsed: {time_str}[/dim]",
-                    end="",
-                )
-                self.current = (self.current + 1) % len(self.spinner_chars)
-            time.sleep(0.1)
-
-    def start(self) -> None:
-        with self._lock:
-            self.spinning = True
-            self.start_time = time.time()
-            self.thread = threading.Thread(target=self._spin, daemon=True)
-            self.thread.start()
-
-    def stop(self, success: bool = True) -> None:
-        with self._lock:
-            self.spinning = False
-        if self.thread:
-            self.thread.join()
-        elapsed = time.time() - self.start_time
-        time_str = f"{elapsed:.1f}s"
-        console.print("\r" + " " * 80, end="\r")
-        if success:
-            console.print(
-                f"[{NordColors.GREEN}]✓[/] [{NordColors.FROST_2}]{self.message}[/] "
-                f"[{NordColors.GREEN}]completed[/] in {time_str}"
-            )
-            logging.info(f"COMPLETED: {self.message} in {time_str}")
+def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
+    start_time = time.time()
+    try:
+        if sys.platform == "win32":
+            cmd = [
+                "ping",
+                "-n",
+                str(PING_COUNT),
+                "-w",
+                str(int(PING_TIMEOUT * 1000)),
+                ip_address,
+            ]
         else:
-            console.print(
-                f"[{NordColors.RED}]✗[/] [{NordColors.FROST_2}]{self.message}[/] "
-                f"[{NordColors.RED}]failed[/] after {time_str}"
-            )
-            logging.error(f"FAILED: {self.message} after {time_str}")
-
-    def __enter__(self) -> "Spinner":
-        self.start()
-        return self
-
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
-        self.stop(success=exc_type is None)
-
-
-# ----------------------------------------------------------------
-# System Helper Functions
-# ----------------------------------------------------------------
-def check_root() -> bool:
-    """Return True if running with root privileges."""
-    return os.geteuid() == 0 if hasattr(os, "geteuid") else False
-
-
-def ensure_root() -> bool:
-    """Ensure the script is running as root."""
-    if not check_root():
-        print_message(
-            "This utility requires root privileges. Please run with sudo.",
-            NordColors.RED,
-            "✗",
-        )
-        return False
-    return True
-
-
-def check_system_compatibility() -> bool:
-    """
-    Check if the system is Linux and that Nala is available.
-    """
-    if platform.system().lower() != "linux":
-        print_message(
-            f"Designed for Linux systems. Detected: {platform.system()}",
-            NordColors.YELLOW,
-            "⚠",
-        )
-        return False
-    try:
-        result = run_command(["which", "nala"], check=False)
-        if result.returncode != 0:
-            print_message("Nala not found.", NordColors.YELLOW, "⚠")
-            return False
-    except Exception:
-        print_message(
-            "Failed to verify package manager compatibility.", NordColors.YELLOW, "⚠"
-        )
-        return False
-    return True
-
-
-# ----------------------------------------------------------------
-# Dependency Installation Functions
-# ----------------------------------------------------------------
-def run_command(
-    cmd: Union[List[str], str],
-    env: Optional[Dict[str, str]] = None,
-    shell: bool = False,
-    check: bool = True,
-    capture_output: bool = True,
-    timeout: int = OPERATION_TIMEOUT,
-    verbose: bool = False,
-) -> subprocess.CompletedProcess:
-    """
-    Execute a system command and return the CompletedProcess.
-    """
-    cmd_display = cmd if isinstance(cmd, str) else " ".join(cmd)
-    if verbose:
-        print_message(f"Executing: {cmd_display}", NordColors.FROST_3)
-    try:
+            cmd = [
+                "ping",
+                "-c",
+                str(PING_COUNT),
+                "-W",
+                str(int(PING_TIMEOUT)),
+                ip_address,
+            ]
         result = subprocess.run(
             cmd,
-            env=env or os.environ.copy(),
-            shell=shell,
-            check=check,
-            text=True,
-            capture_output=capture_output,
-            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=PING_TIMEOUT + 1,
         )
-        return result
-    except subprocess.CalledProcessError as e:
-        print_message(f"Command failed: {cmd_display}", NordColors.RED, "✗")
-        if e.stdout:
-            console.print(f"[dim]Stdout: {e.stdout.strip()}[/dim]")
-        if e.stderr:
-            console.print(f"[bold {NordColors.RED}]Stderr: {e.stderr.strip()}[/]")
-        raise
-    except subprocess.TimeoutExpired:
-        print_message(f"Command timed out after {timeout} seconds", NordColors.RED, "✗")
-        raise
-    except Exception as e:
-        print_message(f"Error executing command: {e}", NordColors.RED, "✗")
-        raise
+        end_time = time.time()
+        response_time = (end_time - start_time) * 1000  # ms
+        return (
+            result.returncode == 0
+        ), response_time if result.returncode == 0 else None
+    except Exception:
+        return False, None
 
 
-def install_nala() -> bool:
-    """
-    Install Nala if it is not already installed.
-    Uses apt to install Nala system wide.
-    """
-    if shutil.which("nala"):
-        print_message("Nala is already installed.", NordColors.GREEN, "✓")
-        return True
-    print_section("Installing Nala")
-    try:
-        run_command(["apt", "install", "nala", "-y"])
-        if shutil.which("nala"):
-            print_message("Nala installed successfully.", NordColors.GREEN, "✓")
-            return True
-        else:
-            print_message("Nala installation failed.", NordColors.RED, "✗")
-            return False
-    except Exception as e:
-        print_message(f"Error installing Nala: {e}", NordColors.RED, "✗")
-        return False
+def check_device_statuses(
+    devices: List[Device], progress_callback: Optional[Callable[[int], None]] = None
+) -> None:
+    def check_single(device: Device, index: int) -> None:
+        success, response_time = ping_device(device.ip_address)
+        device.status = success
+        device.response_time = response_time
+        device.last_ping_time = time.time()
+        if progress_callback:
+            progress_callback(index)
 
-
-def install_pip() -> bool:
-    """
-    Ensure python3-pip is installed using Nala.
-    """
-    if shutil.which("pip3"):
-        print_message("pip3 is already installed.", NordColors.GREEN, "✓")
-        return True
-    print_section("Installing python3-pip")
-    try:
-        run_command(["nala", "install", "python3-pip", "-y"])
-        if shutil.which("pip3"):
-            print_message("pip3 installed successfully.", NordColors.GREEN, "✓")
-            return True
-        else:
-            print_message("pip3 installation failed.", NordColors.RED, "✗")
-            return False
-    except Exception as e:
-        print_message(f"Error installing pip3: {e}", NordColors.RED, "✗")
-        return False
-
-
-def install_python_dependencies_system() -> bool:
-    """
-    Install required Python dependencies system wide using Nala.
-    """
-    try:
-        print_section("Installing Python Dependencies (System-wide via Nala)")
-        cmd = ["nala", "install", "python3-rich", "python3-pyfiglet", "-y"]
-        run_command(cmd)
-        print_message(
-            "System-wide Python dependencies installed.", NordColors.GREEN, "✓"
-        )
-        return True
-    except Exception as e:
-        print_message(
-            f"Failed to install system Python dependencies: {e}", NordColors.RED, "✗"
-        )
-        return False
-
-
-def install_pipx() -> bool:
-    """
-    Install pipx if not already available.
-    """
-    if shutil.which("pipx"):
-        print_message("pipx is already installed.", NordColors.GREEN, "✓")
-        return True
-    print_section("Installing pipx")
-    try:
-        run_command(["nala", "install", "pipx", "-y"])
-        if shutil.which("pipx"):
-            print_message("pipx installed successfully.", NordColors.GREEN, "✓")
-            return True
-        else:
-            print_message("pipx installation failed.", NordColors.RED, "✗")
-            return False
-    except Exception as e:
-        print_message(f"Error installing pipx: {e}", NordColors.RED, "✗")
-        return False
-
-
-def install_system_dependencies() -> bool:
-    """
-    Install all necessary system dependencies: Nala, pip3, system Python packages,
-    pipx, and then install Python libraries via pipx.
-    """
-    overall_success = True
-    if not install_nala():
-        overall_success = False
-    if not install_pip():
-        overall_success = False
-    if not install_python_dependencies_system():
-        overall_success = False
-    if not install_pipx():
-        overall_success = False
-    return overall_success
+    # Use a simple sequential loop (could be parallelized if needed)
+    for i, device in enumerate(devices):
+        check_single(device, i)
 
 
 # ----------------------------------------------------------------
-# Tailscale Operation Functions (Using Nala)
+# UI Components
 # ----------------------------------------------------------------
-def uninstall_tailscale() -> bool:
-    """
-    Stop tailscaled, disable its service, remove the Tailscale package using Nala,
-    and delete configuration directories.
-    """
-    if not ensure_root():
-        return False
-    print_section("Uninstalling Tailscale")
-    steps: List[Tuple[str, List[str]]] = [
-        ("Stopping tailscaled service", ["systemctl", "stop", "tailscaled"]),
-        ("Disabling tailscaled service", ["systemctl", "disable", "tailscaled"]),
-        (
-            "Removing tailscale package",
-            ["nala", "remove", "--purge", "tailscale", "-y"],
-        ),
-        ("Autoremoving unused packages", ["nala", "autoremove", "-y"]),
-    ]
-    success = True
-    for desc, cmd in steps:
-        print_message(desc, NordColors.FROST_3)
-        try:
-            run_command(cmd, check=False)
-        except Exception as e:
-            print_message(f"Error during {desc}: {e}", NordColors.RED, "✗")
-            success = False
-        time.sleep(TRANSITION_DELAY)
-    print_message("Removing configuration directories...", NordColors.FROST_3)
-    for path in TAILSCALE_PATHS:
-        if os.path.exists(path):
-            try:
-                shutil.rmtree(path)
-                print_message(f"Removed {path}", NordColors.GREEN, "✓")
-            except Exception as e:
-                print_message(f"Failed to remove {path}: {e}", NordColors.YELLOW, "⚠")
-                success = False
-        else:
-            print_message(f"Directory not found: {path}", NordColors.FROST_3)
-        time.sleep(TRANSITION_DELAY)
-    if success:
-        print_message(
-            "Tailscale uninstalled and cleaned up successfully.", NordColors.GREEN, "✓"
-        )
-    else:
-        print_message(
-            "Uninstallation completed with some issues.", NordColors.YELLOW, "⚠"
-        )
-    return success
-
-
-def install_tailscale() -> bool:
-    """
-    Install Tailscale using the official install script.
-    """
-    if not ensure_root():
-        return False
-    print_section("Installing Tailscale")
-    print_message("Running Tailscale install script", NordColors.FROST_3)
-    install_cmd = f"curl -fsSL {TAILSCALE_INSTALL_URL} | sh"
-    with Spinner("Installing Tailscale") as spinner:
-        try:
-            result = run_command(install_cmd, shell=True)
-            if result.returncode == 0:
-                spinner.stop(success=True)
-                print_message(
-                    "Tailscale installed successfully.", NordColors.GREEN, "✓"
-                )
-                return True
-            else:
-                spinner.stop(success=False)
-                print_message(
-                    "Tailscale installation may have issues.", NordColors.YELLOW, "⚠"
-                )
-                return False
-        except Exception as e:
-            spinner.stop(success=False)
-            print_message(f"Installation failed: {e}", NordColors.RED, "✗")
-            return False
-
-
-def start_tailscale_service() -> bool:
-    """
-    Enable and start the tailscaled service.
-    """
-    if not ensure_root():
-        return False
-    print_section("Starting Tailscale Service")
-    steps: List[Tuple[str, List[str]]] = [
-        ("Enabling tailscaled service", ["systemctl", "enable", "tailscaled"]),
-        ("Starting tailscaled service", ["systemctl", "start", "tailscaled"]),
-    ]
-    success = True
-    for desc, cmd in steps:
-        print_message(desc, NordColors.FROST_3)
-        try:
-            run_command(cmd)
-        except Exception as e:
-            print_message(f"Error during {desc}: {e}", NordColors.RED, "✗")
-            success = False
-        time.sleep(TRANSITION_DELAY)
-    if success:
-        print_message(
-            "Tailscale service enabled and started successfully.", NordColors.GREEN, "✓"
-        )
-    else:
-        print_message(
-            "Service configuration completed with issues.", NordColors.YELLOW, "⚠"
-        )
-    return success
-
-
-def tailscale_up() -> bool:
-    """
-    Run 'tailscale up' to bring the daemon online.
-    """
-    if not ensure_root():
-        return False
-    print_section("Running 'tailscale up'")
-    with Spinner("Executing tailscale up") as spinner:
-        try:
-            result = run_command(["tailscale", "up"])
-            spinner.stop(success=True)
-            print_message("Tailscale is up!", NordColors.GREEN, "✓")
-            if result.stdout.strip():
-                display_panel(
-                    result.stdout.strip(),
-                    style=NordColors.FROST_3,
-                    title="Tailscale Up Output",
-                )
-            return True
-        except Exception as e:
-            spinner.stop(success=False)
-            print_message(f"Failed to bring Tailscale up: {e}", NordColors.RED, "✗")
-            return False
-
-
-def check_tailscale_status() -> bool:
-    """
-    Check and display the current Tailscale status.
-    """
-    print_section("Tailscale Status")
-    with Spinner("Checking Tailscale status") as spinner:
-        try:
-            result = run_command(["tailscale", "status"], check=False)
-            if result.returncode == 0 and result.stdout.strip():
-                spinner.stop(success=True)
-                console.print(
-                    Panel(
-                        result.stdout.strip(),
-                        title="Tailscale Status",
-                        border_style=f"bold {NordColors.FROST_2}",
-                    )
-                )
-                return True
-            else:
-                spinner.stop(success=False)
-                print_message(
-                    "No status information available. Tailscale may not be running.",
-                    NordColors.YELLOW,
-                    "⚠",
-                )
-                try:
-                    svc_result = run_command(
-                        ["systemctl", "status", "tailscaled"], check=False
-                    )
-                    if svc_result.stdout.strip():
-                        console.print(
-                            Panel(
-                                svc_result.stdout.strip(),
-                                title="tailscaled Service Status",
-                                border_style=f"bold {NordColors.FROST_2}",
-                            )
-                        )
-                except Exception:
-                    print_message(
-                        "Could not check tailscaled service status.",
-                        NordColors.YELLOW,
-                        "⚠",
-                    )
-                return False
-        except Exception as e:
-            spinner.stop(success=False)
-            print_message(f"Failed to check status: {e}", NordColors.RED, "✗")
-            return False
-
-
-def reset_tailscale() -> bool:
-    """
-    Perform a complete reset of Tailscale by sequentially:
-      1. Uninstalling Tailscale
-      2. Installing Tailscale
-      3. Starting the tailscaled service
-      4. Running 'tailscale up'
-      5. Checking final status
-    """
-    if not ensure_root():
-        return False
-    print_section("Complete Tailscale Reset")
-    steps: List[Tuple[str, Any]] = [
-        ("Uninstall", uninstall_tailscale),
-        ("Install", install_tailscale),
-        ("Service Start", start_tailscale_service),
-        ("Tailscale Up", tailscale_up),
-        ("Status Check", check_tailscale_status),
-    ]
-    overall_success = True
-    results: List[Tuple[str, bool]] = []
-    with ProgressManager() as progress:
-        task = progress.add_task("Resetting Tailscale", total=len(steps))
-        for label, func in steps:
-            print_message(f"Step: {label}", NordColors.FROST_2)
-            step_success = func()
-            results.append((label, step_success))
-            if step_success:
-                progress.update(
-                    task, advance=1, status=f"[{NordColors.GREEN}]{label} succeeded"
-                )
-            else:
-                progress.update(
-                    task, advance=1, status=f"[{NordColors.RED}]{label} failed"
-                )
-                overall_success = False
-            time.sleep(TRANSITION_DELAY)
-    print_section("Reset Process Summary")
+def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
+    term_width, _ = shutil.get_terminal_size((80, 24))
+    compact_mode = term_width < 100
     table = Table(
-        title="Tailscale Reset Results",
-        title_style=f"bold {NordColors.FROST_2}",
-        border_style=NordColors.FROST_3,
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
         expand=True,
+        title=f"[bold {NordColors.FROST_2}]{title}[/]",
+        border_style=NordColors.FROST_3,
+        title_justify="center",
+        box=box.ROUNDED,
     )
-    table.add_column("Operation", style=f"bold {NordColors.FROST_1}")
-    table.add_column("Result", style=f"bold {NordColors.FROST_2}")
-    for op, res in results:
-        status = (
-            f"[{NordColors.GREEN}]Success[/]" if res else f"[{NordColors.RED}]Failed[/]"
+    table.add_column("#", style=f"bold {NordColors.FROST_4}", justify="right", width=4)
+    table.add_column("Name", style=f"bold {NordColors.FROST_1}")
+    table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}")
+    table.add_column("Status", justify="center")
+    if not compact_mode:
+        table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
+    online_count = sum(1 for d in devices if d.status is True)
+    for idx, device in enumerate(devices, 1):
+        if compact_mode:
+            table.add_row(
+                f"{prefix}{idx}",
+                device.name,
+                device.ip_address,
+                device.get_status_indicator(),
+            )
+        else:
+            table.add_row(
+                f"{prefix}{idx}",
+                device.name,
+                device.ip_address,
+                device.get_status_indicator(),
+                device.description or "",
+            )
+    if devices:
+        footer = Text.from_markup(
+            f"[{NordColors.FROST_3}]{online_count}/{len(devices)} devices online[/]"
         )
-        table.add_row(op, status)
-    console.print(table)
-    if overall_success:
-        print_message(
-            "Tailscale has been completely reset and is now running!",
-            NordColors.GREEN,
-            "✓",
-        )
-    else:
-        print_message(
-            "Tailscale reset completed with issues. Please check the logs.",
-            NordColors.YELLOW,
-            "⚠",
-        )
-    return overall_success
+        table.caption = footer
+    return table
+
+
+def create_commands_panel() -> Panel:
+    command_text = (
+        f"[{NordColors.FROST_3}]Commands: [bold]1-N[/] Tailscale | [bold]L1-LN[/] Local | "
+        f"[bold]r[/] Refresh | [bold]c[/] Config | [bold]s[/] Search | [bold]h[/] Help | [bold]q[/] Quit"
+    )
+    return Panel(
+        Align.center(Text.from_markup(command_text)),
+        border_style=NordColors.FROST_4,
+        padding=(1, 2),
+        box=box.ROUNDED,
+    )
 
 
 # ----------------------------------------------------------------
-# Main Entry Point
+# SSH Connection Functions
+# ----------------------------------------------------------------
+def get_username(default_username: str) -> str:
+    return Prompt.ask(
+        f"Username for SSH connection [{default_username}]: ", default=default_username
+    )
+
+
+def connect_to_device(device: Device, username: Optional[str] = None) -> None:
+    clear_screen()
+    console.print(create_header())
+    effective_username = username or device.username or DEFAULT_USERNAME
+    connection_info = (
+        f"\n[bold {NordColors.FROST_2}]Device:[/] [bold {NordColors.SNOW_STORM_2}]{device.name}[/]\n"
+        f"[bold {NordColors.FROST_2}]Address:[/] [bold {NordColors.SNOW_STORM_2}]{device.ip_address}[/]\n"
+        f"[bold {NordColors.FROST_2}]User:[/] [bold {NordColors.SNOW_STORM_2}]{effective_username}[/]\n"
+    )
+    if device.description:
+        connection_info += f"[bold {NordColors.FROST_2}]Description:[/] [bold {NordColors.SNOW_STORM_2}]{device.description}[/]\n"
+    if device.port != DEFAULT_SSH_PORT:
+        connection_info += f"[bold {NordColors.FROST_2}]Port:[/] [bold {NordColors.SNOW_STORM_2}]{device.port}[/]\n"
+    console.print(
+        Panel(
+            Text.from_markup(connection_info),
+            title=f"[bold {NordColors.FROST_3}]SSH Connection[/]",
+            border_style=NordColors.FROST_3,
+            padding=(1, 2),
+            box=box.ROUNDED,
+        )
+    )
+    try:
+        with Progress(
+            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+            TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Connecting...",
+                total=4,
+                visible=True,
+                task_fields={
+                    "message": "Initializing secure channel...",
+                    "message_color": NordColors.FROST_2,
+                },
+            )
+            time.sleep(0.4)
+            progress.update(task, message="Negotiating encryption parameters...")
+            time.sleep(0.4)
+            progress.update(
+                task, message=f"Establishing SSH tunnel to {device.ip_address}..."
+            )
+            time.sleep(0.4)
+            progress.update(
+                task,
+                message="Connection established. Launching secure shell...",
+                task_fields={"message_color": NordColors.GREEN},
+            )
+            time.sleep(0.4)
+        ssh_args = [SSH_COMMAND]
+        config = load_config()
+        for option, (value, _) in config.ssh_options.items():
+            ssh_args.extend(["-o", f"{option}={value}"])
+        if device.port != DEFAULT_SSH_PORT:
+            ssh_args.extend(["-p", str(device.port)])
+        ssh_args.append(f"{effective_username}@{device.ip_address}")
+        os.execvp(SSH_COMMAND, ssh_args)
+    except Exception as e:
+        console.print(
+            Panel(
+                Text.from_markup(
+                    f"[bold {NordColors.RED}]Connection Error:[/] {str(e)}"
+                ),
+                border_style=NordColors.RED,
+                title="Connection Failed",
+                padding=(1, 2),
+                box=box.ROUNDED,
+            )
+        )
+        print_section("Troubleshooting Tips")
+        print_step("Check that the device is online and SSH is properly configured")
+        print_step("Verify that SSH is installed and running on the target device")
+        print_step("Ensure the correct username and IP address were used")
+        print_step("Try connecting manually with 'ssh -v' for verbose output")
+        Prompt.ask("Press Enter to return to the main menu")
+
+
+# ----------------------------------------------------------------
+# Device Status Refresh and SSH Option Configuration
+# ----------------------------------------------------------------
+def refresh_device_statuses(devices: List[Device]) -> None:
+    clear_screen()
+    console.print(create_header())
+    display_panel(
+        "Checking connectivity status of all devices",
+        style=NordColors.FROST_3,
+        title="Network Scan",
+    )
+    with Progress(
+        SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+        TextColumn("[bold {task.fields[message]}]{task.fields[message]}"),
+        BarColumn(
+            bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
+        ),
+        TaskProgressColumn(),
+        TextColumn(f"[{NordColors.SNOW_STORM_1}]{{task.percentage:>3.0f}}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        scan_task = progress.add_task(
+            "Refreshing",
+            total=len(devices),
+            visible=True,
+            task_fields={"message": "Checking device status"},
+        )
+
+        def update_progress(index: int) -> None:
+            progress.advance(scan_task)
+
+        check_device_statuses(devices, update_progress)
+    Prompt.ask("Press Enter to return to the main menu")
+
+
+def configure_ssh_options() -> None:
+    clear_screen()
+    console.print(create_header())
+    print_section("SSH Configuration Options")
+    config = load_config()
+    table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        expand=True,
+        title=f"[bold {NordColors.FROST_2}]Current SSH Options[/]",
+        border_style=NordColors.FROST_3,
+        box=box.ROUNDED,
+    )
+    table.add_column("Option", style=f"bold {NordColors.FROST_3}")
+    table.add_column("Value", style=f"{NordColors.SNOW_STORM_1}")
+    table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
+    for option, (value, description) in config.ssh_options.items():
+        table.add_row(option, value, description)
+    console.print(table)
+    print_message(
+        "These options will be applied to all SSH connections", NordColors.FROST_2
+    )
+    choices = [
+        "1. Modify an option",
+        "2. Add a new option",
+        "3. Reset to defaults",
+        "4. Change default username",
+        "5. Return to main menu",
+    ]
+    for choice in choices:
+        console.print(f"[{NordColors.FROST_2}]{choice}[/]")
+    selected = Prompt.ask(
+        "Select an option", choices=["1", "2", "3", "4", "5"], default="5"
+    )
+    if selected == "1":
+        option_keys = list(config.ssh_options.keys())
+        if not option_keys:
+            print_error("No options to modify")
+        else:
+            console.print("Available Options:")
+            for i, key in enumerate(option_keys, 1):
+                console.print(f"[bold]{i}[/]: {key}")
+            option_num = Prompt.ask("Enter option number to modify", default="1")
+            try:
+                idx = int(option_num) - 1
+                if 0 <= idx < len(option_keys):
+                    key = option_keys[idx]
+                    current_value, description = config.ssh_options[key]
+                    new_value = Prompt.ask(
+                        f"New value for {key}", default=current_value
+                    )
+                    config.ssh_options[key] = (new_value, description)
+                    save_config(config)
+                    print_success(f"Updated {key} to: {new_value}")
+                else:
+                    print_error("Invalid option number")
+            except ValueError:
+                print_error("Invalid input")
+    elif selected == "2":
+        new_key = Prompt.ask("Option name")
+        new_value = Prompt.ask("Option value")
+        description = Prompt.ask("Option description", default="Custom SSH option")
+        config.ssh_options[new_key] = (new_value, description)
+        save_config(config)
+        print_success(f"Added new option: {new_key}={new_value}")
+    elif selected == "3":
+        if Confirm.ask("Reset all SSH options to defaults?", default=False):
+            config.ssh_options = {
+                "ServerAliveInterval": (
+                    "30",
+                    "Interval (sec) to send keepalive packets",
+                ),
+                "ServerAliveCountMax": ("3", "Packets to send before disconnecting"),
+                "ConnectTimeout": ("10", "Timeout (sec) for establishing connection"),
+                "StrictHostKeyChecking": (
+                    "accept-new",
+                    "Host key verification behavior",
+                ),
+                "Compression": ("yes", "Enable compression"),
+                "LogLevel": ("ERROR", "SSH logging verbosity"),
+            }
+            save_config(config)
+            print_success("SSH options reset to defaults")
+    elif selected == "4":
+        current = config.default_username
+        new_username = Prompt.ask("New default username", default=current)
+        config.default_username = new_username
+        save_config(config)
+        print_success(f"Default username changed to: {new_username}")
+    Prompt.ask("Press Enter to return to the main menu")
+
+
+def search_for_devices(devices: List[Device]) -> None:
+    clear_screen()
+    console.print(create_header())
+    search_term = Prompt.ask("Enter search term (name, IP, or description)")
+    if not search_term:
+        return
+    term = search_term.lower()
+    matching = [
+        d
+        for d in devices
+        if term in d.name.lower()
+        or term in d.ip_address.lower()
+        or (d.description and term in d.description.lower())
+    ]
+    print_section(f"Search Results for '{search_term}'")
+    if not matching:
+        display_panel(
+            f"No devices found matching '{search_term}'",
+            style=NordColors.YELLOW,
+            title="No Results",
+        )
+    else:
+        table = Table(
+            show_header=True,
+            header_style=f"bold {NordColors.FROST_1}",
+            expand=True,
+            title=f"[bold {NordColors.FROST_2}]Matching Devices ({len(matching)})[/]",
+            border_style=NordColors.FROST_3,
+            box=box.ROUNDED,
+        )
+        table.add_column("Type", style=f"bold {NordColors.FROST_4}")
+        table.add_column("Name", style=f"bold {NordColors.FROST_1}")
+        table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}")
+        table.add_column("Status", justify="center")
+        table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}")
+        for d in matching:
+            dev_type = "Tailscale" if d.device_type == "tailscale" else "Local"
+            table.add_row(
+                dev_type,
+                d.name,
+                d.ip_address,
+                d.get_status_indicator(),
+                d.description or "",
+            )
+        console.print(table)
+        choice = Prompt.ask(
+            "Connect to a device? Enter its number or 'n' to cancel", default="n"
+        )
+        if choice.lower() != "n":
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(matching):
+                    selected_device = matching[idx]
+                    uname = get_username(selected_device.username or DEFAULT_USERNAME)
+                    connect_to_device(selected_device, uname)
+                    return
+                else:
+                    print_error(f"Invalid device number: {choice}")
+            except ValueError:
+                print_error(f"Invalid choice: {choice}")
+    Prompt.ask("Press Enter to return to the main menu")
+
+
+# ----------------------------------------------------------------
+# Main Interactive Menu Loop
 # ----------------------------------------------------------------
 def main() -> None:
-    """
-    Main function that performs all reset operations automatically.
-    Installs system dependencies, checks compatibility, and then resets Tailscale.
-    """
-    try:
+    ensure_config_directory()
+    config = load_config()
+    # Use static device list (DEVICES)
+    devices = DEVICES
+
+    # Initial network scan
+    clear_screen()
+    console.print(create_header())
+    display_panel(
+        "Scanning network for available devices",
+        style=NordColors.FROST_3,
+        title="Initialization",
+    )
+    with Progress(
+        SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+        TextColumn("[bold {task.fields[message]}]{task.fields[message]}"),
+        BarColumn(
+            bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
+        ),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        scan_task = progress.add_task(
+            "Scanning",
+            total=len(devices),
+            visible=True,
+            task_fields={"message": "Pinging devices"},
+        )
+
+        def update_progress(index: int) -> None:
+            progress.advance(scan_task)
+
+        check_device_statuses(devices, update_progress)
+    time.sleep(0.5)
+
+    while True:
+        term_width, _ = shutil.get_terminal_size()
+        config.terminal_width = term_width
         clear_screen()
         console.print(create_header())
         display_system_info()
-        setup_logging()
-
-        print_section("System Dependency Installation")
-        if not install_system_dependencies():
-            print_message(
-                "Dependency installation failed. Exiting.", NordColors.RED, "✗"
-            )
-            sys.exit(1)
-
-        print_section("System Compatibility Check")
-        if not check_system_compatibility():
-            print_message(
-                "System compatibility issues detected. Proceeding anyway.",
-                NordColors.YELLOW,
-                "⚠",
-            )
-        else:
-            print_message("System compatibility check passed.", NordColors.GREEN, "✓")
-
-        if not ensure_root():
-            print_message(
-                "This utility requires root privileges. Please run with sudo.",
-                NordColors.RED,
-                "✗",
-            )
-            sys.exit(1)
-
-        print_message(
-            "Beginning automated Tailscale reset process...", NordColors.FROST_2, "▶"
+        # Split devices by type
+        tailscale_devices = [d for d in devices if d.device_type == "tailscale"]
+        local_devices = [d for d in devices if d.device_type == "local"]
+        tailscale_table = create_device_table(
+            tailscale_devices, "", "Tailscale Devices"
         )
-        reset_success = reset_tailscale()
-        if reset_success:
-            display_panel(
-                "Tailscale has been successfully reset and configured!",
-                style=NordColors.GREEN,
-                title="Operation Complete",
+        local_table = create_device_table(local_devices, "L", "Local Devices")
+        if term_width >= 160:
+            from rich.columns import Columns
+
+            console.print(
+                Columns(
+                    [
+                        Panel(
+                            tailscale_table,
+                            border_style=NordColors.FROST_4,
+                            padding=(0, 1),
+                            box=box.ROUNDED,
+                        ),
+                        Panel(
+                            local_table,
+                            border_style=NordColors.FROST_4,
+                            padding=(0, 1),
+                            box=box.ROUNDED,
+                        ),
+                    ]
+                )
             )
         else:
-            display_panel(
-                "Tailscale reset completed with issues. Check the logs for details.",
-                style=NordColors.YELLOW,
-                title="Operation Partially Complete",
+            console.print(
+                Panel(
+                    tailscale_table,
+                    border_style=NordColors.FROST_4,
+                    padding=(0, 1),
+                    box=box.ROUNDED,
+                )
             )
-    except KeyboardInterrupt:
-        print_message("Process interrupted by user.", NordColors.YELLOW, "⚠")
-        sys.exit(130)
-    except Exception as e:
-        print_message(f"Unexpected error: {e}", NordColors.RED, "✗")
-        console.print_exception()
-        sys.exit(1)
+            console.print(
+                Panel(
+                    local_table,
+                    border_style=NordColors.FROST_4,
+                    padding=(0, 1),
+                    box=box.ROUNDED,
+                )
+            )
+        console.print()
+        console.print(create_commands_panel())
+        console.print()
+        choice = Prompt.ask("Enter your choice").strip().lower()
+        if choice in ("q", "quit", "exit"):
+            clear_screen()
+            console.print(
+                Panel(
+                    Text.from_markup(
+                        f"Thank you for using {APP_NAME}!",
+                        style=f"bold {NordColors.FROST_2}",
+                    ),
+                    border_style=NordColors.FROST_1,
+                    padding=(1, 2),
+                    box=box.ROUNDED,
+                )
+            )
+            break
+        elif choice in ("r", "refresh"):
+            refresh_device_statuses(devices)
+        elif choice in ("h", "help"):
+            show_help()
+            Prompt.ask("Press Enter to continue")
+        elif choice in ("c", "config", "configure"):
+            configure_ssh_options()
+        elif choice in ("s", "search"):
+            search_for_devices(devices)
+        elif choice.startswith("l"):
+            try:
+                idx = int(choice[1:]) - 1
+                if 0 <= idx < len(local_devices):
+                    device = local_devices[idx]
+                    if device.status is False and not Confirm.ask(
+                        "This device appears offline. Connect anyway?", default=False
+                    ):
+                        continue
+                    uname = get_username(device.username or config.default_username)
+                    connect_to_device(device, uname)
+                else:
+                    display_panel(
+                        f"Invalid local device number: {choice}",
+                        style=NordColors.RED,
+                        title="Error",
+                    )
+                    Prompt.ask("Press Enter to continue")
+            except ValueError:
+                display_panel(
+                    f"Invalid choice: {choice}", style=NordColors.RED, title="Error"
+                )
+                Prompt.ask("Press Enter to continue")
+        else:
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(tailscale_devices):
+                    device = tailscale_devices[idx]
+                    if device.status is False and not Confirm.ask(
+                        "This device appears offline. Connect anyway?", default=False
+                    ):
+                        continue
+                    uname = get_username(device.username or config.default_username)
+                    connect_to_device(device, uname)
+                else:
+                    display_panel(
+                        f"Invalid device number: {choice}",
+                        style=NordColors.RED,
+                        title="Error",
+                    )
+                    Prompt.ask("Press Enter to continue")
+            except ValueError:
+                display_panel(
+                    f"Invalid choice: {choice}", style=NordColors.RED, title="Error"
+                )
+                Prompt.ask("Press Enter to continue")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        display_panel(
+            "Operation cancelled by user", style=NordColors.YELLOW, title="Cancelled"
+        )
+        sys.exit(0)
+    except Exception as e:
+        display_panel(f"Unhandled error: {str(e)}", style=NordColors.RED, title="Error")
+        console.print_exception()
+        sys.exit(1)
 ```
 
 ## Final Guidelines for User Interaction

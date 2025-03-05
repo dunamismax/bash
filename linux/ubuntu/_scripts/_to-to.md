@@ -156,5 +156,5 @@ The final script should operate unattended, requiring no user input, and provide
 
 ---------------------------------------------------------------------------------------------
 
-rewrite (claude 3.7 high)
+rewrite (Claude 3.7 high)
 using new prompt
