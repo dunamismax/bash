@@ -14,10 +14,10 @@
     └── owncloud_setup.py
     └── python_dev_setup.py
     └── raspberry_pi_5_overclocking_utility.py
-    *└── reset_tailscale.py
+    └── reset_tailscale.py
     └── secure_disk_eraser.py
     └── sftp_toolkit.py
-    └── ssh_machine_selector.py
+    *└── ssh_machine_selector.py
     └── system_monitor.py
     └── ubuntu_voip_setup.py
     └── unified_backup_restore_deployment.py
@@ -45,20 +45,11 @@ Here’s a cleaner, more concise, and refined version of your prompt:
 - **Professional UI** with a **Nord color theme** across all elements.  
 - **Fully interactive, menu-driven interface** with numbered options and validation.  
 - **Dynamic ASCII banners** via Pyfiglet, with gradient styling adapting to terminal width.  
-- **Rich library integration** for panels, tables, spinners, and real-time progress tracking.  
-- **prompt_toolkit support** for tab completion, command history, and enhanced input.  
+- **Rich library integration** for panels, tables, spinners, and real-time progress tracking.
 - **Comprehensive error handling** with color-coded messaging and recovery mechanisms.  
 - **Signal handling** for graceful termination (SIGINT, SIGTERM).  
 - **Type annotations & dataclasses** for readability.
 - **Modular architecture** with well-documented sections.  
-
-**Dependency Management:**
-
-- **Use Nala (not Apt) for system-wide installations.** Install it first via `apt install nala`.  
-- **Ensure necessary Python tools** (`python3-pip`, etc.) are installed via Nala.  
-- **Use Nala for Rich & Pyfiglet** (`nala install python3-rich python3-pyfiglet`).  
-- **Use Pipx for other system-wide dependencies.** Do not use `pip install`.  
-- **No command-line argument parsing.** The script must be fully interactive.  
 
 Maintain core functionality while implementing these enhancements for a **production-grade user experience**.
 
@@ -84,14 +75,6 @@ Here’s a cleaner and more concise version of your prompt:
 - Implement signal handling for graceful termination in unattended environments.
 - Maintain a modular structure with clear comments and type annotations.
 - Handle resource management and cleanup properly.
-
-**Dependency Management:**
-
-- Use `nala` (not `apt`) for system-wide installations (`nala install python3-rich`, `nala install python3-pyfiglet`, etc.).
-- Install `nala` first (`apt install nala`), followed by `python3-pip` for `pipx` support.
-- Use `pipx` only for additional dependencies that cannot be installed with `nala`.
-- Do **not** use `pip install` under any circumstances.
-- Ensure all dependencies are installed system-wide before executing the script.
 
 The final script should operate unattended, requiring no user input, and provide clear, real-time visual feedback.
 
@@ -173,5 +156,5 @@ The final script should operate unattended, requiring no user input, and provide
 
 ---------------------------------------------------------------------------------------------
 
-rewrite (o3-mini-high)
+rewrite (claude 3.7 high)
 using new prompt
