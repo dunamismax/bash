@@ -150,5 +150,5 @@ The application should operate without user interaction while providing clear, r
 
 ---------------------------------------------------------------------------------------------
 
-rewrite (Claude 3.7)
+rewrite (o3-mini-high)
 using new prompt
