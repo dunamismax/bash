@@ -3,18 +3,18 @@
     *└── _bashrc_cheat_sheet.md
     *└── _template.md
     *└── _to-to.md
-    *└── deploy_scripts.py
+    └── deploy_scripts.py
     └── fail2ban_toolkit.py
     └── file_toolkit.py
     └── fix_ssh_tool.py
-    *└── git_commander.py
+    └── git_commander.py
     └── hacker_toolkit.py
     └── hacking_tools.py
     └── hello_world.py
     └── log_monitor.py
     └── metasploit.py
     └── network_toolkit.py
-    └── owncloud_setup.py
+    *└── nextcloud_setup.py
     └── python_dev_setup.py
     └── raspberry_pi_5_overclocking_utility.py
     └── reset_tailscale.py

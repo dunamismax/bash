@@ -272,11 +272,150 @@ def download_package(url: str, destination: str) -> bool:
         return False
 
 
+def find_problematic_repos() -> List[Tuple[str, str]]:
+    """
+    Scan apt sources files to find problematic repositories.
+    Returns a list of tuples containing (file_path, problematic_line).
+    """
+    problematic_repos = []
+    sources_dir = "/etc/apt/sources.list.d"
+    sources_file = "/etc/apt/sources.list"
+
+    # Check main sources.list file
+    try:
+        if os.path.exists(sources_file):
+            returncode, stdout, _ = run_command(["cat", sources_file], sudo=True)
+            if returncode == 0:
+                for line in stdout.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        # Look for problematic Debian repositories
+                        if (
+                            ("debian" in line.lower() and "trixie" in line.lower())
+                            or "NO_PUBKEY" in line
+                            or "InRelease" in line
+                            and "not signed" in line
+                        ):
+                            problematic_repos.append((sources_file, line))
+    except Exception as e:
+        print_warning(f"Error checking main sources file: {e}")
+
+    # Check sources.list.d directory
+    try:
+        if os.path.exists(sources_dir):
+            returncode, stdout, _ = run_command(["ls", sources_dir], sudo=True)
+            if returncode == 0:
+                for filename in stdout.splitlines():
+                    if not filename.endswith(".list"):
+                        continue
+                    file_path = os.path.join(sources_dir, filename)
+                    returncode, file_content, _ = run_command(
+                        ["cat", file_path], sudo=True
+                    )
+                    if returncode == 0:
+                        for line in file_content.splitlines():
+                            line = line.strip()
+                            if line and not line.startswith("#"):
+                                # Look for problematic repositories
+                                if (
+                                    (
+                                        "debian" in line.lower()
+                                        and "trixie" in line.lower()
+                                    )
+                                    or "NO_PUBKEY" in line
+                                    or "InRelease" in line
+                                    and "not signed" in line
+                                ):
+                                    problematic_repos.append((file_path, line))
+    except Exception as e:
+        print_warning(f"Error checking sources directory: {e}")
+
+    return problematic_repos
+
+
+def fix_repository_issues() -> bool:
+    """
+    Find and fix problematic repositories.
+    Returns True if successful, False otherwise.
+    """
+    print_section("Checking for Repository Issues")
+
+    problematic_repos = find_problematic_repos()
+
+    if not problematic_repos:
+        print_success("No problematic repositories found.")
+        return True
+
+    print_warning(f"Found {len(problematic_repos)} problematic repository entries:")
+
+    for i, (file_path, repo_line) in enumerate(problematic_repos, 1):
+        console.print(f"[{NordColors.YELLOW}]{i}. File: {file_path}[/]")
+        console.print(f"[{NordColors.YELLOW}]   Entry: {repo_line}[/]")
+
+    fix_repos = Confirm.ask(
+        "\nWould you like to disable these problematic repositories?", default=True
+    )
+
+    if not fix_repos:
+        print_warning(
+            "Continuing without fixing repository issues. This might cause problems later."
+        )
+        return False
+
+    success = True
+    for file_path, repo_line in problematic_repos:
+        try:
+            # Create a backup of the file
+            backup_path = f"{file_path}.bak"
+            print_step(f"Creating backup of {file_path}")
+            returncode, _, stderr = run_command(
+                ["cp", file_path, backup_path], sudo=True
+            )
+            if returncode != 0:
+                print_error(f"Failed to create backup of {file_path}: {stderr}")
+                success = False
+                continue
+
+            # Escape special characters for sed
+            escaped_line = (
+                repo_line.replace("/", "\\/").replace("&", "\\&").replace(".", "\\.")
+            )
+
+            # Comment out the problematic line
+            print_step(f"Disabling problematic repository in {file_path}")
+            sedcmd = f"sed -i 's/{escaped_line}/# {escaped_line} # Disabled by Nextcloud setup script/g' {file_path}"
+            returncode, _, stderr = run_command(["bash", "-c", sedcmd], sudo=True)
+
+            if returncode == 0:
+                print_success(f"Successfully disabled repository in {file_path}")
+            else:
+                print_error(f"Failed to disable repository in {file_path}: {stderr}")
+                success = False
+        except Exception as e:
+            print_error(f"Error processing {file_path}: {e}")
+            success = False
+
+    if success:
+        print_step("Updating package lists after repository changes...")
+        returncode, _, stderr = run_command(["apt", "update"], sudo=True)
+        if returncode != 0:
+            print_warning(f"Package list update still has issues: {stderr}")
+            print_warning(
+                "Continuing with installation, but some packages might not be available."
+            )
+
+    return True
+
+
 def install_dependencies() -> bool:
     """
     Install all required dependencies for Nextcloud using apt.
+    First checks for and fixes problematic repositories.
     """
     print_section("Installing Dependencies")
+
+    # Check for and fix repository issues before installing dependencies
+    fix_repository_issues()
 
     dependencies = [
         "apache2",
@@ -318,8 +457,9 @@ def install_dependencies() -> bool:
 
             _, stdout, stderr = run_command(["apt", "update"], sudo=True)
             if stderr and "error" in stderr.lower():
-                print_error(f"Failed to update package lists: {stderr}")
-                return False
+                print_warning(
+                    f"Package list update has warnings/errors, but continuing: {stderr}"
+                )
 
             progress.update(task_update, completed=1)
 
@@ -341,11 +481,13 @@ def install_dependencies() -> bool:
 
                 if returncode != 0:
                     print_error(f"Failed to install {dependency}: {stderr}")
-                    return False
+                    print_warning(
+                        "Continuing with installation. Some features might not work properly."
+                    )
 
                 progress.advance(task_install)
 
-        print_success("All dependencies installed successfully.")
+        print_success("Dependencies installation completed.")
         return True
     except Exception as e:
         print_error(f"Error installing dependencies: {e}")
