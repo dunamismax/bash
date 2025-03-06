@@ -8,7 +8,7 @@
 # 1. Environment Variables, PATH, and Shell Options
 # ------------------------------------------------------------------------------
 # Prepend essential directories to PATH
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$HOME/go/bin:$PATH"
 
 # Enable useful Bash options
 shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify 2>/dev/null || true
