@@ -77,3 +77,161 @@ The application should operate without user interaction while providing clear, r
 
 rewrite (claude 3.7 sonnet)
 using new prompt
+
+---------------------------------------------------------------------------------------------
+
+Below is an essential cheat sheet for using Nala. It distills the key commands and options you need to know:
+
+# Nala Command Cheat Sheet
+
+## Installation: `nala install`
+
+- **Basic Usage:**  
+
+  ```bash
+  nala install [--options] <pkg1> <pkg2> ...
+  ```
+
+- **Examples:**
+  - Install multiple packages:  
+    `nala install package1 package2`
+  - Install a specific version:  
+    `nala install tmux=3.3a-3~bpo11+1`
+  - Install from a URL:  
+    `nala install https://example.org/path/to/pkg.deb`
+- **Common Options:**
+  - **Transaction Behavior:**  
+    - `--purge` — Purge removed packages.
+    - `-d, --download-only` — Only download packages without unpacking.
+    - `-t, --target-release <release>` — Specify release (e.g., `testing`).
+    - `--remove-essential` — Allow removal of essential packages.
+  - **Prompts & Summary:**  
+    - `-y, --assume-yes` / `-n, --assume-no` — Automatic yes/no for prompts.
+    - `--simple` / `--no-simple` — Choose between condensed or detailed summary.
+  - **Additional Options:**  
+    - `-o, --option <option>` — Pass extra options to apt/nala/dpkg.
+    - `-v, --verbose` — Display extra debugging info.
+    - `--autoremove` / `--no-autoremove` — Enable/disable automatic removal of unneeded packages.
+    - `--update` / `--no-update` — Update package lists before running (default for upgrade).
+    - `--install-recommends` / `--no-install-recommends` — Toggle installation of recommended packages.
+    - `--install-suggests` / `--no-install-suggests` — Toggle installation of suggested packages.
+    - `--fix-broken` / `--no-fix-broken` — Attempt to fix broken dependencies.
+    - `--debug` and `--raw-dpkg` — For troubleshooting and raw dpkg output.
+
+## Update: `nala update`
+
+- **Usage:**  
+
+  ```bash
+  nala update [--options]
+  ```
+
+- **Description:**  
+  Updates the package list (similar to `apt update`).
+- **Key Options:**  
+  - `--debug`, `--raw-dpkg`, `-o, --option`, `-v, --verbose`, `-h, --help`
+
+## Upgrade: `nala upgrade`
+
+- **Usage:**  
+
+  ```bash
+  nala upgrade [--options]
+  ```
+
+- **Modes:**
+  - **Standard Upgrade:** Only upgrades packages and autoremoves unneeded ones.
+  - **Full Upgrade:**  
+
+    ```bash
+    nala upgrade --full
+    ```  
+
+    (Aliases: `nala full-upgrade`, `nala dist-upgrade`) — Upgrades, installs new packages, and removes packages if necessary.
+- **Additional Options:**  
+  - `--exclude <pkg>` — Exclude specific packages (multiple allowed).
+  - Others are similar to `nala install`: options like `--purge`, `-d/--download-only`, `-y/--assume-yes`, `--autoremove`, `--update`, etc.
+
+## Search: `nala search`
+
+- **Usage:**  
+
+  ```bash
+  nala search [--options] <pattern>
+  ```
+
+- **Description:**  
+  Searches package names and descriptions using regex (default) or glob patterns.
+- **Examples:**
+  - Regex search:  
+    `nala search "nala"`
+  - Glob search (prefix with `g/`):  
+    `nala search "g/nala*"`
+- **Key Options:**  
+  - `--full` — Show full package descriptions.
+  - `-n, --names` — Search only in package names.
+  - `-i, --installed` — List only installed packages.
+  - `-N, --nala-installed` — List packages explicitly installed with Nala.
+  - `-u, --upgradable` — List only upgradable packages.
+  - `-a, --all-versions` — Show all versions.
+  - `-A, --all-arches` — List all architectures.
+  - `-V, --virtual` — Show only virtual packages.
+  - Also supports `--debug`, `-v, --verbose`, and `-h, --help`.
+
+## Fetch Mirrors: `nala fetch`
+
+- **Usage:**  
+
+  ```bash
+  nala fetch [--options]
+  ```
+
+- **Description:**  
+  Retrieves fast mirrors to speed up downloads by parsing mirror lists (from Debian, Ubuntu, or Devuan).
+- **Key Options:**
+  - `--debian <release>`, `--ubuntu <release>`, `--devuan <release>` — Specify the distro/release.
+  - `--https-only` — Only list HTTPS mirrors.
+  - `--auto` — Run non-interactively.
+  - `--fetches <number>` — Number of mirrors to display for selection.
+  - `--sources` — Include source repositories.
+  - `--non-free` — Add contrib and non-free (Debian only).
+  - `-c, --country <code>` — Filter by country (repeatable for multiple codes).
+  - Additional options: `--debug`, `-v, --verbose`, `-h, --help`.
+
+## Autoremove/Autopurge: `nala autoremove` / `nala autopurge`
+
+- **Usage:**  
+
+  ```bash
+  nala autoremove [--options]
+  ```
+
+  or  
+
+  ```bash
+  nala autopurge [--options]  # equivalent to: nala autoremove --purge
+  ```
+
+- **Description:**  
+  Removes packages (usually orphaned dependencies) that are no longer needed.
+- **Key Options:**
+  - `--config` — Purge configuration files for removed packages.
+  - `--purge` — Purge packages rather than just removing them.
+  - Plus standard options: `--debug`, `--raw-dpkg`, `-d, --download-only`, `-y, --assume-yes`, `--simple`, `-o, --option`, etc.
+
+## Clean: `nala clean`
+
+- **Usage:**  
+
+  ```bash
+  nala clean [--options]
+  ```
+
+- **Description:**  
+  Clears local caches:
+  - Removes downloaded package files (typically in `/var/cache/apt/archives`).
+  - Deletes package cache files (`pkgcache.bin` and `srcpkgcache.bin`).
+- **Key Options:**
+  - `--lists` — Also remove package lists (from `/var/lib/apt/lists`).
+  - `--fetch` — Remove the `nala-sources.list` file created by `nala fetch`.
+  - Additional options: `--debug`, `-v, --verbose`, `-h, --help`.
