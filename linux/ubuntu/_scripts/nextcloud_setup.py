@@ -46,14 +46,14 @@ except ImportError:
 
 # Configuration and Constants
 APP_NAME: str = "Nextcloud Installer"
-VERSION: str = "1.1.0"
+VERSION: str = "1.2.0"
 DEFAULT_USERNAME: str = os.environ.get("USER") or "sawyer"
 DOMAIN_NAME: str = "nextcloud.dunamismax.com"
 DOCKER_COMMAND: List[str] = ["docker"]
 DOCKER_COMPOSE_V1_COMMAND: List[str] = ["docker-compose"]
 DOCKER_COMPOSE_V2_COMMAND: List[str] = ["docker", "compose"]
 DOCKER_COMPOSE_COMMAND: List[str] = DOCKER_COMPOSE_V2_COMMAND  # Default to V2
-OPERATION_TIMEOUT: int = 60
+OPERATION_TIMEOUT: int = 120  # Increased from 60 to 120 seconds
 
 # Configuration file paths
 CONFIG_DIR: str = os.path.expanduser("~/.config/nextcloud_installer")
@@ -391,13 +391,13 @@ async def check_prerequisites() -> bool:
 
 
 # ---------------------------
-# Docker installation function (unchanged)
+# Docker installation function (updated with more robust commands)
 # ---------------------------
 async def install_docker() -> bool:
     print_step("Installing Docker...")
     commands = [
         ["sudo", "apt-get", "update"],
-        ["sudo", "apt-get", "install", "ca-certificates", "curl", "-y"],
+        ["sudo", "apt-get", "install", "ca-certificates", "curl", "gnupg", "-y"],
         ["sudo", "install", "-m", "0755", "-d", "/etc/apt/keyrings"],
         [
             "sudo",
@@ -425,6 +425,8 @@ async def install_docker() -> bool:
             "docker-compose-plugin",
             "-y",
         ],
+        # Add current user to docker group to avoid using sudo
+        ["sudo", "usermod", "-aG", "docker", os.environ.get("USER", "")],
     ]
     for cmd in commands:
         try:
@@ -436,52 +438,204 @@ async def install_docker() -> bool:
             print_error(f"Error running command '{' '.join(cmd)}': {e}")
             return False
     print_success("Docker installed successfully!")
+    print_warning(
+        "You may need to log out and back in for group changes to take effect."
+    )
     return True
 
 
 # ---------------------------
-# New helper: Fix container permissions after startup
+# ENHANCED: Completely rewritten container permissions fix function
 # ---------------------------
 async def fix_container_permissions() -> None:
-    """Fix permission issues by ensuring that key executables in the containers are marked as executable."""
+    """
+    Comprehensive function to fix various permission issues in containers.
+    - Fixes shared library issues
+    - Sets correct permissions on key directories
+    - Ensures executables are properly marked as executable
+    - Creates missing directories if needed
+    """
+    logger.info("Starting comprehensive container permission fixes")
+    print_step("Applying container permission fixes...")
+
     try:
+        # Get container IDs
+        container_info = {}
         for service in ["db", "app"]:
             container_id_cmd = DOCKER_COMPOSE_COMMAND + ["ps", "-q", service]
             returncode, container_id, stderr = await run_command_async(container_id_cmd)
             if returncode == 0 and container_id:
-                container_id = container_id.strip()
-                if service == "db":
-                    # Fix docker-entrypoint.sh permission in the db container
-                    chmod_cmd = [
-                        "docker",
-                        "exec",
-                        container_id,
-                        "chmod",
-                        "+x",
-                        "/usr/local/bin/docker-entrypoint.sh",
-                    ]
-                    await run_command_async(chmod_cmd)
-                    logger.info(
-                        f"Fixed permissions on /usr/local/bin/docker-entrypoint.sh for {service} container"
-                    )
-                elif service == "app":
-                    # Fix /bin/sh permission (if needed) in the app container
-                    chmod_cmd = [
-                        "docker",
-                        "exec",
-                        container_id,
-                        "chmod",
-                        "+x",
-                        "/bin/sh",
-                    ]
-                    await run_command_async(chmod_cmd)
-                    logger.info(f"Fixed permissions on /bin/sh for {service} container")
+                container_info[service] = container_id.strip()
+                logger.info(f"Found {service} container: {container_id.strip()}")
+
+        if "db" in container_info:
+            db_id = container_info["db"]
+
+            # Fix PostgreSQL container permissions
+            fix_commands = [
+                # Ensure shell and entrypoint scripts are executable
+                [
+                    "docker",
+                    "exec",
+                    db_id,
+                    "chmod",
+                    "+x",
+                    "/usr/local/bin/docker-entrypoint.sh",
+                ],
+                ["docker", "exec", db_id, "chmod", "+x", "/bin/sh"],
+                ["docker", "exec", db_id, "chmod", "+x", "/bin/bash"],
+                # Ensure PostgreSQL data directory has correct permissions
+                [
+                    "docker",
+                    "exec",
+                    db_id,
+                    "chown",
+                    "-R",
+                    "postgres:postgres",
+                    "/var/lib/postgresql/data",
+                ],
+                ["docker", "exec", db_id, "chmod", "700", "/var/lib/postgresql/data"],
+                # Create symlinks for potentially missing libraries
+                ["docker", "exec", db_id, "mkdir", "-p", "/lib64"],
+                [
+                    "docker",
+                    "exec",
+                    db_id,
+                    "sh",
+                    "-c",
+                    "if [ ! -e /lib64/libtinfo.so.6 ] && [ -e /lib/libtinfo.so.6 ]; then ln -s /lib/libtinfo.so.6 /lib64/libtinfo.so.6; fi",
+                ],
+                [
+                    "docker",
+                    "exec",
+                    db_id,
+                    "sh",
+                    "-c",
+                    "if [ ! -e /lib64/libreadline.so.8 ] && [ -e /lib/libreadline.so.8 ]; then ln -s /lib/libreadline.so.8 /lib64/libreadline.so.8; fi",
+                ],
+            ]
+
+            for cmd in fix_commands:
+                try:
+                    await run_command_async(cmd)
+                except Exception as e:
+                    logger.warning(f"Non-critical error in DB container fix: {e}")
+
+            logger.info("Applied fixes to DB container")
+
+        if "app" in container_info:
+            app_id = container_info["app"]
+
+            # Fix Nextcloud container permissions
+            fix_commands = [
+                # Ensure shell executables are properly marked
+                ["docker", "exec", app_id, "chmod", "+x", "/bin/sh"],
+                ["docker", "exec", app_id, "chmod", "+x", "/bin/bash"],
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "chmod",
+                    "+x",
+                    "/usr/local/bin/entrypoint.sh",
+                ],
+                # Fix PHP and Apache executables
+                ["docker", "exec", app_id, "chmod", "+x", "/usr/local/bin/php"],
+                ["docker", "exec", app_id, "chmod", "+x", "/usr/sbin/apache2"],
+                ["docker", "exec", app_id, "chmod", "+x", "/usr/sbin/apache2ctl"],
+                # Create and fix permissions for Nextcloud directories
+                ["docker", "exec", app_id, "mkdir", "-p", "/var/www/html/config"],
+                ["docker", "exec", app_id, "mkdir", "-p", "/var/www/html/data"],
+                ["docker", "exec", app_id, "mkdir", "-p", "/var/www/html/custom_apps"],
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "mkdir",
+                    "-p",
+                    "/var/www/html/themes/custom",
+                ],
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "chown",
+                    "-R",
+                    "www-data:www-data",
+                    "/var/www/html",
+                ],
+                # Ensure the occ command is executable
+                ["docker", "exec", app_id, "chmod", "+x", "/var/www/html/occ"],
+                # Create missing symlinks for shared libraries
+                ["docker", "exec", app_id, "mkdir", "-p", "/usr/lib64"],
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "sh",
+                    "-c",
+                    "if [ ! -e /usr/lib64/libtinfo.so.6 ] && [ -e /usr/lib/libtinfo.so.6 ]; then ln -s /usr/lib/libtinfo.so.6 /usr/lib64/libtinfo.so.6; fi",
+                ],
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "sh",
+                    "-c",
+                    "if [ ! -e /usr/lib64/libreadline.so.8 ] && [ -e /usr/lib/libreadline.so.8 ]; then ln -s /usr/lib/libreadline.so.8 /usr/lib64/libreadline.so.8; fi",
+                ],
+                # Ensure proper file permissions for config file
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "sh",
+                    "-c",
+                    "touch /var/www/html/config/config.php || true",
+                ],
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "chown",
+                    "www-data:www-data",
+                    "/var/www/html/config/config.php",
+                ],
+                [
+                    "docker",
+                    "exec",
+                    app_id,
+                    "chmod",
+                    "660",
+                    "/var/www/html/config/config.php",
+                ],
+            ]
+
+            for cmd in fix_commands:
+                try:
+                    await run_command_async(cmd)
+                except Exception as e:
+                    logger.warning(f"Non-critical error in app container fix: {e}")
+
+            # Restart Apache to apply changes
+            try:
+                await run_command_async(
+                    ["docker", "exec", app_id, "apache2ctl", "graceful"]
+                )
+            except Exception as e:
+                logger.warning(f"Could not restart Apache: {e}")
+
+            logger.info("Applied fixes to app container")
+
+        print_success("Container permission fixes applied")
+
     except Exception as e:
-        logger.warning(f"Failed to fix container permissions: {e}")
+        logger.error(f"Error during permission fixes: {e}")
+        print_warning(f"Some permission fixes failed: {e}")
 
 
 async def create_docker_compose_file(config: NextcloudConfig) -> bool:
-    logger.info("Creating Docker Compose file with named volumes")
+    logger.info("Creating Docker Compose file with named volumes and healthchecks")
     try:
         os.makedirs(DOCKER_DIR, exist_ok=True)
         logger.info(f"Created Docker directory: {DOCKER_DIR}")
@@ -514,6 +668,11 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
             "NEXTCLOUD_ADMIN_USER": config.admin_username,
             "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
             "NEXTCLOUD_TRUSTED_DOMAINS": trusted_domains_str,
+            # Add helpful environment variables for installation
+            "PHP_MEMORY_LIMIT": "512M",
+            "PHP_UPLOAD_LIMIT": "500M",
+            "NEXTCLOUD_DATA_DIR": "/var/www/html/data",
+            "NEXTCLOUD_UPDATE": "1",  # Enable auto updates during container startup
         }
 
         if config.behind_reverse_proxy:
@@ -540,21 +699,34 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
             )
 
         compose_config = {
+            "version": "3.8",  # Explicitly set version for better compatibility
             "services": {
                 "db": {
-                    "image": "postgres:15",
+                    "image": "postgres:15-alpine",  # Using alpine for smaller image size
                     "restart": "always",
                     "volumes": ["postgres_data:/var/lib/postgresql/data"],
                     "environment": {
                         "POSTGRES_DB": config.db_name,
                         "POSTGRES_USER": config.db_username,
                         "POSTGRES_PASSWORD": config.db_password,
+                        "POSTGRES_HOST_AUTH_METHOD": "trust",  # Help avoid auth issues
+                    },
+                    "healthcheck": {  # Add healthcheck for better dependency management
+                        "test": ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"],
+                        "interval": "10s",
+                        "timeout": "5s",
+                        "retries": 5,
+                        "start_period": "10s",
                     },
                 },
                 "app": {
                     "image": "nextcloud:apache",
                     "restart": "always",
-                    "depends_on": ["db"],
+                    "depends_on": {
+                        "db": {
+                            "condition": "service_healthy"  # Wait for db to be ready
+                        }
+                    },
                     "volumes": [
                         "nextcloud_data:/var/www/html/data",
                         "nextcloud_custom_apps:/var/www/html/custom_apps",
@@ -563,14 +735,21 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                     ],
                     "environment": nextcloud_environment,
                     "ports": [f"{config.port}:80"],
+                    "healthcheck": {  # Add healthcheck for app container
+                        "test": ["CMD", "curl", "-f", "http://localhost/status.php"],
+                        "interval": "30s",
+                        "timeout": "10s",
+                        "retries": 3,
+                        "start_period": "60s",
+                    },
                 },
             },
             "volumes": {
-                "postgres_data": {},
-                "nextcloud_data": {},
-                "nextcloud_custom_apps": {},
-                "nextcloud_config": {},
-                "nextcloud_themes": {},
+                "postgres_data": {"driver": "local"},
+                "nextcloud_data": {"driver": "local"},
+                "nextcloud_custom_apps": {"driver": "local"},
+                "nextcloud_config": {"driver": "local"},
+                "nextcloud_themes": {"driver": "local"},
             },
         }
         with open(DOCKER_COMPOSE_FILE, "w") as f:
@@ -588,17 +767,35 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
 async def start_docker_containers() -> bool:
     logger.info("Starting Docker containers")
     try:
-        print_step("Starting Nextcloud containers...")
+        print_step("Ensuring clean state before starting Nextcloud containers...")
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-        returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND + ["up", "-d"]
-        )
+
+        # First ensure containers are down for a clean start
+        down_cmd = DOCKER_COMPOSE_COMMAND + ["down", "--remove-orphans"]
+        await run_command_async(down_cmd)
+        logger.info("Stopped any existing containers")
+
+        print_step("Starting Nextcloud containers...")
+        # Use --pull always to ensure latest images are used
+        up_cmd = DOCKER_COMPOSE_COMMAND + ["up", "-d", "--pull", "always"]
+        returncode, stdout, stderr = await run_command_async(up_cmd)
+
         if returncode == 0:
             print_success("Nextcloud containers started successfully")
             logger.info("Nextcloud containers started successfully")
+
+            # Give containers a moment to initialize before fixing permissions
+            print_step("Waiting for containers to initialize...")
+            await asyncio.sleep(15)
+
             # Fix permissions in containers after startup
             await fix_container_permissions()
+
+            # Additional wait to ensure services are fully started
+            print_step("Waiting for services to be fully operational...")
+            await asyncio.sleep(15)
+
             return True
         else:
             error_msg = f"Failed to start containers: {stderr}"
@@ -625,8 +822,28 @@ async def check_nextcloud_status() -> bool:
             logger.error(error_msg)
             print_error(error_msg)
             return False
-        print_success("Nextcloud container is running")
-        logger.info("Nextcloud container is running")
+
+        # Also check if container is healthy
+        health_cmd = [
+            "docker",
+            "inspect",
+            "--format",
+            "{{.State.Health.Status}}",
+            stdout.strip(),
+        ]
+        try:
+            returncode, health, stderr = await run_command_async(health_cmd)
+            if health.strip() == "healthy":
+                print_success("Nextcloud container is running and healthy")
+                logger.info("Nextcloud container is running and healthy")
+            else:
+                print_warning(
+                    f"Nextcloud container is running but health status is: {health}"
+                )
+                logger.warning(f"Nextcloud container health status: {health}")
+        except Exception as e:
+            logger.warning(f"Could not check container health: {e}")
+
         return True
     except Exception as e:
         error_msg = f"Error checking Nextcloud status: {e}"
@@ -642,7 +859,7 @@ async def stop_docker_containers() -> bool:
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND + ["down"]
+            DOCKER_COMPOSE_COMMAND + ["down", "--remove-orphans"]
         )
         if returncode == 0:
             print_success("Nextcloud containers stopped successfully")
@@ -661,6 +878,10 @@ async def stop_docker_containers() -> bool:
 
 
 async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
+    """
+    Enhanced OCC command execution with multiple approaches and better error handling.
+    First tries to execute as www-data, then as root if that fails.
+    """
     logger.info(f"Executing occ command: {' '.join(command)}")
     try:
         os.chdir(DOCKER_DIR)
@@ -670,15 +891,43 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
         if returncode != 0 or not container_id:
             logger.error(f"Failed to get container ID: {stderr}")
             return False, f"Container not running or not found: {stderr}"
-        # Run occ without switching user to avoid shared library errors
-        full_command = ["docker", "exec", container_id.strip(), "php", "occ"] + command
-        returncode, stdout, stderr = await run_command_async(full_command)
+
+        container_id = container_id.strip()
+
+        # Approach 1: Execute as www-data (recommended)
+        occ_cmd = [
+            "docker",
+            "exec",
+            "-u",
+            "www-data",
+            container_id,
+            "php",
+            "/var/www/html/occ",
+        ] + command
+
+        try:
+            returncode, stdout, stderr = await run_command_async(occ_cmd)
+            if returncode == 0:
+                logger.info(f"OCC command successful (as www-data): {stdout}")
+                return True, stdout
+            else:
+                logger.warning(
+                    f"OCC command failed as www-data, trying as root: {stderr}"
+                )
+        except Exception as e:
+            logger.warning(f"Error executing OCC command as www-data: {e}")
+
+        # Approach 2: Execute as root (fallback)
+        occ_cmd = ["docker", "exec", container_id, "php", "/var/www/html/occ"] + command
+
+        returncode, stdout, stderr = await run_command_async(occ_cmd)
         if returncode == 0:
-            logger.info(f"OCC command successful: {stdout}")
+            logger.info(f"OCC command successful (as root): {stdout}")
             return True, stdout
         else:
             logger.error(f"OCC command failed: {stderr}")
             return False, stderr
+
     except Exception as e:
         error_msg = f"Error executing OCC command: {e}"
         logger.error(error_msg)
@@ -689,102 +938,124 @@ async def configure_nextcloud_post_install(config: NextcloudConfig) -> bool:
     logger.info("Applying post-installation configuration")
     print_step("Configuring Nextcloud post-installation settings...")
     try:
+        # Wait until Nextcloud is ready, with progressively longer delays
+        is_running = False
         for i in range(6):
-            await asyncio.sleep(5 * (i + 1))
-            running = await check_nextcloud_status()
-            if running:
+            await asyncio.sleep(10 * (i + 1))  # Longer delays for better reliability
+            is_running = await check_nextcloud_status()
+            if is_running:
+                logger.info(
+                    f"Nextcloud container is running after {10 * (i + 1)} seconds"
+                )
                 break
-        if not running:
+
+        if not is_running:
             print_error("Nextcloud container is not running, cannot configure")
             return False
-        await asyncio.sleep(15)
+
+        # Wait additional time for app initialization
+        print_step("Waiting for Nextcloud to initialize...")
+        await asyncio.sleep(20)
+
+        # First fix permissions to ensure everything works
+        await fix_container_permissions()
+
+        # Get container ID
         container_id_cmd = DOCKER_COMPOSE_COMMAND + ["ps", "-q", "app"]
         returncode, container_id, stderr = await run_command_async(container_id_cmd)
         if returncode != 0 or not container_id:
             logger.error(f"Failed to get container ID: {stderr}")
             return False
         container_id = container_id.strip()
-        # Build trusted domains array for PHP config
+
+        # Configure trusted domains using OCC commands
+        print_step("Configuring trusted domains...")
         trusted_domains = [config.domain, "localhost", "app", "127.0.0.1"]
+
         for domain in config.additional_trusted_domains:
             if domain and domain.strip() and domain not in trusted_domains:
                 trusted_domains.append(domain.strip())
-        php_config_updates = []
-        trusted_domains_php = []
-        for i, domain in enumerate(trusted_domains):
-            if domain and domain.strip():
-                trusted_domains_php.append(f"  {i} => '{domain}',")
-        php_config_updates.append(
-            f"$CONFIG['trusted_domains'] = array(\n{chr(10).join(trusted_domains_php)}\n);"
+
+        # First check existing domains
+        success, domains_output = await execute_occ_command(
+            ["config:system:get", "trusted_domains"]
         )
-        if config.behind_reverse_proxy:
-            php_config_updates.append(
-                f"$CONFIG['overwriteprotocol'] = '{config.proxy_protocol}';"
-            )
-            php_config_updates.append(f"$CONFIG['overwritehost'] = '{config.domain}';")
-            php_config_updates.append(
-                f"$CONFIG['overwrite.cli.url'] = '{config.proxy_protocol}://{config.domain}';"
-            )
-            if config.reverse_proxy_headers:
-                php_config_updates.append(
-                    "$CONFIG['trusted_proxies'] = ['127.0.0.1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];"
+        existing_domains = []
+
+        if success:
+            # Parse existing domains from the output
+            for line in domains_output.strip().split("\n"):
+                if "=>" in line:
+                    try:
+                        domain_match = re.search(r"'([^']+)'", line)
+                        if domain_match:
+                            existing_domains.append(domain_match.group(1))
+                    except:
+                        pass
+
+        # Add new domains
+        for domain in trusted_domains:
+            if domain not in existing_domains:
+                success, output = await execute_occ_command(
+                    [
+                        "config:system:set",
+                        "trusted_domains",
+                        "--value",
+                        domain,
+                        "--type",
+                        "string",
+                        "--update-only",
+                    ]
                 )
-        temp_config_path = os.path.join(DOCKER_DIR, "nextcloud_config_append.php")
-        try:
-            with open(temp_config_path, "w") as f:
-                f.write("\n".join(php_config_updates))
-            # Ensure config.php exists in container before changing permissions
-            check_config_cmd = [
-                "docker",
-                "exec",
-                container_id,
-                "sh",
-                "-c",
-                "if [ ! -f /var/www/html/config/config.php ]; then touch /var/www/html/config/config.php; fi",
+                if success:
+                    logger.info(f"Added trusted domain: {domain}")
+                else:
+                    logger.warning(f"Failed to add trusted domain {domain}: {output}")
+
+        # Configure reverse proxy settings if needed
+        if config.behind_reverse_proxy:
+            print_step("Configuring reverse proxy settings...")
+
+            # Set overwrite settings
+            settings = [
+                ("overwrite.cli.url", f"{config.proxy_protocol}://{config.domain}"),
+                ("overwritehost", config.domain),
+                ("overwriteprotocol", config.proxy_protocol),
             ]
-            await run_command_async(check_config_cmd)
-            # Ensure config.php is writable inside the container
-            chmod_cmd = [
-                "docker",
-                "exec",
-                container_id,
-                "chmod",
-                "u+w",
-                "/var/www/html/config/config.php",
-            ]
-            await run_command_async(chmod_cmd)
-            cp_cmd = [
-                "docker",
-                "cp",
-                temp_config_path,
-                f"{container_id}:/tmp/nextcloud_config_append.php",
-            ]
-            returncode, stdout, stderr = await run_command_async(cp_cmd)
-            if returncode != 0:
-                logger.error(f"Failed to copy config file to container: {stderr}")
-                return False
-            # Use sh instead of bash to avoid shared library issues
-            append_cmd = [
-                "docker",
-                "exec",
-                container_id,
-                "sh",
-                "-c",
-                "cat /tmp/nextcloud_config_append.php >> /var/www/html/config/config.php",
-            ]
-            returncode, stdout, stderr = await run_command_async(append_cmd)
-            if returncode != 0:
-                logger.error(f"Failed to append config: {stderr}")
-                return False
-            if os.path.exists(temp_config_path):
-                os.remove(temp_config_path)
-            restart_cmd = ["docker", "exec", container_id, "apache2ctl", "graceful"]
-            returncode, stdout, stderr = await run_command_async(restart_cmd)
-            if returncode != 0:
-                logger.warning(f"Warning when restarting Apache: {stderr}")
-        except Exception as e:
-            logger.error(f"Error updating config.php: {e}")
-            return False
+
+            if config.reverse_proxy_headers:
+                settings.append(
+                    (
+                        "trusted_proxies",
+                        "127.0.0.1 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16",
+                    )
+                )
+
+            for key, value in settings:
+                success, output = await execute_occ_command(
+                    ["config:system:set", key, "--value", value]
+                )
+                if success:
+                    logger.info(f"Set {key} = {value}")
+                else:
+                    logger.warning(f"Failed to set {key}: {output}")
+
+        # Apply additional optimizations
+        print_step("Applying performance optimizations...")
+        optimizations = [
+            ("memcache.local", "\\OC\\Memcache\\APCu"),
+            ("default_phone_region", "US"),  # For phone number parsing
+            ("mail_smtpmode", "smtp"),  # Basic mail setup
+            ("mail_sendmailmode", "smtp"),
+        ]
+
+        for key, value in optimizations:
+            await execute_occ_command(["config:system:set", key, "--value", value])
+
+        # Restart Apache for changes to take effect
+        restart_cmd = ["docker", "exec", container_id, "apache2ctl", "graceful"]
+        await run_command_async(restart_cmd)
+
         print_success("Post-installation configuration applied successfully")
         return True
     except Exception as e:
@@ -853,10 +1124,27 @@ async def configure_nextcloud() -> NextcloudConfig:
         f"[bold {NordColors.FROST_2}]Admin username[/]", default=config.admin_username
     )
     logger.info(f"Admin username configured: {config.admin_username}")
+
+    # Generate a strong random password if the user doesn't provide one
+    password_hint = "Enter password or leave empty to generate a secure random password"
     config.admin_password = await async_password_prompt(
-        f"[bold {NordColors.FROST_2}]Admin password[/]"
+        f"[bold {NordColors.FROST_2}]Admin password[/] ({password_hint})"
     )
+
+    if not config.admin_password:
+        # Generate a secure password
+        import random
+        import string
+
+        chars = string.ascii_letters + string.digits + "!@#$%^&*()-_=+[]{}|;:,.<>?"
+        config.admin_password = "".join(random.choice(chars) for _ in range(16))
+        print_success(
+            f"Generated secure password for admin user: {config.admin_password}"
+        )
+        print_warning("Please save this password - it will not be shown again!")
+
     logger.info("Admin password configured")
+
     print_section("Database Configuration")
     config.db_name = await async_prompt(
         f"[bold {NordColors.FROST_2}]Database name[/]", default=config.db_name
@@ -866,28 +1154,45 @@ async def configure_nextcloud() -> NextcloudConfig:
         f"[bold {NordColors.FROST_2}]Database user[/]", default=config.db_username
     )
     logger.info(f"Database username configured: {config.db_username}")
+
+    # Generate a strong random password for DB if the user doesn't provide one
     config.db_password = await async_password_prompt(
-        f"[bold {NordColors.FROST_2}]Database password[/]"
+        f"[bold {NordColors.FROST_2}]Database password[/] ({password_hint})"
     )
+
+    if not config.db_password:
+        # Generate a secure password
+        import random
+        import string
+
+        chars = string.ascii_letters + string.digits + "!@#$%^&*()-_=+[]{}|;:,.<>?"
+        config.db_password = "".join(random.choice(chars) for _ in range(16))
+        print_success(f"Generated secure password for database: {config.db_password}")
+        print_warning("Please save this password - it will not be shown again!")
+
     logger.info("Database password configured")
+
     print_section("Network Configuration")
     config.port = await async_int_prompt(
         f"[bold {NordColors.FROST_2}]Port to expose Nextcloud on[/]",
         default=config.port,
     )
     logger.info(f"Port configured: {config.port}")
+
     print_section("Reverse Proxy Configuration")
     config.behind_reverse_proxy = await async_confirm(
         f"[bold {NordColors.FROST_2}]Is this Nextcloud instance behind a reverse proxy (like Caddy, Nginx, Apache)?[/]",
         default=True,
     )
     logger.info(f"Behind reverse proxy: {config.behind_reverse_proxy}")
+
     if config.behind_reverse_proxy:
         config.proxy_protocol = await async_prompt(
             f"[bold {NordColors.FROST_2}]Protocol used by the reverse proxy (http/https)[/]",
             default="https",
         )
         logger.info(f"Proxy protocol: {config.proxy_protocol}")
+
         additional_domains = await async_prompt(
             f"[bold {NordColors.FROST_2}]Additional trusted domains (space-separated)[/]",
             default="",
@@ -897,25 +1202,30 @@ async def configure_nextcloud() -> NextcloudConfig:
             logger.info(
                 f"Additional trusted domains: {config.additional_trusted_domains}"
             )
+
     config.use_https = await async_confirm(
         f"[bold {NordColors.FROST_2}]Enable HTTPS in Docker container? (Usually not needed with reverse proxy)[/]",
         default=False,
     )
     logger.info(f"Use HTTPS configured: {config.use_https}")
+
     print_section("Data Directories")
     config.data_dir = await async_prompt(
         f"[bold {NordColors.FROST_2}]Nextcloud data directory[/]",
         default=config.data_dir,
     )
     logger.info(f"Data directory configured: {config.data_dir}")
+
     print_section("Configuration Summary")
     table = Table(show_header=True, box=box.ROUNDED)
     table.add_column("Setting", style=f"bold {NordColors.FROST_2}")
     table.add_column("Value", style=NordColors.SNOW_STORM_1)
     table.add_row("Domain", config.domain)
     table.add_row("Admin User", config.admin_username)
+    table.add_row("Admin Password", "********" if config.admin_password else "Not set")
     table.add_row("Database Name", config.db_name)
     table.add_row("Database User", config.db_username)
+    table.add_row("Database Password", "********" if config.db_password else "Not set")
     table.add_row("Port", str(config.port))
     table.add_row("HTTPS Enabled", "Yes" if config.use_https else "No")
     table.add_row(
@@ -927,12 +1237,14 @@ async def configure_nextcloud() -> NextcloudConfig:
     table.add_row("Docker Directory", DOCKER_DIR)
     console.print(table)
     console.print()
+
     if not await async_confirm(
         f"[bold {NordColors.FROST_2}]Is this configuration correct?[/]", default=True
     ):
         logger.info("Configuration not confirmed, starting over")
         print_warning("Configuration cancelled. Please start over.")
         return await configure_nextcloud()
+
     await save_config(config)
     print_success("Configuration saved successfully")
     logger.info("Configuration saved successfully")
@@ -965,6 +1277,7 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await check_prerequisites():
                 logger.error("Prerequisites check failed")
                 return False
+
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Creating Docker configuration...",
@@ -973,6 +1286,7 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await create_docker_compose_file(config):
                 logger.error("Creating Docker configuration failed")
                 return False
+
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Starting containers...",
@@ -981,13 +1295,15 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await start_docker_containers():
                 logger.error("Starting containers failed")
                 return False
+
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Waiting for containers to be ready...",
                 advance=20,
             )
-            logger.info("Waiting for containers to start up (15 seconds)")
-            await asyncio.sleep(15)
+            logger.info("Waiting for containers to start up (30 seconds)")
+            await asyncio.sleep(30)  # Increased wait time
+
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Verifying installation...",
@@ -996,6 +1312,7 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await check_nextcloud_status():
                 logger.error("Verification failed - containers not running")
                 return False
+
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Applying post-installation configuration...",
@@ -1003,15 +1320,35 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             )
             if not await configure_nextcloud_post_install(config):
                 logger.warning("Post-installation configuration had issues")
+                print_warning(
+                    "Some post-installation configuration steps had issues, but installation will continue."
+                )
+                print_warning(
+                    "You may need to manually configure some settings through the web interface."
+                )
+
             progress.update(
                 task_id,
                 description=f"[{NordColors.GREEN}]Installation complete!",
                 advance=5,
             )
+
         config.installation_status = "installed"
         config.installed_at = time.time()
         await save_config(config)
         logger.info("Installation completed successfully")
+
+        # Display access information
+        protocol = config.proxy_protocol if config.behind_reverse_proxy else "http"
+        print_section("Access Information")
+        print_success(f"Nextcloud installed successfully!")
+        print_message(f"Web UI: {protocol}://{config.domain}")
+        print_message(f"Local Access: http://localhost:{config.port}")
+        print_message(f"Admin User: {config.admin_username}")
+        print_message(
+            f"Admin Password: {'********' if config.admin_password else 'Not set'}"
+        )
+
         return True
     except Exception as e:
         error_msg = f"Installation failed: {e}"
@@ -1052,17 +1389,21 @@ async def show_nextcloud_info(config: NextcloudConfig) -> None:
         )
         logger.info("Tried to show info but Nextcloud is not installed")
         return
+
     running = await check_nextcloud_status()
     status_color = NordColors.GREEN if running else NordColors.RED
     status_text = "Running" if running else "Stopped"
+
     display_panel(
         "Nextcloud Status",
         f"Status: [{status_color}]{status_text}[/]",
         NordColors.FROST_2,
     )
+
     protocol = config.proxy_protocol if config.behind_reverse_proxy else "http"
     access_url = f"{protocol}://{config.domain}"
     local_url = f"http://localhost:{config.port}"
+
     info_table = Table(show_header=False, box=box.ROUNDED)
     info_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
     info_table.add_column("Value", style=NordColors.SNOW_STORM_1)
@@ -1077,17 +1418,35 @@ async def show_nextcloud_info(config: NextcloudConfig) -> None:
     )
     if config.behind_reverse_proxy:
         info_table.add_row("Proxy Protocol", config.proxy_protocol)
-    success, output = await execute_occ_command(
-        ["config:system:get", "trusted_domains"]
-    )
-    if success:
-        domains = output.strip().split("\n")
-        domain_list = ", ".join([d.strip(" '[]") for d in domains if d.strip()])
-        info_table.add_row("Trusted Domains", domain_list)
+
+    if running:
+        success, output = await execute_occ_command(
+            ["config:system:get", "trusted_domains"]
+        )
+        if success:
+            domains = output.strip().split("\n")
+            domain_list = ", ".join([d.strip(" '[]") for d in domains if d.strip()])
+            info_table.add_row("Trusted Domains", domain_list)
+
+        # Get version information
+        success, version_info = await execute_occ_command(["--version"])
+        if success:
+            info_table.add_row("Nextcloud Version", version_info.strip())
+
+        # Get status information
+        success, status_info = await execute_occ_command(["status"])
+        if success:
+            maintenance_mode = (
+                "Yes" if "maintenance mode: yes" in status_info.lower() else "No"
+            )
+            info_table.add_row("Maintenance Mode", maintenance_mode)
+
     info_table.add_row("Log Directory", LOG_DIR)
     info_table.add_row("Current Log File", LOG_FILE)
+
     console.print(info_table)
     console.print()
+
     await async_prompt("Press Enter to return to the main menu")
     logger.info("Returned to main menu from info screen")
 
@@ -1148,19 +1507,23 @@ async def uninstall_nextcloud() -> bool:
         logger.info("Uninstallation cancelled by user")
         await async_prompt("Press Enter to return to the main menu")
         return False
+
     confirm_data = await async_confirm(
         f"[bold {NordColors.RED}]Should we also delete all data directories? This will PERMANENTLY DELETE all your Nextcloud files![/]",
         default=False,
     )
     logger.info(f"User confirmed data deletion: {confirm_data}")
+
     print_step("Stopping Nextcloud containers...")
     await stop_docker_containers()
+
     print_step("Removing Docker containers...")
     try:
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND + ["down", "--rmi", "all", "--volumes"]
+            DOCKER_COMPOSE_COMMAND
+            + ["down", "--rmi", "all", "--volumes", "--remove-orphans"]
         )
         if returncode == 0:
             logger.info("Docker containers removed successfully")
@@ -1170,6 +1533,7 @@ async def uninstall_nextcloud() -> bool:
         error_msg = f"Error removing containers: {e}"
         logger.error(error_msg)
         print_error(error_msg)
+
     config = await load_config()
     if confirm_data:
         print_step("Removing data directories...")
@@ -1189,6 +1553,7 @@ async def uninstall_nextcloud() -> bool:
                 error_msg = f"Error removing directory {directory}: {e}"
                 logger.error(error_msg)
                 print_error(error_msg)
+
     try:
         print_step("Removing Docker configuration...")
         if os.path.exists(DOCKER_COMPOSE_FILE):
@@ -1203,10 +1568,12 @@ async def uninstall_nextcloud() -> bool:
         error_msg = f"Error removing Docker configuration: {e}"
         logger.error(error_msg)
         print_error(error_msg)
+
     config.installation_status = "not_installed"
     config.installed_at = None
     await save_config(config)
     logger.info("Updated configuration - marked as not installed")
+
     print_success("Nextcloud has been uninstalled")
     logger.info("Nextcloud uninstallation completed")
     await async_prompt("Press Enter to return to the main menu")
@@ -1220,11 +1587,13 @@ async def manage_trusted_domains() -> None:
         print_warning("Nextcloud is not installed yet. Please install it first.")
         await async_prompt("Press Enter to continue")
         return
+
     running = await check_nextcloud_status()
     if not running:
         print_warning("Nextcloud is not running. Please start it first.")
         await async_prompt("Press Enter to continue")
         return
+
     clear_screen()
     console.print(create_header())
     display_panel(
@@ -1232,95 +1601,69 @@ async def manage_trusted_domains() -> None:
         "View and manage trusted domains for your Nextcloud instance",
         NordColors.FROST_2,
     )
-    container_id_cmd = DOCKER_COMPOSE_COMMAND + ["ps", "-q", "app"]
-    returncode, container_id, stderr = await run_command_async(container_id_cmd)
-    if returncode != 0 or not container_id:
-        print_error(f"Failed to get container ID: {stderr}")
-        await async_prompt("Press Enter to continue")
-        return
-    container_id = container_id.strip()
-    cat_cmd = [
-        "docker",
-        "exec",
-        container_id,
-        "grep",
-        "-A",
-        "10",
-        "trusted_domains",
-        "/var/www/html/config/config.php",
-    ]
-    returncode, config_output, stderr = await run_command_async(cat_cmd)
+
+    # Get trusted domains using OCC command
+    success, output = await execute_occ_command(
+        ["config:system:get", "trusted_domains"]
+    )
     domains = []
-    if returncode == 0 and config_output:
-        lines = config_output.split("\n")
-        for line in lines:
-            line = line.strip()
-            if "=>" in line and "'" in line:
+
+    if success and output:
+        for line in output.strip().split("\n"):
+            if "=>" in line:
                 try:
-                    domain = line.split("'")[1]
-                    domains.append(domain)
+                    domain_match = re.search(r"'([^']+)'", line)
+                    if domain_match:
+                        domains.append(domain_match.group(1))
                 except:
                     continue
+
     if not domains:
-        print_warning("Could not retrieve trusted domains from config file.")
+        print_warning("Could not retrieve trusted domains from Nextcloud.")
         await async_prompt("Press Enter to continue")
         return
+
     print_section("Current Trusted Domains")
     for i, domain in enumerate(domains):
         console.print(f"[{NordColors.FROST_2}]{i}: {domain}[/{NordColors.FROST_2}]")
     console.print()
+
     action = await async_prompt(
         f"[bold {NordColors.FROST_2}]Choose an action (add/remove/back)[/]",
         default="back",
     )
+
     if action.lower() == "add":
         new_domain = await async_prompt(
             f"[bold {NordColors.FROST_2}]Enter new domain to trust[/]"
         )
+
         if new_domain and new_domain.strip():
+            # Add to config file
             if not hasattr(config, "additional_trusted_domains"):
                 config.additional_trusted_domains = []
             if new_domain not in config.additional_trusted_domains:
                 config.additional_trusted_domains.append(new_domain)
                 await save_config(config)
-            domains.append(new_domain)
-            trusted_domains_php = []
-            for i, domain in enumerate(domains):
-                trusted_domains_php.append(f"  {i} => '{domain}',")
-            php_config = f"$CONFIG['trusted_domains'] = array(\n{chr(10).join(trusted_domains_php)}\n);"
-            temp_config_path = os.path.join(DOCKER_DIR, "trusted_domains.php")
-            with open(temp_config_path, "w") as f:
-                f.write(php_config)
-            cp_cmd = [
-                "docker",
-                "cp",
-                temp_config_path,
-                f"{container_id}:/tmp/trusted_domains.php",
-            ]
-            returncode, stdout, stderr = await run_command_async(cp_cmd)
-            if returncode != 0:
-                print_error(f"Failed to copy config: {stderr}")
-                await async_prompt("Press Enter to continue")
-                return
-            sed_cmd = [
-                "docker",
-                "exec",
-                container_id,
-                "sh",
-                "-c",
-                "sed -i '/trusted_domains/,/);/c\\n' /var/www/html/config/config.php && "
-                "sed -i '/<?php/a\\n' /var/www/html/config/config.php && "
-                "sed -i '/<?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
-            ]
-            returncode, stdout, stderr = await run_command_async(sed_cmd)
-            if returncode == 0:
+
+            # Add using OCC command
+            index = len(domains)
+            success, output = await execute_occ_command(
+                [
+                    "config:system:set",
+                    "trusted_domains",
+                    str(index),
+                    "--value",
+                    new_domain,
+                ]
+            )
+
+            if success:
                 print_success(f"Added {new_domain} to trusted domains")
-                restart_cmd = ["docker", "exec", container_id, "apache2ctl", "graceful"]
-                await run_command_async(restart_cmd)
+                success, _ = await execute_occ_command(["maintenance:update:htaccess"])
             else:
-                print_error(f"Failed to update config: {stderr}")
-            if os.path.exists(temp_config_path):
-                os.remove(temp_config_path)
+                print_error(f"Failed to add domain: {output}")
+
     elif action.lower() == "remove":
         index = await async_prompt(
             f"[bold {NordColors.FROST_2}]Enter index of domain to remove[/]"
@@ -1328,60 +1671,48 @@ async def manage_trusted_domains() -> None:
         try:
             idx = int(index)
             if 0 <= idx < len(domains):
-                removed_domain = domains.pop(idx)
+                removed_domain = domains[idx]
+
+                # Remove from config file
                 if (
                     hasattr(config, "additional_trusted_domains")
                     and removed_domain in config.additional_trusted_domains
                 ):
                     config.additional_trusted_domains.remove(removed_domain)
                     await save_config(config)
-                trusted_domains_php = []
-                for i, domain in enumerate(domains):
-                    trusted_domains_php.append(f"  {i} => '{domain}',")
-                php_config = f"$CONFIG['trusted_domains'] = array(\n{chr(10).join(trusted_domains_php)}\n);"
-                temp_config_path = os.path.join(DOCKER_DIR, "trusted_domains.php")
-                with open(temp_config_path, "w") as f:
-                    f.write(php_config)
-                cp_cmd = [
-                    "docker",
-                    "cp",
-                    temp_config_path,
-                    f"{container_id}:/tmp/trusted_domains.php",
-                ]
-                returncode, stdout, stderr = await run_command_async(cp_cmd)
-                if returncode != 0:
-                    print_error(f"Failed to copy config: {stderr}")
-                    await async_prompt("Press Enter to continue")
-                    return
-                sed_cmd = [
-                    "docker",
-                    "exec",
-                    container_id,
-                    "sh",
-                    "-c",
-                    "sed -i '/trusted_domains/,/);/c\\n' /var/www/html/config/config.php && "
-                    "sed -i '/<?php/a\\n' /var/www/html/config/config.php && "
-                    "sed -i '/<?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
-                ]
-                returncode, stdout, stderr = await run_command_async(sed_cmd)
-                if returncode == 0:
+
+                # We need to recreate the trusted domains array without the removed domain
+                remaining_domains = [d for i, d in enumerate(domains) if i != idx]
+
+                # First, delete all trusted domains
+                success, output = await execute_occ_command(
+                    ["config:system:delete", "trusted_domains"]
+                )
+
+                # Then re-add the remaining domains
+                for i, domain in enumerate(remaining_domains):
+                    success, output = await execute_occ_command(
+                        [
+                            "config:system:set",
+                            "trusted_domains",
+                            str(i),
+                            "--value",
+                            domain,
+                        ]
+                    )
+
+                if success:
                     print_success(f"Removed {removed_domain} from trusted domains")
-                    restart_cmd = [
-                        "docker",
-                        "exec",
-                        container_id,
-                        "apache2ctl",
-                        "graceful",
-                    ]
-                    await run_command_async(restart_cmd)
+                    success, _ = await execute_occ_command(
+                        ["maintenance:update:htaccess"]
+                    )
                 else:
-                    print_error(f"Failed to update config: {stderr}")
-                if os.path.exists(temp_config_path):
-                    os.remove(temp_config_path)
+                    print_error(f"Failed to update domains: {output}")
             else:
                 print_error(f"Invalid index: {idx}")
         except ValueError:
             print_error("Please enter a number")
+
     await async_prompt("Press Enter to continue")
 
 
@@ -1402,24 +1733,30 @@ async def view_logs() -> None:
             print_warning("No log files found.")
             await async_prompt("Press Enter to return to the main menu")
             return
+
         log_table = Table(show_header=True, box=box.ROUNDED)
         log_table.add_column("#", style=f"bold {NordColors.FROST_2}")
         log_table.add_column("Log File", style=NordColors.SNOW_STORM_1)
         log_table.add_column("Size", style=NordColors.SNOW_STORM_1)
         log_table.add_column("Last Modified", style=NordColors.SNOW_STORM_1)
+
         for i, log_file in enumerate(log_files[:10], 1):
             file_path = os.path.join(LOG_DIR, log_file)
             size = os.path.getsize(file_path)
             size_str = f"{size / 1024:.1f} KB"
             modified = time.ctime(os.path.getmtime(file_path))
             log_table.add_row(str(i), log_file, size_str, modified)
+
         console.print(log_table)
         console.print()
+
         choice = await async_prompt(
             f"[bold {NordColors.FROST_2}]Enter a number to view a log file (or 'q' to return to menu)[/]"
         )
+
         if choice.lower() == "q":
             return
+
         try:
             file_index = int(choice) - 1
             if 0 <= file_index < len(log_files):
@@ -1427,6 +1764,7 @@ async def view_logs() -> None:
                 with open(selected_file, "r") as f:
                     lines = f.readlines()
                     tail_lines = lines[-100:] if len(lines) > 100 else lines
+
                 clear_screen()
                 console.print(create_header())
                 display_panel(
@@ -1434,6 +1772,7 @@ async def view_logs() -> None:
                     f"Showing last {len(tail_lines)} lines",
                     NordColors.FROST_2,
                 )
+
                 for line in tail_lines:
                     if "ERROR" in line:
                         console.print(f"[bold {NordColors.RED}]{line.strip()}[/]")
@@ -1441,6 +1780,7 @@ async def view_logs() -> None:
                         console.print(f"[bold {NordColors.YELLOW}]{line.strip()}[/]")
                     else:
                         console.print(line.strip())
+
                 console.print()
                 await async_prompt("Press Enter to return to the main menu")
             else:
@@ -1455,6 +1795,7 @@ async def view_logs() -> None:
         error_msg = f"Error viewing logs: {e}"
         logger.error(error_msg)
         print_error(error_msg)
+
     logger.info("Returned to main menu from log viewer")
 
 
@@ -1473,30 +1814,62 @@ async def view_container_logs() -> None:
             )
             await async_prompt("Press Enter to return to the main menu")
             return
+
+        print_step("Fetching container logs...")
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-        returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND + ["logs", "--tail=100"]
+
+        service_choice = await async_prompt(
+            f"[bold {NordColors.FROST_2}]View logs for which service? (app/db/all)[/]",
+            default="all",
         )
+
+        lines_choice = await async_prompt(
+            f"[bold {NordColors.FROST_2}]Number of log lines to show[/]", default="100"
+        )
+
+        try:
+            lines = int(lines_choice)
+        except ValueError:
+            lines = 100
+
+        log_cmd = DOCKER_COMPOSE_COMMAND + ["logs", f"--tail={lines}"]
+
+        if service_choice.lower() == "app":
+            log_cmd.append("app")
+        elif service_choice.lower() == "db":
+            log_cmd.append("db")
+
+        returncode, stdout, stderr = await run_command_async(log_cmd)
+
         if returncode == 0:
             clear_screen()
             console.print(create_header())
             display_panel(
-                "Container Logs", "Last 100 lines of container logs", NordColors.FROST_2
+                "Container Logs",
+                f"Last {lines} lines of {service_choice} container logs",
+                NordColors.FROST_2,
             )
+
             if stdout:
                 console.print(stdout)
+
             if stderr:
                 console.print(f"[bold {NordColors.RED}]STDERR:[/]")
                 console.print(stderr)
+
             save_logs = await async_confirm(
                 f"[bold {NordColors.FROST_2}]Save container logs to file?[/]",
                 default=True,
             )
+
             if save_logs:
-                log_file = os.path.join(LOG_DIR, f"container_logs_{current_time}.log")
+                log_file = os.path.join(
+                    LOG_DIR, f"container_logs_{service_choice}_{current_time}.log"
+                )
                 with open(log_file, "w") as f:
                     f.write(f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}")
+
                 print_success(f"Container logs saved to {log_file}")
                 logger.info(f"Container logs saved to {log_file}")
         else:
@@ -1506,6 +1879,7 @@ async def view_container_logs() -> None:
         error_msg = f"Error viewing container logs: {e}"
         logger.error(error_msg)
         print_error(error_msg)
+
     await async_prompt("Press Enter to return to the main menu")
     logger.info("Returned to main menu from container logs viewer")
 
@@ -1530,6 +1904,7 @@ async def main_menu_async() -> None:
                 else:
                     status_text = "Stopped"
                     status_color = NordColors.RED
+
             menu_panel = Panel(
                 f"Status: [{status_color}]{status_text}[/]\n\n"
                 "1. Configure Nextcloud\n"
@@ -1551,6 +1926,7 @@ async def main_menu_async() -> None:
             choice = await async_prompt("Enter your choice")
             choice = choice.strip().lower()
             logger.info(f"User selected menu option: {choice}")
+
             if choice in ("q", "quit", "exit"):
                 clear_screen()
                 console.print(
