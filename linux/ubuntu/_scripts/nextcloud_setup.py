@@ -487,7 +487,7 @@ async def start_docker_containers() -> bool:
 
         # Run docker-compose up -d
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND + ["up", "-d"]
+            DOCKER_COMPOSE_COMMAND + ["up"]
         )
 
         if returncode == 0:
