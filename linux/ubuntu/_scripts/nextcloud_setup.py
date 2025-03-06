@@ -264,6 +264,7 @@ async def check_docker_installed() -> bool:
 
 async def check_docker_compose_installed() -> bool:
     """Check if Docker Compose is installed and available."""
+    global DOCKER_COMPOSE_COMMAND
     try:
         # First try with docker compose (newer Docker versions)
         returncode, stdout, stderr = await run_command_async(
@@ -279,7 +280,6 @@ async def check_docker_compose_installed() -> bool:
         )
         if returncode == 0:
             print_success(f"Docker Compose is installed: {stdout}")
-            global DOCKER_COMPOSE_COMMAND
             DOCKER_COMPOSE_COMMAND = "docker-compose"
             return True
 
