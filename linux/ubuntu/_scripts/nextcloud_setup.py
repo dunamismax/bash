@@ -302,291 +302,6 @@ def download_package(url: str, destination: str) -> bool:
         return False
 
 
-def find_problematic_repos() -> List[Tuple[str, str, str]]:
-    """
-    Scan apt sources files to find problematic repositories and files.
-    Returns a list of tuples containing (file_path, issue_type, description).
-    Issue types: 'invalid_extension', 'unsigned_repo', 'missing_key', 'problematic_content'
-    """
-    problematic_items = []
-    sources_dir = "/etc/apt/sources.list.d"
-    sources_file = "/etc/apt/sources.list"
-    apt_conf_dir = "/etc/apt/apt.conf.d"
-
-    # Check for backup files with .bak extension in sources.list.d
-    try:
-        if os.path.exists(sources_dir):
-            returncode, stdout, _ = run_command(
-                ["find", sources_dir, "-name", "*.bak*"], sudo=True
-            )
-            if returncode == 0 and stdout.strip():
-                for file_path in stdout.splitlines():
-                    problematic_items.append(
-                        (
-                            file_path.strip(),
-                            "invalid_extension",
-                            f"Backup file with invalid extension: {os.path.basename(file_path.strip())}",
-                        )
-                    )
-    except Exception as e:
-        print_warning(f"Error checking for backup files: {e}")
-
-    # Check for backup files with .bak extension in apt.conf.d
-    try:
-        if os.path.exists(apt_conf_dir):
-            returncode, stdout, _ = run_command(
-                ["find", apt_conf_dir, "-name", "*.bak*"], sudo=True
-            )
-            if returncode == 0 and stdout.strip():
-                for file_path in stdout.splitlines():
-                    problematic_items.append(
-                        (
-                            file_path.strip(),
-                            "invalid_extension",
-                            f"Backup configuration file with invalid extension: {os.path.basename(file_path.strip())}",
-                        )
-                    )
-    except Exception as e:
-        print_warning(f"Error checking for backup apt config files: {e}")
-
-    # Check if there are any incomplete Caddy repo configurations
-    try:
-        caddy_repo_path = "/etc/apt/sources.list.d/caddy-stable.list"
-        if os.path.exists(caddy_repo_path):
-            problematic_items.append(
-                (
-                    caddy_repo_path,
-                    "remove_first",
-                    "Removing existing Caddy repository to ensure proper installation",
-                )
-            )
-    except Exception as e:
-        print_warning(f"Error checking Caddy repository: {e}")
-
-    # Check main sources.list file
-    try:
-        if os.path.exists(sources_file):
-            returncode, stdout, _ = run_command(["cat", sources_file], sudo=True)
-            if returncode == 0:
-                for line in stdout.splitlines():
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        # Look for problematic Debian repositories
-                        if (
-                            ("debian" in line.lower() and "trixie" in line.lower())
-                            or "NO_PUBKEY" in line
-                            or "InRelease" in line
-                            and "not signed" in line
-                        ):
-                            problematic_items.append(
-                                (
-                                    sources_file,
-                                    "problematic_content",
-                                    f"Problematic repository entry: {line}",
-                                )
-                            )
-    except Exception as e:
-        print_warning(f"Error checking main sources file: {e}")
-
-    # Check sources.list.d directory for problematic content
-    try:
-        if os.path.exists(sources_dir):
-            returncode, stdout, _ = run_command(["ls", sources_dir], sudo=True)
-            if returncode == 0:
-                for filename in stdout.splitlines():
-                    if not filename.endswith(".list") and not filename.endswith(".bak"):
-                        continue
-                    file_path = os.path.join(sources_dir, filename)
-                    returncode, file_content, _ = run_command(
-                        ["cat", file_path], sudo=True
-                    )
-                    if returncode == 0:
-                        for line in file_content.splitlines():
-                            line = line.strip()
-                            if line and not line.startswith("#"):
-                                # Look for problematic repositories
-                                if (
-                                    (
-                                        "debian" in line.lower()
-                                        and "trixie" in line.lower()
-                                    )
-                                    or "NO_PUBKEY" in line
-                                    or ("InRelease" in line and "not signed" in line)
-                                    or "cloudsmith.io" in line
-                                ):
-                                    problematic_items.append(
-                                        (
-                                            file_path,
-                                            "problematic_content",
-                                            f"Problematic repository entry: {line}",
-                                        )
-                                    )
-    except Exception as e:
-        print_warning(f"Error checking sources directory: {e}")
-
-    # Check for interrupted dpkg state
-    try:
-        returncode, _, _ = run_command(["dpkg", "--audit"], sudo=True)
-        if returncode != 0:
-            problematic_items.append(
-                ("", "dpkg_interrupted", "dpkg was interrupted, needs to be configured")
-            )
-    except Exception as e:
-        print_warning(f"Error checking dpkg state: {e}")
-
-    return problematic_items
-
-
-def fix_repository_issues() -> bool:
-    """
-    Find and fix problematic repositories and files.
-    Returns True if successful, False otherwise.
-    """
-    print_section("Checking for Repository Issues")
-
-    problematic_items = find_problematic_repos()
-
-    if not problematic_items:
-        print_success("No problematic repositories or files found.")
-        return True
-
-    print_warning(f"Found {len(problematic_items)} problematic repository items:")
-
-    for i, (file_path, issue_type, description) in enumerate(problematic_items, 1):
-        console.print(f"[{NordColors.YELLOW}]{i}. {description}[/]")
-        if file_path:
-            console.print(f"[{NordColors.YELLOW}]   File: {file_path}[/]")
-
-    fix_repos = Confirm.ask(
-        "\nWould you like to fix these repository issues?", default=True
-    )
-
-    if not fix_repos:
-        print_warning(
-            "Continuing without fixing repository issues. This might cause problems later."
-        )
-        return False
-
-    success = True
-
-    # First, check if dpkg was interrupted
-    dpkg_interrupted = any(item[1] == "dpkg_interrupted" for item in problematic_items)
-    if dpkg_interrupted:
-        print_step("Fixing interrupted dpkg...")
-        returncode, _, stderr = run_command(["dpkg", "--configure", "-a"], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to configure dpkg: {stderr}")
-            success = False
-        else:
-            print_success("Successfully configured dpkg.")
-
-    # Handle files with invalid extensions
-    for file_path, issue_type, description in problematic_items:
-        if issue_type == "invalid_extension":
-            try:
-                print_step(f"Removing file with invalid extension: {file_path}")
-                returncode, _, stderr = run_command(["rm", "-f", file_path], sudo=True)
-                if returncode != 0:
-                    print_error(f"Failed to remove {file_path}: {stderr}")
-                    success = False
-                else:
-                    print_success(f"Successfully removed {file_path}")
-            except Exception as e:
-                print_error(f"Error removing {file_path}: {e}")
-                success = False
-        elif issue_type == "remove_first":
-            try:
-                print_step(f"Removing {file_path} to ensure clean installation")
-                returncode, _, stderr = run_command(["rm", "-f", file_path], sudo=True)
-                if returncode != 0:
-                    print_error(f"Failed to remove {file_path}: {stderr}")
-                    success = False
-                else:
-                    print_success(f"Successfully removed {file_path}")
-            except Exception as e:
-                print_error(f"Error removing {file_path}: {e}")
-                success = False
-        elif issue_type == "problematic_content" and file_path:
-            try:
-                # Create a backup of the file
-                backup_path = f"{file_path}.bak.{int(time.time())}"
-                print_step(f"Creating backup of {file_path}")
-                returncode, _, stderr = run_command(
-                    ["cp", file_path, backup_path], sudo=True
-                )
-                if returncode != 0:
-                    print_error(f"Failed to create backup of {file_path}: {stderr}")
-                    success = False
-                    continue
-
-                # For files with problematic content, we'll comment out the problematic lines
-                # Instead of using sed which can be error-prone with escaping, we'll read, modify, and write back
-                returncode, file_content, _ = run_command(["cat", file_path], sudo=True)
-                if returncode == 0:
-                    modified_content = ""
-                    for line in file_content.splitlines():
-                        line_strip = line.strip()
-                        if (
-                            line_strip
-                            and not line_strip.startswith("#")
-                            and (
-                                (
-                                    "debian" in line_strip.lower()
-                                    and "trixie" in line_strip.lower()
-                                )
-                                or "NO_PUBKEY" in line_strip
-                                or (
-                                    "InRelease" in line_strip
-                                    and "not signed" in line_strip
-                                )
-                                or "cloudsmith.io" in line_strip
-                            )
-                        ):
-                            modified_content += (
-                                f"# {line} # Disabled by Nextcloud setup script\n"
-                            )
-                        else:
-                            modified_content += f"{line}\n"
-
-                    # Write modified content to a temporary file
-                    temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
-                    temp_file.write(modified_content)
-                    temp_file.close()
-
-                    # Copy the temp file to the original location
-                    print_step(
-                        f"Updating {file_path} with problematic entries commented out"
-                    )
-                    returncode, _, stderr = run_command(
-                        ["cp", temp_file.name, file_path], sudo=True
-                    )
-
-                    os.unlink(temp_file.name)
-
-                    if returncode != 0:
-                        print_error(f"Failed to update {file_path}: {stderr}")
-                        success = False
-                    else:
-                        print_success(f"Successfully updated {file_path}")
-            except Exception as e:
-                print_error(f"Error processing {file_path}: {e}")
-                success = False
-
-    if success:
-        print_step("Cleaning apt lists cache...")
-        run_command(["rm", "-rf", "/var/lib/apt/lists/*"], sudo=True)
-
-        print_step("Updating package lists after repository changes...")
-        returncode, _, stderr = run_command(["nala", "update"], sudo=True)
-        if returncode != 0:
-            print_warning(f"Package list update still has issues: {stderr}")
-            print_warning(
-                "Continuing with installation, but some packages might not be available."
-            )
-
-    return True
-
-
 def install_dependencies() -> bool:
     """
     Install all required dependencies for Nextcloud using nala.
@@ -602,9 +317,6 @@ def install_dependencies() -> bool:
     if returncode != 0:
         print_error(f"Failed to fix interrupted dpkg: {stderr}")
         print_warning("Continuing, but this might cause problems with installation.")
-
-    # Check for and fix repository issues before installing dependencies
-    fix_repository_issues()
 
     # Install nala if it's not already installed
     print_step("Checking if nala is installed...")
@@ -752,44 +464,6 @@ def install_dependencies() -> bool:
                 print_error(f"Failed to install Caddy prerequisites: {stderr}")
                 return False
             progress.update(task_caddy, advance=1)
-
-            # Step 2: Add Caddy GPG key
-            print_step("Adding Caddy GPG key...")
-            gpg_cmd = "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg"
-            returncode, _, stderr = run_command(["bash", "-c", gpg_cmd], sudo=True)
-            if returncode != 0:
-                print_error(f"Failed to add Caddy GPG key: {stderr}")
-                return False
-            progress.update(task_caddy, advance=1)
-
-            # Step 3: Add Caddy repository
-            print_step("Adding Caddy repository...")
-            repo_cmd = "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list"
-            returncode, _, stderr = run_command(["bash", "-c", repo_cmd], sudo=True)
-            if returncode != 0:
-                print_error(f"Failed to add Caddy repository: {stderr}")
-                return False
-            progress.update(task_caddy, advance=1)
-
-            # Step 4: Update package lists
-            print_step("Updating package lists...")
-            returncode, _, stderr = run_command(["apt", "update"], sudo=True)
-            if returncode != 0:
-                print_error(f"Failed to update package lists: {stderr}")
-                return False
-            progress.update(task_caddy, advance=1)
-
-            # Step 5: Install Caddy
-            print_step("Installing Caddy...")
-            returncode, _, stderr = run_command(
-                ["apt", "install", "-y", "caddy"], sudo=True
-            )
-            if returncode != 0:
-                print_error(f"Failed to install Caddy: {stderr}")
-                return False
-            progress.update(task_caddy, advance=1)
-
-            print_success("Caddy installed successfully.")
 
             # Install other dependencies
             task_install = progress.add_task(
@@ -1279,89 +953,30 @@ def setup_caddy(config: NextcloudConfig) -> bool:
                 return False
 
         # Create Caddyfile configuration
-        caddyfile_content = f"""# Nextcloud Caddyfile
-{config.domain} {{
-    root * {config.install_dir}
-    
-    # If you want to use Caddy's automatic HTTPS, remove or comment out these lines
-    # and remove the tls directives below
-    # Caddy would handle certificates automatically, but using Cloudflare certificates here
-    tls {config.cert_file} {config.key_file}
-    
-    # PHP-FPM handler
-    php_fastcgi unix/{php_fpm_sock}
-    
-    # Nextcloud specific headers
-    header Strict-Transport-Security "max-age=15552000; includeSubDomains"
-    
-    # For Cloudflare support
-    @cloudflareIPs {{
-        remote_ip 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 104.16.0.0/12 108.162.192.0/18 131.0.72.0/22 141.101.64.0/18 162.158.0.0/15 172.64.0.0/13 173.245.48.0/20 188.114.96.0/20 190.93.240.0/20 197.234.240.0/22 198.41.128.0/17
-    }}
-    
-    # Properly handle HTTPS when behind Cloudflare
-    @cloudflare_redirect {{
-        header_regexp X-Forwarded-Proto X-Forwarded-Proto "^http$"
-        match @cloudflareIPs
-    }}
-    redir @cloudflare_redirect https://{config.domain}{{{{uri}}}}
+        # Create a minimal Caddyfile configuration with auto HTTPS and Let's Encrypt
+        caddyfile_content = f"""{config.domain} {{
+            root * {config.install_dir}
+            php_fastcgi unix/{php_fpm_sock}
+            file_server
 
-    # Needed for /.well-known URLs
-    rewrite /.well-known/* /.well-known/{{{{path}}}}
-    
-    # Nextcloud .htaccess rules converted for Caddy
-    rewrite /_next/* /_next/{{{{path}}}}
-    rewrite /core/js/* /core/js/{{{{path}}}}
-    rewrite /core/css/* /core/css/{{{{path}}}}
-    
-    # Prohibit direct access to sensitive directories
-    @blocked {{
-        path /data/* /config/* /db_structure/* /.ht*
-    }}
-    respond @blocked 403
-    
-    # Pretty URLs for Nextcloud
-    try_files {{{{path}}}} {{{{path}}}}/index.php {{{{path}}}}/index.html
-    
-    # Handle .well-known urls (for ACME challenges and Caldav/Carddav)
-    handle /.well-known/* {{
-        try_files {{{{path}}}} /index.php{{{{uri}}}}
-    }}
-    
-    # Primary rule for Nextcloud - all PHP requests go to index.php
-    @phpFiles {{
-        path *.php
-    }}
-    rewrite @phpFiles /index.php{{{{query}}}}
-    
-    # Optimization for static files
-    header /favicon.ico Cache-Control "max-age=604800"
-    header /static/* Cache-Control "max-age=604800"
-    
-    # Enable compression
-    encode gzip zstd
-    
-    # Basic security headers
-    header {{
-        # Enable XSS filtering for legacy browsers
-        X-XSS-Protection "1; mode=block"
-        # Control MIME type sniffing
-        X-Content-Type-Options "nosniff"
-        # Prevent embedding in frames (clickjacking protection)
-        X-Frame-Options "SAMEORIGIN"
-        # Content Security Policy
-        Content-Security-Policy "frame-ancestors 'self'"
-        # Remove server header
-        -Server
-    }}
-    
-    # Log configuration
-    log {{
-        output file /var/log/caddy/nextcloud.log
-        format console
-    }}
-}}
-"""
+            # Nextcloud routing: try serving static files, fallback to index.php
+            try_files {{path}} {{path}}/index.php
+
+            # Security headers
+            header {{
+                Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+                X-Content-Type-Options nosniff
+                X-Frame-Options "SAMEORIGIN"
+                X-XSS-Protection "1; mode=block"
+            }}
+
+            # Log configuration
+            log {{
+                output file /var/log/caddy/nextcloud.log
+                format console
+            }}
+        }}
+        """
 
         # Create temporary file for the Caddyfile
         caddy_config_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
