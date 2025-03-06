@@ -439,24 +439,20 @@ async def install_docker() -> bool:
 
 
 async def create_docker_compose_file(config: NextcloudConfig) -> bool:
-    """Create the Docker Compose file for Nextcloud and PostgreSQL."""
-    logger.info("Creating Docker Compose file")
+    """Create the Docker Compose file for Nextcloud and PostgreSQL using Docker-managed volumes."""
+    logger.info("Creating Docker Compose file with named volumes")
     try:
         os.makedirs(DOCKER_DIR, exist_ok=True)
         logger.info(f"Created Docker directory: {DOCKER_DIR}")
-        os.makedirs(config.data_dir, exist_ok=True)
-        os.makedirs(config.db_data_dir, exist_ok=True)
-        os.makedirs(config.custom_apps_dir, exist_ok=True)
-        os.makedirs(config.config_dir, exist_ok=True)
-        os.makedirs(config.theme_dir, exist_ok=True)
-        logger.info("Created required directories")
+
+        # Instead of creating host directories, we now rely on Docker-managed volumes.
         compose_config = {
             "version": "3",
             "services": {
                 "db": {
                     "image": "postgres:15",
                     "restart": "always",
-                    "volumes": [f"{config.db_data_dir}:/var/lib/postgresql/data"],
+                    "volumes": ["postgres_data:/var/lib/postgresql/data"],
                     "environment": {
                         "POSTGRES_DB": config.db_name,
                         "POSTGRES_USER": config.db_username,
@@ -468,10 +464,10 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                     "restart": "always",
                     "depends_on": ["db"],
                     "volumes": [
-                        f"{config.data_dir}:/var/www/html/data",
-                        f"{config.custom_apps_dir}:/var/www/html/custom_apps",
-                        f"{config.config_dir}:/var/www/html/config",
-                        f"{config.theme_dir}:/var/www/html/themes/custom",
+                        "nextcloud_data:/var/www/html/data",
+                        "nextcloud_custom_apps:/var/www/html/custom_apps",
+                        "nextcloud_config:/var/www/html/config",
+                        "nextcloud_themes:/var/www/html/themes/custom",
                     ],
                     "environment": {
                         "POSTGRES_DB": config.db_name,
@@ -485,12 +481,22 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                     "ports": [f"{config.port}:80"],
                 },
             },
+            "volumes": {
+                "postgres_data": {},
+                "nextcloud_data": {},
+                "nextcloud_custom_apps": {},
+                "nextcloud_config": {},
+                "nextcloud_themes": {},
+            },
         }
+
         with open(DOCKER_COMPOSE_FILE, "w") as f:
             yaml.dump(compose_config, f, default_flow_style=False)
+
         logger.info(f"Created Docker Compose configuration at {DOCKER_COMPOSE_FILE}")
         print_success(f"Created Docker Compose configuration at {DOCKER_COMPOSE_FILE}")
         return True
+
     except Exception as e:
         error_msg = f"Failed to create Docker Compose file: {e}"
         logger.error(error_msg)
