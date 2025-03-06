@@ -445,7 +445,8 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
         os.makedirs(DOCKER_DIR, exist_ok=True)
         logger.info(f"Created Docker directory: {DOCKER_DIR}")
 
-        # Instead of creating host directories, we now rely on Docker-managed volumes.
+        # Rely on Docker-managed volumes rather than host directories.
+        # Note: The trusted domain is now set via occ below, so we remove it from the environment.
         compose_config = {
             "version": "3",
             "services": {
@@ -470,13 +471,12 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                         "nextcloud_themes:/var/www/html/themes/custom",
                     ],
                     "environment": {
+                        "NEXTCLOUD_ADMIN_USER": config.admin_username,
+                        "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
                         "POSTGRES_DB": config.db_name,
                         "POSTGRES_USER": config.db_username,
                         "POSTGRES_PASSWORD": config.db_password,
                         "POSTGRES_HOST": config.db_host,
-                        "NEXTCLOUD_ADMIN_USER": config.admin_username,
-                        "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
-                        "NEXTCLOUD_TRUSTED_DOMAINS": config.domain,
                     },
                     "ports": [f"{config.port}:80"],
                 },
@@ -603,6 +603,21 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
         error_msg = f"Error executing OCC command: {e}"
         logger.error(error_msg)
         return False, str(e)
+
+
+async def set_trusted_domain(domain: str) -> bool:
+    """Set the trusted domain in Nextcloud using occ command."""
+    print_step(f"Setting trusted domain to '{domain}'...")
+    success, output = await execute_occ_command(
+        ["config:system:set", "trusted_domains", "1", f"--value={domain}"]
+    )
+    if success:
+        print_success(f"Trusted domain '{domain}' set successfully")
+        return True
+    else:
+        print_error("Failed to set trusted domain")
+        logger.error(f"occ command output: {output}")
+        return False
 
 
 async def async_confirm(message: str, default: bool = False) -> bool:
@@ -774,6 +789,15 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             )
             logger.info("Waiting for containers to start up (5 seconds)")
             await asyncio.sleep(5)
+            # Set the trusted domain using occ command
+            progress.update(
+                task_id,
+                description=f"[{NordColors.FROST_2}]Configuring trusted domain...",
+                advance=5,
+            )
+            if not await set_trusted_domain(config.domain):
+                logger.error("Failed to set trusted domain.")
+                return False
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Verifying installation...",
@@ -785,7 +809,7 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             progress.update(
                 task_id,
                 description=f"[{NordColors.GREEN}]Installation complete!",
-                advance=10,
+                advance=5,
             )
         config.installation_status = "installed"
         config.installed_at = time.time()
