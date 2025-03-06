@@ -215,9 +215,29 @@ def load_config() -> NextcloudConfig:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
                 data = json.load(f)
-            return NextcloudConfig(**data)
+
+            # Filter out fields that don't exist in our current NextcloudConfig class
+            valid_fields = {
+                field
+                for field in dir(NextcloudConfig())
+                if not field.startswith("_")
+                and not callable(getattr(NextcloudConfig(), field))
+            }
+            filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+
+            # Create a new config with only the valid fields
+            return NextcloudConfig(**filtered_data)
     except Exception as e:
         print_error(f"Failed to load configuration: {e}")
+        # If loading fails, delete the old config file
+        try:
+            if os.path.exists(CONFIG_FILE):
+                os.remove(CONFIG_FILE)
+                print_warning(
+                    "Removed incompatible configuration file. Using defaults."
+                )
+        except Exception:
+            pass
     return NextcloudConfig()
 
 
