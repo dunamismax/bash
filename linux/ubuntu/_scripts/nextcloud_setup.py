@@ -714,16 +714,14 @@ def install_dependencies() -> bool:
 
             # Install Caddy
             task_caddy = progress.add_task(
-                f"[{NordColors.FROST_2}]Installing Caddy...", total=1
+                f"[{NordColors.FROST_2}]Installing Caddy...", total=5
             )
 
-            # Add Caddy official repository
-            print_step("Installing prerequisites for Caddy...")
-
-            # Install dependencies for adding apt repositories
-            run_command(
+            # Step 1: Install prerequisites
+            print_step("Installing Caddy prerequisites...")
+            returncode, _, stderr = run_command(
                 [
-                    "nala",
+                    "apt",
                     "install",
                     "-y",
                     "debian-keyring",
@@ -733,43 +731,48 @@ def install_dependencies() -> bool:
                 ],
                 sudo=True,
             )
+            if returncode != 0:
+                print_error(f"Failed to install Caddy prerequisites: {stderr}")
+                return False
+            progress.update(task_caddy, advance=1)
 
-            # Download and dearmor Caddy's signing key
+            # Step 2: Add Caddy GPG key
             print_step("Adding Caddy GPG key...")
-            run_command(
-                [
-                    "bash",
-                    "-c",
-                    "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg",
-                ],
-                sudo=True,
-            )
+            gpg_cmd = "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+            returncode, _, stderr = run_command(["bash", "-c", gpg_cmd], sudo=True)
+            if returncode != 0:
+                print_error(f"Failed to add Caddy GPG key: {stderr}")
+                return False
+            progress.update(task_caddy, advance=1)
 
-            # Add Caddy repository to apt sources
+            # Step 3: Add Caddy repository
             print_step("Adding Caddy repository...")
-            run_command(
-                [
-                    "bash",
-                    "-c",
-                    "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list",
-                ],
-                sudo=True,
-            )
+            repo_cmd = "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list"
+            returncode, _, stderr = run_command(["bash", "-c", repo_cmd], sudo=True)
+            if returncode != 0:
+                print_error(f"Failed to add Caddy repository: {stderr}")
+                return False
+            progress.update(task_caddy, advance=1)
 
-            # Update package lists after adding Caddy repository
+            # Step 4: Update package lists
             print_step("Updating package lists...")
-            run_command(["nala", "update"], sudo=True)
+            returncode, _, stderr = run_command(["apt", "update"], sudo=True)
+            if returncode != 0:
+                print_error(f"Failed to update package lists: {stderr}")
+                return False
+            progress.update(task_caddy, advance=1)
 
-            # Install Caddy
+            # Step 5: Install Caddy
             print_step("Installing Caddy...")
             returncode, _, stderr = run_command(
-                ["nala", "install", "-y", "caddy"], sudo=True
+                ["apt", "install", "-y", "caddy"], sudo=True
             )
             if returncode != 0:
                 print_error(f"Failed to install Caddy: {stderr}")
                 return False
+            progress.update(task_caddy, advance=1)
 
-            progress.update(task_caddy, completed=1)
+            print_success("Caddy installed successfully.")
 
             # Install other dependencies
             task_install = progress.add_task(
@@ -2091,28 +2094,51 @@ def get_nextcloud_config() -> NextcloudConfig:
 
     # Admin account
     config.admin_user = Prompt.ask(
-        "[bold]Enter Nextcloud admin username[/]", default="admin"
+        "[bold]Enter Nextcloud admin username[/]", default="sawyer"
     )
-    config.admin_pass = Prompt.ask(
-        "[bold]Enter Nextcloud admin password[/]", password=True
-    )
+
+    # Admin password with confirmation
+    while True:
+        config.admin_pass = Prompt.ask(
+            "[bold]Enter Nextcloud admin password[/]", password=True
+        )
+        admin_pass_confirm = Prompt.ask(
+            "[bold]Confirm Nextcloud admin password[/]", password=True
+        )
+
+        if config.admin_pass == admin_pass_confirm:
+            break
+        else:
+            print_error("Passwords do not match. Please try again.")
 
     # Database configuration
     print_section("Database Configuration")
     config.db_name = Prompt.ask("[bold]Enter database name[/]", default="nextcloud")
-    config.db_user = Prompt.ask("[bold]Enter database user[/]", default="nextcloud")
-    config.db_pass = Prompt.ask("[bold]Enter database password[/]", password=True)
+    config.db_user = Prompt.ask("[bold]Enter database user[/]", default="sawyer")
+
+    # Database password with confirmation
+    while True:
+        config.db_pass = Prompt.ask("[bold]Enter database password[/]", password=True)
+        db_pass_confirm = Prompt.ask(
+            "[bold]Confirm database password[/]", password=True
+        )
+
+        if config.db_pass == db_pass_confirm:
+            break
+        else:
+            print_error("Passwords do not match. Please try again.")
+
     config.db_host = Prompt.ask("[bold]Enter database host[/]", default="localhost")
     config.db_port = Prompt.ask("[bold]Enter database port[/]", default="5432")
 
     # Server configuration
     print_section("Server Configuration")
     config.domain = Prompt.ask(
-        "[bold]Enter domain name for Nextcloud[/]", default="dunamismax.com"
+        "[bold]Enter domain name for Nextcloud[/]", default="nextcloud.dunamismax.com"
     )
     config.email = Prompt.ask(
         "[bold]Enter email address (for admin notifications)[/]",
-        default="admin@example.com",
+        default="dunamismax@tutamail.com",
     )
 
     # Installation directories
