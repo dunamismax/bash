@@ -222,7 +222,7 @@ async def run_command_async(
         stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
 
         if proc.returncode != 0 and check:
-            raise Exception(stderr)
+            raise Exception(stderr or "Command failed with no error message")
 
         return proc.returncode, stdout
     except Exception as e:
@@ -242,11 +242,20 @@ async def check_root() -> None:
 async def update_system() -> None:
     """Update system packages"""
     print_section("Updating system packages")
+
     print_step("Updating package lists...")
-    await run_command_async("apt update")
-    print_step("Upgrading packages...")
-    await run_command_async("apt upgrade -y")
-    print_success("System updated successfully!")
+    try:
+        # Using shell=True to handle apt commands better
+        await run_command_async("apt update", shell=True)
+        print_step("Upgrading packages...")
+        await run_command_async("apt upgrade -y", shell=True)
+        print_success("System updated successfully!")
+    except Exception as e:
+        print_error(f"System update failed: {e}")
+        if await async_confirm("Continue anyway?", default=True):
+            print_warning("Continuing installation despite update failure.")
+        else:
+            sys.exit(1)
 
 
 async def install_docker() -> bool:
@@ -262,7 +271,8 @@ async def install_docker() -> bool:
 
     print_step("Installing required packages...")
     await run_command_async(
-        "apt install -y apt-transport-https ca-certificates curl software-properties-common"
+        "apt install -y apt-transport-https ca-certificates curl software-properties-common",
+        shell=True,
     )
 
     print_step("Adding Docker's GPG key...")
@@ -280,11 +290,11 @@ async def install_docker() -> bool:
     )
 
     print_step("Installing Docker...")
-    await run_command_async("apt update")
-    await run_command_async("apt install -y docker-ce")
+    await run_command_async("apt update", shell=True)
+    await run_command_async("apt install -y docker-ce", shell=True)
 
     print_step("Checking Docker status...")
-    await run_command_async("systemctl status docker --no-pager")
+    await run_command_async("systemctl status docker --no-pager", shell=True)
 
     # Verify installation
     docker_version = await run_command_async("docker --version")
@@ -310,7 +320,7 @@ async def install_docker_compose() -> bool:
     )
 
     print_step("Setting permissions...")
-    await run_command_async("chmod +x /usr/local/bin/docker-compose")
+    await run_command_async("chmod +x /usr/local/bin/docker-compose", shell=True)
 
     # Verify installation
     compose_version = await run_command_async("docker-compose --version")
@@ -578,12 +588,12 @@ async def start_nextcloud(nextcloud_dir: str) -> None:
 
         # Simulate progress while actually starting containers
         progress.update(task_id, completed=10)
-        await run_command_async("docker-compose up -d")
+        await run_command_async("docker-compose up -d", shell=True)
         progress.update(task_id, completed=70)
 
         # Check container status
         await asyncio.sleep(5)  # Give containers time to start
-        await run_command_async("docker-compose ps")
+        await run_command_async("docker-compose ps", shell=True)
         progress.update(task_id, completed=100)
 
     print_success("Nextcloud containers started!")
@@ -615,7 +625,8 @@ async def install_watchtower() -> bool:
     await run_command_async(
         "docker run -d --name watchtower --restart always "
         "-v /var/run/docker.sock:/var/run/docker.sock "
-        "containrrr/watchtower --cleanup --interval 86400 nextcloud-app nextcloud-postgres"
+        "containrrr/watchtower --cleanup --interval 86400 nextcloud-app nextcloud-postgres",
+        shell=True,
     )
 
     print_success("Watchtower installed for automatic daily updates!")
@@ -678,35 +689,35 @@ async def async_cleanup() -> None:
         print_error(f"Error during cleanup: {e}")
 
 
-async def signal_handler_async(sig: int, frame: Any) -> None:
-    """Handle signals in an async-friendly way"""
+def signal_handler(sig: int, frame: Any) -> None:
+    """Synchronous signal handler that starts the async cleanup process"""
     try:
         sig_name = signal.Signals(sig).name
         print_warning(f"Process interrupted by {sig_name}")
     except Exception:
         print_warning(f"Process interrupted by signal {sig}")
 
-    # Get the current running loop
-    loop = asyncio.get_running_loop()
+    # Run cleanup in a new event loop if needed
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(async_cleanup())
+        else:
+            asyncio.run(async_cleanup())
+    except RuntimeError:
+        # Create a new event loop if none exists or is closed
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(async_cleanup())
+        loop.close()
 
-    # Cancel all tasks except the current one
-    for task in asyncio.all_tasks(loop):
-        if task is not asyncio.current_task():
-            task.cancel()
-
-    # Clean up resources
-    await async_cleanup()
-
-    # Stop the loop
-    loop.stop()
+    sys.exit(1)
 
 
-def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    """Set up signal handlers that work with the main event loop"""
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(
-            sig, lambda sig=sig: asyncio.create_task(signal_handler_async(sig, None))
-        )
+def setup_signal_handlers() -> None:
+    """Set up signal handlers"""
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
 
 async def proper_shutdown_async() -> None:
@@ -742,19 +753,19 @@ def proper_shutdown() -> None:
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # If a loop is already running, we can't run a new one
-                print_warning("Event loop already running during shutdown")
+                loop.create_task(proper_shutdown_async())
                 return
         except RuntimeError:
-            # No event loop, create a new one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # No event loop or closed loop
+            pass
 
-        # Run the async cleanup
+        # If we get here, no running loop, create a new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         loop.run_until_complete(proper_shutdown_async())
         loop.close()
     except Exception as e:
-        print_error(f"Error during synchronous shutdown: {e}")
+        print_error(f"Error during synchronous shutdown: {str(e)}")
 
 
 async def main_async() -> None:
@@ -804,50 +815,32 @@ async def main_async() -> None:
 
     except KeyboardInterrupt:
         print_warning("\n\nInstallation interrupted. Exiting.")
+        await async_cleanup()
         sys.exit(1)
     except Exception as e:
         print_error(f"\nAn error occurred: {e}")
         console.print_exception()
+        await async_cleanup()
         sys.exit(1)
 
 
 def main() -> None:
     """Main entry point of the application"""
     try:
-        # Create and get a reference to the event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Setup signal handlers with the specific loop
-        setup_signal_handlers(loop)
+        # Setup signal handlers
+        setup_signal_handlers()
 
         # Register shutdown handler
         atexit.register(proper_shutdown)
 
         # Run the main async function
-        loop.run_until_complete(main_async())
+        asyncio.run(main_async())
     except KeyboardInterrupt:
         print_warning("Received keyboard interrupt, shutting down...")
     except Exception as e:
         print_error(f"An unexpected error occurred: {e}")
         console.print_exception()
     finally:
-        try:
-            # Cancel all remaining tasks
-            loop = asyncio.get_event_loop()
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-
-            # Allow cancelled tasks to complete
-            if tasks:
-                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-
-            # Close the loop
-            loop.close()
-        except Exception as e:
-            print_error(f"Error during shutdown: {e}")
-
         print_message("Application terminated.", NordColors.FROST_3)
 
 
