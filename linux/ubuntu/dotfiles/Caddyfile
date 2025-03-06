@@ -1,19 +1,3 @@
-{
-    # Global settings
-
-    # Email for Let's Encrypt notifications
-    email dunamismax@tutamail.com
-
-    # Global logging configuration in JSON format
-    log {
-        output file /var/log/caddy/caddy.log
-        format json
-    }
-
-    # Uncomment to enable debug mode for troubleshooting
-    # debug
-}
-
 # ------------------------------------------------------------------------------
 # Redirect www to non-www
 # ------------------------------------------------------------------------------
@@ -22,27 +6,24 @@ www.dunamismax.com {
 }
 
 # ------------------------------------------------------------------------------
-# Main Website: dunamismax.com (FastAPI Backend)
+# WebDAV Configuration
 # ------------------------------------------------------------------------------
-dunamismax.com {
+webdav.dunamismax.com {
+    root * /home/sawyer/github/obsidian/obsidian_vault
 
-    # Block access to hidden files (dotfiles), excluding the .well-known directory (required for ACME)
-    @hiddenFiles {
-        path_regexp hidden ^/(?!\.well-known/)\..*
-    }
-    handle @hiddenFiles {
-        respond 404
+    # Basic authentication
+    basic_auth / {
+        sawyer $2a$14$S23pVq2zqkAYyaXDUNoQG.DZKkxFD7rT7kbJP3Nb8PzO/IrTHFNYW
     }
 
-    # Reverse proxy all other requests to the FastAPI application running on localhost:8000
-    reverse_proxy localhost:8000
-
-    # Per-site access logging in JSON format
-    log {
-        output file /var/log/caddy/dunamismax_access.log
-        format json
+    # Use route block for webdav
+    route {
+        file_server browse
+        webdav
     }
 
-    # Optionally enable gzip compression for improved performance
-    # encode gzip
+    # TLS configuration
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
 }

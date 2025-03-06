@@ -505,6 +505,9 @@ def main_menu() -> None:
         console.print()
         console.print(create_device_table(local_devices, "L", "Local Devices"))
         console.print()
+        console.print("r: refresh q: exit")
+        console.print()
+        console.print()
 
         choice = Prompt.ask("Enter your choice").strip().lower()
         if choice in ("q", "quit", "exit"):
