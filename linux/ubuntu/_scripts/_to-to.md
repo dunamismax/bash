@@ -1,9 +1,9 @@
 ```
 └── 📁_scripts
-    └── _bashrc_cheat_sheet.md
-    └── _template.md
-    └── _to-to.md
-    └── deploy_scripts.py
+    *└── _bashrc_cheat_sheet.md
+    *└── _template.md
+    *└── _to-to.md
+    *└── deploy_scripts.py
     └── fail2ban_toolkit.py
     └── file_toolkit.py
     └── fix_ssh_tool.py
@@ -75,81 +75,5 @@ The application should operate without user interaction while providing clear, r
 
 ---------------------------------------------------------------------------------------------
 
-**Nala Command Cheat Sheet**
-
-### Basic Usage
-
-- **Install Packages:**  
-  `nala install [--options] PKGS ...`  
-  _Example:_ `nala install tmux`
-
-- **Install Specific Version:**  
-  `nala install pkg=version`  
-  _Example:_ `nala install tmux=3.3a-3~bpo11+1`
-
-- **Install from URL:**  
-  `nala install <URL>`  
-  _Example:_ `nala install https://example.org/path/to/pkg.deb`
-
----
-
-### Common Options
-
-- **General:**
-  - `-h, --help`  
-    Show help/man page.
-  - `--debug`  
-    Print debug information for troubleshooting.
-  - `-v, --verbose`  
-    Disable scrolling text & show extra details.
-  - `-o, --option <option>`  
-    Pass options to apt/nala/dpkg.  
-    _Examples:_  
-    `nala install --option Dpkg::Options::="--force-confnew"`  
-    `nala install --option Nala::scrolling_text="false"`
-
-- **Transaction Control:**
-  - `--purge`  
-    Purge packages that would be removed during the transaction.
-  - `-d, --download-only`  
-    Only download packages (do not unpack/install).
-  - `--remove-essential`  
-    Allow removal of essential packages (use with caution).
-
-- **Release & Updates:**
-  - `-t, --target-release <release>`  
-    Install from a specific release.  
-    _Example:_ `nala install --target-release testing neofetch`
-  - `--update` / `--no-update`  
-    Update package list before operation.  
-    _Example:_ `nala install --update neofetch`
-
-- **Prompt Options:**
-  - `-y, --assume-yes`  
-    Automatically answer "yes" to prompts.
-  - `-n, --assume-no`  
-    Automatically answer "no" to prompts.
-
-- **Display & Output:**
-  - `--simple` / `--no-simple`  
-    Toggle between a simple (condensed) or detailed transaction summary.
-  - `--raw-dpkg`  
-    Disable dpkg output formatting (no progress bar; output as in apt).
-
-- **Dependency Management:**
-  - `--autoremove` / `--no-autoremove`  
-    Automatically remove unneeded packages (default is autoremove).
-  - `--install-recommends` / `--no-install-recommends`  
-    Toggle installation of recommended packages (default installs them).
-  - `--install-suggests` / `--no-install-suggests`  
-    Toggle installation of suggested packages (default installs them).
-  - `--fix-broken` / `--no-fix-broken`  
-    Attempt to fix broken packages (default is to fix).  
-    _Tip:_ Run `nala install --fix-broken` if you encounter issues.
-
-
-
----------------------------------------------------------------------------------------------
-
-rewrite (o3-mini-high)
+rewrite (claude 3.7 sonnet)
 using new prompt

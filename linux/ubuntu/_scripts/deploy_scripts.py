@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Script Deployer - Automated Deployment Tool
---------------------------------------------------
-Automatically deploys all files from a source directory to a destination directory,
-updating only modified files, setting ownership and permissions (including making
-scripts executable), and displaying real-time progress via a Nord-themed terminal
-interface with dynamic ASCII headers.
-
-Version: 2.0.0
-"""
 
 import atexit
 import hashlib
@@ -22,43 +12,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List
-
-
-# ----------------------------------------------------------------
-# Dependency Check and Imports
-# ----------------------------------------------------------------
-def install_missing_packages() -> None:
-    """
-    Install required Python packages if they're missing.
-    """
-    required_packages = ["rich", "pyfiglet"]
-    missing_packages = []
-    for package in required_packages:
-        try:
-            __import__(package)
-        except ImportError:
-            missing_packages.append(package)
-    if missing_packages:
-        print(f"Installing missing packages: {', '.join(missing_packages)}")
-        try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install"] + missing_packages,
-                check=True,
-                capture_output=True,
-            )
-            print("Successfully installed required packages. Restarting script...")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-        except Exception as e:
-            print(f"Failed to install required packages: {e}")
-            print(
-                "Please install them manually: pip install "
-                + " ".join(missing_packages)
-            )
-            sys.exit(1)
-
-
-install_missing_packages()
+from typing import Any, List, Optional
 
 try:
     import pyfiglet
@@ -86,17 +40,11 @@ except ImportError as e:
 install_rich_traceback(show_locals=True)
 
 
-# ----------------------------------------------------------------
-# Configuration & Constants
-# ----------------------------------------------------------------
 class AppConfig:
-    """Application configuration settings."""
-
     VERSION = "2.0.0"
     APP_NAME = "Script Deployer"
     APP_SUBTITLE = "File Deployment & Permission Utility"
 
-    # Directories (adjust as needed)
     SOURCE_DIR = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
     DEST_DIR = "/home/sawyer/bin"
     OWNER_USER = "sawyer"
@@ -107,9 +55,8 @@ class AppConfig:
         OWNER_UID = None
         OWNER_GID = None
 
-    FILE_PERMISSIONS = 0o700  # rwx------
-    DIR_PERMISSIONS = 0o700  # rwx------
-    # Only files ending with .py or .sh will be made executable
+    FILE_PERMISSIONS = 0o700
+    DIR_PERMISSIONS = 0o700
     EXECUTABLE_EXTENSIONS = [".py", ".sh"]
 
     try:
@@ -117,15 +64,10 @@ class AppConfig:
     except Exception:
         TERM_WIDTH = 80
     PROGRESS_WIDTH = min(50, TERM_WIDTH - 30)
-    DEFAULT_TIMEOUT = 30  # seconds
+    DEFAULT_TIMEOUT = 30
 
 
-# ----------------------------------------------------------------
-# Nord-Themed Colors
-# ----------------------------------------------------------------
 class NordColors:
-    """Nord color palette for consistent theming."""
-
     POLAR_NIGHT_1 = "#2E3440"
     POLAR_NIGHT_2 = "#3B4252"
     POLAR_NIGHT_3 = "#434C5E"
@@ -157,36 +99,22 @@ console = Console(
 )
 
 
-# ----------------------------------------------------------------
-# Custom Exception Classes
-# ----------------------------------------------------------------
 class DeploymentError(Exception):
-    """Base exception for deployment errors."""
-
     pass
 
 
 class PathVerificationError(DeploymentError):
-    """Raised when path verification fails."""
-
     pass
 
 
 class PermissionOperationError(DeploymentError):
-    """Raised when permission operations fail."""
-
     pass
 
 
 class FileOperationError(DeploymentError):
-    """Raised when file operations fail."""
-
     pass
 
 
-# ----------------------------------------------------------------
-# Deployment Data Structures
-# ----------------------------------------------------------------
 class FileStatus:
     NEW = "new"
     UPDATED = "updated"
@@ -195,10 +123,6 @@ class FileStatus:
 
 
 class DeploymentResult:
-    """
-    Tracks deployment statistics.
-    """
-
     def __init__(self):
         self.new_files = 0
         self.updated_files = 0
@@ -250,13 +174,7 @@ class DeploymentResult:
             self.permission_changes += 1
 
 
-# ----------------------------------------------------------------
-# Console & UI Helpers
-# ----------------------------------------------------------------
 def create_header() -> Panel:
-    """
-    Create an ASCII art header using Pyfiglet and Nord-themed colors.
-    """
     fonts = ["slant", "small", "standard", "digital", "big"]
     ascii_art = ""
     for font in fonts:
@@ -336,9 +254,6 @@ def create_section_header(title: str) -> Panel:
     )
 
 
-# ----------------------------------------------------------------
-# Signal Handling and Cleanup
-# ----------------------------------------------------------------
 def cleanup() -> None:
     print_message("Cleaning up...", NordColors.FROST_3)
 
@@ -363,13 +278,7 @@ except Exception:
 atexit.register(cleanup)
 
 
-# ----------------------------------------------------------------
-# File Operations
-# ----------------------------------------------------------------
 def get_file_hash(file_path: str) -> str:
-    """
-    Calculate the MD5 hash of a file's contents.
-    """
     md5_hash = hashlib.md5()
     try:
         with open(file_path, "rb") as f:
@@ -381,10 +290,6 @@ def get_file_hash(file_path: str) -> str:
 
 
 def list_all_files(directory: str) -> List[str]:
-    """
-    Recursively list all files in a directory (including dotfiles).
-    Returns a list of file paths relative to the given directory.
-    """
     file_paths = []
     for root, _, files in os.walk(directory):
         for f in files:
@@ -395,17 +300,11 @@ def list_all_files(directory: str) -> List[str]:
 
 
 def is_executable_file(filename: str) -> bool:
-    """
-    Determine if a file should be made executable based on its extension.
-    """
     _, ext = os.path.splitext(filename)
     return ext.lower() in AppConfig.EXECUTABLE_EXTENSIONS
 
 
 def set_owner(path: str) -> bool:
-    """
-    Set the owner of a file or directory to the configured user.
-    """
     if AppConfig.OWNER_UID is None or AppConfig.OWNER_GID is None:
         return False
     try:
@@ -423,9 +322,6 @@ def set_owner(path: str) -> bool:
 
 
 def set_permissions(path: str, is_directory: bool = False) -> bool:
-    """
-    Set file or directory permissions and update owner.
-    """
     try:
         set_owner(path)
         if is_directory:
@@ -439,9 +335,6 @@ def set_permissions(path: str, is_directory: bool = False) -> bool:
 
 
 def make_executable(file_path: str) -> bool:
-    """
-    Make a file executable by setting the executable bit.
-    """
     try:
         set_owner(file_path)
         os.chmod(file_path, AppConfig.FILE_PERMISSIONS | stat.S_IXUSR)
@@ -452,9 +345,6 @@ def make_executable(file_path: str) -> bool:
 
 
 def verify_paths() -> bool:
-    """
-    Verify that the source and destination directories exist (or can be created).
-    """
     if not os.path.exists(AppConfig.SOURCE_DIR) or not os.path.isdir(
         AppConfig.SOURCE_DIR
     ):
@@ -476,10 +366,6 @@ def verify_paths() -> bool:
 
 
 def deploy_files() -> DeploymentResult:
-    """
-    Deploy files from the source to destination directory recursively.
-    Compares file hashes to update only modified files.
-    """
     result = DeploymentResult()
     try:
         source_files = list_all_files(AppConfig.SOURCE_DIR)
@@ -508,10 +394,8 @@ def deploy_files() -> DeploymentResult:
             is_exec = is_executable_file(filename)
             perm_changed = False
 
-            # Ensure destination subdirectory exists
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
-            # Determine file status (NEW, UPDATED, or UNCHANGED)
             if not os.path.exists(dest_path):
                 status = FileStatus.NEW
             else:
@@ -537,7 +421,7 @@ def deploy_files() -> DeploymentResult:
                 except Exception as e:
                     print_warning(f"Failed to copy file {filename}: {e}")
                     result.add_file(rel_path, FileStatus.FAILED)
-            else:  # UNCHANGED
+            else:
                 perm_changed = set_permissions(dest_path)
                 if is_exec and not os.access(dest_path, os.X_OK):
                     make_executable(dest_path)
@@ -547,13 +431,7 @@ def deploy_files() -> DeploymentResult:
     return result
 
 
-# ----------------------------------------------------------------
-# Reporting Functions
-# ----------------------------------------------------------------
 def display_deployment_details() -> None:
-    """
-    Display deployment configuration details.
-    """
     current_user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
     is_root = (os.geteuid() == 0) if hasattr(os, "geteuid") else False
     permission_warning = ""
@@ -580,9 +458,6 @@ Running as: [bold]{current_user}[/] ({"root" if is_root else "non-root"})
 
 
 def create_stats_table(result: DeploymentResult) -> Table:
-    """
-    Create a table displaying deployment statistics.
-    """
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -605,9 +480,6 @@ def create_stats_table(result: DeploymentResult) -> Table:
 
 
 def create_file_details_table(result: DeploymentResult, max_files: int = 20) -> Table:
-    """
-    Create a table displaying details of modified files.
-    """
     modified_files = [
         f
         for f in result.file_details
@@ -647,13 +519,7 @@ def create_file_details_table(result: DeploymentResult, max_files: int = 20) -> 
     return table
 
 
-# ----------------------------------------------------------------
-# Main Deployment Process
-# ----------------------------------------------------------------
 def run_deployment() -> None:
-    """
-    Execute the complete unattended deployment process.
-    """
     console.print(create_header())
     print_step(f"Starting deployment at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     console.print()
@@ -698,9 +564,6 @@ def run_deployment() -> None:
 
 
 def main() -> None:
-    """
-    Main entry point for the unattended deployment script.
-    """
     try:
         run_deployment()
     except KeyboardInterrupt:

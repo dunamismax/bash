@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""
-SSH Connection Manager
-----------------------------------
 
-A professional-grade terminal application for managing SSH connections with a
-Nord-themed interface. This interactive CLI allows you to connect to Tailscale
-and local devices, check device status, and manage SSH connections—all with
-dynamic ASCII banners, progress tracking, and comprehensive error handling
-for a production-grade user experience.
-
-Usage:
-  Run the script and follow the interactive menu options.
-
-Version: 1.0.0
-"""
-
-# ----------------------------------------------------------------
-# Dependencies and Imports
-# ----------------------------------------------------------------
 import os
 import signal
 import subprocess
@@ -26,8 +8,10 @@ import time
 import shutil
 import socket
 import json
+import asyncio
+import atexit
 from dataclasses import dataclass, field, asdict
-from typing import List, Tuple, Dict, Optional, Any, Callable
+from typing import List, Tuple, Dict, Optional, Any, Callable, Union, TypeVar, cast
 
 try:
     import pyfiglet
@@ -57,73 +41,47 @@ except ImportError:
 install_rich_traceback(show_locals=True)
 console: Console = Console()
 
-# ----------------------------------------------------------------
 # Configuration and Constants
-# ----------------------------------------------------------------
-APP_NAME = "SSH Manager"
-APP_SUBTITLE = "Professional Network Connection Tool"
-VERSION = "1.0.0"
-DEFAULT_USERNAME = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
-SSH_COMMAND = "ssh"
-PING_TIMEOUT = 1.5  # seconds for ping operations
-PING_COUNT = 1
-OPERATION_TIMEOUT = 30  # seconds for commands
-DEFAULT_SSH_PORT = 22
+APP_NAME: str = "ssh connector"
+VERSION: str = "1.0.0"
+DEFAULT_USERNAME: str = os.environ.get("USER") or "user"
+SSH_COMMAND: str = "ssh"
+PING_TIMEOUT: float = 0.4  # Reduced timeout for faster checks
+PING_COUNT: int = 1
+OPERATION_TIMEOUT: int = 30
+DEFAULT_SSH_PORT: int = 22
 
-CONFIG_DIR = os.path.expanduser("~/.config/ssh_manager")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+# Configuration file paths
+CONFIG_DIR: str = os.path.expanduser("~/.config/ssh_manager")
+CONFIG_FILE: str = os.path.join(CONFIG_DIR, "config.json")
 
 
-# ----------------------------------------------------------------
-# Nord Color Theme Implementation
-# ----------------------------------------------------------------
 class NordColors:
-    """Nord theme color palette for consistent styling."""
-
-    POLAR_NIGHT_1 = "#2E3440"
-    POLAR_NIGHT_2 = "#3B4252"
-    POLAR_NIGHT_3 = "#434C5E"
-    POLAR_NIGHT_4 = "#4C566A"
-    SNOW_STORM_1 = "#D8DEE9"
-    SNOW_STORM_2 = "#E5E9F0"
-    SNOW_STORM_3 = "#ECEFF4"
-    FROST_1 = "#8FBCBB"
-    FROST_2 = "#88C0D0"
-    FROST_3 = "#81A1C1"
-    FROST_4 = "#5E81AC"
-    RED = "#BF616A"
-    ORANGE = "#D08770"
-    YELLOW = "#EBCB8B"
-    GREEN = "#A3BE8C"
-    PURPLE = "#B48EAD"
+    POLAR_NIGHT_1: str = "#2E3440"
+    POLAR_NIGHT_2: str = "#3B4252"
+    POLAR_NIGHT_3: str = "#434C5E"
+    POLAR_NIGHT_4: str = "#4C566A"
+    SNOW_STORM_1: str = "#D8DEE9"
+    SNOW_STORM_2: str = "#E5E9F0"
+    SNOW_STORM_3: str = "#ECEFF4"
+    FROST_1: str = "#8FBCBB"
+    FROST_2: str = "#88C0D0"
+    FROST_3: str = "#81A1C1"
+    FROST_4: str = "#5E81AC"
+    RED: str = "#BF616A"
+    ORANGE: str = "#D08770"
+    YELLOW: str = "#EBCB8B"
+    GREEN: str = "#A3BE8C"
+    PURPLE: str = "#B48EAD"
 
     @classmethod
     def get_frost_gradient(cls, steps: int = 4) -> List[str]:
-        """Return a gradient of frost colors for dynamic banner styling."""
         frosts = [cls.FROST_1, cls.FROST_2, cls.FROST_3, cls.FROST_4]
         return frosts[:steps]
 
 
-# ----------------------------------------------------------------
-# Data Structures
-# ----------------------------------------------------------------
 @dataclass
 class Device:
-    """
-    Represents an SSH-accessible device with connection details.
-
-    Attributes:
-        name (str): The device's name.
-        ip_address (str): The device's IP address.
-        device_type (str): Either "tailscale" or "local".
-        description (Optional[str]): Optional description.
-        port (int): SSH port number.
-        username (Optional[str]): Username for SSH connection.
-        status (Optional[bool]): True for online, False for offline, None for unknown.
-        last_ping_time (float): Timestamp when last pinged.
-        response_time (Optional[float]): Ping response time in milliseconds.
-    """
-
     name: str
     ip_address: str
     device_type: str = "local"
@@ -135,33 +93,23 @@ class Device:
     response_time: Optional[float] = None
 
     def get_connection_string(self, username: Optional[str] = None) -> str:
-        """Generate an SSH connection string with the given or default username."""
-        user = username or self.username or DEFAULT_USERNAME
+        user: str = username or self.username or DEFAULT_USERNAME
         if self.port == DEFAULT_SSH_PORT:
             return f"{user}@{self.ip_address}"
         return f"{user}@{self.ip_address} -p {self.port}"
 
     def get_status_indicator(self) -> Text:
-        """Return a formatted status indicator as a Rich Text object."""
         if self.status is True:
             return Text("● ONLINE", style=f"bold {NordColors.GREEN}")
-        elif self.status is False:
+        else:
             return Text("● OFFLINE", style=f"bold {NordColors.RED}")
-        return Text("○ UNKNOWN", style=f"dim {NordColors.POLAR_NIGHT_4}")
+
+
+T = TypeVar("T")
 
 
 @dataclass
 class AppConfig:
-    """
-    Configuration for SSH connection options.
-
-    Attributes:
-        default_username (str): Default username for SSH.
-        ssh_options (Dict[str, Tuple[str, str]]): SSH options and their descriptions.
-        last_refresh (float): Timestamp of the last device status refresh.
-        device_check_interval (int): Interval (in seconds) for automatic checks.
-    """
-
     default_username: str = DEFAULT_USERNAME
     ssh_options: Dict[str, Tuple[str, str]] = field(
         default_factory=lambda: {
@@ -174,31 +122,25 @@ class AppConfig:
         }
     )
     last_refresh: float = field(default_factory=time.time)
-    device_check_interval: int = 300  # seconds
+    device_check_interval: int = 300
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert configuration to a dictionary for JSON serialization."""
         return asdict(self)
 
 
-# ----------------------------------------------------------------
+# Global variables to track async tasks
+_background_task = None
+
+
 # UI Helper Functions
-# ----------------------------------------------------------------
 def clear_screen() -> None:
-    """Clear the terminal screen."""
     console.clear()
 
 
 def create_header() -> Panel:
-    """
-    Create a dynamic ASCII banner header using Pyfiglet with a Nord frost gradient.
-
-    Returns:
-        A Rich Panel containing the header banner.
-    """
     term_width, _ = shutil.get_terminal_size((80, 24))
-    fonts = ["slant", "small", "mini", "digital"]
-    font_to_use = fonts[0]
+    fonts: List[str] = ["slant", "small", "mini", "digital"]
+    font_to_use: str = fonts[0]
     if term_width < 60:
         font_to_use = fonts[1]
     elif term_width < 40:
@@ -229,39 +171,32 @@ def create_header() -> Panel:
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """Print a formatted message with the given style and prefix."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def print_error(message: str) -> None:
-    """Print an error message in red."""
     print_message(message, NordColors.RED, "✗")
 
 
 def print_success(message: str) -> None:
-    """Print a success message in green."""
     print_message(message, NordColors.GREEN, "✓")
 
 
 def print_warning(message: str) -> None:
-    """Print a warning message in yellow."""
     print_message(message, NordColors.YELLOW, "⚠")
 
 
 def print_step(message: str) -> None:
-    """Print a step message for procedural instructions."""
     print_message(message, NordColors.FROST_2, "→")
 
 
 def print_section(title: str) -> None:
-    """Print a section header."""
     console.print()
     console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
     console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
 
 
 def display_panel(title: str, message: str, style: str = NordColors.FROST_2) -> None:
-    """Display a formatted panel with a title and message."""
     panel = Panel(
         message,
         title=title,
@@ -272,11 +207,8 @@ def display_panel(title: str, message: str, style: str = NordColors.FROST_2) -> 
     console.print(panel)
 
 
-# ----------------------------------------------------------------
 # Core Functionality
-# ----------------------------------------------------------------
 def ensure_config_directory() -> None:
-    """Ensure the configuration directory exists."""
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
     except Exception as e:
@@ -284,12 +216,6 @@ def ensure_config_directory() -> None:
 
 
 def save_config(config: AppConfig) -> bool:
-    """
-    Save the application configuration to a JSON file.
-
-    Returns:
-        True if successful, False otherwise.
-    """
     ensure_config_directory()
     try:
         with open(CONFIG_FILE, "w") as f:
@@ -301,12 +227,6 @@ def save_config(config: AppConfig) -> bool:
 
 
 def load_config() -> AppConfig:
-    """
-    Load configuration from JSON file or return the default configuration.
-
-    Returns:
-        An AppConfig object.
-    """
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
@@ -318,18 +238,6 @@ def load_config() -> AppConfig:
 
 
 def run_command(cmd: List[str]) -> Tuple[int, str]:
-    """
-    Execute a shell command and return its exit code and output.
-
-    Args:
-        cmd: List of command and arguments.
-
-    Returns:
-        A tuple (exit_code, output).
-
-    Raises:
-        Exception if the command fails or times out.
-    """
     try:
         result = subprocess.run(
             cmd,
@@ -345,83 +253,67 @@ def run_command(cmd: List[str]) -> Tuple[int, str]:
         raise Exception("Command timed out.")
 
 
-def ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
-    """
-    Ping a device to check connectivity and measure response time.
-
-    Args:
-        ip_address: The IP address to ping.
-
-    Returns:
-        A tuple: (success, response_time_in_ms).
-    """
+async def async_ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
     start_time = time.time()
     try:
-        if sys.platform == "win32":
-            cmd = [
-                "ping",
-                "-n",
-                str(PING_COUNT),
-                "-w",
-                str(int(PING_TIMEOUT * 1000)),
-                ip_address,
-            ]
-        else:
-            cmd = [
-                "ping",
-                "-c",
-                str(PING_COUNT),
-                "-W",
-                str(int(PING_TIMEOUT)),
-                ip_address,
-            ]
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=PING_TIMEOUT + 1,
+        cmd = [
+            "ping",
+            "-c",
+            str(PING_COUNT),
+            "-W",
+            str(int(PING_TIMEOUT)),
+            ip_address,
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        end_time = time.time()
-        response_time = (end_time - start_time) * 1000  # in ms
-        return (
-            result.returncode == 0
-        ), response_time if result.returncode == 0 else None
+
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=PING_TIMEOUT + 0.5)
+            end_time = time.time()
+            response_time = (end_time - start_time) * 1000  # in ms
+            return proc.returncode == 0, response_time if proc.returncode == 0 else None
+        except asyncio.TimeoutError:
+            if proc.returncode is None:
+                proc.terminate()
+            return False, None
+
     except Exception:
         return False, None
+
+
+async def async_check_device_status(device: Device) -> None:
+    success, response_time = await async_ping_device(device.ip_address)
+    device.status = success
+    device.response_time = response_time
+    device.last_ping_time = time.time()
+
+
+async def async_check_device_statuses(devices: List[Device]) -> None:
+    tasks = [async_check_device_status(device) for device in devices]
+    await asyncio.gather(*tasks)
 
 
 def check_device_statuses(
     devices: List[Device],
     progress_callback: Optional[Callable[[int, Device], None]] = None,
 ) -> None:
-    """
-    Check connectivity status for a list of devices.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    Args:
-        devices: List of Device objects to check.
-        progress_callback: Optional callback after each device check.
-    """
-    for i, device in enumerate(devices):
-        success, response_time = ping_device(device.ip_address)
-        device.status = success
-        device.response_time = response_time
-        device.last_ping_time = time.time()
+    try:
         if progress_callback:
-            progress_callback(i, device)
+            for i, device in enumerate(devices):
+                loop.run_until_complete(async_check_device_status(device))
+                progress_callback(i, device)
+        else:
+            loop.run_until_complete(async_check_device_statuses(devices))
+    finally:
+        loop.close()
 
 
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
-    """
-    Create a Rich table displaying device details.
-
-    Args:
-        devices: List of Device objects.
-        prefix: Prefix for device numbering.
-        title: Title for the table.
-
-    Returns:
-        A Rich Table object.
-    """
     table = Table(
         show_header=True,
         header_style=f"bold {NordColors.FROST_1}",
@@ -454,12 +346,6 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
 
 
 def get_username(default_username: str) -> str:
-    """
-    Prompt the user for a username with a default suggestion.
-
-    Returns:
-        The username entered by the user.
-    """
     return Prompt.ask(
         f"[bold {NordColors.FROST_2}]Username for SSH connection[/]",
         default=default_username,
@@ -467,13 +353,6 @@ def get_username(default_username: str) -> str:
 
 
 def connect_to_device(device: Device, username: Optional[str] = None) -> None:
-    """
-    Establish an SSH connection to the chosen device.
-
-    Args:
-        device: The Device object to connect to.
-        username: Optional username override.
-    """
     clear_screen()
     console.print(create_header())
     display_panel(
@@ -482,9 +361,8 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
         NordColors.FROST_2,
     )
 
-    effective_username = username or device.username or DEFAULT_USERNAME
+    effective_username: str = username or device.username or DEFAULT_USERNAME
 
-    # Display connection details
     details_table = Table(show_header=False, box=None, padding=(0, 3))
     details_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
     details_table.add_column("Value", style=f"{NordColors.SNOW_STORM_2}")
@@ -494,7 +372,7 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
         details_table.add_row("Description", device.description)
     if device.port != DEFAULT_SSH_PORT:
         details_table.add_row("Port", str(device.port))
-    details_table.add_row("Status", "Online" if device.status else "Unknown/Offline")
+    details_table.add_row("Status", "Online" if device.status else "Offline")
     if device.response_time:
         details_table.add_row("Latency", f"{device.response_time:.1f} ms")
     console.print(details_table)
@@ -525,8 +403,8 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
             ]:
                 time.sleep(0.3)
                 progress.update(task_id, description=step, completed=pct)
-        # Build SSH command with options from configuration
-        ssh_args = [SSH_COMMAND]
+
+        ssh_args: List[str] = [SSH_COMMAND]
         config = load_config()
         for option, (value, _) in config.ssh_options.items():
             ssh_args.extend(["-o", f"{option}={value}"])
@@ -534,6 +412,7 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
             ssh_args.extend(["-p", str(device.port)])
         ssh_args.append(f"{effective_username}@{device.ip_address}")
         print_success(f"Connecting to {device.name} as {effective_username}...")
+
         os.execvp(SSH_COMMAND, ssh_args)
     except Exception as e:
         print_error(f"Connection failed: {str(e)}")
@@ -547,12 +426,6 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
 
 
 def refresh_device_statuses(devices: List[Device]) -> None:
-    """
-    Refresh the connectivity status of all devices with progress visualization.
-
-    Args:
-        devices: List of Device objects.
-    """
     clear_screen()
     console.print(create_header())
     display_panel(
@@ -582,6 +455,7 @@ def refresh_device_statuses(devices: List[Device]) -> None:
             )
 
         check_device_statuses(devices, update_progress)
+
     online_count = sum(1 for d in devices if d.status is True)
     offline_count = sum(1 for d in devices if d.status is False)
     print_success(f"Scan complete: {online_count} online, {offline_count} offline")
@@ -592,24 +466,38 @@ def refresh_device_statuses(devices: List[Device]) -> None:
 
 
 def main_menu() -> None:
-    """
-    Display the main menu for SSH connections and process user input.
-    """
-    devices = DEVICES  # Using the static device list defined below
+    devices = DEVICES
+    global _background_task
 
+    # Start background device status check without blocking the UI
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("Initializing..."),
         console=console,
     ) as progress:
         progress.add_task("Loading", total=None)
-        check_device_statuses(devices)
+
+        # Create a new event loop for initialization
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            # Start the checks but don't wait for them to complete
+            _background_task = loop.create_task(async_check_device_statuses(devices))
+
+            # Give the checks a small head start but proceed quickly
+            loop.run_until_complete(asyncio.sleep(0.3))
+
+            # Don't close the loop yet - we need to properly clean it up
+            # We'll just detach from it and let it continue running
+        except Exception as e:
+            print_error(f"Error starting device checks: {e}")
+            loop.close()
 
     while True:
         clear_screen()
         console.print(create_header())
 
-        # Separate devices by type
         tailscale_devices = [d for d in devices if d.device_type == "tailscale"]
         local_devices = [d for d in devices if d.device_type == "local"]
 
@@ -666,12 +554,13 @@ def main_menu() -> None:
                 Prompt.ask("Press Enter to continue")
 
 
-# ----------------------------------------------------------------
-# Signal Handling and Cleanup
-# ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform cleanup operations before exiting."""
     try:
+        # Cancel any pending asyncio tasks
+        for task in asyncio.all_tasks(asyncio.get_event_loop_policy().get_event_loop()):
+            if not task.done():
+                task.cancel()
+
         config = load_config()
         config.last_refresh = time.time()
         save_config(config)
@@ -680,23 +569,33 @@ def cleanup() -> None:
         print_error(f"Error during cleanup: {e}")
 
 
-def signal_handler(sig, frame) -> None:
-    """Gracefully handle termination signals (SIGINT, SIGTERM)."""
+def signal_handler(sig: int, frame: Any) -> None:
     try:
         sig_name = signal.Signals(sig).name
         print_warning(f"Process interrupted by {sig_name}")
     except Exception:
         print_warning(f"Process interrupted by signal {sig}")
-    cleanup()
+
+    # Get the current event loop if one exists
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Schedule the cleanup to run properly in the loop
+            loop.call_soon_threadsafe(cleanup)
+            # Give a moment for cleanup to run
+            time.sleep(0.2)
+        else:
+            cleanup()
+    except Exception:
+        # If we can't get the loop or it's closed already, just attempt cleanup directly
+        cleanup()
+
     sys.exit(128 + sig)
 
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-# ----------------------------------------------------------------
-# Static Device Lists (Preconfigured Devices)
-# ----------------------------------------------------------------
 STATIC_TAILSCALE_DEVICES: List[Device] = [
     Device(
         name="ubuntu-server",
@@ -786,12 +685,43 @@ STATIC_LOCAL_DEVICES: List[Device] = [
 DEVICES: List[Device] = STATIC_TAILSCALE_DEVICES + STATIC_LOCAL_DEVICES
 
 
-# ----------------------------------------------------------------
-# Entry Point with Proper Error Handling
-# ----------------------------------------------------------------
-def main() -> None:
-    """Main entry point for the SSH Connection Manager."""
+def proper_shutdown():
+    """Clean up resources at exit, specifically asyncio tasks."""
+    global _background_task
+
+    # Cancel any pending asyncio tasks
     try:
+        if _background_task and not _background_task.done():
+            _background_task.cancel()
+
+        # Get the current event loop and cancel all tasks
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_closed():
+                tasks = asyncio.all_tasks(loop)
+                for task in tasks:
+                    task.cancel()
+
+                # Run the loop briefly to process cancellations
+                if tasks and loop.is_running():
+                    pass  # Loop is already running, let it process cancellations
+                elif tasks:
+                    loop.run_until_complete(asyncio.sleep(0.1))
+
+                # Close the loop
+                loop.close()
+        except Exception:
+            pass  # Loop might already be closed
+
+    except Exception as e:
+        print_error(f"Error during shutdown: {e}")
+
+
+def main() -> None:
+    try:
+        # Register the proper shutdown function
+        atexit.register(proper_shutdown)
+
         ensure_config_directory()
         main_menu()
     except Exception as e:
