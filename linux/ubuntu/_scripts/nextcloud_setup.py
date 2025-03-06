@@ -569,39 +569,43 @@ def install_dependencies() -> bool:
 
             # Add Caddy official repository
             print_step("Adding Caddy official repository...")
-            
+
             # Install dependencies for adding apt repositories
-            run_command(["nala", "install", "-y", "apt-transport-https", "gnupg"], sudo=True)
-            
+            run_command(
+                ["nala", "install", "-y", "apt-transport-https", "gnupg"], sudo=True
+            )
+
             # Download and install Caddy's signing key
             run_command(
                 [
-                    "curl", 
-                    "-1sLf", 
+                    "curl",
+                    "-1sLf",
                     "https://dl.cloudsmith.io/public/caddy/stable/gpg.key",
-                    "-o", 
-                    "/usr/share/keyrings/caddy-stable-archive-keyring.asc"
-                ], 
-                sudo=True
+                    "-o",
+                    "/usr/share/keyrings/caddy-stable-archive-keyring.asc",
+                ],
+                sudo=True,
             )
-            
+
             # Add Caddy repository to apt sources
             run_command(
                 [
-                    "curl", 
-                    "-1sLf", 
+                    "curl",
+                    "-1sLf",
                     "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt",
-                    "-o", 
-                    "/etc/apt/sources.list.d/caddy-stable.list"
-                ], 
-                sudo=True
+                    "-o",
+                    "/etc/apt/sources.list.d/caddy-stable.list",
+                ],
+                sudo=True,
             )
-            
+
             # Update package lists after adding Caddy repository
             run_command(["nala", "update"], sudo=True)
-            
+
             # Install Caddy
-            returncode, _, stderr = run_command(["nala", "install", "-y", "caddy"], sudo=True)
+            returncode, _, stderr = run_command(
+                ["nala", "install", "-y", "caddy"], sudo=True
+            )
             if returncode != 0:
                 print_error(f"Failed to install Caddy: {stderr}")
                 return False
@@ -789,11 +793,13 @@ def detect_available_php_versions() -> List[str]:
         if returncode == 0:
             for line in stdout.splitlines():
                 if "php" in line and "-common" in line:
-                    parts = line.split()[0].split("-")[0]  # Get "php7.4" from "php7.4-common"
+                    parts = line.split()[0].split("-")[
+                        0
+                    ]  # Get "php7.4" from "php7.4-common"
                     version = parts[3:]  # Get "7.4" from "php7.4"
                     if version and version not in available_versions:
                         available_versions.append(version)
-        
+
         # If no versions found, try using apt-cache search
         if not available_versions:
             returncode, stdout, _ = run_command(
@@ -803,7 +809,9 @@ def detect_available_php_versions() -> List[str]:
                 for line in stdout.splitlines():
                     # Extract version from package name (e.g., php7.4-common)
                     if line.startswith("php"):
-                        parts = line.split(" - ")[0].split("-")[0]  # Get "php7.4" from "php7.4-common"
+                        parts = line.split(" - ")[0].split("-")[
+                            0
+                        ]  # Get "php7.4" from "php7.4-common"
                         version = parts[3:]  # Get "7.4" from "php7.4"
                         if version and version not in available_versions:
                             available_versions.append(version)
@@ -1066,21 +1074,29 @@ def setup_caddy(config: NextcloudConfig) -> bool:
         run_command(["mkdir", "-p", CADDY_CONFIG_DIR], sudo=True)
 
         # Determine which PHP-FPM socket to use
-        php_version = config.php_version if config.php_version else "7.4"  # Default fallback
+        php_version = (
+            config.php_version if config.php_version else "7.4"
+        )  # Default fallback
         php_fpm_sock = f"/run/php/php{php_version}-fpm.sock"
-        
+
         # Check if the socket exists
         returncode, _, _ = run_command(["test", "-S", php_fpm_sock], sudo=True)
         if returncode != 0:
-            print_warning(f"PHP-FPM socket {php_fpm_sock} not found. Checking alternatives...")
-            
+            print_warning(
+                f"PHP-FPM socket {php_fpm_sock} not found. Checking alternatives..."
+            )
+
             # Try to find any PHP-FPM socket
-            returncode, stdout, _ = run_command(["find", "/run/php", "-name", "*.sock"], sudo=True)
+            returncode, stdout, _ = run_command(
+                ["find", "/run/php", "-name", "*.sock"], sudo=True
+            )
             if returncode == 0 and stdout.strip():
                 php_fpm_sock = stdout.splitlines()[0].strip()
                 print_success(f"Found alternative PHP-FPM socket: {php_fpm_sock}")
             else:
-                print_error("No PHP-FPM socket found. PHP might not be properly installed.")
+                print_error(
+                    "No PHP-FPM socket found. PHP might not be properly installed."
+                )
                 return False
 
         # Create Caddyfile configuration
@@ -1091,7 +1107,7 @@ def setup_caddy(config: NextcloudConfig) -> bool:
     # If you want to use Caddy's automatic HTTPS, remove or comment out these lines
     # and remove the tls directives below
     # Caddy would handle certificates automatically, but using Cloudflare certificates here
-    tls {config.cert_file} {config.key_file}}
+    tls {config.cert_file} {config.key_file}
     
     # PHP-FPM handler
     php_fastcgi unix/{php_fpm_sock}
@@ -1100,44 +1116,44 @@ def setup_caddy(config: NextcloudConfig) -> bool:
     header Strict-Transport-Security "max-age=15552000; includeSubDomains"
     
     # For Cloudflare support
-    @cloudflareIPs {
+    @cloudflareIPs {{
         remote_ip 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 104.16.0.0/12 108.162.192.0/18 131.0.72.0/22 141.101.64.0/18 162.158.0.0/15 172.64.0.0/13 173.245.48.0/20 188.114.96.0/20 190.93.240.0/20 197.234.240.0/22 198.41.128.0/17
-    }
+    }}
     
     # Properly handle HTTPS when behind Cloudflare
-    @cloudflare_redirect {
+    @cloudflare_redirect {{
         header_regexp X-Forwarded-Proto X-Forwarded-Proto "^http$"
         match @cloudflareIPs
-    }
-    redir @cloudflare_redirect https://{config.domain}{"{uri}"}
+    }}
+    redir @cloudflare_redirect https://{config.domain}{{{{uri}}}}
 
     # Needed for /.well-known URLs
-    rewrite /.well-known/* /.well-known/{"{path}"}
+    rewrite /.well-known/* /.well-known/{{{{path}}}}
     
     # Nextcloud .htaccess rules converted for Caddy
-    rewrite /_next/* /_next/{"{path}"}
-    rewrite /core/js/* /core/js/{"{path}"}
-    rewrite /core/css/* /core/css/{"{path}"}
+    rewrite /_next/* /_next/{{{{path}}}}
+    rewrite /core/js/* /core/js/{{{{path}}}}
+    rewrite /core/css/* /core/css/{{{{path}}}}
     
     # Prohibit direct access to sensitive directories
-    @blocked {
+    @blocked {{
         path /data/* /config/* /db_structure/* /.ht*
-    }
+    }}
     respond @blocked 403
     
     # Pretty URLs for Nextcloud
-    try_files {"{path}"} {"{path}"}/index.php {"{path}"}/index.html
+    try_files {{{{path}}}} {{{{path}}}}/index.php {{{{path}}}}/index.html
     
     # Handle .well-known urls (for ACME challenges and Caldav/Carddav)
-    handle /.well-known/* {
-        try_files {"{path}"} /index.php{"{uri}"}
-    }
+    handle /.well-known/* {{
+        try_files {{{{path}}}} /index.php{{{{uri}}}}
+    }}
     
     # Primary rule for Nextcloud - all PHP requests go to index.php
-    @phpFiles {
+    @phpFiles {{
         path *.php
-    }
-    rewrite @phpFiles /index.php{"{query}"}
+    }}
+    rewrite @phpFiles /index.php{{{{query}}}}
     
     # Optimization for static files
     header /favicon.ico Cache-Control "max-age=604800"
@@ -1147,7 +1163,7 @@ def setup_caddy(config: NextcloudConfig) -> bool:
     encode gzip zstd
     
     # Basic security headers
-    header {
+    header {{
         # Enable XSS filtering for legacy browsers
         X-XSS-Protection "1; mode=block"
         # Control MIME type sniffing
@@ -1158,7 +1174,7 @@ def setup_caddy(config: NextcloudConfig) -> bool:
         Content-Security-Policy "frame-ancestors 'self'"
         # Remove server header
         -Server
-    }
+    }}
     
     # Log configuration
     log {{
@@ -1193,7 +1209,9 @@ def setup_caddy(config: NextcloudConfig) -> bool:
 
         # Validate Caddy configuration
         print_step("Validating Caddy configuration...")
-        returncode, _, stderr = run_command(["caddy", "validate", "--config", CADDYFILE_PATH], sudo=True)
+        returncode, _, stderr = run_command(
+            ["caddy", "validate", "--config", CADDYFILE_PATH], sudo=True
+        )
         if returncode != 0:
             print_error(f"Caddy configuration validation failed: {stderr}")
             if not Confirm.ask("Continue anyway?", default=False):
@@ -1202,12 +1220,14 @@ def setup_caddy(config: NextcloudConfig) -> bool:
         # Reload Caddy to apply the new configuration
         print_step("Reloading Caddy service...")
         returncode, _, stderr = run_command(["systemctl", "reload", "caddy"], sudo=True)
-        
+
         # If reload fails, try restart
         if returncode != 0:
             print_warning(f"Failed to reload Caddy: {stderr}")
             print_step("Trying to restart Caddy...")
-            returncode, _, stderr = run_command(["systemctl", "restart", "caddy"], sudo=True)
+            returncode, _, stderr = run_command(
+                ["systemctl", "restart", "caddy"], sudo=True
+            )
             if returncode != 0:
                 print_error(f"Failed to restart Caddy: {stderr}")
                 return False
