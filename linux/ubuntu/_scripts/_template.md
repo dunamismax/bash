@@ -131,10 +131,6 @@ class AppConfig:
         return asdict(self)
 
 
-# Global variables to track async tasks
-_background_task = None
-
-
 # UI Helper Functions
 def clear_screen() -> None:
     console.clear()
@@ -210,49 +206,59 @@ def display_panel(title: str, message: str, style: str = NordColors.FROST_2) -> 
     console.print(panel)
 
 
-# Core Functionality
-def ensure_config_directory() -> None:
+# Core Functionality - Made Async
+async def ensure_config_directory() -> None:
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
     except Exception as e:
         print_error(f"Could not create config directory: {e}")
 
 
-def save_config(config: AppConfig) -> bool:
-    ensure_config_directory()
+async def save_config(config: AppConfig) -> bool:
+    await ensure_config_directory()
     try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config.to_dict(), f, indent=2)
+        # Use async file operations for more consistent async behavior
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: json.dump(config.to_dict(), open(CONFIG_FILE, "w"), indent=2)
+        )
         return True
     except Exception as e:
         print_error(f"Failed to save configuration: {e}")
         return False
 
 
-def load_config() -> AppConfig:
+async def load_config() -> AppConfig:
     try:
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
+            loop = asyncio.get_running_loop()
+            data = await loop.run_in_executor(
+                None, lambda: json.load(open(CONFIG_FILE, "r"))
+            )
             return AppConfig(**data)
     except Exception as e:
         print_error(f"Failed to load configuration: {e}")
     return AppConfig()
 
 
-def run_command(cmd: List[str]) -> Tuple[int, str]:
+async def run_command_async(cmd: List[str]) -> Tuple[int, str]:
     try:
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             text=True,
-            timeout=OPERATION_TIMEOUT,
         )
-        if result.returncode != 0:
-            raise Exception(result.stderr.strip())
-        return result.returncode, result.stdout.strip()
-    except subprocess.TimeoutExpired:
+
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=OPERATION_TIMEOUT
+        )
+
+        if proc.returncode != 0:
+            raise Exception(stderr.strip())
+
+        return proc.returncode, stdout.strip()
+    except asyncio.TimeoutError:
         raise Exception("Command timed out.")
 
 
@@ -279,7 +285,10 @@ async def async_ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
             return proc.returncode == 0, response_time if proc.returncode == 0 else None
         except asyncio.TimeoutError:
             if proc.returncode is None:
-                proc.terminate()
+                try:
+                    proc.terminate()
+                except ProcessLookupError:
+                    pass
             return False, None
 
     except Exception:
@@ -293,27 +302,52 @@ async def async_check_device_status(device: Device) -> None:
     device.last_ping_time = time.time()
 
 
-async def async_check_device_statuses(devices: List[Device]) -> None:
-    tasks = [async_check_device_status(device) for device in devices]
-    await asyncio.gather(*tasks)
-
-
-def check_device_statuses(
+async def async_check_device_statuses(
     devices: List[Device],
     progress_callback: Optional[Callable[[int, Device], None]] = None,
 ) -> None:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    """Check the status of all devices asynchronously.
 
+    If a progress_callback is provided, it will be called after each device check.
+    Otherwise, all devices are checked in parallel.
+    """
     try:
         if progress_callback:
             for i, device in enumerate(devices):
-                loop.run_until_complete(async_check_device_status(device))
-                progress_callback(i, device)
+                try:
+                    await async_check_device_status(device)
+                except Exception as e:
+                    print_error(f"Error checking {device.name}: {e}")
+                    device.status = False
+                    device.response_time = None
+                finally:
+                    progress_callback(i, device)
         else:
-            loop.run_until_complete(async_check_device_statuses(devices))
-    finally:
-        loop.close()
+            # Create tasks for checking each device
+            tasks = []
+            for device in devices:
+                task = asyncio.create_task(async_check_device_status(device))
+                # Add error handling for each task
+                task.add_done_callback(
+                    lambda t, d=device: handle_device_check_result(t, d)
+                )
+                tasks.append(task)
+
+            # Wait for all tasks to complete
+            await asyncio.gather(*tasks, return_exceptions=True)
+    except Exception as e:
+        print_error(f"Error during device status check: {e}")
+
+
+def handle_device_check_result(task, device):
+    """Handle the result of a device status check task."""
+    try:
+        # Get the result or exception
+        task.result()
+    except Exception as e:
+        # If there was an exception, mark the device as offline
+        device.status = False
+        device.response_time = None
 
 
 def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
@@ -348,14 +382,27 @@ def create_device_table(devices: List[Device], prefix: str, title: str) -> Table
     return table
 
 
-def get_username(default_username: str) -> str:
-    return Prompt.ask(
-        f"[bold {NordColors.FROST_2}]Username for SSH connection[/]",
-        default=default_username,
+async def get_username_async(default_username: str) -> str:
+    # Prompt is synchronous, but wrap in run_in_executor to maintain async pattern
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: Prompt.ask(
+            f"[bold {NordColors.FROST_2}]Username for SSH connection[/]",
+            default=default_username,
+        ),
     )
 
 
-def connect_to_device(device: Device, username: Optional[str] = None) -> None:
+async def simulate_progress(progress, task_id, steps, delay=0.3):
+    for step, pct in steps:
+        await asyncio.sleep(delay)
+        progress.update(task_id, description=step, completed=pct)
+
+
+async def connect_to_device_async(
+    device: Device, username: Optional[str] = None
+) -> None:
     clear_screen()
     console.print(create_header())
     display_panel(
@@ -397,18 +444,20 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
             task_id = progress.add_task(
                 f"[{NordColors.FROST_2}]Establishing connection...", total=100
             )
-            for step, pct in [
+
+            steps = [
                 (f"[{NordColors.FROST_2}]Resolving hostname...", 20),
                 (f"[{NordColors.FROST_2}]Establishing connection...", 40),
                 (f"[{NordColors.FROST_2}]Negotiating SSH protocol...", 60),
                 (f"[{NordColors.FROST_2}]Authenticating...", 80),
                 (f"[{NordColors.GREEN}]Connection established.", 100),
-            ]:
-                time.sleep(0.3)
-                progress.update(task_id, description=step, completed=pct)
+            ]
+
+            # Run progress simulation in the background
+            await simulate_progress(progress, task_id, steps)
 
         ssh_args: List[str] = [SSH_COMMAND]
-        config = load_config()
+        config = await load_config()
         for option, (value, _) in config.ssh_options.items():
             ssh_args.extend(["-o", f"{option}={value}"])
         if device.port != DEFAULT_SSH_PORT:
@@ -416,6 +465,8 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
         ssh_args.append(f"{effective_username}@{device.ip_address}")
         print_success(f"Connecting to {device.name} as {effective_username}...")
 
+        # This is a system exec call that replaces the current process
+        # We can't make this async, but it's the end of processing anyway
         os.execvp(SSH_COMMAND, ssh_args)
     except Exception as e:
         print_error(f"Connection failed: {str(e)}")
@@ -425,10 +476,23 @@ def connect_to_device(device: Device, username: Optional[str] = None) -> None:
         print_step("Verify that the SSH service is running on the target device.")
         print_step("Check your SSH key configuration.")
         print_step("Try connecting with verbose output: ssh -v user@host")
-        Prompt.ask("Press Enter to return to the main menu")
+
+        # Wait for user input in an async-compatible way
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: Prompt.ask("Press Enter to return to the main menu")
+        )
 
 
-def refresh_device_statuses(devices: List[Device]) -> None:
+async def refresh_device_statuses_async(devices: List[Device]) -> None:
+    """Refresh the status of all devices with a progress indicator.
+
+    This function shows a progress bar while checking device statuses
+    and handles user input in an async-friendly way.
+    """
+    # Store the current task so we can check for cancellation
+    current_task = asyncio.current_task()
+
     clear_screen()
     console.print(create_header())
     display_panel(
@@ -436,171 +500,232 @@ def refresh_device_statuses(devices: List[Device]) -> None:
         "Checking connectivity for all configured devices",
         NordColors.FROST_3,
     )
-    with Progress(
-        SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
-        TextColumn("[bold]{task.description}[/bold]"),
-        BarColumn(
-            bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2
-        ),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        scan_task = progress.add_task(
-            f"[{NordColors.FROST_2}]Scanning", total=len(devices)
+
+    try:
+        with Progress(
+            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+            TextColumn("[bold]{task.description}[/bold]"),
+            BarColumn(
+                bar_width=40,
+                style=NordColors.FROST_4,
+                complete_style=NordColors.FROST_2,
+            ),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            scan_task = progress.add_task(
+                f"[{NordColors.FROST_2}]Scanning", total=len(devices)
+            )
+
+            def update_progress(index: int, device: Device) -> None:
+                # Check if our task has been cancelled
+                if current_task and current_task.cancelled():
+                    raise asyncio.CancelledError()
+
+                progress.advance(scan_task)
+                progress.update(
+                    scan_task,
+                    description=f"[{NordColors.FROST_2}]Checking {device.name} ({device.ip_address})",
+                )
+
+            # Use the async version that updates progress as it goes
+            await async_check_device_statuses(devices, update_progress)
+
+        online_count = sum(1 for d in devices if d.status is True)
+        offline_count = sum(1 for d in devices if d.status is False)
+        print_success(f"Scan complete: {online_count} online, {offline_count} offline")
+
+        # Update config with last refresh time
+        config = await load_config()
+        config.last_refresh = time.time()
+        await save_config(config)
+
+        # Wait for user input in an async-compatible way
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: Prompt.ask("Press Enter to return to the main menu")
+        )
+    except asyncio.CancelledError:
+        print_warning("Refresh operation cancelled")
+    except Exception as e:
+        print_error(f"Error during refresh: {e}")
+        # Still allow the user to return to the main menu
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: Prompt.ask("Press Enter to return to the main menu")
         )
 
-        def update_progress(index: int, device: Device) -> None:
-            progress.advance(scan_task)
-            progress.update(
-                scan_task,
-                description=f"[{NordColors.FROST_2}]Checking {device.name} ({device.ip_address})",
-            )
 
-        check_device_statuses(devices, update_progress)
-
-    online_count = sum(1 for d in devices if d.status is True)
-    offline_count = sum(1 for d in devices if d.status is False)
-    print_success(f"Scan complete: {online_count} online, {offline_count} offline")
-    config = load_config()
-    config.last_refresh = time.time()
-    save_config(config)
-    Prompt.ask("Press Enter to return to the main menu")
+async def async_confirm(message: str, default: bool = False) -> bool:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, lambda: Confirm.ask(message, default=default)
+    )
 
 
-def main_menu() -> None:
+async def async_prompt(message: str) -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: Prompt.ask(message))
+
+
+async def main_menu_async() -> None:
     devices = DEVICES
-    global _background_task
 
-    # Start background device status check without blocking the UI
-    with Progress(
-        SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
-        TextColumn("Initializing..."),
-        console=console,
-    ) as progress:
-        progress.add_task("Loading", total=None)
+    # Wait for initial device status check before displaying the menu
+    # This ensures we have status information on first launch
+    print_message("Performing initial device scan...", NordColors.FROST_3)
+    await async_check_device_statuses(devices)
 
-        # Create a new event loop for initialization
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    # Now start background refresh task
+    refresh_interval = 300  # seconds
+    last_refresh = time.time()
 
-        try:
-            # Start the checks but don't wait for them to complete
-            _background_task = loop.create_task(async_check_device_statuses(devices))
+    # Use asyncio.create_task for background status checks
+    background_refresh_task = None
 
-            # Give the checks a small head start but proceed quickly
-            loop.run_until_complete(asyncio.sleep(0.3))
+    try:
+        while True:
+            # Refresh the device status in the background periodically
+            current_time = time.time()
+            if current_time - last_refresh > refresh_interval:
+                if background_refresh_task is None or background_refresh_task.done():
+                    background_refresh_task = asyncio.create_task(
+                        async_check_device_statuses(devices)
+                    )
+                    last_refresh = current_time
 
-            # Don't close the loop yet - we need to properly clean it up
-            # We'll just detach from it and let it continue running
-        except Exception as e:
-            print_error(f"Error starting device checks: {e}")
-            loop.close()
-
-    while True:
-        clear_screen()
-        console.print(create_header())
-
-        tailscale_devices = [d for d in devices if d.device_type == "tailscale"]
-        local_devices = [d for d in devices if d.device_type == "local"]
-
-        console.print(create_device_table(tailscale_devices, "", "Tailscale Devices"))
-        console.print()
-        console.print(create_device_table(local_devices, "L", "Local Devices"))
-        console.print()
-        console.print("r: refresh q: exit")
-        console.print()
-        console.print()
-
-        choice = Prompt.ask("Enter your choice").strip().lower()
-        if choice in ("q", "quit", "exit"):
             clear_screen()
+            console.print(create_header())
+
+            tailscale_devices = [d for d in devices if d.device_type == "tailscale"]
+            local_devices = [d for d in devices if d.device_type == "local"]
+
             console.print(
-                Panel(
-                    Text("Goodbye!", style=f"bold {NordColors.FROST_2}"),
-                    border_style=NordColors.FROST_1,
-                )
+                create_device_table(tailscale_devices, "", "Tailscale Devices")
             )
-            break
-        elif choice in ("r", "refresh"):
-            refresh_device_statuses(devices)
-        elif choice.startswith("l"):
+            console.print()
+            console.print(create_device_table(local_devices, "L", "Local Devices"))
+            console.print()
+            console.print("r: refresh q: exit")
+            console.print()
+            console.print()
+
+            choice = await async_prompt("Enter your choice")
+            choice = choice.strip().lower()
+
+            if choice in ("q", "quit", "exit"):
+                clear_screen()
+                console.print(
+                    Panel(
+                        Text("Goodbye!", style=f"bold {NordColors.FROST_2}"),
+                        border_style=NordColors.FROST_1,
+                    )
+                )
+                break
+            elif choice in ("r", "refresh"):
+                # This now runs fully async
+                await refresh_device_statuses_async(devices)
+            elif choice.startswith("l"):
+                try:
+                    idx = int(choice[1:]) - 1
+                    if 0 <= idx < len(local_devices):
+                        device = local_devices[idx]
+                        if device.status is False and not await async_confirm(
+                            f"This device appears offline. Connect anyway?",
+                            default=False,
+                        ):
+                            continue
+                        username = await get_username_async(
+                            device.username or DEFAULT_USERNAME
+                        )
+                        await connect_to_device_async(device, username)
+                    else:
+                        print_error(f"Invalid device number: {choice}")
+                        await async_prompt("Press Enter to continue")
+                except ValueError:
+                    print_error(f"Invalid choice: {choice}")
+                    await async_prompt("Press Enter to continue")
+            else:
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(tailscale_devices):
+                        device = tailscale_devices[idx]
+                        if device.status is False and not await async_confirm(
+                            f"This device appears offline. Connect anyway?",
+                            default=False,
+                        ):
+                            continue
+                        username = await get_username_async(
+                            device.username or DEFAULT_USERNAME
+                        )
+                        await connect_to_device_async(device, username)
+                    else:
+                        print_error(f"Invalid device number: {choice}")
+                        await async_prompt("Press Enter to continue")
+                except ValueError:
+                    print_error(f"Invalid choice: {choice}")
+                    await async_prompt("Press Enter to continue")
+    except Exception as e:
+        print_error(f"An error occurred in the main menu: {str(e)}")
+        console.print_exception()
+    finally:
+        # Make sure we clean up our background task
+        if background_refresh_task is not None and not background_refresh_task.done():
+            background_refresh_task.cancel()
             try:
-                idx = int(choice[1:]) - 1
-                if 0 <= idx < len(local_devices):
-                    device = local_devices[idx]
-                    if device.status is False and not Confirm.ask(
-                        f"This device appears offline. Connect anyway?", default=False
-                    ):
-                        continue
-                    username = get_username(device.username or DEFAULT_USERNAME)
-                    connect_to_device(device, username)
-                else:
-                    print_error(f"Invalid device number: {choice}")
-                    Prompt.ask("Press Enter to continue")
-            except ValueError:
-                print_error(f"Invalid choice: {choice}")
-                Prompt.ask("Press Enter to continue")
-        else:
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(tailscale_devices):
-                    device = tailscale_devices[idx]
-                    if device.status is False and not Confirm.ask(
-                        f"This device appears offline. Connect anyway?", default=False
-                    ):
-                        continue
-                    username = get_username(device.username or DEFAULT_USERNAME)
-                    connect_to_device(device, username)
-                else:
-                    print_error(f"Invalid device number: {choice}")
-                    Prompt.ask("Press Enter to continue")
-            except ValueError:
-                print_error(f"Invalid choice: {choice}")
-                Prompt.ask("Press Enter to continue")
+                await background_refresh_task
+            except asyncio.CancelledError:
+                pass
 
 
-def cleanup() -> None:
+async def async_cleanup() -> None:
     try:
         # Cancel any pending asyncio tasks
-        for task in asyncio.all_tasks(asyncio.get_event_loop_policy().get_event_loop()):
-            if not task.done():
+        for task in asyncio.all_tasks():
+            if not task.done() and task != asyncio.current_task():
                 task.cancel()
 
-        config = load_config()
+        config = await load_config()
         config.last_refresh = time.time()
-        save_config(config)
+        await save_config(config)
         print_message("Cleaning up resources...", NordColors.FROST_3)
     except Exception as e:
         print_error(f"Error during cleanup: {e}")
 
 
-def signal_handler(sig: int, frame: Any) -> None:
+async def signal_handler_async(sig: int, frame: Any) -> None:
+    """Handle signals in an async-friendly way without creating new event loops."""
     try:
         sig_name = signal.Signals(sig).name
         print_warning(f"Process interrupted by {sig_name}")
     except Exception:
         print_warning(f"Process interrupted by signal {sig}")
 
-    # Get the current event loop if one exists
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Schedule the cleanup to run properly in the loop
-            loop.call_soon_threadsafe(cleanup)
-            # Give a moment for cleanup to run
-            time.sleep(0.2)
-        else:
-            cleanup()
-    except Exception:
-        # If we can't get the loop or it's closed already, just attempt cleanup directly
-        cleanup()
+    # Get the current running loop instead of creating a new one
+    loop = asyncio.get_running_loop()
 
-    sys.exit(128 + sig)
+    # Cancel all tasks except the current one
+    for task in asyncio.all_tasks(loop):
+        if task is not asyncio.current_task():
+            task.cancel()
+
+    # Clean up resources
+    await async_cleanup()
+
+    # Stop the loop instead of exiting directly
+    loop.stop()
 
 
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
+def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
+    """Set up signal handlers that work with the main event loop."""
+
+    # Use asyncio's built-in signal handling
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(
+            sig, lambda sig=sig: asyncio.create_task(signal_handler_async(sig, None))
+        )
+
 
 STATIC_TAILSCALE_DEVICES: List[Device] = [
     Device(
@@ -691,49 +816,106 @@ STATIC_LOCAL_DEVICES: List[Device] = [
 DEVICES: List[Device] = STATIC_TAILSCALE_DEVICES + STATIC_LOCAL_DEVICES
 
 
-def proper_shutdown():
+async def proper_shutdown_async():
     """Clean up resources at exit, specifically asyncio tasks."""
-    global _background_task
-
-    # Cancel any pending asyncio tasks
     try:
-        if _background_task and not _background_task.done():
-            _background_task.cancel()
-
-        # Get the current event loop and cancel all tasks
+        # Try to get the current running loop, but don't fail if there isn't one
         try:
-            loop = asyncio.get_event_loop()
-            if not loop.is_closed():
-                tasks = asyncio.all_tasks(loop)
-                for task in tasks:
-                    task.cancel()
+            loop = asyncio.get_running_loop()
+            tasks = [
+                t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()
+            ]
 
-                # Run the loop briefly to process cancellations
-                if tasks and loop.is_running():
-                    pass  # Loop is already running, let it process cancellations
-                elif tasks:
-                    loop.run_until_complete(asyncio.sleep(0.1))
+            # Cancel all tasks
+            for task in tasks:
+                task.cancel()
 
-                # Close the loop
-                loop.close()
-        except Exception:
-            pass  # Loop might already be closed
+            # Wait for all tasks to complete cancellation with a timeout
+            if tasks:
+                await asyncio.wait(tasks, timeout=2.0)
+
+        except RuntimeError:
+            # No running event loop
+            pass
 
     except Exception as e:
-        print_error(f"Error during shutdown: {e}")
+        print_error(f"Error during async shutdown: {e}")
 
 
-def main() -> None:
+def proper_shutdown():
+    """Synchronous wrapper for the async shutdown function.
+    This is called by atexit and should be safe to call from any context."""
     try:
-        # Register the proper shutdown function
-        atexit.register(proper_shutdown)
+        # Check if there's a running loop first
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If a loop is already running, we can't run a new one
+                # Just log and return
+                print_warning("Event loop already running during shutdown")
+                return
+        except RuntimeError:
+            # No event loop, create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-        ensure_config_directory()
-        main_menu()
+        # Run the async cleanup
+        loop.run_until_complete(proper_shutdown_async())
+        loop.close()
+    except Exception as e:
+        print_error(f"Error during synchronous shutdown: {e}")
+
+
+async def main_async() -> None:
+    try:
+        # Initialize stuff
+        await ensure_config_directory()
+
+        # Run the main menu
+        await main_menu_async()
     except Exception as e:
         print_error(f"An unexpected error occurred: {e}")
         console.print_exception()
         sys.exit(1)
+
+
+def main() -> None:
+    """Main entry point of the application."""
+    try:
+        # Create and get a reference to the event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        # Setup signal handlers with the specific loop
+        setup_signal_handlers(loop)
+
+        # Register shutdown handler
+        atexit.register(proper_shutdown)
+
+        # Run the main async function
+        loop.run_until_complete(main_async())
+    except KeyboardInterrupt:
+        print_warning("Received keyboard interrupt, shutting down...")
+    except Exception as e:
+        print_error(f"An unexpected error occurred: {e}")
+        console.print_exception()
+    finally:
+        try:
+            # Cancel all remaining tasks
+            tasks = asyncio.all_tasks(loop)
+            for task in tasks:
+                task.cancel()
+
+            # Allow cancelled tasks to complete
+            if tasks:
+                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+
+            # Close the loop
+            loop.close()
+        except Exception as e:
+            print_error(f"Error during shutdown: {e}")
+
+        print_message("Application terminated.", NordColors.FROST_3)
 
 
 if __name__ == "__main__":

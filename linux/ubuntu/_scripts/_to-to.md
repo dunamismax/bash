@@ -1,3 +1,10 @@
+---------------------------------------------------------------------------------------------
+
+rewrite (claude 3.7 sonnet)
+using new prompt
+
+---------------------------------------------------------------------------------------------
+
 ```
 └── 📁_scripts
     *└── _bashrc_cheat_sheet.md
@@ -11,7 +18,7 @@
     └── hacker_toolkit.py
     └── hacking_tools.py
     └── hello_world.py
-    └── log_monitor.py
+    *└── log_monitor.py
     └── metasploit.py
     └── network_toolkit.py
     *└── nextcloud_setup.py
