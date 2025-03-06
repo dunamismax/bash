@@ -955,28 +955,25 @@ def setup_caddy(config: NextcloudConfig) -> bool:
         # Create Caddyfile configuration
         # Create a minimal Caddyfile configuration with auto HTTPS and Let's Encrypt
         caddyfile_content = f"""{config.domain} {{
-            root * {config.install_dir}
-            php_fastcgi unix/{php_fpm_sock}
-            file_server
+    root * {config.install_dir}
+    php_fastcgi unix/{php_fpm_sock}
+    file_server
 
-            # Nextcloud routing: try serving static files, fallback to index.php
-            try_files {{path}} {{path}}/index.php
+    # Security headers
+    header {{
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options nosniff
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+    }}
 
-            # Security headers
-            header {{
-                Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-                X-Content-Type-Options nosniff
-                X-Frame-Options "SAMEORIGIN"
-                X-XSS-Protection "1; mode=block"
-            }}
-
-            # Log configuration
-            log {{
-                output file /var/log/caddy/nextcloud.log
-                format console
-            }}
-        }}
-        """
+    # Log configuration
+    log {{
+        output file /var/log/caddy/nextcloud.log
+        format console
+    }}
+}}
+"""
 
         # Create temporary file for the Caddyfile
         caddy_config_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
