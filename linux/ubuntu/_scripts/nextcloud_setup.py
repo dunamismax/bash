@@ -199,23 +199,32 @@ async def run_command_async(
 ) -> Tuple[int, str]:
     """Run a shell command asynchronously and return the result"""
     try:
-        if isinstance(cmd, str) and not shell:
-            cmd = cmd.split()
+        if shell:
+            # For shell commands, use subprocess.shell=True
+            proc = await asyncio.create_subprocess_shell(
+                cmd if isinstance(cmd, str) else " ".join(cmd),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        else:
+            # For non-shell commands, use subprocess.exec with command parts
+            cmd_list = cmd.split() if isinstance(cmd, str) else cmd
+            proc = await asyncio.create_subprocess_exec(
+                *cmd_list,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd if isinstance(cmd, list) else [cmd],
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            shell=shell,
-            text=True,
-        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
 
-        stdout, stderr = await proc.communicate()
+        # Manually decode the output from bytes to string
+        stdout = stdout_bytes.decode("utf-8", errors="replace").strip()
+        stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
 
         if proc.returncode != 0 and check:
-            raise Exception(stderr.strip())
+            raise Exception(stderr)
 
-        return proc.returncode, stdout.strip()
+        return proc.returncode, stdout
     except Exception as e:
         print_error(f"Command failed: {e}")
         if check:
