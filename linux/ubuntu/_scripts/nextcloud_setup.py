@@ -525,7 +525,7 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                 )
 
         compose_config = {
-            "version": "3",
+            # Removed 'version' attribute as it's obsolete in newer Docker Compose
             "services": {
                 "db": {
                     "image": "postgres:15",
@@ -657,11 +657,27 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
     try:
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-        full_command = (
-            DOCKER_COMPOSE_COMMAND
-            + ["exec", "-T", "--user", "www-data", "app", "php", "occ"]
-            + command
-        )
+
+        # Create a properly escaped command using docker exec directly
+        # This avoids permission issues with some docker-compose setups
+        container_id_cmd = DOCKER_COMPOSE_COMMAND + ["ps", "-q", "app"]
+        returncode, container_id, stderr = await run_command_async(container_id_cmd)
+
+        if returncode != 0 or not container_id:
+            logger.error(f"Failed to get container ID: {stderr}")
+            return False, f"Container not running or not found: {stderr}"
+
+        # Use docker exec directly with the container ID
+        full_command = [
+            "docker",
+            "exec",
+            "-u",
+            "www-data",
+            container_id.strip(),
+            "php",
+            "occ",
+        ] + command
+
         returncode, stdout, stderr = await run_command_async(full_command)
         if returncode == 0:
             logger.info(f"OCC command successful: {stdout}")
@@ -693,93 +709,102 @@ async def configure_nextcloud_post_install(config: NextcloudConfig) -> bool:
             return False
 
         # Give the web server a bit more time to initialize
-        await asyncio.sleep(10)
+        await asyncio.sleep(15)
 
-        # Set trusted domains with occ command to ensure they're properly registered
-        trusted_domains = [
-            config.domain,
-            "localhost",
-            "app",
-            "127.0.0.1",
-        ] + config.additional_trusted_domains
+        # Alternative approach: configure trusted domains directly in the config.php file
+        # using docker exec and a simple echo command
+        container_id_cmd = DOCKER_COMPOSE_COMMAND + ["ps", "-q", "app"]
+        returncode, container_id, stderr = await run_command_async(container_id_cmd)
 
+        if returncode != 0 or not container_id:
+            logger.error(f"Failed to get container ID: {stderr}")
+            return False
+
+        container_id = container_id.strip()
+
+        # Create trusted domains array
+        trusted_domains = [config.domain, "localhost", "app", "127.0.0.1"]
+        for domain in config.additional_trusted_domains:
+            if domain and domain.strip() and domain not in trusted_domains:
+                trusted_domains.append(domain.strip())
+
+        # Configure Nextcloud through the config.php file directly
+        php_config_updates = []
+
+        # Add trusted domains
+        trusted_domains_php = []
         for i, domain in enumerate(trusted_domains):
             if domain and domain.strip():
-                success, output = await execute_occ_command(
-                    [
-                        "config:system:set",
-                        "trusted_domains",
-                        str(i),
-                        "--value=" + domain.strip(),
-                    ]
-                )
-                if success:
-                    logger.info(f"Added trusted domain #{i}: {domain}")
-                else:
-                    logger.warning(
-                        f"Failed to add trusted domain #{i} ({domain}): {output}"
-                    )
+                trusted_domains_php.append(f"  {i} => '{domain}',")
 
-        # Configure reverse proxy settings
+        php_config_updates.append(
+            f"$CONFIG['trusted_domains'] = array(\n{chr(10).join(trusted_domains_php)}\n);"
+        )
+
+        # Add reverse proxy settings
         if config.behind_reverse_proxy:
-            commands = [
-                [
-                    "config:system:set",
-                    "overwriteprotocol",
-                    "--value=" + config.proxy_protocol,
-                ],
-                ["config:system:set", "overwritehost", "--value=" + config.domain],
-                [
-                    "config:system:set",
-                    "overwrite.cli.url",
-                    "--value=" + f"{config.proxy_protocol}://{config.domain}",
-                ],
-            ]
+            php_config_updates.append(
+                f"$CONFIG['overwriteprotocol'] = '{config.proxy_protocol}';"
+            )
+            php_config_updates.append(f"$CONFIG['overwritehost'] = '{config.domain}';")
+            php_config_updates.append(
+                f"$CONFIG['overwrite.cli.url'] = '{config.proxy_protocol}://{config.domain}';"
+            )
 
             if config.reverse_proxy_headers:
-                commands.append(
-                    ["config:system:set", "trusted_proxies", "0", "--value=127.0.0.1"]
-                )
-                commands.append(
-                    ["config:system:set", "trusted_proxies", "1", "--value=10.0.0.0/8"]
-                )
-                commands.append(
-                    [
-                        "config:system:set",
-                        "trusted_proxies",
-                        "2",
-                        "--value=172.16.0.0/12",
-                    ]
-                )
-                commands.append(
-                    [
-                        "config:system:set",
-                        "trusted_proxies",
-                        "3",
-                        "--value=192.168.0.0/16",
-                    ]
+                php_config_updates.append(
+                    "$CONFIG['trusted_proxies'] = ['127.0.0.1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];"
                 )
 
-            for cmd in commands:
-                success, output = await execute_occ_command(cmd)
-                if success:
-                    logger.info(f"Successfully ran: {' '.join(cmd)}")
-                else:
-                    logger.warning(f"Command failed: {' '.join(cmd)} - {output}")
+        # Create a temporary config file that we'll append to the main config
+        temp_config_path = os.path.join(DOCKER_DIR, "nextcloud_config_append.php")
+        try:
+            with open(temp_config_path, "w") as f:
+                f.write("\n".join(php_config_updates))
 
-        # Update .htaccess to apply any changes
-        success, output = await execute_occ_command(["maintenance:update:htaccess"])
-        if success:
-            logger.info("Updated .htaccess successfully")
-        else:
-            logger.warning(f"Failed to update .htaccess: {output}")
+            # Copy this file into the container
+            cp_cmd = [
+                "docker",
+                "cp",
+                temp_config_path,
+                f"{container_id}:/tmp/nextcloud_config_append.php",
+            ]
+            returncode, stdout, stderr = await run_command_async(cp_cmd)
 
-        # Ensure maintenance mode is off
-        success, output = await execute_occ_command(["maintenance:mode", "--off"])
-        if success:
-            logger.info("Ensured maintenance mode is off")
-        else:
-            logger.warning(f"Failed to disable maintenance mode: {output}")
+            if returncode != 0:
+                logger.error(f"Failed to copy config file to container: {stderr}")
+                return False
+
+            # Append the config to the existing config.php
+            append_cmd = [
+                "docker",
+                "exec",
+                "-u",
+                "www-data",
+                container_id,
+                "bash",
+                "-c",
+                "cat /tmp/nextcloud_config_append.php >> /var/www/html/config/config.php",
+            ]
+            returncode, stdout, stderr = await run_command_async(append_cmd)
+
+            if returncode != 0:
+                logger.error(f"Failed to append config: {stderr}")
+                return False
+
+            # Remove the temporary file
+            if os.path.exists(temp_config_path):
+                os.remove(temp_config_path)
+
+            # Restart the Apache server inside the container to apply changes
+            restart_cmd = ["docker", "exec", container_id, "apache2ctl", "graceful"]
+            returncode, stdout, stderr = await run_command_async(restart_cmd)
+            if returncode != 0:
+                logger.warning(f"Warning when restarting Apache: {stderr}")
+
+        except Exception as e:
+            logger.error(f"Error updating config.php: {e}")
+            return False
 
         print_success("Post-installation configuration applied successfully")
         return True
@@ -1266,22 +1291,48 @@ async def manage_trusted_domains() -> None:
         NordColors.FROST_2,
     )
 
-    # Get current trusted domains
-    success, output = await execute_occ_command(
-        ["config:system:get", "trusted_domains"]
-    )
-    if not success:
-        print_error(f"Failed to get trusted domains: {output}")
+    # Get container ID for direct access
+    container_id_cmd = DOCKER_COMPOSE_COMMAND + ["ps", "-q", "app"]
+    returncode, container_id, stderr = await run_command_async(container_id_cmd)
+
+    if returncode != 0 or not container_id:
+        print_error(f"Failed to get container ID: {stderr}")
         await async_prompt("Press Enter to continue")
         return
 
+    container_id = container_id.strip()
+
+    # View current trusted domains by looking at the config directly
+    cat_cmd = [
+        "docker",
+        "exec",
+        container_id,
+        "grep",
+        "-A",
+        "10",
+        "trusted_domains",
+        "/var/www/html/config/config.php",
+    ]
+
+    returncode, config_output, stderr = await run_command_async(cat_cmd)
+
     domains = []
-    for line in output.strip().split("\n"):
-        line = line.strip()
-        if line:
-            # Remove array indices and quotes
-            domain = re.sub(r'^\[\d+\] => |^"|"$', "", line)
-            domains.append(domain)
+    if returncode == 0 and config_output:
+        # Parse the trusted domains from the config
+        lines = config_output.split("\n")
+        for line in lines:
+            line = line.strip()
+            if "=>" in line and "'" in line:
+                try:
+                    domain = line.split("'")[1]
+                    domains.append(domain)
+                except:
+                    continue
+
+    if not domains:
+        print_warning("Could not retrieve trusted domains from config file.")
+        await async_prompt("Press Enter to continue")
+        return
 
     print_section("Current Trusted Domains")
     for i, domain in enumerate(domains):
@@ -1298,20 +1349,68 @@ async def manage_trusted_domains() -> None:
             f"[bold {NordColors.FROST_2}]Enter new domain to trust[/]"
         )
         if new_domain and new_domain.strip():
-            success, output = await execute_occ_command(
-                [
-                    "config:system:set",
-                    "trusted_domains",
-                    str(len(domains)),
-                    "--value=" + new_domain.strip(),
-                ]
-            )
-            if success:
+            # Add the domain to our configuration
+            if not hasattr(config, "additional_trusted_domains"):
+                config.additional_trusted_domains = []
+            if new_domain not in config.additional_trusted_domains:
+                config.additional_trusted_domains.append(new_domain)
+                await save_config(config)
+
+            # Update the trusted domains directly in the PHP file
+            domains.append(new_domain)
+
+            # Create the PHP array string
+            trusted_domains_php = []
+            for i, domain in enumerate(domains):
+                trusted_domains_php.append(f"  {i} => '{domain}',")
+
+            php_config = f"$CONFIG['trusted_domains'] = array(\n{chr(10).join(trusted_domains_php)}\n);"
+
+            # Write to a temporary file
+            temp_config_path = os.path.join(DOCKER_DIR, "trusted_domains.php")
+            with open(temp_config_path, "w") as f:
+                f.write(php_config)
+
+            # Copy to container
+            cp_cmd = [
+                "docker",
+                "cp",
+                temp_config_path,
+                f"{container_id}:/tmp/trusted_domains.php",
+            ]
+            returncode, stdout, stderr = await run_command_async(cp_cmd)
+
+            if returncode != 0:
+                print_error(f"Failed to copy config: {stderr}")
+                await async_prompt("Press Enter to continue")
+                return
+
+            # Update the config.php file using sed to replace the trusted_domains section
+            sed_cmd = [
+                "docker",
+                "exec",
+                container_id,
+                "bash",
+                "-c",
+                "sed -i '/trusted_domains/,/);/c\\\\n' /var/www/html/config/config.php && "
+                "sed -i '/<?php/a\\\\n' /var/www/html/config/config.php && "
+                "sed -i '/<\?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
+            ]
+
+            returncode, stdout, stderr = await run_command_async(sed_cmd)
+
+            if returncode == 0:
                 print_success(f"Added {new_domain} to trusted domains")
-                # Update htaccess to apply changes
-                await execute_occ_command(["maintenance:update:htaccess"])
+
+                # Restart the Apache server to apply changes
+                restart_cmd = ["docker", "exec", container_id, "apache2ctl", "graceful"]
+                await run_command_async(restart_cmd)
             else:
-                print_error(f"Failed to add domain: {output}")
+                print_error(f"Failed to update config: {stderr}")
+
+            # Clean up temp file
+            if os.path.exists(temp_config_path):
+                os.remove(temp_config_path)
 
     elif action.lower() == "remove":
         index = await async_prompt(
@@ -1320,29 +1419,74 @@ async def manage_trusted_domains() -> None:
         try:
             idx = int(index)
             if 0 <= idx < len(domains):
-                # We can't easily remove an item from the middle of the array
-                # So we need to rebuild the entire trusted_domains config
                 removed_domain = domains.pop(idx)
 
-                # First delete the current config
-                success, output = await execute_occ_command(
-                    ["config:system:delete", "trusted_domains"]
-                )
+                # Update config
+                if (
+                    hasattr(config, "additional_trusted_domains")
+                    and removed_domain in config.additional_trusted_domains
+                ):
+                    config.additional_trusted_domains.remove(removed_domain)
+                    await save_config(config)
 
-                # Then add each domain back
+                # Create the PHP array string
+                trusted_domains_php = []
                 for i, domain in enumerate(domains):
-                    success, output = await execute_occ_command(
-                        [
-                            "config:system:set",
-                            "trusted_domains",
-                            str(i),
-                            "--value=" + domain,
-                        ]
-                    )
+                    trusted_domains_php.append(f"  {i} => '{domain}',")
 
-                print_success(f"Removed {removed_domain} from trusted domains")
-                # Update htaccess to apply changes
-                await execute_occ_command(["maintenance:update:htaccess"])
+                php_config = f"$CONFIG['trusted_domains'] = array(\n{chr(10).join(trusted_domains_php)}\n);"
+
+                # Write to a temporary file
+                temp_config_path = os.path.join(DOCKER_DIR, "trusted_domains.php")
+                with open(temp_config_path, "w") as f:
+                    f.write(php_config)
+
+                # Copy to container
+                cp_cmd = [
+                    "docker",
+                    "cp",
+                    temp_config_path,
+                    f"{container_id}:/tmp/trusted_domains.php",
+                ]
+                returncode, stdout, stderr = await run_command_async(cp_cmd)
+
+                if returncode != 0:
+                    print_error(f"Failed to copy config: {stderr}")
+                    await async_prompt("Press Enter to continue")
+                    return
+
+                # Update the config.php file
+                sed_cmd = [
+                    "docker",
+                    "exec",
+                    container_id,
+                    "bash",
+                    "-c",
+                    "sed -i '/trusted_domains/,/);/c\\\\n' /var/www/html/config/config.php && "
+                    "sed -i '/<\?php/a\\\\n' /var/www/html/config/config.php && "
+                    "sed -i '/<\?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
+                ]
+
+                returncode, stdout, stderr = await run_command_async(sed_cmd)
+
+                if returncode == 0:
+                    print_success(f"Removed {removed_domain} from trusted domains")
+
+                    # Restart the Apache server to apply changes
+                    restart_cmd = [
+                        "docker",
+                        "exec",
+                        container_id,
+                        "apache2ctl",
+                        "graceful",
+                    ]
+                    await run_command_async(restart_cmd)
+                else:
+                    print_error(f"Failed to update config: {stderr}")
+
+                # Clean up temp file
+                if os.path.exists(temp_config_path):
+                    os.remove(temp_config_path)
             else:
                 print_error(f"Invalid index: {idx}")
         except ValueError:
