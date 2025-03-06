@@ -413,6 +413,8 @@ def install_dependencies() -> bool:
     Install all required dependencies for Nextcloud using apt.
     First checks for and fixes problematic repositories.
     """
+    global DEFAULT_PHP_VERSION
+
     print_section("Installing Dependencies")
 
     # Check for and fix repository issues before installing dependencies
@@ -425,7 +427,6 @@ def install_dependencies() -> bool:
         print_error(
             "No PHP versions could be detected. Trying to install without specifying version."
         )
-        global DEFAULT_PHP_VERSION
         DEFAULT_PHP_VERSION = ""
     else:
         print_step(f"Available PHP versions: {', '.join(php_versions)}")
@@ -433,7 +434,6 @@ def install_dependencies() -> bool:
         suitable_versions = [v for v in php_versions if float(v) >= 7.4]
 
         if suitable_versions:
-            global DEFAULT_PHP_VERSION
             DEFAULT_PHP_VERSION = suitable_versions[-1]  # Get the newest version
             print_success(
                 f"Selected PHP version {DEFAULT_PHP_VERSION} for installation."
