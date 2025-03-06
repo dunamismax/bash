@@ -54,9 +54,9 @@ DEFAULT_DB_TYPE: str = "pgsql"
 DEFAULT_PHP_VERSION: str = ""
 TEMP_DIR: str = tempfile.gettempdir()
 
-# Certificate paths (hardcoded to user's files)
-CERT_FILE: str = "/home/sawyer/dunamismax.com.pem"
-KEY_FILE: str = "/home/sawyer/dunamismax.com.key"
+# Certificate paths (in /etc/ssl/cloudflare/)
+CERT_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.pem"
+KEY_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.key"
 
 # Caddy file paths
 CADDY_CONFIG_DIR: str = "/etc/caddy"
@@ -596,6 +596,13 @@ def install_dependencies() -> bool:
 
     print_section("Installing Dependencies")
 
+    # Fix any interrupted dpkg installations first
+    print_step("Checking for interrupted package installations...")
+    returncode, _, stderr = run_command(["dpkg", "--configure", "-a"], sudo=True)
+    if returncode != 0:
+        print_error(f"Failed to fix interrupted dpkg: {stderr}")
+        print_warning("Continuing, but this might cause problems with installation.")
+
     # Check for and fix repository issues before installing dependencies
     fix_repository_issues()
 
@@ -714,8 +721,18 @@ def install_dependencies() -> bool:
 
             # Install Caddy
             task_caddy = progress.add_task(
-                f"[{NordColors.FROST_2}]Installing Caddy...", total=5
+                f"[{NordColors.FROST_2}]Installing Caddy...", total=6
             )
+
+            # Step 0: Fix any interrupted dpkg installations
+            print_step("Checking and fixing any interrupted package installations...")
+            returncode, _, stderr = run_command(
+                ["dpkg", "--configure", "-a"], sudo=True
+            )
+            if returncode != 0:
+                print_error(f"Failed to fix interrupted dpkg: {stderr}")
+                return False
+            progress.update(task_caddy, advance=1)
 
             # Step 1: Install prerequisites
             print_step("Installing Caddy prerequisites...")
