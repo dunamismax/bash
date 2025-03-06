@@ -340,8 +340,9 @@ async def check_docker_compose_installed() -> bool:
     """Check if Docker Compose is installed and available."""
     global DOCKER_COMPOSE_COMMAND
     logger.info("Checking if Docker Compose is installed")
+
+    # First, try with Docker Compose V2 (docker compose)
     try:
-        # First try with docker compose (newer Docker versions)
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_V2_COMMAND + ["--version"]
         )
@@ -350,20 +351,30 @@ async def check_docker_compose_installed() -> bool:
             logger.info(f"Docker Compose V2 is installed: {stdout}")
             DOCKER_COMPOSE_COMMAND = DOCKER_COMPOSE_V2_COMMAND
             return True
+        else:
+            # If the error message indicates that "compose" is not a docker command, fall back.
+            if "docker: 'compose'" in stderr:
+                logger.info(
+                    "Docker Compose V2 not available; falling back to legacy docker-compose command."
+                )
+                raise Exception("Docker Compose V2 plugin not available")
+    except Exception as e:
+        logger.warning(f"Docker Compose V2 check failed: {e}")
 
-        # If that fails, try with docker-compose (older versions)
+    # Fallback: try with the legacy docker-compose (Docker Compose V1)
+    try:
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_V1_COMMAND + ["--version"]
         )
         if returncode == 0:
             print_success(f"Docker Compose V1 is installed: {stdout}")
-            logger.info(f"Docker Compose is installed (legacy version): {stdout}")
+            logger.info(f"Docker Compose V1 is installed: {stdout}")
             DOCKER_COMPOSE_COMMAND = DOCKER_COMPOSE_V1_COMMAND
             return True
-
-        print_error("Docker Compose not available")
-        logger.error("Docker Compose not available")
-        return False
+        else:
+            print_error("Docker Compose not available")
+            logger.error("Docker Compose not available")
+            return False
     except Exception as e:
         error_msg = f"Error checking Docker Compose: {e}"
         logger.error(error_msg)
