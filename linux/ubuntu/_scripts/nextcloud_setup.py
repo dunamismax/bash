@@ -45,12 +45,13 @@ console: Console = Console()
 
 # Configuration and Constants
 APP_NAME: str = "Nextcloud Setup"
-VERSION: str = "1.0.0"
+VERSION: str = "1.1.0"
 DOWNLOAD_URL: str = "https://download.nextcloud.com/server/releases/latest.zip"
 OPERATION_TIMEOUT: int = 60
 DEFAULT_WEB_USER: str = "www-data"
 DEFAULT_WEBSERVER: str = "apache2"
 DEFAULT_DB_TYPE: str = "pgsql"
+LETSENCRYPT_REPO_URL: str = "https://dl.eff.org/certbot-auto"
 # Will be dynamically determined
 DEFAULT_PHP_VERSION: str = ""
 TEMP_DIR: str = tempfile.gettempdir()
@@ -99,9 +100,12 @@ class NextcloudConfig:
     php_version: str = DEFAULT_PHP_VERSION
     install_dir: str = "/var/www/nextcloud"
     domain: str = "localhost"
-    use_https: bool = False
+    use_https: bool = True
     cert_file: str = ""
     key_file: str = ""
+    email: str = ""
+    using_cloudflare: bool = False
+    ssl_method: str = "letsencrypt"  # Options: "letsencrypt", "self-signed", "manual"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -456,6 +460,10 @@ def install_dependencies() -> bool:
         "postgresql-contrib",
         "unzip",
         "curl",
+        "python3-certbot-apache",  # Added for Let's Encrypt support
+        "certbot",  # Added for Let's Encrypt support
+        "ssl-cert",  # Added for SSL support
+        "openssl",  # Added for SSL support
     ]
 
     # Define PHP dependencies based on detected version
@@ -972,26 +980,233 @@ def free_port(port: int) -> bool:
     return False
 
 
+def setup_self_signed_ssl(config: NextcloudConfig) -> bool:
+    """
+    Create and set up self-signed SSL certificates for Apache.
+    """
+    print_section("Setting up Self-Signed SSL Certificate")
+
+    ssl_dir = "/etc/ssl/nextcloud"
+    cert_file = os.path.join(ssl_dir, f"{config.domain}.crt")
+    key_file = os.path.join(ssl_dir, f"{config.domain}.key")
+
+    # Create directory for certificates
+    print_step(f"Creating SSL directory at {ssl_dir}...")
+    returncode, _, stderr = run_command(["mkdir", "-p", ssl_dir], sudo=True)
+    if returncode != 0:
+        print_error(f"Failed to create SSL directory: {stderr}")
+        return False
+
+    # Generate self-signed certificate
+    print_step("Generating self-signed SSL certificate...")
+    openssl_cmd = [
+        "openssl",
+        "req",
+        "-x509",
+        "-nodes",
+        "-days",
+        "365",
+        "-newkey",
+        "rsa:2048",
+        "-keyout",
+        key_file,
+        "-out",
+        cert_file,
+        "-subj",
+        f"/CN={config.domain}/O=Nextcloud/C=US",
+    ]
+
+    returncode, _, stderr = run_command(openssl_cmd, sudo=True)
+    if returncode != 0:
+        print_error(f"Failed to generate SSL certificate: {stderr}")
+        return False
+
+    # Set proper permissions
+    run_command(["chmod", "600", key_file], sudo=True)
+
+    # Update config with certificate paths
+    config.cert_file = cert_file
+    config.key_file = key_file
+    save_config(config)
+
+    print_success("Self-signed SSL certificate generated successfully.")
+    return True
+
+
+def setup_letsencrypt_ssl(config: NextcloudConfig) -> bool:
+    """
+    Set up Let's Encrypt SSL certificate for Apache.
+    """
+    print_section("Setting up Let's Encrypt SSL Certificate")
+
+    if not config.email:
+        print_error("Email address is required for Let's Encrypt certificate.")
+        return False
+
+    # Make sure Apache is running and ports are available
+    print_step("Ensuring Apache is running...")
+    returncode, _, _ = run_command(["systemctl", "is-active", "apache2"], sudo=True)
+    if returncode != 0:
+        print_step("Starting Apache...")
+        run_command(["systemctl", "start", "apache2"], sudo=True)
+
+    # Check if ports 80 and 443 are free (except for Apache)
+    port80_in_use, process80, _ = check_port_in_use(80)
+    port443_in_use, process443, _ = check_port_in_use(443)
+
+    if port80_in_use and process80 != "apache2":
+        print_warning(f"Port 80 is in use by {process80}. Attempting to free it...")
+        if not free_port(80):
+            print_error("Failed to free port 80. Let's Encrypt verification may fail.")
+
+    if port443_in_use and process443 != "apache2":
+        print_warning(f"Port 443 is in use by {process443}. Attempting to free it...")
+        if not free_port(443):
+            print_error(
+                "Failed to free port 443. Let's Encrypt may not work correctly."
+            )
+
+    # Run certbot to obtain certificates
+    print_step(f"Obtaining Let's Encrypt certificate for {config.domain}...")
+
+    # Check if Cloudflare is being used
+    if config.using_cloudflare:
+        print_warning(
+            "Since you're using Cloudflare, we'll use DNS verification instead of HTTP."
+        )
+        print_warning("For Cloudflare, you need to set up DNS verification manually.")
+        display_panel(
+            "Cloudflare Setup",
+            "When using Cloudflare with Let's Encrypt, consider these steps:\n\n"
+            "1. Temporarily set Cloudflare to 'DNS Only' mode during certificate setup\n"
+            "2. After obtaining certificates, you can enable Cloudflare proxy again\n"
+            "3. Ensure your SSL/TLS encryption mode in Cloudflare is set to 'Full Strict'\n"
+            "4. Create an Origin CA certificate in Cloudflare if Let's Encrypt fails",
+            NordColors.YELLOW,
+        )
+        if not Confirm.ask("Proceed with Let's Encrypt setup?", default=True):
+            print_warning("Skipping Let's Encrypt setup.")
+            return False
+
+    # First, try with the standalone plugin
+    certbot_cmd = [
+        "certbot",
+        "certonly",
+        "--standalone",
+        "--non-interactive",
+        "--agree-tos",
+        "--email",
+        config.email,
+        "-d",
+        config.domain,
+    ]
+
+    returncode, stdout, stderr = run_command(certbot_cmd, sudo=True)
+    if returncode != 0:
+        print_warning(f"Standalone method failed: {stderr}")
+
+        # Try with the webroot plugin
+        print_step("Trying webroot method...")
+        certbot_cmd = [
+            "certbot",
+            "certonly",
+            "--webroot",
+            "--webroot-path",
+            config.install_dir,
+            "--non-interactive",
+            "--agree-tos",
+            "--email",
+            config.email,
+            "-d",
+            config.domain,
+        ]
+
+        returncode, stdout, stderr = run_command(certbot_cmd, sudo=True)
+        if returncode != 0:
+            print_warning(f"Webroot method failed: {stderr}")
+
+            # Try with the Apache plugin
+            print_step("Trying Apache plugin method...")
+            certbot_cmd = [
+                "certbot",
+                "certonly",
+                "--apache",
+                "--non-interactive",
+                "--agree-tos",
+                "--email",
+                config.email,
+                "-d",
+                config.domain,
+            ]
+
+            returncode, stdout, stderr = run_command(certbot_cmd, sudo=True)
+            if returncode != 0:
+                print_error(f"All Let's Encrypt methods failed: {stderr}")
+                print_step("Falling back to self-signed certificate...")
+                return setup_self_signed_ssl(config)
+
+    # Certificate paths
+    cert_file = f"/etc/letsencrypt/live/{config.domain}/fullchain.pem"
+    key_file = f"/etc/letsencrypt/live/{config.domain}/privkey.pem"
+
+    # Verify the certificates exist
+    returncode, _, _ = run_command(["test", "-f", cert_file], sudo=True)
+    if returncode != 0:
+        print_error(f"Certificate file not found at {cert_file}")
+        print_step("Falling back to self-signed certificate...")
+        return setup_self_signed_ssl(config)
+
+    returncode, _, _ = run_command(["test", "-f", key_file], sudo=True)
+    if returncode != 0:
+        print_error(f"Key file not found at {key_file}")
+        print_step("Falling back to self-signed certificate...")
+        return setup_self_signed_ssl(config)
+
+    # Update config with certificate paths
+    config.cert_file = cert_file
+    config.key_file = key_file
+    save_config(config)
+
+    print_success("Let's Encrypt SSL certificate obtained successfully.")
+
+    # Set up automatic renewal
+    print_step("Setting up automatic certificate renewal...")
+    run_command(["systemctl", "enable", "certbot.timer"], sudo=True)
+    run_command(["systemctl", "start", "certbot.timer"], sudo=True)
+
+    return True
+
+
 def setup_apache(config: NextcloudConfig) -> bool:
     """
-    Configure Apache for Nextcloud.
+    Configure Apache for Nextcloud with SSL support.
     """
     print_section("Configuring Apache Web Server")
 
     try:
-        # Check if port 80 is already in use
-        port_in_use, process_name, pid = check_port_in_use(80)
+        # Check if ports 80 and 443 are already in use
+        port80_in_use, process80_name, pid80 = check_port_in_use(80)
+        port443_in_use, process443_name, pid443 = check_port_in_use(443)
 
-        if port_in_use:
+        if port80_in_use and process80_name != "apache2":
             print_warning(
-                f"Port 80 is already in use by {process_name or 'unknown process'}{f' (PID: {pid})' if pid else ''}."
+                f"Port 80 is already in use by {process80_name or 'unknown process'}{f' (PID: {pid80})' if pid80 else ''}."
             )
 
             if free_port(80):
                 print_success("Successfully freed port 80 for Apache.")
             else:
                 print_error("Failed to free port 80. Apache may not start correctly.")
-                # Continue with the setup anyway, as we made a best effort
+
+        if port443_in_use and process443_name != "apache2":
+            print_warning(
+                f"Port 443 is already in use by {process443_name or 'unknown process'}{f' (PID: {pid443})' if pid443 else ''}."
+            )
+
+            if free_port(443):
+                print_success("Successfully freed port 443 for Apache.")
+            else:
+                print_error("Failed to free port 443. Apache may not start correctly.")
 
         # Enable required Apache modules
         modules = ["rewrite", "headers", "env", "dir", "mime", "ssl"]
@@ -1002,8 +1217,58 @@ def setup_apache(config: NextcloudConfig) -> bool:
             if returncode != 0:
                 print_warning(f"Could not enable Apache module {module}: {stderr}")
 
-        # Create Apache site configuration
-        site_config = f"""<VirtualHost *:80>
+        # Create Apache site configuration with SSL
+        if config.use_https and config.cert_file and config.key_file:
+            site_config = f"""<VirtualHost *:80>
+    ServerName {config.domain}
+    ServerAdmin webmaster@localhost
+    
+    # Redirect all HTTP traffic to HTTPS
+    Redirect permanent / https://{config.domain}/
+    
+    ErrorLog ${{APACHE_LOG_DIR}}/nextcloud_error.log
+    CustomLog ${{APACHE_LOG_DIR}}/nextcloud_access.log combined
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName {config.domain}
+    ServerAdmin webmaster@localhost
+    DocumentRoot {config.install_dir}
+
+    <Directory {config.install_dir}>
+        Options FollowSymlinks
+        AllowOverride All
+        Require all granted
+        <IfModule mod_dav.c>
+            Dav off
+        </IfModule>
+        
+        # HSTS (optional)
+        <IfModule mod_headers.c>
+            Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains"
+        </IfModule>
+    </Directory>
+
+    # SSL Configuration
+    SSLEngine on
+    SSLCertificateFile {config.cert_file}
+    SSLCertificateKeyFile {config.key_file}
+    
+    # For Cloudflare
+    SetEnvIf X-Forwarded-Proto "https" HTTPS=on
+
+    # Modern SSL configuration
+    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+    SSLHonorCipherOrder on
+    SSLCompression off
+    
+    ErrorLog ${{APACHE_LOG_DIR}}/nextcloud_ssl_error.log
+    CustomLog ${{APACHE_LOG_DIR}}/nextcloud_ssl_access.log combined
+</VirtualHost>
+"""
+        else:
+            # HTTP-only configuration
+            site_config = f"""<VirtualHost *:80>
     ServerName {config.domain}
     ServerAdmin webmaster@localhost
     DocumentRoot {config.install_dir}
@@ -1100,16 +1365,29 @@ ServerName {config.domain}
             if not Confirm.ask("Continue anyway?", default=False):
                 return False
 
-        # Make sure port 80 is still free before starting Apache
-        port_in_use, process_name, pid = check_port_in_use(80)
-        if port_in_use:
+        # Make sure ports are still free before starting Apache
+        port80_in_use, process80_name, pid80 = check_port_in_use(80)
+        if port80_in_use and process80_name != "apache2":
             print_warning(
-                f"Port 80 is in use again by {process_name or 'unknown process'}{f' (PID: {pid})' if pid else ''}."
+                f"Port 80 is in use again by {process80_name or 'unknown process'}{f' (PID: {pid80})' if pid80 else ''}."
             )
             if free_port(80):
                 print_success("Successfully freed port 80 for Apache.")
             else:
                 print_error("Failed to free port 80. Apache may not start correctly.")
+
+        if config.use_https:
+            port443_in_use, process443_name, pid443 = check_port_in_use(443)
+            if port443_in_use and process443_name != "apache2":
+                print_warning(
+                    f"Port 443 is in use again by {process443_name or 'unknown process'}{f' (PID: {pid443})' if pid443 else ''}."
+                )
+                if free_port(443):
+                    print_success("Successfully freed port 443 for Apache.")
+                else:
+                    print_error(
+                        "Failed to free port 443. Apache may not start correctly."
+                    )
 
         # Restart Apache
         print_step("Restarting Apache service...")
@@ -1124,15 +1402,25 @@ ServerName {config.domain}
             run_command(["systemctl", "stop", "apache2"], sudo=True)
             time.sleep(2)  # Give it time to fully stop
 
-            # Check if port 80 is free before starting
-            port_in_use, process_name, pid = check_port_in_use(80)
-            if port_in_use:
+            # Check if required ports are free before starting
+            port80_in_use, _, _ = check_port_in_use(80)
+            if port80_in_use:
                 if free_port(80):
                     print_success("Successfully freed port 80 for Apache.")
                 else:
                     print_error(
                         "Failed to free port 80. Apache may not start correctly."
                     )
+
+            if config.use_https:
+                port443_in_use, _, _ = check_port_in_use(443)
+                if port443_in_use:
+                    if free_port(443):
+                        print_success("Successfully freed port 443 for Apache.")
+                    else:
+                        print_error(
+                            "Failed to free port 443. Apache may not start correctly."
+                        )
 
             returncode, _, stderr = run_command(
                 ["systemctl", "start", "apache2"], sudo=True
@@ -1151,6 +1439,40 @@ ServerName {config.domain}
         return True
     except Exception as e:
         print_error(f"Error configuring Apache: {e}")
+        return False
+
+
+def setup_ssl(config: NextcloudConfig) -> bool:
+    """
+    Set up SSL certificate based on the chosen method.
+    """
+    if not config.use_https:
+        print_warning("HTTPS is disabled. Skipping SSL setup.")
+        return True
+
+    print_section("Setting up SSL")
+
+    if config.ssl_method == "letsencrypt":
+        return setup_letsencrypt_ssl(config)
+    elif config.ssl_method == "self-signed":
+        return setup_self_signed_ssl(config)
+    elif config.ssl_method == "manual":
+        print_step("Using manually provided certificate files...")
+        # Check if certificate files exist
+        returncode, _, _ = run_command(["test", "-f", config.cert_file], sudo=True)
+        if returncode != 0:
+            print_error(f"Certificate file not found at {config.cert_file}")
+            return False
+
+        returncode, _, _ = run_command(["test", "-f", config.key_file], sudo=True)
+        if returncode != 0:
+            print_error(f"Key file not found at {config.key_file}")
+            return False
+
+        print_success("Manual certificate files verified.")
+        return True
+    else:
+        print_error(f"Unknown SSL method: {config.ssl_method}")
         return False
 
 
@@ -1287,6 +1609,119 @@ def configure_nextcloud(config: NextcloudConfig) -> bool:
             print_error(f"Failed to set trusted domain: {stderr}")
             return False
 
+        # Configure overwrite.cli.url for proper redirects
+        protocol = "https" if config.use_https else "http"
+        overwrite_url_cmd = [
+            "sudo",
+            "-u",
+            DEFAULT_WEB_USER,
+            "php",
+            os.path.join(config.install_dir, "occ"),
+            "config:system:set",
+            "overwrite.cli.url",
+            "--value",
+            f"{protocol}://{config.domain}",
+        ]
+
+        returncode, _, stderr = run_command(overwrite_url_cmd)
+        if returncode != 0:
+            print_error(f"Failed to set overwrite URL: {stderr}")
+            return False
+
+        # Force HTTPS if enabled
+        if config.use_https:
+            print_step("Configuring Nextcloud to use HTTPS...")
+            https_cmd = [
+                "sudo",
+                "-u",
+                DEFAULT_WEB_USER,
+                "php",
+                os.path.join(config.install_dir, "occ"),
+                "config:system:set",
+                "htaccess.RewriteBase",
+                "--value",
+                "/",
+            ]
+            run_command(https_cmd)
+
+            force_https_cmd = [
+                "sudo",
+                "-u",
+                DEFAULT_WEB_USER,
+                "php",
+                os.path.join(config.install_dir, "occ"),
+                "config:system:set",
+                "force_https",
+                "--type",
+                "boolean",
+                "--value",
+                "true",
+            ]
+            run_command(force_https_cmd)
+
+            # Update .htaccess
+            update_htaccess_cmd = [
+                "sudo",
+                "-u",
+                DEFAULT_WEB_USER,
+                "php",
+                os.path.join(config.install_dir, "occ"),
+                "maintenance:update:htaccess",
+            ]
+            run_command(update_htaccess_cmd)
+
+        # If using Cloudflare, add trusted proxy configuration
+        if config.using_cloudflare:
+            print_step("Configuring trusted proxies for Cloudflare...")
+
+            # Cloudflare IPv4 ranges
+            cf_ranges = [
+                "173.245.48.0/20",
+                "103.21.244.0/22",
+                "103.22.200.0/22",
+                "103.31.4.0/22",
+                "141.101.64.0/18",
+                "108.162.192.0/18",
+                "190.93.240.0/20",
+                "188.114.96.0/20",
+                "197.234.240.0/22",
+                "198.41.128.0/17",
+                "162.158.0.0/15",
+                "104.16.0.0/12",
+                "172.64.0.0/13",
+                "131.0.72.0/22",
+            ]
+
+            # Add each Cloudflare range as a trusted proxy
+            for i, ip_range in enumerate(cf_ranges):
+                trusted_proxy_cmd = [
+                    "sudo",
+                    "-u",
+                    DEFAULT_WEB_USER,
+                    "php",
+                    os.path.join(config.install_dir, "occ"),
+                    "config:system:set",
+                    "trusted_proxies",
+                    str(i),
+                    "--value",
+                    ip_range,
+                ]
+                run_command(trusted_proxy_cmd)
+
+            # Set reverse proxy headers
+            proxy_headers_cmd = [
+                "sudo",
+                "-u",
+                DEFAULT_WEB_USER,
+                "php",
+                os.path.join(config.install_dir, "occ"),
+                "config:system:set",
+                "overwriteprotocol",
+                "--value",
+                "https",
+            ]
+            run_command(proxy_headers_cmd)
+
         print_success("Nextcloud configuration completed successfully.")
         return True
     except Exception as e:
@@ -1405,6 +1840,46 @@ opcache.revalidate_freq=1
         return False
 
 
+def display_cloudflare_instructions(config: NextcloudConfig) -> None:
+    """
+    Display helpful instructions for configuring Cloudflare with Nextcloud.
+    """
+    print_section("Cloudflare Configuration Instructions")
+
+    protocol = "https" if config.use_https else "http"
+    url = f"{protocol}://{config.domain}"
+
+    instructions = f"""
+To correctly configure Cloudflare with your Nextcloud installation:
+
+1. Login to your Cloudflare account and go to the DNS settings for {config.domain}
+
+2. Ensure you have an A record pointing to your server's IP address:
+   - Type: A
+   - Name: {config.domain.split(".")[0] if "." in config.domain else "@"}
+   - Content: Your server IP
+   - Proxy status: {("ON (recommended)" if config.use_https else "OFF (required until SSL is set up)")}
+
+3. SSL/TLS settings:
+   - Set SSL/TLS encryption mode to "Full (strict)" 
+   - This requires valid SSL certificates on your origin server (which we've set up)
+
+4. Page Rules (recommended):
+   - Create a page rule for {url}/*
+   - Set Cache Level to "Bypass"
+   - This prevents Cloudflare from caching your Nextcloud content
+
+5. If you experience issues:
+   - Try setting Cloudflare to DNS Only mode temporarily
+   - Once everything is working, you can enable the proxy again
+   - Verify SSL certificates on both your server and Cloudflare
+
+Your Nextcloud installation is already configured to work with Cloudflare proxy.
+"""
+
+    display_panel("Cloudflare Configuration", instructions, NordColors.FROST_2)
+
+
 def setup_nextcloud(config: NextcloudConfig) -> bool:
     """
     Perform the complete Nextcloud setup process.
@@ -1428,6 +1903,13 @@ def setup_nextcloud(config: NextcloudConfig) -> bool:
     if not extract_nextcloud(zip_path, config.install_dir):
         return False
 
+    # Set up SSL if enabled
+    if config.use_https:
+        if not setup_ssl(config):
+            print_warning("SSL setup failed, continuing with HTTP only...")
+            config.use_https = False
+            save_config(config)
+
     # Set up Apache
     if not setup_apache(config):
         return False
@@ -1439,6 +1921,10 @@ def setup_nextcloud(config: NextcloudConfig) -> bool:
     # Optimize Nextcloud
     if not optimize_nextcloud(config):
         return False
+
+    # Display Cloudflare-specific instructions if needed
+    if config.using_cloudflare:
+        display_cloudflare_instructions(config)
 
     # Clean up
     try:
@@ -1478,6 +1964,51 @@ def get_nextcloud_config() -> NextcloudConfig:
     config.domain = Prompt.ask(
         "[bold]Enter domain name for Nextcloud[/]", default="localhost"
     )
+
+    # SSL configuration
+    config.use_https = Confirm.ask("[bold]Enable HTTPS (recommended)?[/]", default=True)
+
+    if config.use_https:
+        config.email = Prompt.ask(
+            "[bold]Enter email address (required for Let's Encrypt)[/]"
+        )
+
+        # Ask about Cloudflare
+        config.using_cloudflare = Confirm.ask(
+            "[bold]Are you using Cloudflare as a proxy?[/]", default=False
+        )
+
+        if config.using_cloudflare:
+            display_panel(
+                "Cloudflare Configuration",
+                "Since you're using Cloudflare, we'll configure Nextcloud to work properly with Cloudflare's proxy.\n\n"
+                "Important: Make sure to set Cloudflare's SSL/TLS encryption mode to 'Full (strict)' after setup.",
+                NordColors.FROST_2,
+            )
+
+        # Ask about SSL method
+        ssl_options = {
+            "1": "Let's Encrypt (automatic, recommended)",
+            "2": "Self-signed certificate (quick setup, not recommended for production)",
+            "3": "I'll provide my own certificates (manual)",
+        }
+
+        console.print("[bold]Choose SSL certificate method:[/]")
+        for key, value in ssl_options.items():
+            console.print(f"  {key}. {value}")
+
+        ssl_choice = Prompt.ask(
+            "[bold]Enter your choice[/]", choices=["1", "2", "3"], default="1"
+        )
+
+        if ssl_choice == "1":
+            config.ssl_method = "letsencrypt"
+        elif ssl_choice == "2":
+            config.ssl_method = "self-signed"
+        else:
+            config.ssl_method = "manual"
+            config.cert_file = Prompt.ask("[bold]Enter path to SSL certificate file[/]")
+            config.key_file = Prompt.ask("[bold]Enter path to SSL key file[/]")
 
     use_custom_dir = Confirm.ask(
         "[bold]Use custom installation directory?[/]", default=False
@@ -1561,10 +2092,10 @@ def proper_shutdown():
         print_error(f"Error during shutdown: {e}")
 
 
-# Menu Functions
+# Simplified Menu with just two options: Full Setup and Exit
 def show_menu() -> None:
     """
-    Display a numbered menu system and process user selections.
+    Display a simplified menu system with just full setup and exit options.
     """
     while True:
         clear_screen()
@@ -1577,57 +2108,26 @@ def show_menu() -> None:
                 border_style=NordColors.FROST_3,
             )
         )
-        console.print(f"[bold {NordColors.FROST_2}]1.[/] Download Nextcloud Package")
-        console.print(f"[bold {NordColors.FROST_2}]2.[/] Install Dependencies")
-        console.print(f"[bold {NordColors.FROST_2}]3.[/] Set Up PostgreSQL Database")
-        console.print(
-            f"[bold {NordColors.FROST_2}]4.[/] Install and Configure Nextcloud"
-        )
-        console.print(f"[bold {NordColors.FROST_2}]5.[/] Full Setup (All Steps)")
-        console.print(f"[bold {NordColors.FROST_2}]6.[/] Exit\n")
+        console.print(f"[bold {NordColors.FROST_2}]1.[/] Complete Nextcloud Setup")
+        console.print(f"[bold {NordColors.FROST_2}]2.[/] Exit\n")
 
         choice = Prompt.ask(
             f"[bold {NordColors.FROST_1}]Enter your choice[/]",
-            choices=["1", "2", "3", "4", "5", "6"],
-            default="6",
+            choices=["1", "2"],
+            default="1",
         )
 
         if choice == "1":
-            zip_path = os.path.join(TEMP_DIR, "nextcloud-latest.zip")
-            download_package(DOWNLOAD_URL, zip_path)
-            Prompt.ask("\nPress Enter to return to the menu")
-        elif choice == "2":
-            install_dependencies()
-            Prompt.ask("\nPress Enter to return to the menu")
-        elif choice == "3":
-            config = get_nextcloud_config()
-            setup_postgresql(config)
-            Prompt.ask("\nPress Enter to return to the menu")
-        elif choice == "4":
-            config = get_nextcloud_config()
-            zip_path = os.path.join(TEMP_DIR, "nextcloud-latest.zip")
-
-            if not os.path.exists(zip_path):
-                print_warning("Nextcloud package not found. Downloading it now...")
-                if not download_package(DOWNLOAD_URL, zip_path):
-                    Prompt.ask("\nPress Enter to return to the menu")
-                    continue
-
-            extract_nextcloud(zip_path, config.install_dir)
-            setup_apache(config)
-            configure_nextcloud(config)
-            optimize_nextcloud(config)
-
-            Prompt.ask("\nPress Enter to return to the menu")
-        elif choice == "5":
             config = get_nextcloud_config()
             if setup_nextcloud(config):
+                protocol = "https" if config.use_https else "http"
                 display_panel(
                     "Installation Complete",
                     f"Nextcloud has been successfully installed and configured!\n\n"
-                    f"You can access your Nextcloud instance at: http://{config.domain}/\n"
-                    f"Admin user: {config.admin_user}\n"
-                    f"Remember to secure your installation with HTTPS!",
+                    f"You can access your Nextcloud instance at: {protocol}://{config.domain}/\n"
+                    f"Admin user: {config.admin_user}\n\n"
+                    f"{'SSL is properly configured for secure access.' if config.use_https else 'Consider enabling HTTPS for better security.'}\n\n"
+                    f"{'Cloudflare proxy configuration has been applied.' if config.using_cloudflare else ''}",
                     NordColors.GREEN,
                 )
             else:
@@ -1638,7 +2138,7 @@ def show_menu() -> None:
                     NordColors.RED,
                 )
             Prompt.ask("\nPress Enter to return to the menu")
-        elif choice == "6":
+        elif choice == "2":
             console.print(
                 Panel(
                     "[bold green]Exiting Nextcloud Setup. Goodbye![/]",
