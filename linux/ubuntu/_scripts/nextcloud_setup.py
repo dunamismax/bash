@@ -126,7 +126,6 @@ class NextcloudConfig:
     custom_apps_dir: str = os.path.join(DOCKER_DIR, "custom_apps")
     config_dir: str = os.path.join(DOCKER_DIR, "config")
     theme_dir: str = os.path.join(DOCKER_DIR, "theme")
-    use_traefik: bool = False
     installation_status: str = "not_installed"
     installed_at: Optional[float] = None
 
@@ -439,26 +438,11 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                         "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
                         "NEXTCLOUD_TRUSTED_DOMAINS": config.domain,
                     },
+                    # Always add port mapping (Traefik options removed)
+                    "ports": [f"{config.port}:80"],
                 },
             },
         }
-
-        # Add port mapping if not using Traefik
-        if not config.use_traefik:
-            compose_config["services"]["app"]["ports"] = [f"{config.port}:80"]
-        else:
-            # Add Traefik labels for reverse proxy
-            compose_config["services"]["app"]["labels"] = [
-                "traefik.enable=true",
-                f"traefik.http.routers.nextcloud.rule=Host(`{config.domain}`)",
-                "traefik.http.routers.nextcloud.entrypoints=websecure",
-                "traefik.http.routers.nextcloud.tls=true",
-                "traefik.http.routers.nextcloud.tls.certresolver=letsencrypt",
-            ]
-            # Make sure app is on the same network as Traefik
-            compose_config["services"]["app"]["networks"] = ["traefik-public"]
-            # Add the network definition
-            compose_config["networks"] = {"traefik-public": {"external": True}}
 
         # Write the compose file
         with open(DOCKER_COMPOSE_FILE, "w") as f:
@@ -612,7 +596,7 @@ async def async_prompt(message: str, default: str = "") -> str:
     result = await loop.run_in_executor(
         None, lambda: Prompt.ask(message, default=default)
     )
-    logger.info(f"User input received (prompt)")
+    logger.info("User input received (prompt)")
     return result
 
 
@@ -687,18 +671,12 @@ async def configure_nextcloud() -> NextcloudConfig:
     # Networking configuration
     print_section("Network Configuration")
 
-    config.use_traefik = await async_confirm(
-        f"[bold {NordColors.FROST_2}]Use Traefik reverse proxy?[/]",
-        default=config.use_traefik,
+    # Removed Traefik option; always ask for port mapping
+    config.port = await async_int_prompt(
+        f"[bold {NordColors.FROST_2}]Port to expose Nextcloud on[/]",
+        default=config.port,
     )
-    logger.info(f"Use Traefik configured: {config.use_traefik}")
-
-    if not config.use_traefik:
-        config.port = await async_int_prompt(
-            f"[bold {NordColors.FROST_2}]Port to expose Nextcloud on[/]",
-            default=config.port,
-        )
-        logger.info(f"Port configured: {config.port}")
+    logger.info(f"Port configured: {config.port}")
 
     config.use_https = await async_confirm(
         f"[bold {NordColors.FROST_2}]Enable HTTPS?[/]", default=config.use_https
@@ -726,9 +704,7 @@ async def configure_nextcloud() -> NextcloudConfig:
     table.add_row("Admin User", config.admin_username)
     table.add_row("Database Name", config.db_name)
     table.add_row("Database User", config.db_username)
-    table.add_row("Using Traefik", "Yes" if config.use_traefik else "No")
-    if not config.use_traefik:
-        table.add_row("Port", str(config.port))
+    table.add_row("Port", str(config.port))
     table.add_row("HTTPS Enabled", "Yes" if config.use_https else "No")
     table.add_row("Data Directory", config.data_dir)
 
@@ -900,12 +876,8 @@ async def show_nextcloud_info(config: NextcloudConfig) -> None:
     )
 
     # Display access information
-    access_url = (
-        f"https://{config.domain}" if config.use_https else f"http://{config.domain}"
-    )
-    if not config.use_traefik:
-        access_url = f"http://localhost:{config.port}"
-
+    # Since Traefik support has been removed, always use localhost with the configured port.
+    access_url = f"http://localhost:{config.port}"
     info_table = Table(show_header=False, box=box.ROUNDED)
     info_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
     info_table.add_column("Value", style=NordColors.SNOW_STORM_1)
