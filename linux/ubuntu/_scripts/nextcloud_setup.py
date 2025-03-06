@@ -753,35 +753,78 @@ def detect_available_php_versions() -> List[str]:
     return available_versions
 
 
-def check_port_in_use(port: int) -> Tuple[bool, Optional[str]]:
+def check_port_in_use(port: int) -> Tuple[bool, Optional[str], Optional[int]]:
     """
     Check if a port is already in use and if so, by which process.
-    Returns a tuple (is_in_use, process_name)
+    Returns a tuple (is_in_use, process_name, process_pid)
     """
     try:
-        # Check using netstat, a common utility
+        # First try with ss command (most modern)
+        returncode, stdout, _ = run_command(["ss", "-tulpn"], sudo=True)
+        if returncode == 0:
+            for line in stdout.splitlines():
+                if f":{port}" in line and "LISTEN" in line:
+                    # Extract process info - format: users:(("process",pid,fd))
+                    if "users:" in line:
+                        process_info = line.split("users:")[1].strip()
+                        if "pid=" in process_info:
+                            # Extract from newer format: pid=1234,fd=5
+                            pid_str = process_info.split("pid=")[1].split(",")[0]
+                            process = (
+                                process_info.split('"')[1]
+                                if '"' in process_info
+                                else "unknown"
+                            )
+                            try:
+                                return True, process, int(pid_str)
+                            except ValueError:
+                                return True, process, None
+                        elif '(("' in process_info:
+                            # Extract from format: ((\"process\",pid,fd))
+                            parts = process_info.strip("()").split(",")
+                            if len(parts) >= 2:
+                                process = parts[0].strip('("')
+                                try:
+                                    pid = int(parts[1])
+                                    return True, process, pid
+                                except ValueError:
+                                    return True, process, None
+                    return True, None, None
+
+        # Try with netstat if ss failed
         returncode, stdout, _ = run_command(["netstat", "-tulpn"], sudo=True)
         if returncode == 0:
             for line in stdout.splitlines():
-                if f":{port}" in line:
-                    # Extract process name/PID
-                    if "LISTEN" in line:
-                        parts = line.split()
-                        if len(parts) >= 7:
-                            process_info = parts[6]  # Should contain PID/process
-                            return True, process_info
-                    return True, None  # Port in use but couldn't identify process
+                if f":{port}" in line and "LISTEN" in line:
+                    # Extract process info - format: process_name/pid
+                    parts = line.split()
+                    if len(parts) >= 7:
+                        process_info = parts[6]
+                        if "/" in process_info:
+                            process, pid_str = process_info.split("/")
+                            try:
+                                return True, process, int(pid_str)
+                            except ValueError:
+                                return True, process, None
+                    return True, None, None
 
-        # Alternative check using lsof
+        # Try with lsof as a fallback
         returncode, stdout, _ = run_command(["lsof", "-i", f":{port}"], sudo=True)
         if returncode == 0 and stdout.strip():
             lines = stdout.splitlines()
             if len(lines) > 1:  # First line is headers
-                process_name = lines[1].split()[0]
-                return True, process_name
+                parts = lines[1].split()
+                if len(parts) > 1:
+                    process_name = parts[0]
+                    pid_str = parts[1]
+                    try:
+                        return True, process_name, int(pid_str)
+                    except ValueError:
+                        return True, process_name, None
 
-        return False, None
-    except Exception:
+        return False, None, None
+    except Exception as e:
+        print_warning(f"Error checking port: {e}")
         # If command failed, try a basic socket check
         import socket
 
@@ -789,29 +832,98 @@ def check_port_in_use(port: int) -> Tuple[bool, Optional[str]]:
         try:
             s.bind(("0.0.0.0", port))
             s.close()
-            return False, None
+            return False, None, None
         except socket.error:
-            return True, None
+            return True, None, None
 
 
-def stop_service(service_name: str) -> bool:
+def kill_process(pid: int, force: bool = False) -> bool:
     """
-    Stop a system service.
+    Kill a process with the given PID.
+    If force is True, uses SIGKILL (-9) instead of SIGTERM.
     Returns True if successful, False otherwise.
     """
     try:
-        print_step(f"Stopping {service_name} service...")
+        signal_option = "-9" if force else ""
+        print_step(f"Attempting to kill process with PID {pid}...")
         returncode, _, stderr = run_command(
-            ["systemctl", "stop", service_name], sudo=True
+            ["kill", signal_option, str(pid)], sudo=True
         )
+
+        if returncode != 0:
+            print_error(f"Failed to kill process: {stderr}")
+            # If normal kill failed, try with force
+            if not force:
+                print_step("Trying forced kill...")
+                returncode, _, stderr = run_command(["kill", "-9", str(pid)], sudo=True)
+                if returncode != 0:
+                    print_error(f"Forced kill also failed: {stderr}")
+                    return False
+
+        # Verify the process was killed
+        time.sleep(1)  # Give it a moment to terminate
+        returncode, _, _ = run_command(["ps", "-p", str(pid)])
         if returncode == 0:
-            print_success(f"Service {service_name} stopped successfully.")
-            return True
-        else:
-            print_error(f"Failed to stop {service_name}: {stderr}")
+            print_warning(f"Process {pid} is still running.")
             return False
+
+        print_success(f"Process with PID {pid} was successfully terminated.")
+        return True
     except Exception as e:
-        print_error(f"Error stopping service {service_name}: {e}")
+        print_error(f"Error killing process: {e}")
+        return False
+
+
+def free_port(port: int) -> bool:
+    """
+    Find and kill any process using the specified port.
+    Returns True if the port was successfully freed, False otherwise.
+    """
+    port_in_use, process_name, pid = check_port_in_use(port)
+
+    if not port_in_use:
+        print_success(f"Port {port} is already free.")
+        return True
+
+    process_info = (
+        f"{process_name} (PID: {pid})"
+        if process_name and pid
+        else f"PID: {pid}"
+        if pid
+        else "unknown process"
+    )
+    print_warning(f"Port {port} is in use by {process_info}.")
+
+    if pid:
+        if Confirm.ask(
+            f"Would you like to forcibly terminate the process using port {port}?",
+            default=True,
+        ):
+            # First try graceful kill
+            if kill_process(pid, force=False):
+                # Check if port is now free
+                port_still_in_use, _, _ = check_port_in_use(port)
+                if not port_still_in_use:
+                    return True
+
+                print_warning(
+                    f"Process terminated but port {port} is still in use. Trying forced kill..."
+                )
+
+            # If graceful kill failed or port still in use, try force kill
+            if kill_process(pid, force=True):
+                # Verify port is now free
+                port_still_in_use, _, _ = check_port_in_use(port)
+                if not port_still_in_use:
+                    return True
+
+            print_error(f"Failed to free port {port} despite killing the process.")
+            return False
+        else:
+            print_warning("Process termination cancelled by user.")
+            return False
+    else:
+        print_error(f"Could not identify the PID of the process using port {port}.")
         return False
 
 
@@ -823,126 +935,18 @@ def setup_apache(config: NextcloudConfig) -> bool:
 
     try:
         # Check if port 80 is already in use
-        port_in_use, process = check_port_in_use(80)
+        port_in_use, process_name, pid = check_port_in_use(80)
+
         if port_in_use:
             print_warning(
-                f"Port 80 is already in use{' by ' + process if process else ''}."
+                f"Port 80 is already in use by {process_name or 'unknown process'}{f' (PID: {pid})' if pid else ''}."
             )
 
-            # If it's Apache itself, we need to disable any conflicting sites
-            if "apache" in str(process).lower():
-                print_step("Checking for enabled Apache sites...")
-                returncode, stdout, _ = run_command(
-                    ["ls", "-l", "/etc/apache2/sites-enabled"], sudo=True
-                )
-                if returncode == 0:
-                    enabled_sites = [
-                        site.split("/")[-1]
-                        for site in stdout.splitlines()
-                        if "->" in site
-                    ]
-                    print_step(
-                        f"Found enabled sites: {', '.join(enabled_sites) if enabled_sites else 'None'}"
-                    )
-
-                    # Option to disable all sites
-                    if enabled_sites and Confirm.ask(
-                        "Would you like to disable all currently enabled Apache sites?",
-                        default=True,
-                    ):
-                        for site in enabled_sites:
-                            print_step(f"Disabling site {site}...")
-                            run_command(["a2dissite", site], sudo=True)
-                else:
-                    print_warning("Could not list enabled Apache sites.")
-
-                # Try stopping and restarting Apache
-                if not stop_service("apache2"):
-                    alternative_port = Prompt.ask(
-                        "Would you like to use an alternative port for Nextcloud?",
-                        choices=["8080", "8081", "8082", "8888", "9000", "Custom"],
-                        default="8080",
-                    )
-
-                    if alternative_port.lower() == "custom":
-                        alternative_port = Prompt.ask(
-                            "Enter custom port number", default="8080"
-                        )
-
-                    config.port = alternative_port
+            if free_port(80):
+                print_success("Successfully freed port 80 for Apache.")
             else:
-                # If it's another service, offer to stop it
-                service_names = {"nginx": "nginx", "caddy": "caddy", "httpd": "httpd"}
-
-                service_to_stop = None
-                for key, value in service_names.items():
-                    if key in str(process).lower():
-                        service_to_stop = value
-                        break
-
-                if service_to_stop:
-                    if Confirm.ask(
-                        f"Would you like to stop the {service_to_stop} service to free port 80?",
-                        default=True,
-                    ):
-                        if not stop_service(service_to_stop):
-                            # If we couldn't stop the service, offer an alternative port
-                            alternative_port = Prompt.ask(
-                                "Would you like to use an alternative port for Nextcloud?",
-                                choices=[
-                                    "8080",
-                                    "8081",
-                                    "8082",
-                                    "8888",
-                                    "9000",
-                                    "Custom",
-                                ],
-                                default="8080",
-                            )
-
-                            if alternative_port.lower() == "custom":
-                                alternative_port = Prompt.ask(
-                                    "Enter custom port number", default="8080"
-                                )
-
-                            config.port = alternative_port
-                    else:
-                        # User chose not to stop the service, offer an alternative port
-                        alternative_port = Prompt.ask(
-                            "Would you like to use an alternative port for Nextcloud?",
-                            choices=["8080", "8081", "8082", "8888", "9000", "Custom"],
-                            default="8080",
-                        )
-
-                        if alternative_port.lower() == "custom":
-                            alternative_port = Prompt.ask(
-                                "Enter custom port number", default="8080"
-                            )
-
-                        config.port = alternative_port
-                else:
-                    # Unknown process, offer an alternative port
-                    alternative_port = Prompt.ask(
-                        "Would you like to use an alternative port for Nextcloud?",
-                        choices=["8080", "8081", "8082", "8888", "9000", "Custom"],
-                        default="8080",
-                    )
-
-                    if alternative_port.lower() == "custom":
-                        alternative_port = Prompt.ask(
-                            "Enter custom port number", default="8080"
-                        )
-
-                    config.port = alternative_port
-
-            # Check if the alternative port is also in use
-            if hasattr(config, "port") and config.port != "80":
-                alt_port_in_use, alt_process = check_port_in_use(int(config.port))
-                if alt_port_in_use:
-                    print_error(
-                        f"Alternative port {config.port} is also in use. Please choose another port."
-                    )
-                    return False
+                print_error("Failed to free port 80. Apache may not start correctly.")
+                # Continue with the setup anyway, as we made a best effort
 
         # Enable required Apache modules
         modules = ["rewrite", "headers", "env", "dir", "mime", "ssl"]
@@ -953,11 +957,8 @@ def setup_apache(config: NextcloudConfig) -> bool:
             if returncode != 0:
                 print_warning(f"Could not enable Apache module {module}: {stderr}")
 
-        # Set port in configuration
-        port = getattr(config, "port", "80")
-
         # Create Apache site configuration
-        site_config = f"""<VirtualHost *:{port}>
+        site_config = f"""<VirtualHost *:80>
     ServerName {config.domain}
     ServerAdmin webmaster@localhost
     DocumentRoot {config.install_dir}
@@ -1021,36 +1022,25 @@ ServerName {config.domain}
 
         os.unlink(server_name_file.name)
 
-        # If we're using a non-standard port, make sure it's in ports.conf
-        if port != "80":
-            print_step(f"Ensuring port {port} is in Apache ports.conf...")
-            # Check if port is already in ports.conf
-            returncode, stdout, _ = run_command(
-                ["cat", "/etc/apache2/ports.conf"], sudo=True
-            )
-            if returncode == 0:
-                if f"Listen {port}" not in stdout:
-                    # Add the port to ports.conf
-                    port_config = f"\nListen {port}\n"
-                    port_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
-                    port_file.write(port_config)
-                    port_file.close()
+        # Disable any existing sites that might conflict
+        print_step("Checking for enabled Apache sites that might conflict...")
+        returncode, stdout, _ = run_command(
+            ["ls", "-1", "/etc/apache2/sites-enabled"], sudo=True
+        )
+        if returncode == 0:
+            enabled_sites = [
+                site for site in stdout.splitlines() if site != "nextcloud.conf"
+            ]
 
-                    returncode, _, stderr = run_command(
-                        [
-                            "bash",
-                            "-c",
-                            f"cat {port_file.name} >> /etc/apache2/ports.conf",
-                        ],
-                        sudo=True,
-                    )
+            if enabled_sites:
+                print_warning(f"Found other enabled sites: {', '.join(enabled_sites)}")
+                print_step("Disabling other Apache sites to avoid conflicts...")
 
-                    if returncode != 0:
-                        print_warning(f"Could not update ports.conf: {stderr}")
+                for site in enabled_sites:
+                    print_step(f"Disabling site {site}...")
+                    run_command(["a2dissite", site], sudo=True)
 
-                    os.unlink(port_file.name)
-
-        # Enable the site
+        # Enable the Nextcloud site
         print_step("Enabling Nextcloud site in Apache...")
         returncode, _, stderr = run_command(["a2ensite", "nextcloud.conf"], sudo=True)
         if returncode != 0:
@@ -1065,6 +1055,17 @@ ServerName {config.domain}
             if not Confirm.ask("Continue anyway?", default=False):
                 return False
 
+        # Make sure port 80 is still free before starting Apache
+        port_in_use, process_name, pid = check_port_in_use(80)
+        if port_in_use:
+            print_warning(
+                f"Port 80 is in use again by {process_name or 'unknown process'}{f' (PID: {pid})' if pid else ''}."
+            )
+            if free_port(80):
+                print_success("Successfully freed port 80 for Apache.")
+            else:
+                print_error("Failed to free port 80. Apache may not start correctly.")
+
         # Restart Apache
         print_step("Restarting Apache service...")
         returncode, _, stderr = run_command(
@@ -1077,6 +1078,17 @@ ServerName {config.domain}
             print_step("Trying alternative method: stop and start Apache...")
             run_command(["systemctl", "stop", "apache2"], sudo=True)
             time.sleep(2)  # Give it time to fully stop
+
+            # Check if port 80 is free before starting
+            port_in_use, process_name, pid = check_port_in_use(80)
+            if port_in_use:
+                if free_port(80):
+                    print_success("Successfully freed port 80 for Apache.")
+                else:
+                    print_error(
+                        "Failed to free port 80. Apache may not start correctly."
+                    )
+
             returncode, _, stderr = run_command(
                 ["systemctl", "start", "apache2"], sudo=True
             )
@@ -1090,8 +1102,7 @@ ServerName {config.domain}
             print_error("Apache is not running after configuration.")
             return False
 
-        port_msg = f" on port {port}" if port != "80" else ""
-        print_success(f"Apache configuration completed successfully{port_msg}.")
+        print_success("Apache configuration completed successfully.")
         return True
     except Exception as e:
         print_error(f"Error configuring Apache: {e}")
