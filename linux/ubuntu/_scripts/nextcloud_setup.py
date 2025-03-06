@@ -46,7 +46,7 @@ except ImportError:
 
 # Configuration and Constants
 APP_NAME: str = "Nextcloud Installer"
-VERSION: str = "1.0.0"
+VERSION: str = "1.1.0"
 DEFAULT_USERNAME: str = os.environ.get("USER") or "sawyer"
 DOMAIN_NAME: str = "nextcloud.dunamismax.com"
 DOCKER_COMMAND: List[str] = ["docker"]
@@ -123,6 +123,14 @@ class NextcloudConfig:
     theme_dir: str = os.path.join(DOCKER_DIR, "theme")
     installation_status: str = "not_installed"
     installed_at: Optional[float] = None
+    behind_reverse_proxy: bool = False
+    reverse_proxy_headers: bool = True
+    proxy_protocol: str = "http"
+    additional_trusted_domains: List[str] = field(default_factory=list)
+    overwrite_host: str = ""
+    overwrite_protocol: str = ""
+    overwrite_webroot: str = ""
+    overwrite_cli_url: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -261,7 +269,12 @@ async def load_config() -> NextcloudConfig:
                 None, lambda: json.load(open(CONFIG_FILE, "r"))
             )
             logger.info(f"Loaded configuration from {CONFIG_FILE}")
-            return NextcloudConfig(**data)
+            # Initialize any missing fields with default values
+            config = NextcloudConfig()
+            for key, value in data.items():
+                if hasattr(config, key):
+                    setattr(config, key, value)
+            return config
     except Exception as e:
         error_msg = f"Failed to load configuration: {e}"
         logger.error(error_msg)
@@ -439,14 +452,78 @@ async def install_docker() -> bool:
 
 
 async def create_docker_compose_file(config: NextcloudConfig) -> bool:
-    """Create the Docker Compose file for Nextcloud and PostgreSQL using Docker-managed volumes."""
+    """Create the Docker Compose file for Nextcloud and PostgreSQL with proper configuration."""
     logger.info("Creating Docker Compose file with named volumes")
     try:
         os.makedirs(DOCKER_DIR, exist_ok=True)
         logger.info(f"Created Docker directory: {DOCKER_DIR}")
 
-        # Rely on Docker-managed volumes rather than host directories.
-        # Note: The trusted domain is now set via occ below, so we remove it from the environment.
+        # Build trusted domains list
+        trusted_domains = [
+            config.domain,  # Primary domain
+            "localhost",  # Local access
+            "app",  # Container service name
+            "127.0.0.1",  # Localhost IP
+            "dunamismax.com",  # Main site
+            "nextcloud.dunamismax.com",  # nextcloud subdomain
+            "192.168.0.73",  # Local Server IP
+            "192.168.0.45",  # Local Lenovo IP
+            "100.109.43.88",  # Tailnet Server IP
+            "100.88.172.104",  # Tailnet Lenovo IP
+            "100.72.245.118",  # Tailnet iPhone IP
+        ]
+
+        # Add any additional trusted domains from config
+        for domain in config.additional_trusted_domains:
+            if domain and domain not in trusted_domains:
+                trusted_domains.append(domain)
+
+        trusted_domains_str = " ".join(trusted_domains)
+        logger.info(f"Configured trusted domains: {trusted_domains_str}")
+
+        # Environment variables for Nextcloud
+        nextcloud_environment = {
+            "POSTGRES_DB": config.db_name,
+            "POSTGRES_USER": config.db_username,
+            "POSTGRES_PASSWORD": config.db_password,
+            "POSTGRES_HOST": config.db_host,
+            "NEXTCLOUD_ADMIN_USER": config.admin_username,
+            "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
+            "NEXTCLOUD_TRUSTED_DOMAINS": trusted_domains_str,
+        }
+
+        # Add reverse proxy related configs
+        if config.behind_reverse_proxy:
+            logger.info("Configuring for use behind reverse proxy")
+
+            # Set necessary environment variables for reverse proxy
+            if config.overwrite_host:
+                nextcloud_environment["OVERWRITEHOST"] = config.overwrite_host
+            else:
+                nextcloud_environment["OVERWRITEHOST"] = config.domain
+
+            if config.overwrite_protocol:
+                nextcloud_environment["OVERWRITEPROTOCOL"] = config.overwrite_protocol
+            else:
+                nextcloud_environment["OVERWRITEPROTOCOL"] = config.proxy_protocol
+
+            if config.reverse_proxy_headers:
+                nextcloud_environment["APACHE_DISABLE_REWRITE_IP"] = "1"
+                nextcloud_environment["TRUSTED_PROXIES"] = (
+                    "172.16.0.0/12 192.168.0.0/16 10.0.0.0/8 localhost 127.0.0.1"
+                )
+
+            if config.overwrite_webroot:
+                nextcloud_environment["OVERWRITEWEBROOT"] = config.overwrite_webroot
+
+            if config.overwrite_cli_url:
+                nextcloud_environment["OVERWRITECLIURL"] = config.overwrite_cli_url
+            else:
+                # Default CLI URL based on protocol and domain
+                nextcloud_environment["OVERWRITECLIURL"] = (
+                    f"{config.proxy_protocol}://{config.domain}"
+                )
+
         compose_config = {
             "version": "3",
             "services": {
@@ -470,14 +547,7 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                         "nextcloud_config:/var/www/html/config",
                         "nextcloud_themes:/var/www/html/themes/custom",
                     ],
-                    "environment": {
-                        "NEXTCLOUD_ADMIN_USER": config.admin_username,
-                        "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
-                        "POSTGRES_DB": config.db_name,
-                        "POSTGRES_USER": config.db_username,
-                        "POSTGRES_PASSWORD": config.db_password,
-                        "POSTGRES_HOST": config.db_host,
-                    },
+                    "environment": nextcloud_environment,
                     "ports": [f"{config.port}:80"],
                 },
             },
@@ -589,7 +659,7 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
         logger.info(f"Changed directory to {DOCKER_DIR}")
         full_command = (
             DOCKER_COMPOSE_COMMAND
-            + ["exec", "--user", "www-data", "app", "php", "occ"]
+            + ["exec", "-T", "--user", "www-data", "app", "php", "occ"]
             + command
         )
         returncode, stdout, stderr = await run_command_async(full_command)
@@ -605,18 +675,119 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
         return False, str(e)
 
 
-async def set_trusted_domain(domain: str) -> bool:
-    """Set the trusted domain in Nextcloud using occ command."""
-    print_step(f"Setting trusted domain to '{domain}'...")
-    success, output = await execute_occ_command(
-        ["config:system:set", "trusted_domains", "1", f"--value={domain}"]
-    )
-    if success:
-        print_success(f"Trusted domain '{domain}' set successfully")
+async def configure_nextcloud_post_install(config: NextcloudConfig) -> bool:
+    """Apply additional configuration to Nextcloud after installation."""
+    logger.info("Applying post-installation configuration")
+    print_step("Configuring Nextcloud post-installation settings...")
+
+    try:
+        # Wait for Nextcloud to be fully up before making changes
+        for i in range(6):  # Try 6 times with increasing waits
+            await asyncio.sleep(5 * (i + 1))
+            running = await check_nextcloud_status()
+            if running:
+                break
+
+        if not running:
+            print_error("Nextcloud container is not running, cannot configure")
+            return False
+
+        # Give the web server a bit more time to initialize
+        await asyncio.sleep(10)
+
+        # Set trusted domains with occ command to ensure they're properly registered
+        trusted_domains = [
+            config.domain,
+            "localhost",
+            "app",
+            "127.0.0.1",
+        ] + config.additional_trusted_domains
+
+        for i, domain in enumerate(trusted_domains):
+            if domain and domain.strip():
+                success, output = await execute_occ_command(
+                    [
+                        "config:system:set",
+                        "trusted_domains",
+                        str(i),
+                        "--value=" + domain.strip(),
+                    ]
+                )
+                if success:
+                    logger.info(f"Added trusted domain #{i}: {domain}")
+                else:
+                    logger.warning(
+                        f"Failed to add trusted domain #{i} ({domain}): {output}"
+                    )
+
+        # Configure reverse proxy settings
+        if config.behind_reverse_proxy:
+            commands = [
+                [
+                    "config:system:set",
+                    "overwriteprotocol",
+                    "--value=" + config.proxy_protocol,
+                ],
+                ["config:system:set", "overwritehost", "--value=" + config.domain],
+                [
+                    "config:system:set",
+                    "overwrite.cli.url",
+                    "--value=" + f"{config.proxy_protocol}://{config.domain}",
+                ],
+            ]
+
+            if config.reverse_proxy_headers:
+                commands.append(
+                    ["config:system:set", "trusted_proxies", "0", "--value=127.0.0.1"]
+                )
+                commands.append(
+                    ["config:system:set", "trusted_proxies", "1", "--value=10.0.0.0/8"]
+                )
+                commands.append(
+                    [
+                        "config:system:set",
+                        "trusted_proxies",
+                        "2",
+                        "--value=172.16.0.0/12",
+                    ]
+                )
+                commands.append(
+                    [
+                        "config:system:set",
+                        "trusted_proxies",
+                        "3",
+                        "--value=192.168.0.0/16",
+                    ]
+                )
+
+            for cmd in commands:
+                success, output = await execute_occ_command(cmd)
+                if success:
+                    logger.info(f"Successfully ran: {' '.join(cmd)}")
+                else:
+                    logger.warning(f"Command failed: {' '.join(cmd)} - {output}")
+
+        # Update .htaccess to apply any changes
+        success, output = await execute_occ_command(["maintenance:update:htaccess"])
+        if success:
+            logger.info("Updated .htaccess successfully")
+        else:
+            logger.warning(f"Failed to update .htaccess: {output}")
+
+        # Ensure maintenance mode is off
+        success, output = await execute_occ_command(["maintenance:mode", "--off"])
+        if success:
+            logger.info("Ensured maintenance mode is off")
+        else:
+            logger.warning(f"Failed to disable maintenance mode: {output}")
+
+        print_success("Post-installation configuration applied successfully")
         return True
-    else:
-        print_error("Failed to set trusted domain")
-        logger.error(f"occ command output: {output}")
+
+    except Exception as e:
+        error_msg = f"Error during post-installation configuration: {e}"
+        logger.error(error_msg)
+        print_error(error_msg)
         return False
 
 
@@ -676,37 +847,72 @@ async def configure_nextcloud() -> NextcloudConfig:
         default=config.domain,
     )
     logger.info(f"Domain configured: {config.domain}")
+
     config.admin_username = await async_prompt(
         f"[bold {NordColors.FROST_2}]Admin username[/]", default=config.admin_username
     )
     logger.info(f"Admin username configured: {config.admin_username}")
+
     config.admin_password = await async_password_prompt(
         f"[bold {NordColors.FROST_2}]Admin password[/]"
     )
     logger.info("Admin password configured")
+
     print_section("Database Configuration")
     config.db_name = await async_prompt(
         f"[bold {NordColors.FROST_2}]Database name[/]", default=config.db_name
     )
     logger.info(f"Database name configured: {config.db_name}")
+
     config.db_username = await async_prompt(
         f"[bold {NordColors.FROST_2}]Database user[/]", default=config.db_username
     )
     logger.info(f"Database username configured: {config.db_username}")
+
     config.db_password = await async_password_prompt(
         f"[bold {NordColors.FROST_2}]Database password[/]"
     )
     logger.info("Database password configured")
+
     print_section("Network Configuration")
     config.port = await async_int_prompt(
         f"[bold {NordColors.FROST_2}]Port to expose Nextcloud on[/]",
         default=config.port,
     )
     logger.info(f"Port configured: {config.port}")
+
+    # Reverse proxy configuration
+    print_section("Reverse Proxy Configuration")
+    config.behind_reverse_proxy = await async_confirm(
+        f"[bold {NordColors.FROST_2}]Is this Nextcloud instance behind a reverse proxy (like Caddy, Nginx, Apache)?[/]",
+        default=True,
+    )
+    logger.info(f"Behind reverse proxy: {config.behind_reverse_proxy}")
+
+    if config.behind_reverse_proxy:
+        config.proxy_protocol = await async_prompt(
+            f"[bold {NordColors.FROST_2}]Protocol used by the reverse proxy (http/https)[/]",
+            default="https",
+        )
+        logger.info(f"Proxy protocol: {config.proxy_protocol}")
+
+        # Ask if there are additional domains to trust
+        additional_domains = await async_prompt(
+            f"[bold {NordColors.FROST_2}]Additional trusted domains (space-separated)[/]",
+            default="",
+        )
+        if additional_domains:
+            config.additional_trusted_domains = additional_domains.split()
+            logger.info(
+                f"Additional trusted domains: {config.additional_trusted_domains}"
+            )
+
     config.use_https = await async_confirm(
-        f"[bold {NordColors.FROST_2}]Enable HTTPS?[/]", default=config.use_https
+        f"[bold {NordColors.FROST_2}]Enable HTTPS in Docker container? (Usually not needed with reverse proxy)[/]",
+        default=False,
     )
     logger.info(f"Use HTTPS configured: {config.use_https}")
+
     print_section("Data Directories")
     data_dir_default = os.path.join(os.path.expanduser("~"), "nextcloud_data")
     config.data_dir = await async_prompt(
@@ -714,6 +920,7 @@ async def configure_nextcloud() -> NextcloudConfig:
         default=config.data_dir,
     )
     logger.info(f"Data directory configured: {config.data_dir}")
+
     print_section("Configuration Summary")
     table = Table(show_header=True, box=box.ROUNDED)
     table.add_column("Setting", style=f"bold {NordColors.FROST_2}")
@@ -724,15 +931,22 @@ async def configure_nextcloud() -> NextcloudConfig:
     table.add_row("Database User", config.db_username)
     table.add_row("Port", str(config.port))
     table.add_row("HTTPS Enabled", "Yes" if config.use_https else "No")
+    table.add_row(
+        "Behind Reverse Proxy", "Yes" if config.behind_reverse_proxy else "No"
+    )
+    if config.behind_reverse_proxy:
+        table.add_row("Proxy Protocol", config.proxy_protocol)
     table.add_row("Data Directory", config.data_dir)
     console.print(table)
     console.print()
+
     if not await async_confirm(
         f"[bold {NordColors.FROST_2}]Is this configuration correct?[/]", default=True
     ):
         logger.info("Configuration not confirmed, starting over")
         print_warning("Configuration cancelled. Please start over.")
         return await configure_nextcloud()
+
     await save_config(config)
     print_success("Configuration saved successfully")
     logger.info("Configuration saved successfully")
@@ -769,7 +983,7 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Creating Docker configuration...",
-                advance=20,
+                advance=15,
             )
             if not await create_docker_compose_file(config):
                 logger.error("Creating Docker configuration failed")
@@ -777,7 +991,7 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Starting containers...",
-                advance=30,
+                advance=25,
             )
             if not await start_docker_containers():
                 logger.error("Starting containers failed")
@@ -787,17 +1001,10 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
                 description=f"[{NordColors.FROST_2}]Waiting for containers to be ready...",
                 advance=20,
             )
-            logger.info("Waiting for containers to start up (5 seconds)")
-            await asyncio.sleep(5)
-            # Set the trusted domain using occ command
-            progress.update(
-                task_id,
-                description=f"[{NordColors.FROST_2}]Configuring trusted domain...",
-                advance=5,
-            )
-            if not await set_trusted_domain(config.domain):
-                logger.error("Failed to set trusted domain.")
-                return False
+            logger.info("Waiting for containers to start up (15 seconds)")
+            await asyncio.sleep(
+                15
+            )  # Increased wait time to ensure Nextcloud is fully up
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Verifying installation...",
@@ -806,6 +1013,16 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await check_nextcloud_status():
                 logger.error("Verification failed - containers not running")
                 return False
+
+            progress.update(
+                task_id,
+                description=f"[{NordColors.FROST_2}]Applying post-installation configuration...",
+                advance=15,
+            )
+            if not await configure_nextcloud_post_install(config):
+                logger.warning("Post-installation configuration had issues")
+                # Continue anyway, as this might still work
+
             progress.update(
                 task_id,
                 description=f"[{NordColors.GREEN}]Installation complete!",
@@ -864,18 +1081,39 @@ async def show_nextcloud_info(config: NextcloudConfig) -> None:
         f"Status: [{status_color}]{status_text}[/]",
         NordColors.FROST_2,
     )
-    access_url = f"http://localhost:{config.port}"
+
+    protocol = config.proxy_protocol if config.behind_reverse_proxy else "http"
+    access_url = f"{protocol}://{config.domain}"
+    local_url = f"http://localhost:{config.port}"
+
     info_table = Table(show_header=False, box=box.ROUNDED)
     info_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
     info_table.add_column("Value", style=NordColors.SNOW_STORM_1)
-    info_table.add_row("Access URL", access_url)
+    info_table.add_row("Main Access URL", access_url)
+    info_table.add_row("Local Access URL", local_url)
     info_table.add_row("Admin User", config.admin_username)
     info_table.add_row("Installed At", time.ctime(config.installed_at or 0))
     info_table.add_row("Data Directory", config.data_dir)
     info_table.add_row("Docker Directory", DOCKER_DIR)
+    info_table.add_row(
+        "Behind Reverse Proxy", "Yes" if config.behind_reverse_proxy else "No"
+    )
+    if config.behind_reverse_proxy:
+        info_table.add_row("Proxy Protocol", config.proxy_protocol)
+
+    # Show trusted domains
+    success, output = await execute_occ_command(
+        ["config:system:get", "trusted_domains"]
+    )
+    if success:
+        domains = output.strip().split("\n")
+        domain_list = ", ".join([d.strip(" '[]") for d in domains if d.strip()])
+        info_table.add_row("Trusted Domains", domain_list)
+
     info_table.add_row("Log Directory", LOG_DIR)
     info_table.add_row("Current Log File", LOG_FILE)
     console.print(info_table)
+
     console.print()
     await async_prompt("Press Enter to return to the main menu")
     logger.info("Returned to main menu from info screen")
@@ -1003,6 +1241,114 @@ async def uninstall_nextcloud() -> bool:
     logger.info("Nextcloud uninstallation completed")
     await async_prompt("Press Enter to return to the main menu")
     return True
+
+
+async def manage_trusted_domains() -> None:
+    """View and manage trusted domains for Nextcloud."""
+    logger.info("Managing trusted domains")
+    config = await load_config()
+    if config.installation_status != "installed":
+        print_warning("Nextcloud is not installed yet. Please install it first.")
+        await async_prompt("Press Enter to continue")
+        return
+
+    running = await check_nextcloud_status()
+    if not running:
+        print_warning("Nextcloud is not running. Please start it first.")
+        await async_prompt("Press Enter to continue")
+        return
+
+    clear_screen()
+    console.print(create_header())
+    display_panel(
+        "Trusted Domains Manager",
+        "View and manage trusted domains for your Nextcloud instance",
+        NordColors.FROST_2,
+    )
+
+    # Get current trusted domains
+    success, output = await execute_occ_command(
+        ["config:system:get", "trusted_domains"]
+    )
+    if not success:
+        print_error(f"Failed to get trusted domains: {output}")
+        await async_prompt("Press Enter to continue")
+        return
+
+    domains = []
+    for line in output.strip().split("\n"):
+        line = line.strip()
+        if line:
+            # Remove array indices and quotes
+            domain = re.sub(r'^\[\d+\] => |^"|"$', "", line)
+            domains.append(domain)
+
+    print_section("Current Trusted Domains")
+    for i, domain in enumerate(domains):
+        console.print(f"[{NordColors.FROST_2}]{i}: {domain}[/{NordColors.FROST_2}]")
+
+    console.print()
+    action = await async_prompt(
+        f"[bold {NordColors.FROST_2}]Choose an action (add/remove/back)[/]",
+        default="back",
+    )
+
+    if action.lower() == "add":
+        new_domain = await async_prompt(
+            f"[bold {NordColors.FROST_2}]Enter new domain to trust[/]"
+        )
+        if new_domain and new_domain.strip():
+            success, output = await execute_occ_command(
+                [
+                    "config:system:set",
+                    "trusted_domains",
+                    str(len(domains)),
+                    "--value=" + new_domain.strip(),
+                ]
+            )
+            if success:
+                print_success(f"Added {new_domain} to trusted domains")
+                # Update htaccess to apply changes
+                await execute_occ_command(["maintenance:update:htaccess"])
+            else:
+                print_error(f"Failed to add domain: {output}")
+
+    elif action.lower() == "remove":
+        index = await async_prompt(
+            f"[bold {NordColors.FROST_2}]Enter index of domain to remove[/]"
+        )
+        try:
+            idx = int(index)
+            if 0 <= idx < len(domains):
+                # We can't easily remove an item from the middle of the array
+                # So we need to rebuild the entire trusted_domains config
+                removed_domain = domains.pop(idx)
+
+                # First delete the current config
+                success, output = await execute_occ_command(
+                    ["config:system:delete", "trusted_domains"]
+                )
+
+                # Then add each domain back
+                for i, domain in enumerate(domains):
+                    success, output = await execute_occ_command(
+                        [
+                            "config:system:set",
+                            "trusted_domains",
+                            str(i),
+                            "--value=" + domain,
+                        ]
+                    )
+
+                print_success(f"Removed {removed_domain} from trusted domains")
+                # Update htaccess to apply changes
+                await execute_occ_command(["maintenance:update:htaccess"])
+            else:
+                print_error(f"Invalid index: {idx}")
+        except ValueError:
+            print_error("Please enter a number")
+
+    await async_prompt("Press Enter to continue")
 
 
 async def view_logs() -> None:
@@ -1160,10 +1506,11 @@ async def main_menu_async() -> None:
                 "3. Start Nextcloud\n"
                 "4. Stop Nextcloud\n"
                 "5. Show Nextcloud Information\n"
-                "6. Uninstall Nextcloud\n"
-                "7. View Application Logs\n"
-                "8. View Container Logs\n"
-                "9. Install Docker\n"
+                "6. Manage Trusted Domains\n"
+                "7. Uninstall Nextcloud\n"
+                "8. View Application Logs\n"
+                "9. View Container Logs\n"
+                "0. Install Docker\n"
                 "q. Quit",
                 title="Main Menu",
                 border_style=NordColors.FROST_1,
@@ -1217,12 +1564,14 @@ async def main_menu_async() -> None:
             elif choice == "5":
                 await show_nextcloud_info(config)
             elif choice == "6":
-                await uninstall_nextcloud()
+                await manage_trusted_domains()
             elif choice == "7":
-                await view_logs()
+                await uninstall_nextcloud()
             elif choice == "8":
-                await view_container_logs()
+                await view_logs()
             elif choice == "9":
+                await view_container_logs()
+            elif choice == "0":
                 if await async_confirm(
                     "This will install Docker using the official Ubuntu method. Proceed?",
                     default=False,
