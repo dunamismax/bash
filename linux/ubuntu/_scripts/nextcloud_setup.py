@@ -444,6 +444,11 @@ def install_dependencies() -> bool:
             )
             DEFAULT_PHP_VERSION = php_versions[0] if php_versions else ""
 
+    # Update the config with the detected PHP version
+    config = load_config()
+    config.php_version = DEFAULT_PHP_VERSION
+    save_config(config)
+
     # Define base dependencies
     base_dependencies = [
         "apache2",
@@ -578,6 +583,8 @@ def install_dependencies() -> bool:
 
                             if suitable_versions:
                                 DEFAULT_PHP_VERSION = suitable_versions[-1]
+                                config.php_version = DEFAULT_PHP_VERSION
+                                save_config(config)
                                 print_success(
                                     f"Selected PHP version {DEFAULT_PHP_VERSION} for installation."
                                 )
@@ -1313,8 +1320,43 @@ def optimize_nextcloud(config: NextcloudConfig) -> bool:
             print_error(f"Failed to enable memory cache: {stderr}")
             return False
 
-        # Enable opcache in php.ini
-        php_ini_path = f"/etc/php/{config.php_version}/apache2/php.ini"
+        # Find the correct PHP ini path
+        php_version = config.php_version
+
+        if not php_version:
+            # Try to detect PHP version if not set in config
+            print_step("PHP version not set in config, detecting installed version...")
+            php_versions = detect_available_php_versions()
+            if php_versions:
+                php_version = php_versions[-1]  # Get the newest version
+                print_step(f"Using detected PHP version: {php_version}")
+            else:
+                print_warning(
+                    "Could not detect PHP version. Skipping PHP optimization."
+                )
+                return True
+
+        # Verify PHP ini path exists
+        potential_paths = [
+            f"/etc/php/{php_version}/apache2/php.ini",  # Debian/Ubuntu with apache2
+            f"/etc/php/{php_version}/fpm/php.ini",  # Debian/Ubuntu with PHP-FPM
+            f"/etc/php/{php_version}/cli/php.ini",  # CLI version
+            "/etc/php.ini",  # Generic fallback
+        ]
+
+        php_ini_path = None
+        for path in potential_paths:
+            returncode, _, _ = run_command(["test", "-f", path], sudo=True)
+            if returncode == 0:
+                php_ini_path = path
+                print_step(f"Found PHP configuration at: {php_ini_path}")
+                break
+
+        if not php_ini_path:
+            print_warning(
+                "Could not find PHP configuration file. Skipping PHP optimization."
+            )
+            return True
 
         # Create PHP optimization settings
         php_settings = """
@@ -1350,8 +1392,11 @@ opcache.revalidate_freq=1
             ["systemctl", "restart", "apache2"], sudo=True
         )
         if returncode != 0:
-            print_error(f"Failed to restart Apache: {stderr}")
-            return False
+            print_warning(f"Failed to restart Apache: {stderr}")
+            print_warning(
+                "PHP optimizations may not be applied until Apache is restarted."
+            )
+            # Continue anyway as this is not critical
 
         print_success("Nextcloud optimization completed successfully.")
         return True
