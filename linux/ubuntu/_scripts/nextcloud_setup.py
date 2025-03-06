@@ -1,71 +1,4 @@
-def install_caddy() -> bool:
-    """
-    Install Caddy web server following the exact specified steps.
-    Returns True if successful, False otherwise.
-    """
-    print_section("Installing Caddy Web Server")
-
-    try:
-        # Step 1: Install prerequisites
-        print_step("Installing Caddy prerequisites...")
-        returncode, _, stderr = run_command(
-            [
-                "apt",
-                "install",
-                "-y",
-                "debian-keyring",
-                "debian-archive-keyring",
-                "apt-transport-https",
-                "curl",
-            ],
-            sudo=True,
-        )
-        if returncode != 0:
-            print_error(f"Failed to install Caddy prerequisites: {stderr}")
-            return False
-        print_success("Prerequisites installed successfully.")
-
-        # Step 2: Add Caddy GPG key
-        print_step("Adding Caddy GPG key...")
-        gpg_cmd = "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg"
-        returncode, _, stderr = run_command(["bash", "-c", gpg_cmd], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to add Caddy GPG key: {stderr}")
-            return False
-        print_success("Caddy GPG key added successfully.")
-
-        # Step 3: Add Caddy repository
-        print_step("Adding Caddy repository...")
-        repo_cmd = "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list"
-        returncode, _, stderr = run_command(["bash", "-c", repo_cmd], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to add Caddy repository: {stderr}")
-            return False
-        print_success("Caddy repository added successfully.")
-
-        # Step 4: Update package lists using nala
-        print_step("Updating package lists with nala...")
-        returncode, _, stderr = run_command(["nala", "update"], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to update package lists: {stderr}")
-            return False
-        print_success("Package lists updated successfully.")
-
-        # Step 5: Install Caddy using nala
-        print_step("Installing Caddy with nala...")
-        returncode, _, stderr = run_command(
-            ["nala", "install", "-y", "caddy"], sudo=True
-        )
-        if returncode != 0:
-            print_error(f"Failed to install Caddy: {stderr}")
-            return False
-        print_success("Caddy installed successfully.")
-
-        return True
-    except Exception as e:
-        print_error(f"Error during Caddy installation: {e}")
-        return False  #!/usr/bin/env python3
-
+#!/usr/bin/env python3
 
 import os
 import signal
@@ -2098,10 +2031,6 @@ def setup_nextcloud(config: NextcloudConfig) -> bool:
 
     # Install dependencies
     if not install_dependencies():
-        return False
-
-    # Install Caddy separately with dedicated function
-    if not install_caddy():
         return False
 
     # Set up PostgreSQL
