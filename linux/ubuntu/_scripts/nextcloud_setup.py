@@ -511,8 +511,9 @@ async def start_docker_containers() -> bool:
         print_step("Starting Nextcloud containers...")
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
+        # Run in detached mode by adding "-d" flag
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND + ["up"]
+            DOCKER_COMPOSE_COMMAND + ["up", "-d"]
         )
         if returncode == 0:
             print_success("Nextcloud containers started successfully")
