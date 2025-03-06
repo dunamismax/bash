@@ -1043,24 +1043,21 @@ def setup_letsencrypt_ssl(config: NextcloudConfig) -> bool:
         print_error("Email address is required for Let's Encrypt certificate.")
         return False
 
-    # Make sure Apache is running and ports are available
-    print_step("Ensuring Apache is running...")
-    returncode, _, _ = run_command(["systemctl", "is-active", "apache2"], sudo=True)
-    if returncode != 0:
-        print_step("Starting Apache...")
-        run_command(["systemctl", "start", "apache2"], sudo=True)
+    # Stop Apache during certificate acquisition
+    print_step("Temporarily stopping Apache for certificate acquisition...")
+    run_command(["systemctl", "stop", "apache2"], sudo=True)
+    time.sleep(2)  # Give it time to fully stop
 
-    # Check if ports 80 and 443 are free (except for Apache)
-    port80_in_use, process80, _ = check_port_in_use(80)
-    port443_in_use, process443, _ = check_port_in_use(443)
-
-    if port80_in_use and process80 != "apache2":
-        print_warning(f"Port 80 is in use by {process80}. Attempting to free it...")
+    # Free ports 80 and 443 completely
+    port80_in_use, _, _ = check_port_in_use(80)
+    if port80_in_use:
+        print_step("Freeing port 80 for Let's Encrypt verification...")
         if not free_port(80):
             print_error("Failed to free port 80. Let's Encrypt verification may fail.")
 
-    if port443_in_use and process443 != "apache2":
-        print_warning(f"Port 443 is in use by {process443}. Attempting to free it...")
+    port443_in_use, _, _ = check_port_in_use(443)
+    if port443_in_use:
+        print_step("Freeing port 443 for Let's Encrypt...")
         if not free_port(443):
             print_error(
                 "Failed to free port 443. Let's Encrypt may not work correctly."
@@ -1072,23 +1069,165 @@ def setup_letsencrypt_ssl(config: NextcloudConfig) -> bool:
     # Check if Cloudflare is being used
     if config.using_cloudflare:
         print_warning(
-            "Since you're using Cloudflare, we'll use DNS verification instead of HTTP."
+            "Since you're using Cloudflare, we'll use DNS verification with a Cloudflare specific plugin."
         )
-        print_warning("For Cloudflare, you need to set up DNS verification manually.")
-        display_panel(
-            "Cloudflare Setup",
-            "When using Cloudflare with Let's Encrypt, consider these steps:\n\n"
-            "1. Temporarily set Cloudflare to 'DNS Only' mode during certificate setup\n"
-            "2. After obtaining certificates, you can enable Cloudflare proxy again\n"
-            "3. Ensure your SSL/TLS encryption mode in Cloudflare is set to 'Full Strict'\n"
-            "4. Create an Origin CA certificate in Cloudflare if Let's Encrypt fails",
-            NordColors.YELLOW,
-        )
-        if not Confirm.ask("Proceed with Let's Encrypt setup?", default=True):
-            print_warning("Skipping Let's Encrypt setup.")
-            return False
 
-    # First, try with the standalone plugin
+        # Install Cloudflare plugin if needed
+        print_step("Installing Cloudflare DNS plugin for Certbot...")
+        run_command(["apt", "update"], sudo=True)
+        run_command(
+            ["apt", "install", "-y", "python3-certbot-dns-cloudflare"], sudo=True
+        )
+
+        # Show instructions for Cloudflare API token
+        display_panel(
+            "Cloudflare API Setup",
+            "To use the Cloudflare DNS verification method, you need to:\n\n"
+            "1. Log in to your Cloudflare account dashboard\n"
+            "2. Go to 'My Profile' > 'API Tokens' and create a token with the following permissions:\n"
+            "   - Zone > Zone > Read\n"
+            "   - Zone > DNS > Edit\n"
+            "3. Enter these credentials when prompted\n\n"
+            "Note: This will allow automated certificate renewal without manually changing DNS settings.",
+            NordColors.FROST_2,
+        )
+
+        if not Confirm.ask("Have you created a Cloudflare API token?", default=False):
+            print_step("Creating temporary configuration for Cloudflare credentials...")
+
+            cloudflare_email = config.email
+            cloudflare_api_key = Prompt.ask(
+                "[bold]Enter your Cloudflare Global API Key (or API Token)[/]",
+                password=True,
+            )
+
+            # Create a temporary credentials file
+            cf_creds_content = f"""dns_cloudflare_email = {cloudflare_email}
+dns_cloudflare_api_key = {cloudflare_api_key}
+"""
+            # Write to a temporary file with restricted permissions
+            cf_creds_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
+            cf_creds_file.write(cf_creds_content)
+            cf_creds_file.close()
+            os.chmod(cf_creds_file.name, 0o600)
+
+            # Use the Cloudflare DNS plugin
+            print_step("Attempting certificate issuance using Cloudflare DNS...")
+            certbot_cmd = [
+                "certbot",
+                "certonly",
+                "--dns-cloudflare",
+                f"--dns-cloudflare-credentials={cf_creds_file.name}",
+                "--non-interactive",
+                "--agree-tos",
+                "--email",
+                config.email,
+                "-d",
+                config.domain,
+            ]
+
+            returncode, stdout, stderr = run_command(certbot_cmd, sudo=True)
+
+            # Remove credentials file regardless of success
+            os.unlink(cf_creds_file.name)
+
+            if returncode == 0:
+                print_success("Successfully obtained certificate using Cloudflare DNS!")
+
+                # Start Apache back
+                print_step("Starting Apache...")
+                run_command(["systemctl", "start", "apache2"], sudo=True)
+
+                # Certificate paths
+                cert_file = f"/etc/letsencrypt/live/{config.domain}/fullchain.pem"
+                key_file = f"/etc/letsencrypt/live/{config.domain}/privkey.pem"
+
+                # Update config with certificate paths
+                config.cert_file = cert_file
+                config.key_file = key_file
+                save_config(config)
+
+                return True
+            else:
+                print_warning(f"Cloudflare DNS method failed: {stderr}")
+
+        # If Cloudflare method failed or user chose not to proceed, try Origin CA certificate
+        if Confirm.ask(
+            "Would you like to use a Cloudflare Origin Certificate instead?",
+            default=True,
+        ):
+            display_panel(
+                "Cloudflare Origin Certificate Instructions",
+                "To create and use a Cloudflare Origin Certificate:\n\n"
+                "1. Log in to your Cloudflare dashboard\n"
+                "2. Go to SSL/TLS > Origin Server\n"
+                "3. Click 'Create Certificate'\n"
+                "4. Choose 'Let Cloudflare generate a private key and CSR'\n"
+                "5. Select 'RSA (2048)' and set validity to 15 years\n"
+                "6. Click 'Create'\n"
+                "7. Copy the Certificate content to a local file\n"
+                "8. Copy the Private Key content to a separate file\n",
+                NordColors.FROST_2,
+            )
+
+            # Ask for paths to manually created certificate files
+            cert_file = Prompt.ask(
+                "[bold]Enter path to save the Cloudflare Origin certificate[/]",
+                default=f"/etc/ssl/cloudflare/{config.domain}.pem",
+            )
+            key_file = Prompt.ask(
+                "[bold]Enter path to save the Cloudflare Origin private key[/]",
+                default=f"/etc/ssl/cloudflare/{config.domain}.key",
+            )
+
+            # Create directory for certificates
+            cert_dir = os.path.dirname(cert_file)
+            run_command(["mkdir", "-p", cert_dir], sudo=True)
+
+            # Create the certificate and key files
+            print_step("Creating certificate files...")
+            cert_content = Prompt.ask(
+                "[bold]Paste the Cloudflare Origin Certificate content[/]"
+            )
+            key_content = Prompt.ask(
+                "[bold]Paste the Cloudflare Origin Private Key content[/]"
+            )
+
+            # Write certificate
+            cert_temp = tempfile.NamedTemporaryFile(delete=False, mode="w")
+            cert_temp.write(cert_content)
+            cert_temp.close()
+            run_command(["cp", cert_temp.name, cert_file], sudo=True)
+            run_command(["chmod", "644", cert_file], sudo=True)
+            os.unlink(cert_temp.name)
+
+            # Write key
+            key_temp = tempfile.NamedTemporaryFile(delete=False, mode="w")
+            key_temp.write(key_content)
+            key_temp.close()
+            run_command(["cp", key_temp.name, key_file], sudo=True)
+            run_command(["chmod", "600", key_file], sudo=True)
+            os.unlink(key_temp.name)
+
+            # Update config with certificate paths
+            config.cert_file = cert_file
+            config.key_file = key_file
+            save_config(config)
+
+            print_success("Cloudflare Origin Certificate configured successfully!")
+
+            # Start Apache back
+            print_step("Starting Apache...")
+            run_command(["systemctl", "start", "apache2"], sudo=True)
+
+            return True
+
+        # Fall back to self-signed if all Cloudflare options failed
+        print_step("Falling back to self-signed certificate...")
+        return setup_self_signed_ssl(config)
+
+    # Try standard Let's Encrypt methods if not using Cloudflare
+    # First, try with the standalone plugin (more reliable when Apache is stopped)
     certbot_cmd = [
         "certbot",
         "certonly",
@@ -1107,6 +1246,10 @@ def setup_letsencrypt_ssl(config: NextcloudConfig) -> bool:
 
         # Try with the webroot plugin
         print_step("Trying webroot method...")
+        # First, start Apache back
+        run_command(["systemctl", "start", "apache2"], sudo=True)
+        time.sleep(2)  # Give it time to start
+
         certbot_cmd = [
             "certbot",
             "certonly",
@@ -1534,7 +1677,7 @@ def extract_nextcloud(zip_path: str, install_dir: str) -> bool:
 
 def configure_nextcloud(config: NextcloudConfig) -> bool:
     """
-    Configure Nextcloud using the occ command.
+    Configure Nextcloud using the occ command or direct configuration.
     """
     print_section("Configuring Nextcloud")
 
@@ -1555,14 +1698,110 @@ def configure_nextcloud(config: NextcloudConfig) -> bool:
             print_error(f"Failed to set data directory permissions: {stderr}")
             return False
 
-        # Run Nextcloud installation command
-        print_step("Running Nextcloud installation...")
+        # Verify the occ command exists
+        occ_path = os.path.join(config.install_dir, "occ")
+        returncode, _, _ = run_command(["test", "-f", occ_path], sudo=True)
+        if returncode != 0:
+            print_warning(f"OCC command not found at {occ_path}")
+            print_step("Looking for OCC in alternative locations...")
+
+            # Try to find occ in subdirectories
+            returncode, stdout, _ = run_command(
+                ["find", config.install_dir, "-name", "occ", "-type", "f"], sudo=True
+            )
+
+            if returncode == 0 and stdout.strip():
+                occ_path = stdout.splitlines()[0].strip()
+                print_success(f"Found OCC at {occ_path}")
+            else:
+                print_error(
+                    "OCC command not found. Nextcloud may not be properly extracted."
+                )
+                return False
+
+        # Verify PHP is working properly
+        php_check_cmd = ["php", "-v"]
+        returncode, stdout, stderr = run_command(php_check_cmd)
+        if returncode != 0:
+            print_error(f"PHP is not working properly: {stderr}")
+            return False
+
+        print_step("Verifying Nextcloud installation...")
+
+        # First method: Try using setup-nextcloud.php if it exists
+        setup_php_path = os.path.join(config.install_dir, "setup-nextcloud.php")
+        returncode, _, _ = run_command(["test", "-f", setup_php_path], sudo=True)
+        if returncode == 0:
+            print_step("Using setup-nextcloud.php for installation...")
+            # Create config file content
+            setup_content = f"""<?php
+$CONFIG = array (
+  'instanceid' => '{os.urandom(16).hex()}',
+  'passwordsalt' => '{os.urandom(30).hex()}',
+  'datadirectory' => '{config.data_dir}',
+  'dbtype' => '{config.db_type}',
+  'dbname' => '{config.db_name}',
+  'dbhost' => '{config.db_host}',
+  'dbport' => '{config.db_port}',
+  'dbtableprefix' => 'oc_',
+  'dbuser' => '{config.db_user}',
+  'dbpassword' => '{config.db_pass}',
+  'installed' => true,
+);
+"""
+            # Write to a temporary file
+            temp_config = tempfile.NamedTemporaryFile(delete=False, mode="w")
+            temp_config.write(setup_content)
+            temp_config.close()
+
+            # Copy to the Nextcloud config directory
+            config_dir = os.path.join(config.install_dir, "config")
+            run_command(["mkdir", "-p", config_dir], sudo=True)
+            run_command(
+                ["cp", temp_config.name, os.path.join(config_dir, "config.php")],
+                sudo=True,
+            )
+            run_command(
+                [
+                    "chown",
+                    f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}",
+                    os.path.join(config_dir, "config.php"),
+                ],
+                sudo=True,
+            )
+            os.unlink(temp_config.name)
+
+            # Run the setup script
+            setup_cmd = [
+                "sudo",
+                "-u",
+                DEFAULT_WEB_USER,
+                "php",
+                setup_php_path,
+                "--admin-user",
+                config.admin_user,
+                "--admin-pass",
+                config.admin_pass,
+            ]
+            returncode, stdout, stderr = run_command(setup_cmd)
+            if returncode != 0:
+                print_warning(f"Setup script method failed: {stderr}")
+                # Continue to try other methods
+            else:
+                print_success("Nextcloud installed via setup script")
+                # Skip to the occ configuration for trusted domains
+
+        # Second method: Try direct occ command
+        print_step("Running Nextcloud installation via OCC command...")
+        # Make sure occ is executable
+        run_command(["chmod", "+x", occ_path], sudo=True)
+
         occ_cmd = [
             "sudo",
             "-u",
             DEFAULT_WEB_USER,
             "php",
-            os.path.join(config.install_dir, "occ"),
+            occ_path,
             "maintenance:install",
             "--database",
             config.db_type,
@@ -1586,8 +1825,82 @@ def configure_nextcloud(config: NextcloudConfig) -> bool:
 
         returncode, stdout, stderr = run_command(occ_cmd)
         if returncode != 0:
-            print_error(f"Failed to configure Nextcloud: {stderr}")
-            return False
+            print_warning(f"OCC installation method failed: {stderr}")
+
+            # Third method: Manual config file creation
+            print_step("Trying manual configuration method...")
+
+            # Create autoconfig.php
+            autoconfig_content = f"""<?php
+$AUTOCONFIG = array (
+  'dbtype' => '{config.db_type}',
+  'dbname' => '{config.db_name}',
+  'dbuser' => '{config.db_user}',
+  'dbpass' => '{config.db_pass}',
+  'dbhost' => '{config.db_host}',
+  'dbport' => '{config.db_port}',
+  'dbtableprefix' => 'oc_',
+  'directory' => '{config.data_dir}',
+  'adminlogin' => '{config.admin_user}',
+  'adminpass' => '{config.admin_pass}',
+);
+"""
+            # Write to a temporary file
+            temp_autoconfig = tempfile.NamedTemporaryFile(delete=False, mode="w")
+            temp_autoconfig.write(autoconfig_content)
+            temp_autoconfig.close()
+
+            # Copy to the Nextcloud config directory
+            config_dir = os.path.join(config.install_dir, "config")
+            run_command(["mkdir", "-p", config_dir], sudo=True)
+            run_command(
+                [
+                    "cp",
+                    temp_autoconfig.name,
+                    os.path.join(config_dir, "autoconfig.php"),
+                ],
+                sudo=True,
+            )
+            run_command(
+                [
+                    "chown",
+                    f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}",
+                    os.path.join(config_dir, "autoconfig.php"),
+                ],
+                sudo=True,
+            )
+            os.unlink(temp_autoconfig.name)
+
+            # Now try to access the web UI to trigger installation
+            print_step("Manual configuration files created.")
+            print_step("Web-based installation should trigger on first access.")
+
+            # Create a status.php access to try to initialize
+            status_url = f"http://localhost/status.php"
+            try:
+                response = requests.get(status_url, timeout=10)
+                if response.status_code == 200:
+                    print_success("Installation verification successful")
+                else:
+                    print_warning(
+                        f"Installation verification returned status {response.status_code}"
+                    )
+            except Exception as e:
+                print_warning(f"Could not verify installation: {e}")
+
+            # Final verification: check if config.php exists
+            config_php_path = os.path.join(config_dir, "config.php")
+            returncode, _, _ = run_command(["test", "-f", config_php_path], sudo=True)
+            if returncode != 0:
+                print_warning("Could not verify successful installation.")
+                print_warning(
+                    "You may need to complete setup through the web interface."
+                )
+                print_warning(
+                    f"Visit http://{config.domain}/ to complete installation if needed."
+                )
+            else:
+                print_success("Nextcloud configuration files detected.")
 
         # Set trusted domain
         print_step(f"Setting trusted domain to {config.domain}...")
@@ -1864,15 +2177,26 @@ To correctly configure Cloudflare with your Nextcloud installation:
    - Set SSL/TLS encryption mode to "Full (strict)" 
    - This requires valid SSL certificates on your origin server (which we've set up)
 
-4. Page Rules (recommended):
+4. Origin Certificates (if Let's Encrypt failed):
+   - Go to SSL/TLS > Origin Server and create an Origin Certificate
+   - Install the certificate and private key on your server
+   - Update your Apache configuration with these files
+
+5. Page Rules (recommended):
    - Create a page rule for {url}/*
    - Set Cache Level to "Bypass"
    - This prevents Cloudflare from caching your Nextcloud content
 
-5. If you experience issues:
-   - Try setting Cloudflare to DNS Only mode temporarily
-   - Once everything is working, you can enable the proxy again
-   - Verify SSL certificates on both your server and Cloudflare
+6. Additional SSL/TLS settings:
+   - Enable "Always Use HTTPS"
+   - Set Minimum TLS Version to TLS 1.2
+   - Enable Authenticated Origin Pulls if possible
+
+7. If you continue to experience the 526 SSL error:
+   - Create an Origin Certificate in Cloudflare
+   - Download both the certificate and private key
+   - Install them on your server at: {config.cert_file} and {config.key_file}
+   - Restart Apache with: sudo systemctl restart apache2
 
 Your Nextcloud installation is already configured to work with Cloudflare proxy.
 """
@@ -1903,27 +2227,75 @@ def setup_nextcloud(config: NextcloudConfig) -> bool:
     if not extract_nextcloud(zip_path, config.install_dir):
         return False
 
+    # Configure permissions properly before Apache setup
+    print_step("Setting proper permissions for all Nextcloud files...")
+    run_command(
+        ["find", config.install_dir, "-type", "f", "-exec", "chmod", "0640", "{}", ";"],
+        sudo=True,
+    )
+    run_command(
+        ["find", config.install_dir, "-type", "d", "-exec", "chmod", "0750", "{}", ";"],
+        sudo=True,
+    )
+    run_command(
+        ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", config.install_dir],
+        sudo=True,
+    )
+
+    # Set up Apache first with basic configuration (without SSL)
+    temp_https = config.use_https
+    config.use_https = False  # Temporarily disable HTTPS
+    if not setup_apache(config):
+        return False
+    config.use_https = temp_https  # Restore original setting
+
     # Set up SSL if enabled
     if config.use_https:
         if not setup_ssl(config):
             print_warning("SSL setup failed, continuing with HTTP only...")
             config.use_https = False
             save_config(config)
-
-    # Set up Apache
-    if not setup_apache(config):
-        return False
+        else:
+            # Update Apache configuration with SSL
+            if not setup_apache(config):
+                print_warning("Failed to update Apache with SSL configuration")
+                # Continue anyway
 
     # Configure Nextcloud
     if not configure_nextcloud(config):
-        return False
+        print_warning("Automatic Nextcloud configuration had issues.")
+        print_warning("You may need to complete the setup through the web interface.")
+        print_step("Setting permissions to ensure web setup can work...")
+
+        # Make sure config directory is writable for web setup
+        config_dir = os.path.join(config.install_dir, "config")
+        run_command(["mkdir", "-p", config_dir], sudo=True)
+        run_command(
+            ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", config_dir],
+            sudo=True,
+        )
+        run_command(["chmod", "0770", config_dir], sudo=True)
 
     # Optimize Nextcloud
-    if not optimize_nextcloud(config):
-        return False
+    optimize_nextcloud(config)
 
-    # Display Cloudflare-specific instructions if needed
+    # Make sure web server has proper file access
+    print_step("Ensuring web server has proper access to Nextcloud files...")
+    run_command(
+        ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", config.data_dir],
+        sudo=True,
+    )
+    run_command(
+        ["chmod", "0770", config.data_dir],
+        sudo=True,
+    )
+
+    # For Cloudflare, try restart Apache after everything is configured
     if config.using_cloudflare:
+        print_step("Restarting Apache for final configuration...")
+        run_command(["systemctl", "restart", "apache2"], sudo=True)
+
+        # Display Cloudflare-specific instructions
         display_cloudflare_instructions(config)
 
     # Clean up
