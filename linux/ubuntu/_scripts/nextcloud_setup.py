@@ -302,14 +302,66 @@ def download_package(url: str, destination: str) -> bool:
         return False
 
 
-def find_problematic_repos() -> List[Tuple[str, str]]:
+def find_problematic_repos() -> List[Tuple[str, str, str]]:
     """
-    Scan apt sources files to find problematic repositories.
-    Returns a list of tuples containing (file_path, problematic_line).
+    Scan apt sources files to find problematic repositories and files.
+    Returns a list of tuples containing (file_path, issue_type, description).
+    Issue types: 'invalid_extension', 'unsigned_repo', 'missing_key', 'problematic_content'
     """
-    problematic_repos = []
+    problematic_items = []
     sources_dir = "/etc/apt/sources.list.d"
     sources_file = "/etc/apt/sources.list"
+    apt_conf_dir = "/etc/apt/apt.conf.d"
+
+    # Check for backup files with .bak extension in sources.list.d
+    try:
+        if os.path.exists(sources_dir):
+            returncode, stdout, _ = run_command(
+                ["find", sources_dir, "-name", "*.bak*"], sudo=True
+            )
+            if returncode == 0 and stdout.strip():
+                for file_path in stdout.splitlines():
+                    problematic_items.append(
+                        (
+                            file_path.strip(),
+                            "invalid_extension",
+                            f"Backup file with invalid extension: {os.path.basename(file_path.strip())}",
+                        )
+                    )
+    except Exception as e:
+        print_warning(f"Error checking for backup files: {e}")
+
+    # Check for backup files with .bak extension in apt.conf.d
+    try:
+        if os.path.exists(apt_conf_dir):
+            returncode, stdout, _ = run_command(
+                ["find", apt_conf_dir, "-name", "*.bak*"], sudo=True
+            )
+            if returncode == 0 and stdout.strip():
+                for file_path in stdout.splitlines():
+                    problematic_items.append(
+                        (
+                            file_path.strip(),
+                            "invalid_extension",
+                            f"Backup configuration file with invalid extension: {os.path.basename(file_path.strip())}",
+                        )
+                    )
+    except Exception as e:
+        print_warning(f"Error checking for backup apt config files: {e}")
+
+    # Check if there are any incomplete Caddy repo configurations
+    try:
+        caddy_repo_path = "/etc/apt/sources.list.d/caddy-stable.list"
+        if os.path.exists(caddy_repo_path):
+            problematic_items.append(
+                (
+                    caddy_repo_path,
+                    "remove_first",
+                    "Removing existing Caddy repository to ensure proper installation",
+                )
+            )
+    except Exception as e:
+        print_warning(f"Error checking Caddy repository: {e}")
 
     # Check main sources.list file
     try:
@@ -326,17 +378,23 @@ def find_problematic_repos() -> List[Tuple[str, str]]:
                             or "InRelease" in line
                             and "not signed" in line
                         ):
-                            problematic_repos.append((sources_file, line))
+                            problematic_items.append(
+                                (
+                                    sources_file,
+                                    "problematic_content",
+                                    f"Problematic repository entry: {line}",
+                                )
+                            )
     except Exception as e:
         print_warning(f"Error checking main sources file: {e}")
 
-    # Check sources.list.d directory
+    # Check sources.list.d directory for problematic content
     try:
         if os.path.exists(sources_dir):
             returncode, stdout, _ = run_command(["ls", sources_dir], sudo=True)
             if returncode == 0:
                 for filename in stdout.splitlines():
-                    if not filename.endswith(".list"):
+                    if not filename.endswith(".list") and not filename.endswith(".bak"):
                         continue
                     file_path = os.path.join(sources_dir, filename)
                     returncode, file_content, _ = run_command(
@@ -353,37 +411,54 @@ def find_problematic_repos() -> List[Tuple[str, str]]:
                                         and "trixie" in line.lower()
                                     )
                                     or "NO_PUBKEY" in line
-                                    or "InRelease" in line
-                                    and "not signed" in line
+                                    or ("InRelease" in line and "not signed" in line)
+                                    or "cloudsmith.io" in line
                                 ):
-                                    problematic_repos.append((file_path, line))
+                                    problematic_items.append(
+                                        (
+                                            file_path,
+                                            "problematic_content",
+                                            f"Problematic repository entry: {line}",
+                                        )
+                                    )
     except Exception as e:
         print_warning(f"Error checking sources directory: {e}")
 
-    return problematic_repos
+    # Check for interrupted dpkg state
+    try:
+        returncode, _, _ = run_command(["dpkg", "--audit"], sudo=True)
+        if returncode != 0:
+            problematic_items.append(
+                ("", "dpkg_interrupted", "dpkg was interrupted, needs to be configured")
+            )
+    except Exception as e:
+        print_warning(f"Error checking dpkg state: {e}")
+
+    return problematic_items
 
 
 def fix_repository_issues() -> bool:
     """
-    Find and fix problematic repositories.
+    Find and fix problematic repositories and files.
     Returns True if successful, False otherwise.
     """
     print_section("Checking for Repository Issues")
 
-    problematic_repos = find_problematic_repos()
+    problematic_items = find_problematic_repos()
 
-    if not problematic_repos:
-        print_success("No problematic repositories found.")
+    if not problematic_items:
+        print_success("No problematic repositories or files found.")
         return True
 
-    print_warning(f"Found {len(problematic_repos)} problematic repository entries:")
+    print_warning(f"Found {len(problematic_items)} problematic repository items:")
 
-    for i, (file_path, repo_line) in enumerate(problematic_repos, 1):
-        console.print(f"[{NordColors.YELLOW}]{i}. File: {file_path}[/]")
-        console.print(f"[{NordColors.YELLOW}]   Entry: {repo_line}[/]")
+    for i, (file_path, issue_type, description) in enumerate(problematic_items, 1):
+        console.print(f"[{NordColors.YELLOW}]{i}. {description}[/]")
+        if file_path:
+            console.print(f"[{NordColors.YELLOW}]   File: {file_path}[/]")
 
     fix_repos = Confirm.ask(
-        "\nWould you like to disable these problematic repositories?", default=True
+        "\nWould you like to fix these repository issues?", default=True
     )
 
     if not fix_repos:
@@ -393,39 +468,114 @@ def fix_repository_issues() -> bool:
         return False
 
     success = True
-    for file_path, repo_line in problematic_repos:
-        try:
-            # Create a backup of the file
-            backup_path = f"{file_path}.bak"
-            print_step(f"Creating backup of {file_path}")
-            returncode, _, stderr = run_command(
-                ["cp", file_path, backup_path], sudo=True
-            )
-            if returncode != 0:
-                print_error(f"Failed to create backup of {file_path}: {stderr}")
-                success = False
-                continue
 
-            # Escape special characters for sed
-            escaped_line = (
-                repo_line.replace("/", "\\/").replace("&", "\\&").replace(".", "\\.")
-            )
-
-            # Comment out the problematic line
-            print_step(f"Disabling problematic repository in {file_path}")
-            sedcmd = f"sed -i 's/{escaped_line}/# {escaped_line} # Disabled by Nextcloud setup script/g' {file_path}"
-            returncode, _, stderr = run_command(["bash", "-c", sedcmd], sudo=True)
-
-            if returncode == 0:
-                print_success(f"Successfully disabled repository in {file_path}")
-            else:
-                print_error(f"Failed to disable repository in {file_path}: {stderr}")
-                success = False
-        except Exception as e:
-            print_error(f"Error processing {file_path}: {e}")
+    # First, check if dpkg was interrupted
+    dpkg_interrupted = any(item[1] == "dpkg_interrupted" for item in problematic_items)
+    if dpkg_interrupted:
+        print_step("Fixing interrupted dpkg...")
+        returncode, _, stderr = run_command(["dpkg", "--configure", "-a"], sudo=True)
+        if returncode != 0:
+            print_error(f"Failed to configure dpkg: {stderr}")
             success = False
+        else:
+            print_success("Successfully configured dpkg.")
+
+    # Handle files with invalid extensions
+    for file_path, issue_type, description in problematic_items:
+        if issue_type == "invalid_extension":
+            try:
+                print_step(f"Removing file with invalid extension: {file_path}")
+                returncode, _, stderr = run_command(["rm", "-f", file_path], sudo=True)
+                if returncode != 0:
+                    print_error(f"Failed to remove {file_path}: {stderr}")
+                    success = False
+                else:
+                    print_success(f"Successfully removed {file_path}")
+            except Exception as e:
+                print_error(f"Error removing {file_path}: {e}")
+                success = False
+        elif issue_type == "remove_first":
+            try:
+                print_step(f"Removing {file_path} to ensure clean installation")
+                returncode, _, stderr = run_command(["rm", "-f", file_path], sudo=True)
+                if returncode != 0:
+                    print_error(f"Failed to remove {file_path}: {stderr}")
+                    success = False
+                else:
+                    print_success(f"Successfully removed {file_path}")
+            except Exception as e:
+                print_error(f"Error removing {file_path}: {e}")
+                success = False
+        elif issue_type == "problematic_content" and file_path:
+            try:
+                # Create a backup of the file
+                backup_path = f"{file_path}.bak.{int(time.time())}"
+                print_step(f"Creating backup of {file_path}")
+                returncode, _, stderr = run_command(
+                    ["cp", file_path, backup_path], sudo=True
+                )
+                if returncode != 0:
+                    print_error(f"Failed to create backup of {file_path}: {stderr}")
+                    success = False
+                    continue
+
+                # For files with problematic content, we'll comment out the problematic lines
+                # Instead of using sed which can be error-prone with escaping, we'll read, modify, and write back
+                returncode, file_content, _ = run_command(["cat", file_path], sudo=True)
+                if returncode == 0:
+                    modified_content = ""
+                    for line in file_content.splitlines():
+                        line_strip = line.strip()
+                        if (
+                            line_strip
+                            and not line_strip.startswith("#")
+                            and (
+                                (
+                                    "debian" in line_strip.lower()
+                                    and "trixie" in line_strip.lower()
+                                )
+                                or "NO_PUBKEY" in line_strip
+                                or (
+                                    "InRelease" in line_strip
+                                    and "not signed" in line_strip
+                                )
+                                or "cloudsmith.io" in line_strip
+                            )
+                        ):
+                            modified_content += (
+                                f"# {line} # Disabled by Nextcloud setup script\n"
+                            )
+                        else:
+                            modified_content += f"{line}\n"
+
+                    # Write modified content to a temporary file
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
+                    temp_file.write(modified_content)
+                    temp_file.close()
+
+                    # Copy the temp file to the original location
+                    print_step(
+                        f"Updating {file_path} with problematic entries commented out"
+                    )
+                    returncode, _, stderr = run_command(
+                        ["cp", temp_file.name, file_path], sudo=True
+                    )
+
+                    os.unlink(temp_file.name)
+
+                    if returncode != 0:
+                        print_error(f"Failed to update {file_path}: {stderr}")
+                        success = False
+                    else:
+                        print_success(f"Successfully updated {file_path}")
+            except Exception as e:
+                print_error(f"Error processing {file_path}: {e}")
+                success = False
 
     if success:
+        print_step("Cleaning apt lists cache...")
+        run_command(["rm", "-rf", "/var/lib/apt/lists/*"], sudo=True)
+
         print_step("Updating package lists after repository changes...")
         returncode, _, stderr = run_command(["nala", "update"], sudo=True)
         if returncode != 0:
