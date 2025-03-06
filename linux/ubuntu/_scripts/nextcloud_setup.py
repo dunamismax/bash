@@ -44,11 +44,11 @@ console: Console = Console()
 
 # Configuration and Constants
 APP_NAME: str = "Nextcloud Setup"
-VERSION: str = "1.2.0"
+VERSION: str = "2.0.0"
 DOWNLOAD_URL: str = "https://download.nextcloud.com/server/releases/latest.zip"
 OPERATION_TIMEOUT: int = 60
 DEFAULT_WEB_USER: str = "www-data"
-DEFAULT_WEBSERVER: str = "apache2"
+DEFAULT_WEBSERVER: str = "caddy"
 DEFAULT_DB_TYPE: str = "pgsql"
 # Will be dynamically determined
 DEFAULT_PHP_VERSION: str = ""
@@ -57,6 +57,10 @@ TEMP_DIR: str = tempfile.gettempdir()
 # Certificate paths (hardcoded to user's files)
 CERT_FILE: str = "/home/sawyer/dunamismax.com.pem"
 KEY_FILE: str = "/home/sawyer/dunamismax.com.key"
+
+# Caddy file paths
+CADDY_CONFIG_DIR: str = "/etc/caddy"
+CADDYFILE_PATH: str = "/etc/caddy/Caddyfile"
 
 # Configuration file paths
 CONFIG_DIR: str = os.path.expanduser("~/.config/nextcloud_setup")
@@ -423,7 +427,7 @@ def fix_repository_issues() -> bool:
 
     if success:
         print_step("Updating package lists after repository changes...")
-        returncode, _, stderr = run_command(["apt", "update"], sudo=True)
+        returncode, _, stderr = run_command(["nala", "update"], sudo=True)
         if returncode != 0:
             print_warning(f"Package list update still has issues: {stderr}")
             print_warning(
@@ -435,7 +439,7 @@ def fix_repository_issues() -> bool:
 
 def install_dependencies() -> bool:
     """
-    Install all required dependencies for Nextcloud using apt.
+    Install all required dependencies for Nextcloud using nala.
     First checks for and fixes problematic repositories.
     """
     global DEFAULT_PHP_VERSION
@@ -444,6 +448,19 @@ def install_dependencies() -> bool:
 
     # Check for and fix repository issues before installing dependencies
     fix_repository_issues()
+
+    # Install nala if it's not already installed
+    print_step("Checking if nala is installed...")
+    returncode, _, _ = run_command(["which", "nala"])
+    if returncode != 0:
+        print_step("Installing nala package manager...")
+        returncode, _, stderr = run_command(["apt", "install", "-y", "nala"], sudo=True)
+        if returncode != 0:
+            print_error(f"Failed to install nala: {stderr}")
+            return False
+        print_success("Nala package manager installed.")
+    else:
+        print_success("Nala package manager is already installed.")
 
     # Detect PHP versions
     php_versions = detect_available_php_versions()
@@ -476,21 +493,19 @@ def install_dependencies() -> bool:
 
     # Define base dependencies
     base_dependencies = [
-        "apache2",
         "postgresql",
         "postgresql-contrib",
         "unzip",
         "curl",
-        "ssl-cert",  # Added for SSL support
-        "openssl",  # Added for SSL support
+        "ssl-cert",
+        "openssl",
     ]
 
     # Define PHP dependencies based on detected version
     php_dependencies = []
     if DEFAULT_PHP_VERSION:
         php_dependencies = [
-            "libapache2-mod-php",
-            f"php{DEFAULT_PHP_VERSION}",
+            f"php{DEFAULT_PHP_VERSION}-fpm",
             f"php{DEFAULT_PHP_VERSION}-gd",
             f"php{DEFAULT_PHP_VERSION}-xml",
             f"php{DEFAULT_PHP_VERSION}-mbstring",
@@ -505,8 +520,7 @@ def install_dependencies() -> bool:
     else:
         # Try generic packages if no version could be determined
         php_dependencies = [
-            "libapache2-mod-php",
-            "php",
+            "php-fpm",
             "php-gd",
             "php-xml",
             "php-mbstring",
@@ -540,7 +554,7 @@ def install_dependencies() -> bool:
                 f"[{NordColors.FROST_2}]Updating package lists...", total=1
             )
 
-            _, stdout, stderr = run_command(["apt", "update"], sudo=True)
+            _, stdout, stderr = run_command(["nala", "update"], sudo=True)
             if stderr and "error" in stderr.lower():
                 print_warning(
                     f"Package list update has warnings/errors, but continuing: {stderr}"
@@ -548,7 +562,53 @@ def install_dependencies() -> bool:
 
             progress.update(task_update, completed=1)
 
-            # Install dependencies
+            # Install Caddy
+            task_caddy = progress.add_task(
+                f"[{NordColors.FROST_2}]Installing Caddy...", total=1
+            )
+
+            # Add Caddy official repository
+            print_step("Adding Caddy official repository...")
+            
+            # Install dependencies for adding apt repositories
+            run_command(["nala", "install", "-y", "apt-transport-https", "gnupg"], sudo=True)
+            
+            # Download and install Caddy's signing key
+            run_command(
+                [
+                    "curl", 
+                    "-1sLf", 
+                    "https://dl.cloudsmith.io/public/caddy/stable/gpg.key",
+                    "-o", 
+                    "/usr/share/keyrings/caddy-stable-archive-keyring.asc"
+                ], 
+                sudo=True
+            )
+            
+            # Add Caddy repository to apt sources
+            run_command(
+                [
+                    "curl", 
+                    "-1sLf", 
+                    "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt",
+                    "-o", 
+                    "/etc/apt/sources.list.d/caddy-stable.list"
+                ], 
+                sudo=True
+            )
+            
+            # Update package lists after adding Caddy repository
+            run_command(["nala", "update"], sudo=True)
+            
+            # Install Caddy
+            returncode, _, stderr = run_command(["nala", "install", "-y", "caddy"], sudo=True)
+            if returncode != 0:
+                print_error(f"Failed to install Caddy: {stderr}")
+                return False
+
+            progress.update(task_caddy, completed=1)
+
+            # Install other dependencies
             task_install = progress.add_task(
                 f"[{NordColors.FROST_2}]Installing dependencies...",
                 total=len(dependencies),
@@ -563,7 +623,7 @@ def install_dependencies() -> bool:
                 )
 
                 returncode, stdout, stderr = run_command(
-                    ["apt", "install", "-y", dependency], sudo=True
+                    ["nala", "install", "-y", dependency], sudo=True
                 )
 
                 if returncode != 0:
@@ -595,7 +655,7 @@ def install_dependencies() -> bool:
 
                     if returncode == 0:
                         print_step("Updating package lists...")
-                        run_command(["apt", "update"], sudo=True)
+                        run_command(["nala", "update"], sudo=True)
 
                         # Detect PHP versions again
                         php_versions = detect_available_php_versions()
@@ -630,7 +690,7 @@ def install_dependencies() -> bool:
 
                                     print_step(f"Installing {fixed_dep}...")
                                     run_command(
-                                        ["apt", "install", "-y", fixed_dep], sudo=True
+                                        ["nala", "install", "-y", fixed_dep], sudo=True
                                     )
                     else:
                         print_warning(f"Failed to add PHP repository: {stderr}")
@@ -722,20 +782,31 @@ def detect_available_php_versions() -> List[str]:
     available_versions = []
 
     try:
-        # Try to find PHP packages using apt
+        # Try to find PHP packages using apt/nala
         returncode, stdout, _ = run_command(
-            ["apt-cache", "search", "^php[0-9]+\\.[0-9]+-common$"], sudo=True
+            ["nala", "list", "--installed", "php*-common"], sudo=True
         )
         if returncode == 0:
             for line in stdout.splitlines():
-                # Extract version from package name (e.g., php7.4-common)
-                if line.startswith("php"):
-                    parts = line.split(" - ")[0].split("-")[
-                        0
-                    ]  # Get "php7.4" from "php7.4-common"
+                if "php" in line and "-common" in line:
+                    parts = line.split()[0].split("-")[0]  # Get "php7.4" from "php7.4-common"
                     version = parts[3:]  # Get "7.4" from "php7.4"
                     if version and version not in available_versions:
                         available_versions.append(version)
+        
+        # If no versions found, try using apt-cache search
+        if not available_versions:
+            returncode, stdout, _ = run_command(
+                ["apt-cache", "search", "^php[0-9]+\\.[0-9]+-common$"], sudo=True
+            )
+            if returncode == 0:
+                for line in stdout.splitlines():
+                    # Extract version from package name (e.g., php7.4-common)
+                    if line.startswith("php"):
+                        parts = line.split(" - ")[0].split("-")[0]  # Get "php7.4" from "php7.4-common"
+                        version = parts[3:]  # Get "7.4" from "php7.4"
+                        if version and version not in available_versions:
+                            available_versions.append(version)
     except Exception as e:
         print_warning(f"Error detecting PHP versions: {e}")
 
@@ -765,7 +836,7 @@ def detect_available_php_versions() -> List[str]:
             )
             if returncode == 0:
                 print_step("Updating package lists after adding repository...")
-                run_command(["apt", "update"], sudo=True)
+                run_command(["nala", "update"], sudo=True)
 
                 # Check again for available versions
                 returncode, stdout, _ = run_command(
@@ -959,243 +1030,201 @@ def free_port(port: int) -> bool:
     return False
 
 
-def setup_apache(config: NextcloudConfig) -> bool:
+def setup_caddy(config: NextcloudConfig) -> bool:
     """
-    Configure Apache for Nextcloud with SSL support using the provided certificates.
+    Configure Caddy for Nextcloud with SSL support using the provided certificates.
     """
-    print_section("Configuring Apache Web Server")
+    print_section("Configuring Caddy Web Server")
 
     try:
         # Check if ports 80 and 443 are already in use
         port80_in_use, process80_name, pid80 = check_port_in_use(80)
         port443_in_use, process443_name, pid443 = check_port_in_use(443)
 
-        if port80_in_use and process80_name != "apache2":
+        if port80_in_use and process80_name != "caddy":
             print_warning(
                 f"Port 80 is already in use by {process80_name or 'unknown process'}{f' (PID: {pid80})' if pid80 else ''}."
             )
 
             if free_port(80):
-                print_success("Successfully freed port 80 for Apache.")
+                print_success("Successfully freed port 80 for Caddy.")
             else:
-                print_error("Failed to free port 80. Apache may not start correctly.")
+                print_error("Failed to free port 80. Caddy may not start correctly.")
 
-        if port443_in_use and process443_name != "apache2":
+        if port443_in_use and process443_name != "caddy":
             print_warning(
                 f"Port 443 is already in use by {process443_name or 'unknown process'}{f' (PID: {pid443})' if pid443 else ''}."
             )
 
             if free_port(443):
-                print_success("Successfully freed port 443 for Apache.")
+                print_success("Successfully freed port 443 for Caddy.")
             else:
-                print_error("Failed to free port 443. Apache may not start correctly.")
+                print_error("Failed to free port 443. Caddy may not start correctly.")
 
-        # Enable required Apache modules
-        modules = ["rewrite", "headers", "env", "dir", "mime", "ssl"]
+        # Create Caddy directory if it doesn't exist
+        print_step("Creating Caddy configuration directory...")
+        run_command(["mkdir", "-p", CADDY_CONFIG_DIR], sudo=True)
 
-        for module in modules:
-            print_step(f"Enabling Apache module: {module}")
-            returncode, _, stderr = run_command(["a2enmod", module], sudo=True)
-            if returncode != 0:
-                print_warning(f"Could not enable Apache module {module}: {stderr}")
-
-        # Create Apache site configuration with SSL
-        site_config = f"""<VirtualHost *:80>
-    ServerName {config.domain}
-    ServerAdmin webmaster@localhost
-    
-    # Redirect all HTTP traffic to HTTPS
-    Redirect permanent / https://{config.domain}/
-    
-    ErrorLog ${{APACHE_LOG_DIR}}/nextcloud_error.log
-    CustomLog ${{APACHE_LOG_DIR}}/nextcloud_access.log combined
-</VirtualHost>
-
-<VirtualHost *:443>
-    ServerName {config.domain}
-    ServerAdmin webmaster@localhost
-    DocumentRoot {config.install_dir}
-
-    <Directory {config.install_dir}>
-        Options FollowSymlinks
-        AllowOverride All
-        Require all granted
-        <IfModule mod_dav.c>
-            Dav off
-        </IfModule>
+        # Determine which PHP-FPM socket to use
+        php_version = config.php_version if config.php_version else "7.4"  # Default fallback
+        php_fpm_sock = f"/run/php/php{php_version}-fpm.sock"
         
-        # HSTS (optional)
-        <IfModule mod_headers.c>
-            Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains"
-        </IfModule>
-    </Directory>
+        # Check if the socket exists
+        returncode, _, _ = run_command(["test", "-S", php_fpm_sock], sudo=True)
+        if returncode != 0:
+            print_warning(f"PHP-FPM socket {php_fpm_sock} not found. Checking alternatives...")
+            
+            # Try to find any PHP-FPM socket
+            returncode, stdout, _ = run_command(["find", "/run/php", "-name", "*.sock"], sudo=True)
+            if returncode == 0 and stdout.strip():
+                php_fpm_sock = stdout.splitlines()[0].strip()
+                print_success(f"Found alternative PHP-FPM socket: {php_fpm_sock}")
+            else:
+                print_error("No PHP-FPM socket found. PHP might not be properly installed.")
+                return False
 
-    # SSL Configuration
-    SSLEngine on
-    SSLCertificateFile {config.cert_file}
-    SSLCertificateKeyFile {config.key_file}
+        # Create Caddyfile configuration
+        caddyfile_content = f"""# Nextcloud Caddyfile
+{config.domain} {{
+    root * {config.install_dir}
     
-    # For Cloudflare
-    SetEnvIf X-Forwarded-Proto "https" HTTPS=on
+    # If you want to use Caddy's automatic HTTPS, remove or comment out these lines
+    # and remove the tls directives below
+    # Caddy would handle certificates automatically, but using Cloudflare certificates here
+    tls {config.cert_file} {config.key_file}}
+    
+    # PHP-FPM handler
+    php_fastcgi unix/{php_fpm_sock}
+    
+    # Nextcloud specific headers
+    header Strict-Transport-Security "max-age=15552000; includeSubDomains"
+    
+    # For Cloudflare support
+    @cloudflareIPs {
+        remote_ip 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 104.16.0.0/12 108.162.192.0/18 131.0.72.0/22 141.101.64.0/18 162.158.0.0/15 172.64.0.0/13 173.245.48.0/20 188.114.96.0/20 190.93.240.0/20 197.234.240.0/22 198.41.128.0/17
+    }
+    
+    # Properly handle HTTPS when behind Cloudflare
+    @cloudflare_redirect {
+        header_regexp X-Forwarded-Proto X-Forwarded-Proto "^http$"
+        match @cloudflareIPs
+    }
+    redir @cloudflare_redirect https://{config.domain}{"{uri}"}
 
-    # Modern SSL configuration
-    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
-    SSLHonorCipherOrder on
-    SSLCompression off
+    # Needed for /.well-known URLs
+    rewrite /.well-known/* /.well-known/{"{path}"}
     
-    ErrorLog ${{APACHE_LOG_DIR}}/nextcloud_ssl_error.log
-    CustomLog ${{APACHE_LOG_DIR}}/nextcloud_ssl_access.log combined
-</VirtualHost>
+    # Nextcloud .htaccess rules converted for Caddy
+    rewrite /_next/* /_next/{"{path}"}
+    rewrite /core/js/* /core/js/{"{path}"}
+    rewrite /core/css/* /core/css/{"{path}"}
+    
+    # Prohibit direct access to sensitive directories
+    @blocked {
+        path /data/* /config/* /db_structure/* /.ht*
+    }
+    respond @blocked 403
+    
+    # Pretty URLs for Nextcloud
+    try_files {"{path}"} {"{path}"}/index.php {"{path}"}/index.html
+    
+    # Handle .well-known urls (for ACME challenges and Caldav/Carddav)
+    handle /.well-known/* {
+        try_files {"{path}"} /index.php{"{uri}"}
+    }
+    
+    # Primary rule for Nextcloud - all PHP requests go to index.php
+    @phpFiles {
+        path *.php
+    }
+    rewrite @phpFiles /index.php{"{query}"}
+    
+    # Optimization for static files
+    header /favicon.ico Cache-Control "max-age=604800"
+    header /static/* Cache-Control "max-age=604800"
+    
+    # Enable compression
+    encode gzip zstd
+    
+    # Basic security headers
+    header {
+        # Enable XSS filtering for legacy browsers
+        X-XSS-Protection "1; mode=block"
+        # Control MIME type sniffing
+        X-Content-Type-Options "nosniff"
+        # Prevent embedding in frames (clickjacking protection)
+        X-Frame-Options "SAMEORIGIN"
+        # Content Security Policy
+        Content-Security-Policy "frame-ancestors 'self'"
+        # Remove server header
+        -Server
+    }
+    
+    # Log configuration
+    log {{
+        output file /var/log/caddy/nextcloud.log
+        format console
+    }}
+}}
 """
 
-        # Create global ServerName directive to suppress warnings
-        server_name_config = f"""# Global ServerName
-ServerName {config.domain}
-"""
+        # Create temporary file for the Caddyfile
+        caddy_config_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
+        caddy_config_file.write(caddyfile_content)
+        caddy_config_file.close()
 
-        # Create temporary file for the configuration
-        config_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
-        config_file.write(site_config)
-        config_file.close()
-
-        # Copy configuration to Apache sites directory
+        # Copy configuration to Caddy directory
+        print_step("Creating Caddy configuration...")
         returncode, _, stderr = run_command(
-            ["cp", config_file.name, "/etc/apache2/sites-available/nextcloud.conf"],
-            sudo=True,
+            ["cp", caddy_config_file.name, CADDYFILE_PATH], sudo=True
         )
 
         if returncode != 0:
-            print_error(f"Failed to create Apache site configuration: {stderr}")
-            os.unlink(config_file.name)
+            print_error(f"Failed to create Caddy configuration: {stderr}")
+            os.unlink(caddy_config_file.name)
             return False
 
-        os.unlink(config_file.name)
+        os.unlink(caddy_config_file.name)
 
-        # Create ServerName config file
-        server_name_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
-        server_name_file.write(server_name_config)
-        server_name_file.close()
+        # Create log directory for Caddy
+        print_step("Creating Caddy log directory...")
+        run_command(["mkdir", "-p", "/var/log/caddy"], sudo=True)
+        run_command(["chown", "-R", "caddy:caddy", "/var/log/caddy"], sudo=True)
 
-        returncode, _, stderr = run_command(
-            [
-                "cp",
-                server_name_file.name,
-                "/etc/apache2/conf-available/servername.conf",
-            ],
-            sudo=True,
-        )
-
+        # Validate Caddy configuration
+        print_step("Validating Caddy configuration...")
+        returncode, _, stderr = run_command(["caddy", "validate", "--config", CADDYFILE_PATH], sudo=True)
         if returncode != 0:
-            print_warning(f"Could not create ServerName configuration: {stderr}")
-        else:
-            # Enable the ServerName config
-            run_command(["a2enconf", "servername.conf"], sudo=True)
-
-        os.unlink(server_name_file.name)
-
-        # Disable any existing sites that might conflict
-        print_step("Checking for enabled Apache sites that might conflict...")
-        returncode, stdout, _ = run_command(
-            ["ls", "-1", "/etc/apache2/sites-enabled"], sudo=True
-        )
-        if returncode == 0:
-            enabled_sites = [
-                site for site in stdout.splitlines() if site != "nextcloud.conf"
-            ]
-
-            if enabled_sites:
-                print_warning(f"Found other enabled sites: {', '.join(enabled_sites)}")
-                print_step("Disabling other Apache sites to avoid conflicts...")
-
-                for site in enabled_sites:
-                    print_step(f"Disabling site {site}...")
-                    run_command(["a2dissite", site], sudo=True)
-
-        # Enable the Nextcloud site
-        print_step("Enabling Nextcloud site in Apache...")
-        returncode, _, stderr = run_command(["a2ensite", "nextcloud.conf"], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to enable Apache site: {stderr}")
-            return False
-
-        # Verify Apache configuration
-        print_step("Verifying Apache configuration...")
-        returncode, _, stderr = run_command(["apache2ctl", "configtest"], sudo=True)
-        if returncode != 0:
-            print_warning(f"Apache configuration test failed: {stderr}")
+            print_error(f"Caddy configuration validation failed: {stderr}")
             if not Confirm.ask("Continue anyway?", default=False):
                 return False
 
-        # Make sure ports are still free before starting Apache
-        port80_in_use, process80_name, pid80 = check_port_in_use(80)
-        if port80_in_use and process80_name != "apache2":
-            print_warning(
-                f"Port 80 is in use again by {process80_name or 'unknown process'}{f' (PID: {pid80})' if pid80 else ''}."
-            )
-            if free_port(80):
-                print_success("Successfully freed port 80 for Apache.")
-            else:
-                print_error("Failed to free port 80. Apache may not start correctly.")
-
-        port443_in_use, process443_name, pid443 = check_port_in_use(443)
-        if port443_in_use and process443_name != "apache2":
-            print_warning(
-                f"Port 443 is in use again by {process443_name or 'unknown process'}{f' (PID: {pid443})' if pid443 else ''}."
-            )
-            if free_port(443):
-                print_success("Successfully freed port 443 for Apache.")
-            else:
-                print_error("Failed to free port 443. Apache may not start correctly.")
-
-        # Restart Apache
-        print_step("Restarting Apache service...")
-        returncode, _, stderr = run_command(
-            ["systemctl", "restart", "apache2"], sudo=True
-        )
+        # Reload Caddy to apply the new configuration
+        print_step("Reloading Caddy service...")
+        returncode, _, stderr = run_command(["systemctl", "reload", "caddy"], sudo=True)
+        
+        # If reload fails, try restart
         if returncode != 0:
-            print_error(f"Failed to restart Apache: {stderr}")
-
-            # Try stopping and starting instead
-            print_step("Trying alternative method: stop and start Apache...")
-            run_command(["systemctl", "stop", "apache2"], sudo=True)
-            time.sleep(2)  # Give it time to fully stop
-
-            # Check if required ports are free before starting
-            port80_in_use, _, _ = check_port_in_use(80)
-            if port80_in_use:
-                if free_port(80):
-                    print_success("Successfully freed port 80 for Apache.")
-                else:
-                    print_error(
-                        "Failed to free port 80. Apache may not start correctly."
-                    )
-
-            port443_in_use, _, _ = check_port_in_use(443)
-            if port443_in_use:
-                if free_port(443):
-                    print_success("Successfully freed port 443 for Apache.")
-                else:
-                    print_error(
-                        "Failed to free port 443. Apache may not start correctly."
-                    )
-
-            returncode, _, stderr = run_command(
-                ["systemctl", "start", "apache2"], sudo=True
-            )
+            print_warning(f"Failed to reload Caddy: {stderr}")
+            print_step("Trying to restart Caddy...")
+            returncode, _, stderr = run_command(["systemctl", "restart", "caddy"], sudo=True)
             if returncode != 0:
-                print_error(f"Failed to start Apache: {stderr}")
+                print_error(f"Failed to restart Caddy: {stderr}")
                 return False
 
-        # Verify Apache is running
-        returncode, _, _ = run_command(["systemctl", "is-active", "apache2"], sudo=True)
+        # Verify Caddy is running
+        print_step("Verifying Caddy service status...")
+        returncode, _, _ = run_command(["systemctl", "is-active", "caddy"], sudo=True)
         if returncode != 0:
-            print_error("Apache is not running after configuration.")
+            print_error("Caddy is not running after configuration.")
+            print_step("Checking Caddy logs for errors...")
+            run_command(["journalctl", "-u", "caddy", "-n", "20"], sudo=True)
             return False
 
-        print_success("Apache configuration completed successfully.")
+        print_success("Caddy configuration completed successfully.")
         return True
     except Exception as e:
-        print_error(f"Error configuring Apache: {e}")
+        print_error(f"Error configuring Caddy: {e}")
         return False
 
 
@@ -1559,19 +1588,6 @@ $AUTOCONFIG = array (
 
         # Force HTTPS
         print_step("Configuring Nextcloud to use HTTPS...")
-        https_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            os.path.join(config.install_dir, "occ"),
-            "config:system:set",
-            "htaccess.RewriteBase",
-            "--value",
-            "/",
-        ]
-        run_command(https_cmd)
-
         force_https_cmd = [
             "sudo",
             "-u",
@@ -1586,17 +1602,6 @@ $AUTOCONFIG = array (
             "true",
         ]
         run_command(force_https_cmd)
-
-        # Update .htaccess
-        update_htaccess_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            os.path.join(config.install_dir, "occ"),
-            "maintenance:update:htaccess",
-        ]
-        run_command(update_htaccess_cmd)
 
         # Configure trusted proxies for Cloudflare
         print_step("Configuring trusted proxies for Cloudflare...")
@@ -1700,7 +1705,6 @@ def optimize_nextcloud(config: NextcloudConfig) -> bool:
 
         # Verify PHP ini path exists
         potential_paths = [
-            f"/etc/php/{php_version}/apache2/php.ini",  # Debian/Ubuntu with apache2
             f"/etc/php/{php_version}/fpm/php.ini",  # Debian/Ubuntu with PHP-FPM
             f"/etc/php/{php_version}/cli/php.ini",  # CLI version
             "/etc/php.ini",  # Generic fallback
@@ -1748,15 +1752,15 @@ opcache.revalidate_freq=1
 
         os.unlink(php_settings_file.name)
 
-        # Restart Apache to apply PHP changes
-        print_step("Restarting Apache to apply changes...")
+        # Restart PHP-FPM to apply changes
+        print_step("Restarting PHP-FPM to apply changes...")
         returncode, _, stderr = run_command(
-            ["systemctl", "restart", "apache2"], sudo=True
+            ["systemctl", "restart", f"php{php_version}-fpm"], sudo=True
         )
         if returncode != 0:
-            print_warning(f"Failed to restart Apache: {stderr}")
+            print_warning(f"Failed to restart PHP-FPM: {stderr}")
             print_warning(
-                "PHP optimizations may not be applied until Apache is restarted."
+                "PHP optimizations may not be applied until PHP-FPM is restarted."
             )
             # Continue anyway as this is not critical
 
@@ -1801,7 +1805,7 @@ To complete your Cloudflare configuration:
    - Enable "Always Use HTTPS"
    - Set Minimum TLS Version to TLS 1.2
 
-Your Nextcloud server has already been configured with the necessary settings to work with Cloudflare's proxy.
+Your Nextcloud server has been configured with Caddy and the necessary settings to work with Cloudflare's proxy.
 """
 
     display_panel("Cloudflare Configuration", instructions, NordColors.FROST_2)
@@ -1834,7 +1838,7 @@ def setup_nextcloud(config: NextcloudConfig) -> bool:
     if not extract_nextcloud(zip_path, config.install_dir):
         return False
 
-    # Configure permissions properly before Apache setup
+    # Configure permissions properly before Caddy setup
     print_step("Setting proper permissions for all Nextcloud files...")
     run_command(
         ["find", config.install_dir, "-type", "f", "-exec", "chmod", "0640", "{}", ";"],
@@ -1849,8 +1853,8 @@ def setup_nextcloud(config: NextcloudConfig) -> bool:
         sudo=True,
     )
 
-    # Set up Apache with SSL
-    if not setup_apache(config):
+    # Set up Caddy with SSL
+    if not setup_caddy(config):
         return False
 
     # Configure Nextcloud
@@ -1885,9 +1889,9 @@ def setup_nextcloud(config: NextcloudConfig) -> bool:
     # Display Cloudflare-specific instructions
     display_cloudflare_instructions(config)
 
-    # Restart Apache one final time
-    print_step("Restarting Apache for final configuration...")
-    run_command(["systemctl", "restart", "apache2"], sudo=True)
+    # Restart Caddy one final time
+    print_step("Restarting Caddy for final configuration...")
+    run_command(["systemctl", "restart", "caddy"], sudo=True)
 
     # Clean up
     try:
