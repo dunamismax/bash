@@ -14,7 +14,7 @@ import yaml
 import logging
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
-from typing import List, Tuple, Dict, Optional, Any, Callable, Union, TypeVar, cast
+from typing import List, Tuple, Dict, Optional, Any
 from pathlib import Path
 
 try:
@@ -203,8 +203,8 @@ def print_step(message: str) -> None:
 
 def print_section(title: str) -> None:
     console.print()
-    section_title = f"[bold {NordColors.FROST_3}]{title}[/]"
-    section_line = f"[{NordColors.FROST_3}]{'─' * len(title)}[/]"
+    section_title = f"[bold {NordColors.FROST_2}]{title}[/]"
+    section_line = f"[{NordColors.FROST_2}]{'─' * len(title)}[/]"
     console.print(section_title)
     console.print(section_line)
     logger.info(f"SECTION: {title}")
@@ -500,11 +500,9 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
             "100.88.172.104",
             "100.72.245.118",
         ]
-
         for domain in config.additional_trusted_domains:
             if domain and domain not in trusted_domains:
                 trusted_domains.append(domain)
-
         trusted_domains_str = " ".join(trusted_domains)
         logger.info(f"Configured trusted domains: {trusted_domains_str}")
 
@@ -575,14 +573,11 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                 "nextcloud_themes": {},
             },
         }
-
         with open(DOCKER_COMPOSE_FILE, "w") as f:
             yaml.dump(compose_config, f, default_flow_style=False)
-
         logger.info(f"Created Docker Compose configuration at {DOCKER_COMPOSE_FILE}")
         print_success(f"Created Docker Compose configuration at {DOCKER_COMPOSE_FILE}")
         return True
-
     except Exception as e:
         error_msg = f"Failed to create Docker Compose file: {e}"
         logger.error(error_msg)
@@ -675,15 +670,8 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
         if returncode != 0 or not container_id:
             logger.error(f"Failed to get container ID: {stderr}")
             return False, f"Container not running or not found: {stderr}"
-        full_command = [
-            "docker",
-            "exec",
-            "-u",
-            "www-data",
-            container_id.strip(),
-            "php",
-            "occ",
-        ] + command
+        # Run occ without switching user to avoid shared library errors
+        full_command = ["docker", "exec", container_id.strip(), "php", "occ"] + command
         returncode, stdout, stderr = await run_command_async(full_command)
         if returncode == 0:
             logger.info(f"OCC command successful: {stdout}")
@@ -745,6 +733,16 @@ async def configure_nextcloud_post_install(config: NextcloudConfig) -> bool:
         try:
             with open(temp_config_path, "w") as f:
                 f.write("\n".join(php_config_updates))
+            # Ensure config.php exists in container before changing permissions
+            check_config_cmd = [
+                "docker",
+                "exec",
+                container_id,
+                "sh",
+                "-c",
+                "if [ ! -f /var/www/html/config/config.php ]; then touch /var/www/html/config/config.php; fi",
+            ]
+            await run_command_async(check_config_cmd)
             # Ensure config.php is writable inside the container
             chmod_cmd = [
                 "docker",
@@ -765,13 +763,12 @@ async def configure_nextcloud_post_install(config: NextcloudConfig) -> bool:
             if returncode != 0:
                 logger.error(f"Failed to copy config file to container: {stderr}")
                 return False
+            # Use sh instead of bash to avoid shared library issues
             append_cmd = [
                 "docker",
                 "exec",
-                "-u",
-                "www-data",
                 container_id,
-                "bash",
+                "sh",
                 "-c",
                 "cat /tmp/nextcloud_config_append.php >> /var/www/html/config/config.php",
             ]
@@ -1309,11 +1306,11 @@ async def manage_trusted_domains() -> None:
                 "docker",
                 "exec",
                 container_id,
-                "bash",
+                "sh",
                 "-c",
-                "sed -i '/trusted_domains/,/);/c\\\\n' /var/www/html/config/config.php && "
-                "sed -i '/<?php/a\\\\n' /var/www/html/config/config.php && "
-                "sed -i '/<\?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
+                "sed -i '/trusted_domains/,/);/c\\n' /var/www/html/config/config.php && "
+                "sed -i '/<?php/a\\n' /var/www/html/config/config.php && "
+                "sed -i '/<?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
             ]
             returncode, stdout, stderr = await run_command_async(sed_cmd)
             if returncode == 0:
@@ -1360,11 +1357,11 @@ async def manage_trusted_domains() -> None:
                     "docker",
                     "exec",
                     container_id,
-                    "bash",
+                    "sh",
                     "-c",
-                    "sed -i '/trusted_domains/,/);/c\\\\n' /var/www/html/config/config.php && "
-                    "sed -i '/<\?php/a\\\\n' /var/www/html/config/config.php && "
-                    "sed -i '/<\?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
+                    "sed -i '/trusted_domains/,/);/c\\n' /var/www/html/config/config.php && "
+                    "sed -i '/<?php/a\\n' /var/www/html/config/config.php && "
+                    "sed -i '/<?php/r /tmp/trusted_domains.php' /var/www/html/config/config.php",
                 ]
                 returncode, stdout, stderr = await run_command_async(sed_cmd)
                 if returncode == 0:
