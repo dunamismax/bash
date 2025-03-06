@@ -50,8 +50,10 @@ APP_NAME: str = "Nextcloud Installer"
 VERSION: str = "1.0.0"
 DEFAULT_USERNAME: str = os.environ.get("USER") or "sawyer"
 DOMAIN_NAME: str = "nextcloud.dunamismax.com"
-DOCKER_COMMAND: str = "docker"
-DOCKER_COMPOSE_COMMAND: str = "docker compose"
+DOCKER_COMMAND: List[str] = ["docker"]
+DOCKER_COMPOSE_V1_COMMAND: List[str] = ["docker-compose"]
+DOCKER_COMPOSE_V2_COMMAND: List[str] = ["docker", "compose"]
+DOCKER_COMPOSE_COMMAND: List[str] = DOCKER_COMPOSE_V2_COMMAND  # Default to V2
 OPERATION_TIMEOUT: int = 60
 
 # Configuration file paths
@@ -318,7 +320,7 @@ async def check_docker_installed() -> bool:
     logger.info("Checking if Docker is installed")
     try:
         returncode, stdout, stderr = await run_command_async(
-            [DOCKER_COMMAND, "--version"]
+            DOCKER_COMMAND + ["--version"]
         )
         if returncode == 0:
             print_success(f"Docker is installed: {stdout}")
@@ -342,21 +344,22 @@ async def check_docker_compose_installed() -> bool:
     try:
         # First try with docker compose (newer Docker versions)
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND.split() + ["--version"]
+            DOCKER_COMPOSE_V2_COMMAND + ["--version"]
         )
         if returncode == 0:
-            print_success(f"Docker Compose is installed: {stdout}")
-            logger.info(f"Docker Compose is installed: {stdout}")
+            print_success(f"Docker Compose V2 is installed: {stdout}")
+            logger.info(f"Docker Compose V2 is installed: {stdout}")
+            DOCKER_COMPOSE_COMMAND = DOCKER_COMPOSE_V2_COMMAND
             return True
 
         # If that fails, try with docker-compose (older versions)
         returncode, stdout, stderr = await run_command_async(
-            ["docker-compose", "--version"]
+            DOCKER_COMPOSE_V1_COMMAND + ["--version"]
         )
         if returncode == 0:
-            print_success(f"Docker Compose is installed: {stdout}")
+            print_success(f"Docker Compose V1 is installed: {stdout}")
             logger.info(f"Docker Compose is installed (legacy version): {stdout}")
-            DOCKER_COMPOSE_COMMAND = "docker-compose"
+            DOCKER_COMPOSE_COMMAND = DOCKER_COMPOSE_V1_COMMAND
             return True
 
         print_error("Docker Compose not available")
@@ -484,7 +487,7 @@ async def start_docker_containers() -> bool:
 
         # Run docker-compose up -d
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND.split() + ["up", "-d"]
+            DOCKER_COMPOSE_COMMAND + ["up", "-d"]
         )
 
         if returncode == 0:
@@ -513,7 +516,7 @@ async def check_nextcloud_status() -> bool:
         logger.info(f"Changed directory to {DOCKER_DIR}")
 
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND.split() + ["ps", "-q", "app"]
+            DOCKER_COMPOSE_COMMAND + ["ps", "-q", "app"]
         )
 
         if not stdout:
@@ -545,7 +548,7 @@ async def stop_docker_containers() -> bool:
 
         # Run docker-compose down
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND.split() + ["down"]
+            DOCKER_COMPOSE_COMMAND + ["down"]
         )
 
         if returncode == 0:
@@ -573,7 +576,7 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
         logger.info(f"Changed directory to {DOCKER_DIR}")
 
         full_command = (
-            DOCKER_COMPOSE_COMMAND.split()
+            DOCKER_COMPOSE_COMMAND
             + ["exec", "--user", "www-data", "app", "php", "occ"]
             + command
         )
@@ -843,7 +846,7 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             logger.info("Attempting to get container logs for debugging")
             os.chdir(DOCKER_DIR)
             returncode, stdout, stderr = await run_command_async(
-                DOCKER_COMPOSE_COMMAND.split() + ["logs"]
+                DOCKER_COMPOSE_COMMAND + ["logs"]
             )
 
             # Save logs to a file
@@ -1004,7 +1007,7 @@ async def uninstall_nextcloud() -> bool:
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND.split() + ["down", "--rmi", "all", "--volumes"]
+            DOCKER_COMPOSE_COMMAND + ["down", "--rmi", "all", "--volumes"]
         )
         if returncode == 0:
             logger.info("Docker containers removed successfully")
@@ -1188,7 +1191,7 @@ async def view_container_logs() -> None:
 
         # Get container logs
         returncode, stdout, stderr = await run_command_async(
-            DOCKER_COMPOSE_COMMAND.split() + ["logs", "--tail=100"]
+            DOCKER_COMPOSE_COMMAND + ["logs", "--tail=100"]
         )
 
         if returncode == 0:
