@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import os
 import signal
 import subprocess
@@ -69,8 +68,6 @@ DOCKER_COMPOSE_FILE: str = os.path.join(DOCKER_DIR, "docker-compose.yml")
 
 # Setup logging
 os.makedirs(LOG_DIR, exist_ok=True)
-
-# Configure logger
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -80,8 +77,6 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("nextcloud_installer")
-
-# Install rich traceback with logger
 install_rich_traceback(show_locals=True)
 console: Console = Console(record=True)
 
@@ -245,7 +240,6 @@ async def ensure_config_directory() -> None:
 async def save_config(config: NextcloudConfig) -> bool:
     await ensure_config_directory()
     try:
-        # Use async file operations for more consistent async behavior
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, lambda: json.dump(config.to_dict(), open(CONFIG_FILE, "w"), indent=2)
@@ -286,23 +280,17 @@ async def run_command_async(cmd: List[str]) -> Tuple[int, str, str]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             proc.communicate(), timeout=OPERATION_TIMEOUT
         )
-
-        # Decode bytes to strings
         stdout = stdout_bytes.decode("utf-8").strip() if stdout_bytes else ""
         stderr = stderr_bytes.decode("utf-8").strip() if stderr_bytes else ""
-
         returncode = proc.returncode or 0
         logger.info(f"Command completed with return code: {returncode}")
-
         if stdout:
             logger.debug(f"Command stdout: {stdout}")
         if stderr:
             logger.warning(f"Command stderr: {stderr}")
-
         return returncode, stdout, stderr
     except asyncio.TimeoutError:
         error_msg = f"Command timed out: {cmd_str}"
@@ -340,9 +328,8 @@ async def check_docker_compose_installed() -> bool:
     """Check if Docker Compose is installed and available."""
     global DOCKER_COMPOSE_COMMAND
     logger.info("Checking if Docker Compose is installed")
-
-    # First, try with Docker Compose V2 (docker compose)
     try:
+        # Try Docker Compose V2
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_V2_COMMAND + ["--version"]
         )
@@ -352,7 +339,6 @@ async def check_docker_compose_installed() -> bool:
             DOCKER_COMPOSE_COMMAND = DOCKER_COMPOSE_V2_COMMAND
             return True
         else:
-            # If the error message indicates that "compose" is not a docker command, fall back.
             if "docker: 'compose'" in stderr:
                 logger.info(
                     "Docker Compose V2 not available; falling back to legacy docker-compose command."
@@ -361,7 +347,7 @@ async def check_docker_compose_installed() -> bool:
     except Exception as e:
         logger.warning(f"Docker Compose V2 check failed: {e}")
 
-    # Fallback: try with the legacy docker-compose (Docker Compose V1)
+    # Fallback to Docker Compose V1
     try:
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_V1_COMMAND + ["--version"]
@@ -386,37 +372,84 @@ async def check_prerequisites() -> bool:
     """Check all prerequisites for installation."""
     print_section("Checking Prerequisites")
     logger.info("Checking prerequisites")
-
     docker_ok = await check_docker_installed()
     compose_ok = await check_docker_compose_installed()
-
     if not (docker_ok and compose_ok):
         error_msg = "Missing required dependencies. Please install Docker and Docker Compose first."
         logger.error(error_msg)
         print_error(error_msg)
         return False
-
     logger.info("All prerequisites satisfied")
     return True
+
+
+# ---------------------------
+# New Docker installation function
+# ---------------------------
+async def install_docker() -> bool:
+    """Install Docker using Docker's official installation method for Ubuntu."""
+    print_step("Installing Docker...")
+    commands = [
+        ["sudo", "apt-get", "update"],
+        ["sudo", "apt-get", "install", "ca-certificates", "curl", "-y"],
+        ["sudo", "install", "-m", "0755", "-d", "/etc/apt/keyrings"],
+        [
+            "sudo",
+            "curl",
+            "-fsSL",
+            "https://download.docker.com/linux/ubuntu/gpg",
+            "-o",
+            "/etc/apt/keyrings/docker.asc",
+        ],
+        ["sudo", "chmod", "a+r", "/etc/apt/keyrings/docker.asc"],
+        [
+            "bash",
+            "-c",
+            'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null',
+        ],
+        ["sudo", "apt-get", "update"],
+        [
+            "sudo",
+            "apt-get",
+            "install",
+            "docker-ce",
+            "docker-ce-cli",
+            "containerd.io",
+            "docker-buildx-plugin",
+            "docker-compose-plugin",
+            "-y",
+        ],
+    ]
+    for cmd in commands:
+        try:
+            returncode, stdout, stderr = await run_command_async(cmd)
+            if returncode != 0:
+                print_error(f"Command '{' '.join(cmd)}' failed: {stderr}")
+                return False
+        except Exception as e:
+            print_error(f"Error running command '{' '.join(cmd)}': {e}")
+            return False
+    print_success("Docker installed successfully!")
+    return True
+
+
+# ---------------------------
+# End Docker installation function
+# ---------------------------
 
 
 async def create_docker_compose_file(config: NextcloudConfig) -> bool:
     """Create the Docker Compose file for Nextcloud and PostgreSQL."""
     logger.info("Creating Docker Compose file")
     try:
-        # Ensure the docker directory exists
         os.makedirs(DOCKER_DIR, exist_ok=True)
         logger.info(f"Created Docker directory: {DOCKER_DIR}")
-
-        # Create required directories
         os.makedirs(config.data_dir, exist_ok=True)
         os.makedirs(config.db_data_dir, exist_ok=True)
         os.makedirs(config.custom_apps_dir, exist_ok=True)
         os.makedirs(config.config_dir, exist_ok=True)
         os.makedirs(config.theme_dir, exist_ok=True)
         logger.info("Created required directories")
-
-        # Create the docker-compose.yml file
         compose_config = {
             "version": "3",
             "services": {
@@ -449,20 +482,15 @@ async def create_docker_compose_file(config: NextcloudConfig) -> bool:
                         "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
                         "NEXTCLOUD_TRUSTED_DOMAINS": config.domain,
                     },
-                    # Always add port mapping (Traefik options removed)
                     "ports": [f"{config.port}:80"],
                 },
             },
         }
-
-        # Write the compose file
         with open(DOCKER_COMPOSE_FILE, "w") as f:
             yaml.dump(compose_config, f, default_flow_style=False)
-
         logger.info(f"Created Docker Compose configuration at {DOCKER_COMPOSE_FILE}")
         print_success(f"Created Docker Compose configuration at {DOCKER_COMPOSE_FILE}")
         return True
-
     except Exception as e:
         error_msg = f"Failed to create Docker Compose file: {e}"
         logger.error(error_msg)
@@ -475,16 +503,11 @@ async def start_docker_containers() -> bool:
     logger.info("Starting Docker containers")
     try:
         print_step("Starting Nextcloud containers...")
-
-        # Change to the directory containing docker-compose.yml
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-
-        # Run docker-compose up -d
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_COMMAND + ["up"]
         )
-
         if returncode == 0:
             print_success("Nextcloud containers started successfully")
             logger.info("Nextcloud containers started successfully")
@@ -494,7 +517,6 @@ async def start_docker_containers() -> bool:
             logger.error(error_msg)
             print_error(error_msg)
             return False
-
     except Exception as e:
         error_msg = f"Error starting containers: {e}"
         logger.error(error_msg)
@@ -506,24 +528,19 @@ async def check_nextcloud_status() -> bool:
     """Check if Nextcloud is running and accessible."""
     logger.info("Checking Nextcloud status")
     try:
-        # Check if the containers are running
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_COMMAND + ["ps", "-q", "app"]
         )
-
         if not stdout:
             error_msg = "Nextcloud container is not running"
             logger.error(error_msg)
             print_error(error_msg)
             return False
-
         print_success("Nextcloud container is running")
         logger.info("Nextcloud container is running")
         return True
-
     except Exception as e:
         error_msg = f"Error checking Nextcloud status: {e}"
         logger.error(error_msg)
@@ -536,16 +553,11 @@ async def stop_docker_containers() -> bool:
     logger.info("Stopping Docker containers")
     try:
         print_step("Stopping Nextcloud containers...")
-
-        # Change to the directory containing docker-compose.yml
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-
-        # Run docker-compose down
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_COMMAND + ["down"]
         )
-
         if returncode == 0:
             print_success("Nextcloud containers stopped successfully")
             logger.info("Nextcloud containers stopped successfully")
@@ -555,7 +567,6 @@ async def stop_docker_containers() -> bool:
             logger.error(error_msg)
             print_error(error_msg)
             return False
-
     except Exception as e:
         error_msg = f"Error stopping containers: {e}"
         logger.error(error_msg)
@@ -569,22 +580,18 @@ async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
     try:
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-
         full_command = (
             DOCKER_COMPOSE_COMMAND
             + ["exec", "--user", "www-data", "app", "php", "occ"]
             + command
         )
-
         returncode, stdout, stderr = await run_command_async(full_command)
-
         if returncode == 0:
             logger.info(f"OCC command successful: {stdout}")
             return True, stdout
         else:
             logger.error(f"OCC command failed: {stderr}")
             return False, stderr
-
     except Exception as e:
         error_msg = f"Error executing OCC command: {e}"
         logger.error(error_msg)
@@ -635,7 +642,6 @@ async def configure_nextcloud() -> NextcloudConfig:
     """Interactive configuration for Nextcloud installation."""
     logger.info("Starting Nextcloud configuration")
     config = await load_config()
-
     clear_screen()
     console.print(create_header())
     display_panel(
@@ -643,74 +649,53 @@ async def configure_nextcloud() -> NextcloudConfig:
         "Please provide the configuration details for your Nextcloud installation",
         NordColors.FROST_2,
     )
-
-    # Domain configuration
     config.domain = await async_prompt(
         f"[bold {NordColors.FROST_2}]Domain name for Nextcloud[/]",
         default=config.domain,
     )
     logger.info(f"Domain configured: {config.domain}")
-
-    # Admin account
     config.admin_username = await async_prompt(
         f"[bold {NordColors.FROST_2}]Admin username[/]", default=config.admin_username
     )
     logger.info(f"Admin username configured: {config.admin_username}")
-
     config.admin_password = await async_password_prompt(
         f"[bold {NordColors.FROST_2}]Admin password[/]"
     )
     logger.info("Admin password configured")
-
-    # Database configuration
     print_section("Database Configuration")
     config.db_name = await async_prompt(
         f"[bold {NordColors.FROST_2}]Database name[/]", default=config.db_name
     )
     logger.info(f"Database name configured: {config.db_name}")
-
     config.db_username = await async_prompt(
         f"[bold {NordColors.FROST_2}]Database user[/]", default=config.db_username
     )
     logger.info(f"Database username configured: {config.db_username}")
-
     config.db_password = await async_password_prompt(
         f"[bold {NordColors.FROST_2}]Database password[/]"
     )
     logger.info("Database password configured")
-
-    # Networking configuration
     print_section("Network Configuration")
-
-    # Removed Traefik option; always ask for port mapping
     config.port = await async_int_prompt(
         f"[bold {NordColors.FROST_2}]Port to expose Nextcloud on[/]",
         default=config.port,
     )
     logger.info(f"Port configured: {config.port}")
-
     config.use_https = await async_confirm(
         f"[bold {NordColors.FROST_2}]Enable HTTPS?[/]", default=config.use_https
     )
     logger.info(f"Use HTTPS configured: {config.use_https}")
-
-    # Data directories
     print_section("Data Directories")
-
     data_dir_default = os.path.join(os.path.expanduser("~"), "nextcloud_data")
     config.data_dir = await async_prompt(
         f"[bold {NordColors.FROST_2}]Nextcloud data directory[/]",
         default=config.data_dir,
     )
     logger.info(f"Data directory configured: {config.data_dir}")
-
-    # Confirm the config
     print_section("Configuration Summary")
-
     table = Table(show_header=True, box=box.ROUNDED)
     table.add_column("Setting", style=f"bold {NordColors.FROST_2}")
     table.add_column("Value", style=NordColors.SNOW_STORM_1)
-
     table.add_row("Domain", config.domain)
     table.add_row("Admin User", config.admin_username)
     table.add_row("Database Name", config.db_name)
@@ -718,22 +703,17 @@ async def configure_nextcloud() -> NextcloudConfig:
     table.add_row("Port", str(config.port))
     table.add_row("HTTPS Enabled", "Yes" if config.use_https else "No")
     table.add_row("Data Directory", config.data_dir)
-
     console.print(table)
     console.print()
-
     if not await async_confirm(
         f"[bold {NordColors.FROST_2}]Is this configuration correct?[/]", default=True
     ):
         logger.info("Configuration not confirmed, starting over")
         print_warning("Configuration cancelled. Please start over.")
         return await configure_nextcloud()
-
-    # Save the configuration
     await save_config(config)
     print_success("Configuration saved successfully")
     logger.info("Configuration saved successfully")
-
     return config
 
 
@@ -741,7 +721,6 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
     """Install Nextcloud with the given configuration."""
     logger.info("Starting Nextcloud installation")
     try:
-        # Create progress tracker
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn("[bold]{task.description}[/bold]"),
@@ -754,12 +733,9 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             TimeRemainingColumn(),
             console=console,
         ) as progress:
-            # Create task for overall progress
             task_id = progress.add_task(
                 f"[{NordColors.FROST_2}]Installing Nextcloud...", total=100
             )
-
-            # Check prerequisites
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Checking prerequisites...",
@@ -768,8 +744,6 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await check_prerequisites():
                 logger.error("Prerequisites check failed")
                 return False
-
-            # Create the Docker Compose file
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Creating Docker configuration...",
@@ -778,8 +752,6 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await create_docker_compose_file(config):
                 logger.error("Creating Docker configuration failed")
                 return False
-
-            # Start the containers
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Starting containers...",
@@ -788,17 +760,13 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await start_docker_containers():
                 logger.error("Starting containers failed")
                 return False
-
-            # Wait for containers to be ready
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Waiting for containers to be ready...",
                 advance=20,
             )
             logger.info("Waiting for containers to start up (5 seconds)")
-            await asyncio.sleep(5)  # Give some time for containers to start
-
-            # Check if Nextcloud is running
+            await asyncio.sleep(5)
             progress.update(
                 task_id,
                 description=f"[{NordColors.FROST_2}]Verifying installation...",
@@ -807,54 +775,40 @@ async def install_nextcloud(config: NextcloudConfig) -> bool:
             if not await check_nextcloud_status():
                 logger.error("Verification failed - containers not running")
                 return False
-
-            # Complete
             progress.update(
                 task_id,
                 description=f"[{NordColors.GREEN}]Installation complete!",
                 advance=10,
             )
-
-        # Update config with installation status
         config.installation_status = "installed"
         config.installed_at = time.time()
         await save_config(config)
         logger.info("Installation completed successfully")
-
         return True
-
     except Exception as e:
         error_msg = f"Installation failed: {e}"
         logger.error(error_msg, exc_info=True)
         print_error(error_msg)
-
-        # Try to get container logs to help with debugging
         try:
             logger.info("Attempting to get container logs for debugging")
             os.chdir(DOCKER_DIR)
             returncode, stdout, stderr = await run_command_async(
                 DOCKER_COMPOSE_COMMAND + ["logs"]
             )
-
-            # Save logs to a file
             log_output = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
             container_log_file = os.path.join(
                 LOG_DIR, f"container_logs_{current_time}.log"
             )
             with open(container_log_file, "w") as f:
                 f.write(log_output)
-
             logger.info(f"Container logs saved to {container_log_file}")
             print_warning(
                 f"Installation failed but container logs were saved to {container_log_file}"
             )
             print_warning("Please check the logs for details on the error.")
-
-            # Wait for user acknowledgment
             await async_prompt("Press Enter to continue...")
         except Exception as log_e:
             logger.error(f"Failed to get container logs: {log_e}")
-
         return False
 
 
@@ -863,7 +817,6 @@ async def show_nextcloud_info(config: NextcloudConfig) -> None:
     logger.info("Showing Nextcloud information")
     clear_screen()
     console.print(create_header())
-
     if config.installation_status != "installed":
         display_panel(
             "Nextcloud Status",
@@ -872,27 +825,18 @@ async def show_nextcloud_info(config: NextcloudConfig) -> None:
         )
         logger.info("Tried to show info but Nextcloud is not installed")
         return
-
-    # Check if containers are running
     running = await check_nextcloud_status()
-
-    # Create the info panel
     status_color = NordColors.GREEN if running else NordColors.RED
     status_text = "Running" if running else "Stopped"
-
     display_panel(
         "Nextcloud Status",
         f"Status: [{status_color}]{status_text}[/]",
         NordColors.FROST_2,
     )
-
-    # Display access information
-    # Since Traefik support has been removed, always use localhost with the configured port.
     access_url = f"http://localhost:{config.port}"
     info_table = Table(show_header=False, box=box.ROUNDED)
     info_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
     info_table.add_column("Value", style=NordColors.SNOW_STORM_1)
-
     info_table.add_row("Access URL", access_url)
     info_table.add_row("Admin User", config.admin_username)
     info_table.add_row("Installed At", time.ctime(config.installed_at or 0))
@@ -900,11 +844,8 @@ async def show_nextcloud_info(config: NextcloudConfig) -> None:
     info_table.add_row("Docker Directory", DOCKER_DIR)
     info_table.add_row("Log Directory", LOG_DIR)
     info_table.add_row("Current Log File", LOG_FILE)
-
     console.print(info_table)
     console.print()
-
-    # Wait for user to press a key
     await async_prompt("Press Enter to return to the main menu")
     logger.info("Returned to main menu from info screen")
 
@@ -917,7 +858,6 @@ async def start_nextcloud() -> bool:
     display_panel(
         "Starting Nextcloud", "Starting Nextcloud containers...", NordColors.FROST_2
     )
-
     if await start_docker_containers():
         print_success("Nextcloud started successfully")
         logger.info("Nextcloud started successfully")
@@ -938,7 +878,6 @@ async def stop_nextcloud() -> bool:
     display_panel(
         "Stopping Nextcloud", "Stopping Nextcloud containers...", NordColors.FROST_2
     )
-
     if await stop_docker_containers():
         print_success("Nextcloud stopped successfully")
         logger.info("Nextcloud stopped successfully")
@@ -961,30 +900,22 @@ async def uninstall_nextcloud() -> bool:
         "⚠️ This will remove Nextcloud and all its data!",
         NordColors.RED,
     )
-
     confirm = await async_confirm(
         f"[bold {NordColors.RED}]Are you sure you want to uninstall Nextcloud? This cannot be undone![/]",
         default=False,
     )
-
     if not confirm:
         print_warning("Uninstallation cancelled")
         logger.info("Uninstallation cancelled by user")
         await async_prompt("Press Enter to return to the main menu")
         return False
-
-    # Double confirm for data deletion
     confirm_data = await async_confirm(
         f"[bold {NordColors.RED}]Should we also delete all data directories? This will PERMANENTLY DELETE all your Nextcloud files![/]",
         default=False,
     )
     logger.info(f"User confirmed data deletion: {confirm_data}")
-
-    # Stop containers
     print_step("Stopping Nextcloud containers...")
     await stop_docker_containers()
-
-    # Remove containers and images
     print_step("Removing Docker containers...")
     try:
         os.chdir(DOCKER_DIR)
@@ -1000,11 +931,7 @@ async def uninstall_nextcloud() -> bool:
         error_msg = f"Error removing containers: {e}"
         logger.error(error_msg)
         print_error(error_msg)
-
-    # Load config to get data directories
     config = await load_config()
-
-    # Delete data directories if confirmed
     if confirm_data:
         print_step("Removing data directories...")
         for directory in [
@@ -1023,16 +950,12 @@ async def uninstall_nextcloud() -> bool:
                 error_msg = f"Error removing directory {directory}: {e}"
                 logger.error(error_msg)
                 print_error(error_msg)
-
-    # Remove Docker directory
     try:
         print_step("Removing Docker configuration...")
         if os.path.exists(DOCKER_COMPOSE_FILE):
             os.remove(DOCKER_COMPOSE_FILE)
             print_success(f"Removed {DOCKER_COMPOSE_FILE}")
             logger.info(f"Removed {DOCKER_COMPOSE_FILE}")
-
-        # Don't remove the DOCKER_DIR if we're keeping data
         if confirm_data and os.path.exists(DOCKER_DIR):
             shutil.rmtree(DOCKER_DIR)
             print_success(f"Removed {DOCKER_DIR}")
@@ -1041,13 +964,10 @@ async def uninstall_nextcloud() -> bool:
         error_msg = f"Error removing Docker configuration: {e}"
         logger.error(error_msg)
         print_error(error_msg)
-
-    # Update config
     config.installation_status = "not_installed"
     config.installed_at = None
     await save_config(config)
     logger.info("Updated configuration - marked as not installed")
-
     print_success("Nextcloud has been uninstalled")
     logger.info("Nextcloud uninstallation completed")
     await async_prompt("Press Enter to return to the main menu")
@@ -1060,59 +980,43 @@ async def view_logs() -> None:
     clear_screen()
     console.print(create_header())
     display_panel(
-        "Log Viewer",
-        "Showing the most recent log entries",
-        NordColors.FROST_2,
+        "Log Viewer", "Showing the most recent log entries", NordColors.FROST_2
     )
-
     try:
-        # Get the list of log files
         log_files = sorted(
             [f for f in os.listdir(LOG_DIR) if f.endswith(".log")],
             key=lambda x: os.path.getmtime(os.path.join(LOG_DIR, x)),
             reverse=True,
         )
-
         if not log_files:
             print_warning("No log files found.")
             await async_prompt("Press Enter to return to the main menu")
             return
-
-        # Show files in a table
         log_table = Table(show_header=True, box=box.ROUNDED)
         log_table.add_column("#", style=f"bold {NordColors.FROST_2}")
         log_table.add_column("Log File", style=NordColors.SNOW_STORM_1)
         log_table.add_column("Size", style=NordColors.SNOW_STORM_1)
         log_table.add_column("Last Modified", style=NordColors.SNOW_STORM_1)
-
-        for i, log_file in enumerate(log_files[:10], 1):  # Show only the 10 most recent
+        for i, log_file in enumerate(log_files[:10], 1):
             file_path = os.path.join(LOG_DIR, log_file)
             size = os.path.getsize(file_path)
             size_str = f"{size / 1024:.1f} KB"
             modified = time.ctime(os.path.getmtime(file_path))
             log_table.add_row(str(i), log_file, size_str, modified)
-
         console.print(log_table)
         console.print()
-
-        # Ask which file to view
         choice = await async_prompt(
             f"[bold {NordColors.FROST_2}]Enter a number to view a log file (or 'q' to return to menu)[/]"
         )
-
         if choice.lower() == "q":
             return
-
         try:
             file_index = int(choice) - 1
             if 0 <= file_index < len(log_files):
                 selected_file = os.path.join(LOG_DIR, log_files[file_index])
-
-                # Read and display the log file (last 100 lines)
                 with open(selected_file, "r") as f:
                     lines = f.readlines()
                     tail_lines = lines[-100:] if len(lines) > 100 else lines
-
                 clear_screen()
                 console.print(create_header())
                 display_panel(
@@ -1120,7 +1024,6 @@ async def view_logs() -> None:
                     f"Showing last {len(tail_lines)} lines",
                     NordColors.FROST_2,
                 )
-
                 for line in tail_lines:
                     if "ERROR" in line:
                         console.print(f"[bold {NordColors.RED}]{line.strip()}[/]")
@@ -1128,7 +1031,6 @@ async def view_logs() -> None:
                         console.print(f"[bold {NordColors.YELLOW}]{line.strip()}[/]")
                     else:
                         console.print(line.strip())
-
                 console.print()
                 await async_prompt("Press Enter to return to the main menu")
             else:
@@ -1139,12 +1041,10 @@ async def view_logs() -> None:
             print_error("Please enter a number")
             await async_prompt("Press Enter to try again")
             await view_logs()
-
     except Exception as e:
         error_msg = f"Error viewing logs: {e}"
         logger.error(error_msg)
         print_error(error_msg)
-
     logger.info("Returned to main menu from log viewer")
 
 
@@ -1154,13 +1054,9 @@ async def view_container_logs() -> None:
     clear_screen()
     console.print(create_header())
     display_panel(
-        "Container Logs",
-        "Showing the Docker container logs",
-        NordColors.FROST_2,
+        "Container Logs", "Showing the Docker container logs", NordColors.FROST_2
     )
-
     try:
-        # Check if containers exist
         config = await load_config()
         if config.installation_status != "installed":
             print_warning(
@@ -1168,37 +1064,26 @@ async def view_container_logs() -> None:
             )
             await async_prompt("Press Enter to return to the main menu")
             return
-
         os.chdir(DOCKER_DIR)
         logger.info(f"Changed directory to {DOCKER_DIR}")
-
-        # Get container logs
         returncode, stdout, stderr = await run_command_async(
             DOCKER_COMPOSE_COMMAND + ["logs", "--tail=100"]
         )
-
         if returncode == 0:
             clear_screen()
             console.print(create_header())
             display_panel(
-                "Container Logs",
-                "Last 100 lines of container logs",
-                NordColors.FROST_2,
+                "Container Logs", "Last 100 lines of container logs", NordColors.FROST_2
             )
-
             if stdout:
                 console.print(stdout)
-
             if stderr:
                 console.print(f"[bold {NordColors.RED}]STDERR:[/]")
                 console.print(stderr)
-
-            # Offer to save logs to file
             save_logs = await async_confirm(
                 f"[bold {NordColors.FROST_2}]Save container logs to file?[/]",
                 default=True,
             )
-
             if save_logs:
                 log_file = os.path.join(LOG_DIR, f"container_logs_{current_time}.log")
                 with open(log_file, "w") as f:
@@ -1208,12 +1093,10 @@ async def view_container_logs() -> None:
         else:
             print_error(f"Failed to get container logs: {stderr}")
             logger.error(f"Failed to get container logs: {stderr}")
-
     except Exception as e:
         error_msg = f"Error viewing container logs: {e}"
         logger.error(error_msg)
         print_error(error_msg)
-
     await async_prompt("Press Enter to return to the main menu")
     logger.info("Returned to main menu from container logs viewer")
 
@@ -1223,23 +1106,15 @@ async def main_menu_async() -> None:
     logger.info("Starting main menu")
     try:
         while True:
-            # Load current config
             config = await load_config()
-
             clear_screen()
             console.print(create_header())
-
-            # Check installation status
             is_installed = config.installation_status == "installed"
             is_running = False
-
             if is_installed:
                 is_running = await check_nextcloud_status()
-
-            # Create status indicator
             status_text = "Not Installed"
             status_color = NordColors.YELLOW
-
             if is_installed:
                 if is_running:
                     status_text = "Running"
@@ -1247,8 +1122,6 @@ async def main_menu_async() -> None:
                 else:
                     status_text = "Stopped"
                     status_color = NordColors.RED
-
-            # Display menu
             menu_panel = Panel(
                 f"Status: [{status_color}]{status_text}[/]\n\n"
                 "1. Configure Nextcloud\n"
@@ -1259,17 +1132,16 @@ async def main_menu_async() -> None:
                 "6. Uninstall Nextcloud\n"
                 "7. View Application Logs\n"
                 "8. View Container Logs\n"
+                "9. Install Docker\n"
                 "q. Quit",
                 title="Main Menu",
                 border_style=NordColors.FROST_1,
                 box=box.ROUNDED,
             )
             console.print(menu_panel)
-
             choice = await async_prompt("Enter your choice")
             choice = choice.strip().lower()
             logger.info(f"User selected menu option: {choice}")
-
             if choice in ("q", "quit", "exit"):
                 clear_screen()
                 console.print(
@@ -1283,18 +1155,15 @@ async def main_menu_async() -> None:
             elif choice == "1":
                 await configure_nextcloud()
             elif choice == "2":
-                # Make sure we have config first
                 if not config.admin_password or not config.db_password:
                     print_warning("Please configure Nextcloud first")
                     logger.warning("Installation attempted without configuration")
                     config = await configure_nextcloud()
-
                 success = await install_nextcloud(config)
                 if not success:
                     print_error("Installation failed. Check the logs for details.")
                     print_warning(f"Log file: {LOG_FILE}")
                     logger.error("Installation failed")
-                    # Wait for user acknowledgment
                     await async_prompt("Press Enter to continue...")
             elif choice == "3":
                 if not is_installed:
@@ -1304,7 +1173,6 @@ async def main_menu_async() -> None:
                     logger.warning("Attempted to start without installation")
                     await async_prompt("Press Enter to continue")
                     continue
-
                 await start_nextcloud()
             elif choice == "4":
                 if not is_installed:
@@ -1314,7 +1182,6 @@ async def main_menu_async() -> None:
                     logger.warning("Attempted to stop without installation")
                     await async_prompt("Press Enter to continue")
                     continue
-
                 await stop_nextcloud()
             elif choice == "5":
                 await show_nextcloud_info(config)
@@ -1324,6 +1191,17 @@ async def main_menu_async() -> None:
                 await view_logs()
             elif choice == "8":
                 await view_container_logs()
+            elif choice == "9":
+                if await async_confirm(
+                    "This will install Docker using the official Ubuntu method. Proceed?",
+                    default=False,
+                ):
+                    success = await install_docker()
+                    if success:
+                        print_success("Docker installation completed successfully.")
+                    else:
+                        print_error("Docker installation failed.")
+                    await async_prompt("Press Enter to return to the main menu")
             else:
                 print_error(f"Invalid choice: {choice}")
                 logger.warning(f"Invalid menu choice: {choice}")
@@ -1333,11 +1211,7 @@ async def main_menu_async() -> None:
         logger.error(error_msg, exc_info=True)
         print_error(error_msg)
         console.print_exception()
-
-        # Save console output to help with debugging
         save_console_output()
-
-        # Pause to allow the user to see the error
         print_warning("An exception has been logged. Press Enter to try to continue...")
         try:
             input()
@@ -1347,11 +1221,9 @@ async def main_menu_async() -> None:
 
 async def async_cleanup() -> None:
     try:
-        # Cancel any pending asyncio tasks
         for task in asyncio.all_tasks():
             if not task.done() and task != asyncio.current_task():
                 task.cancel()
-
         print_message("Cleaning up resources...", NordColors.FROST_3)
         logger.info("Cleaning up resources")
     except Exception as e:
@@ -1361,7 +1233,6 @@ async def async_cleanup() -> None:
 
 
 async def signal_handler_async(sig: int, frame: Any) -> None:
-    """Handle signals in an async-friendly way without creating new event loops."""
     try:
         sig_name = signal.Signals(sig).name
         warning_msg = f"Process interrupted by {sig_name}"
@@ -1371,27 +1242,16 @@ async def signal_handler_async(sig: int, frame: Any) -> None:
         warning_msg = f"Process interrupted by signal {sig}"
         logger.warning(warning_msg)
         print_warning(warning_msg)
-
-    # Get the current running loop instead of creating a new one
     loop = asyncio.get_running_loop()
-
-    # Cancel all tasks except the current one
     for task in asyncio.all_tasks(loop):
         if task is not asyncio.current_task():
             task.cancel()
-
-    # Clean up resources
     await async_cleanup()
-
-    # Stop the loop instead of exiting directly
     loop.stop()
 
 
 def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    """Set up signal handlers that work with the main event loop."""
     logger.info("Setting up signal handlers")
-
-    # Use asyncio's built-in signal handling
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(
             sig, lambda sig=sig: asyncio.create_task(signal_handler_async(sig, None))
@@ -1399,30 +1259,21 @@ def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
 
 
 async def proper_shutdown_async():
-    """Clean up resources at exit, specifically asyncio tasks."""
     logger.info("Performing async shutdown")
     try:
-        # Try to get the current running loop, but don't fail if there isn't one
         try:
             loop = asyncio.get_running_loop()
             tasks = [
                 t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()
             ]
-
-            # Cancel all tasks
             for task in tasks:
                 task.cancel()
-
-            # Wait for all tasks to complete cancellation with a timeout
             if tasks:
                 await asyncio.wait(tasks, timeout=2.0)
                 logger.info(f"Cancelled {len(tasks)} pending tasks")
-
         except RuntimeError:
-            # No running event loop
             logger.info("No running event loop during shutdown")
             pass
-
     except Exception as e:
         error_msg = f"Error during async shutdown: {e}"
         logger.error(error_msg)
@@ -1430,26 +1281,18 @@ async def proper_shutdown_async():
 
 
 def proper_shutdown():
-    """Synchronous wrapper for the async shutdown function.
-    This is called by atexit and should be safe to call from any context."""
     logger.info("Starting proper shutdown")
     try:
-        # Check if there's a running loop first
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # If a loop is already running, we can't run a new one
-                # Just log and return
                 logger.warning("Event loop already running during shutdown")
                 print_warning("Event loop already running during shutdown")
                 return
         except RuntimeError:
-            # No event loop, create a new one
             logger.info("Creating new event loop for shutdown")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-
-        # Run the async cleanup
         loop.run_until_complete(proper_shutdown_async())
         loop.close()
         logger.info("Shutdown completed successfully")
@@ -1462,41 +1305,25 @@ def proper_shutdown():
 async def main_async() -> None:
     logger.info(f"Starting {APP_NAME} v{VERSION}")
     try:
-        # Initialize stuff
         await ensure_config_directory()
-
-        # Run the main menu
         await main_menu_async()
     except Exception as e:
         error_msg = f"An unexpected error occurred: {e}"
         logger.error(error_msg, exc_info=True)
         print_error(error_msg)
         console.print_exception()
-
-        # Save console output for debugging
         save_console_output()
-
         sys.exit(1)
 
 
 def main() -> None:
-    """Main entry point of the application."""
     try:
-        # Log application start
         logger.info(f"=== {APP_NAME} v{VERSION} starting ===")
         logger.info(f"Log file: {LOG_FILE}")
-
-        # Create and get a reference to the event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-        # Setup signal handlers with the specific loop
         setup_signal_handlers(loop)
-
-        # Register shutdown handler
         atexit.register(proper_shutdown)
-
-        # Run the main async function
         loop.run_until_complete(main_async())
     except KeyboardInterrupt:
         warning_msg = "Received keyboard interrupt, shutting down..."
@@ -1507,29 +1334,21 @@ def main() -> None:
         logger.error(error_msg, exc_info=True)
         print_error(error_msg)
         console.print_exception()
-
-        # Save console output for debugging
         save_console_output()
     finally:
         try:
-            # Cancel all remaining tasks
             tasks = asyncio.all_tasks(loop)
             for task in tasks:
                 task.cancel()
-
-            # Allow cancelled tasks to complete
             if tasks:
                 logger.info(f"Cancelling {len(tasks)} remaining tasks")
                 loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-
-            # Close the loop
             loop.close()
             logger.info("Event loop closed")
         except Exception as e:
             error_msg = f"Error during shutdown: {e}"
             logger.error(error_msg)
             print_error(error_msg)
-
         final_msg = "Application terminated."
         logger.info(final_msg)
         print_message(final_msg, NordColors.FROST_3)
