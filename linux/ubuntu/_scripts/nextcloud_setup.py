@@ -55,8 +55,8 @@ DEFAULT_PHP_VERSION: str = ""
 TEMP_DIR: str = tempfile.gettempdir()
 
 # Certificate paths (hardcoded to user's files)
-CERT_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.pem"
-KEY_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.key"
+CERT_FILE: str = "/home/sawyer/dunamismax.com.pem"
+KEY_FILE: str = "/home/sawyer/dunamismax.com.key"
 
 # Caddy file paths
 CADDY_CONFIG_DIR: str = "/etc/caddy"
@@ -568,41 +568,50 @@ def install_dependencies() -> bool:
             )
 
             # Add Caddy official repository
-            print_step("Adding Caddy official repository...")
+            print_step("Installing prerequisites for Caddy...")
 
             # Install dependencies for adding apt repositories
             run_command(
-                ["nala", "install", "-y", "apt-transport-https", "gnupg"], sudo=True
+                [
+                    "nala",
+                    "install",
+                    "-y",
+                    "debian-keyring",
+                    "debian-archive-keyring",
+                    "apt-transport-https",
+                    "curl",
+                ],
+                sudo=True,
             )
 
-            # Download and install Caddy's signing key
+            # Download and dearmor Caddy's signing key
+            print_step("Adding Caddy GPG key...")
             run_command(
                 [
-                    "curl",
-                    "-1sLf",
-                    "https://dl.cloudsmith.io/public/caddy/stable/gpg.key",
-                    "-o",
-                    "/usr/share/keyrings/caddy-stable-archive-keyring.asc",
+                    "bash",
+                    "-c",
+                    "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg",
                 ],
                 sudo=True,
             )
 
             # Add Caddy repository to apt sources
+            print_step("Adding Caddy repository...")
             run_command(
                 [
-                    "curl",
-                    "-1sLf",
-                    "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt",
-                    "-o",
-                    "/etc/apt/sources.list.d/caddy-stable.list",
+                    "bash",
+                    "-c",
+                    "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list",
                 ],
                 sudo=True,
             )
 
             # Update package lists after adding Caddy repository
+            print_step("Updating package lists...")
             run_command(["nala", "update"], sudo=True)
 
             # Install Caddy
+            print_step("Installing Caddy...")
             returncode, _, stderr = run_command(
                 ["nala", "install", "-y", "caddy"], sudo=True
             )
