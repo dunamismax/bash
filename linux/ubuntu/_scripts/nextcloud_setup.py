@@ -55,8 +55,8 @@ DEFAULT_PHP_VERSION: str = ""
 TEMP_DIR: str = tempfile.gettempdir()
 
 # Certificate paths (hardcoded to user's files)
-CERT_FILE: str = "/home/sawyer/dunamismax.com.pem"
-KEY_FILE: str = "/home/sawyer/dunamismax.com.key"
+CERT_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.pem"
+KEY_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.key"
 
 # Caddy file paths
 CADDY_CONFIG_DIR: str = "/etc/caddy"
