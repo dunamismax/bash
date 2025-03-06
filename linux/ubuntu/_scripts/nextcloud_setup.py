@@ -844,27 +844,30 @@ def kill_process(pid: int, force: bool = False) -> bool:
     Returns True if successful, False otherwise.
     """
     try:
-        signal_option = "-9" if force else ""
         print_step(f"Attempting to kill process with PID {pid}...")
-        returncode, _, stderr = run_command(
-            ["kill", signal_option, str(pid)], sudo=True
-        )
+        cmd = ["kill"]
+        if force:
+            cmd.append("-9")
+        cmd.append(str(pid))
+
+        returncode, _, stderr = run_command(cmd, sudo=True)
 
         if returncode != 0:
             print_error(f"Failed to kill process: {stderr}")
-            # If normal kill failed, try with force
+            # If normal kill failed and we didn't already try force, try with force
             if not force:
                 print_step("Trying forced kill...")
-                returncode, _, stderr = run_command(["kill", "-9", str(pid)], sudo=True)
-                if returncode != 0:
-                    print_error(f"Forced kill also failed: {stderr}")
-                    return False
+                return kill_process(pid, force=True)
+            return False
 
         # Verify the process was killed
         time.sleep(1)  # Give it a moment to terminate
-        returncode, _, _ = run_command(["ps", "-p", str(pid)])
+        returncode, _, _ = run_command(["ps", "-p", str(pid)], sudo=True)
         if returncode == 0:
             print_warning(f"Process {pid} is still running.")
+            # If it's still running and we didn't use force, try force
+            if not force:
+                return kill_process(pid, force=True)
             return False
 
         print_success(f"Process with PID {pid} was successfully terminated.")
@@ -877,54 +880,89 @@ def kill_process(pid: int, force: bool = False) -> bool:
 def free_port(port: int) -> bool:
     """
     Find and kill any process using the specified port.
+    Uses multiple methods to ensure the port is freed.
     Returns True if the port was successfully freed, False otherwise.
     """
-    port_in_use, process_name, pid = check_port_in_use(port)
+    # First try using fuser (most direct method)
+    try:
+        print_step(f"Forcibly freeing port {port} with fuser...")
+        run_command(["fuser", "-k", f"{port}/tcp"], sudo=True)
 
+        # Give it a moment
+        time.sleep(2)
+
+        # Check if port is now free
+        port_still_in_use, _, _ = check_port_in_use(port)
+        if not port_still_in_use:
+            print_success(f"Successfully freed port {port}.")
+            return True
+    except Exception:
+        pass  # Continue with other methods if fuser fails
+
+    # Try using ss -K (socket statistics kill)
+    try:
+        print_step(f"Attempting to free port {port} with ss...")
+        run_command(["ss", "-K", f"sport = :{port}"], sudo=True)
+
+        time.sleep(2)
+
+        # Check if port is now free
+        port_still_in_use, _, _ = check_port_in_use(port)
+        if not port_still_in_use:
+            print_success(f"Successfully freed port {port}.")
+            return True
+    except Exception:
+        pass  # Continue with other methods if ss fails
+
+    # Fall back to identifying and killing processes
+    attempts = 0
+    max_attempts = 3
+
+    while attempts < max_attempts:
+        port_in_use, process_name, pid = check_port_in_use(port)
+
+        if not port_in_use:
+            print_success(f"Port {port} is now free.")
+            return True
+
+        attempts += 1
+        print_warning(f"Attempt {attempts}/{max_attempts} to free port {port}...")
+
+        if pid:
+            print_step(f"Killing process {process_name or 'unknown'} (PID: {pid})...")
+            # Always use force kill (-9) to ensure termination
+            run_command(["kill", "-9", str(pid)], sudo=True)
+
+            # Give it time to die
+            time.sleep(2)
+        else:
+            # If we can't get PID, try more aggressive methods
+            print_warning(f"Cannot identify PID for process using port {port}")
+            try:
+                # Try using lsof with kill
+                run_command(
+                    ["bash", "-c", f"lsof -ti:{port} | xargs kill -9"], sudo=True
+                )
+                time.sleep(1)
+            except Exception:
+                pass
+
+    # As a last resort, try restarting networking
+    print_step("Attempting to restart networking services...")
+    try:
+        run_command(["systemctl", "restart", "networking"], sudo=True)
+        time.sleep(5)  # Give enough time for networking to restart
+    except Exception:
+        pass
+
+    # One final check
+    port_in_use, _, _ = check_port_in_use(port)
     if not port_in_use:
-        print_success(f"Port {port} is already free.")
+        print_success(f"Successfully freed port {port} after multiple attempts.")
         return True
 
-    process_info = (
-        f"{process_name} (PID: {pid})"
-        if process_name and pid
-        else f"PID: {pid}"
-        if pid
-        else "unknown process"
-    )
-    print_warning(f"Port {port} is in use by {process_info}.")
-
-    if pid:
-        if Confirm.ask(
-            f"Would you like to forcibly terminate the process using port {port}?",
-            default=True,
-        ):
-            # First try graceful kill
-            if kill_process(pid, force=False):
-                # Check if port is now free
-                port_still_in_use, _, _ = check_port_in_use(port)
-                if not port_still_in_use:
-                    return True
-
-                print_warning(
-                    f"Process terminated but port {port} is still in use. Trying forced kill..."
-                )
-
-            # If graceful kill failed or port still in use, try force kill
-            if kill_process(pid, force=True):
-                # Verify port is now free
-                port_still_in_use, _, _ = check_port_in_use(port)
-                if not port_still_in_use:
-                    return True
-
-            print_error(f"Failed to free port {port} despite killing the process.")
-            return False
-        else:
-            print_warning("Process termination cancelled by user.")
-            return False
-    else:
-        print_error(f"Could not identify the PID of the process using port {port}.")
-        return False
+    print_error(f"Failed to free port {port} after {max_attempts} attempts.")
+    return False
 
 
 def setup_apache(config: NextcloudConfig) -> bool:
