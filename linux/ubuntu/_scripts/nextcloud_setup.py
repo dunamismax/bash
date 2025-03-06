@@ -5,16 +5,19 @@ import signal
 import subprocess
 import sys
 import time
-import tempfile
 import shutil
+import socket
 import json
+import asyncio
 import atexit
+import re
+import yaml
 from dataclasses import dataclass, field, asdict
 from typing import List, Tuple, Dict, Optional, Any, Callable, Union, TypeVar, cast
+from pathlib import Path
 
 try:
     import pyfiglet
-    import requests
     from rich import box
     from rich.align import Align
     from rich.console import Console
@@ -24,18 +27,18 @@ try:
         SpinnerColumn,
         TextColumn,
         BarColumn,
-        DownloadColumn,
         TaskProgressColumn,
         TimeRemainingColumn,
     )
-    from rich.prompt import Prompt, Confirm
+    from rich.prompt import Prompt, Confirm, IntPrompt
     from rich.table import Table
     from rich.text import Text
     from rich.traceback import install as install_rich_traceback
+    from rich.markdown import Markdown
 except ImportError:
     print(
         "Required libraries not found. Please install them using:\n"
-        "pip install rich pyfiglet requests"
+        "pip install rich pyfiglet pyyaml"
     )
     sys.exit(1)
 
@@ -43,28 +46,21 @@ install_rich_traceback(show_locals=True)
 console: Console = Console()
 
 # Configuration and Constants
-APP_NAME: str = "Nextcloud Setup"
-VERSION: str = "2.0.0"
-DOWNLOAD_URL: str = "https://download.nextcloud.com/server/releases/latest.zip"
+APP_NAME: str = "Nextcloud Installer"
+VERSION: str = "1.0.0"
+DEFAULT_USERNAME: str = os.environ.get("USER") or "sawyer"
+DOMAIN_NAME: str = "nextcloud.dunamismax.com"
+DOCKER_COMMAND: str = "docker"
+DOCKER_COMPOSE_COMMAND: str = "docker compose"
 OPERATION_TIMEOUT: int = 60
-DEFAULT_WEB_USER: str = "www-data"
-DEFAULT_WEBSERVER: str = "caddy"
-DEFAULT_DB_TYPE: str = "pgsql"
-# Will be dynamically determined
-DEFAULT_PHP_VERSION: str = ""
-TEMP_DIR: str = tempfile.gettempdir()
-
-# Certificate paths (in /etc/ssl/cloudflare/)
-CERT_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.pem"
-KEY_FILE: str = "/etc/ssl/cloudflare/dunamismax.com.key"
-
-# Caddy file paths
-CADDY_CONFIG_DIR: str = "/etc/caddy"
-CADDYFILE_PATH: str = "/etc/caddy/Caddyfile"
 
 # Configuration file paths
-CONFIG_DIR: str = os.path.expanduser("~/.config/nextcloud_setup")
+CONFIG_DIR: str = os.path.expanduser("~/.config/nextcloud_installer")
 CONFIG_FILE: str = os.path.join(CONFIG_DIR, "config.json")
+
+# Docker Compose setup directory
+DOCKER_DIR: str = os.path.expanduser("~/nextcloud_docker")
+DOCKER_COMPOSE_FILE: str = os.path.join(DOCKER_DIR, "docker-compose.yml")
 
 
 class NordColors:
@@ -93,31 +89,26 @@ class NordColors:
 
 @dataclass
 class NextcloudConfig:
-    admin_user: str = "admin"
-    admin_pass: str = ""
-    data_dir: str = "/var/www/nextcloud/data"
+    domain: str = DOMAIN_NAME
+    admin_username: str = DEFAULT_USERNAME
+    admin_password: str = ""
+    db_username: str = DEFAULT_USERNAME
+    db_password: str = ""
     db_name: str = "nextcloud"
-    db_user: str = "nextcloud"
-    db_pass: str = ""
-    db_host: str = "localhost"
-    db_port: str = "5432"
-    db_type: str = DEFAULT_DB_TYPE
-    webserver: str = DEFAULT_WEBSERVER
-    php_version: str = DEFAULT_PHP_VERSION
-    install_dir: str = "/var/www/nextcloud"
-    domain: str = "localhost"
-    use_https: bool = True
-    cert_file: str = CERT_FILE
-    key_file: str = KEY_FILE
-    email: str = ""
-    using_cloudflare: bool = True
+    db_host: str = "db"
+    use_https: bool = False
+    port: int = 8080
+    data_dir: str = os.path.join(DOCKER_DIR, "nextcloud_data")
+    db_data_dir: str = os.path.join(DOCKER_DIR, "postgres_data")
+    custom_apps_dir: str = os.path.join(DOCKER_DIR, "custom_apps")
+    config_dir: str = os.path.join(DOCKER_DIR, "config")
+    theme_dir: str = os.path.join(DOCKER_DIR, "theme")
+    use_traefik: bool = False
+    installation_status: str = "not_installed"
+    installed_at: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
-
-
-# Global variables
-_background_task = None
 
 
 # UI Helper Functions
@@ -196,216 +187,429 @@ def display_panel(title: str, message: str, style: str = NordColors.FROST_2) -> 
 
 
 # Core Functionality
-def ensure_config_directory() -> None:
+async def ensure_config_directory() -> None:
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
     except Exception as e:
         print_error(f"Could not create config directory: {e}")
 
 
-def save_config(config: NextcloudConfig) -> bool:
-    ensure_config_directory()
+async def save_config(config: NextcloudConfig) -> bool:
+    await ensure_config_directory()
     try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config.to_dict(), f, indent=2)
+        # Use async file operations for more consistent async behavior
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, lambda: json.dump(config.to_dict(), open(CONFIG_FILE, "w"), indent=2)
+        )
         return True
     except Exception as e:
         print_error(f"Failed to save configuration: {e}")
         return False
 
 
-def load_config() -> NextcloudConfig:
+async def load_config() -> NextcloudConfig:
     try:
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-
-            # Filter out fields that don't exist in our current NextcloudConfig class
-            valid_fields = {
-                field
-                for field in dir(NextcloudConfig())
-                if not field.startswith("_")
-                and not callable(getattr(NextcloudConfig(), field))
-            }
-            filtered_data = {k: v for k, v in data.items() if k in valid_fields}
-
-            # Create a new config with only the valid fields
-            return NextcloudConfig(**filtered_data)
+            loop = asyncio.get_running_loop()
+            data = await loop.run_in_executor(
+                None, lambda: json.load(open(CONFIG_FILE, "r"))
+            )
+            return NextcloudConfig(**data)
     except Exception as e:
         print_error(f"Failed to load configuration: {e}")
-        # If loading fails, delete the old config file
-        try:
-            if os.path.exists(CONFIG_FILE):
-                os.remove(CONFIG_FILE)
-                print_warning(
-                    "Removed incompatible configuration file. Using defaults."
-                )
-        except Exception:
-            pass
     return NextcloudConfig()
 
 
-def run_command(cmd: List[str], sudo: bool = False) -> Tuple[int, str, str]:
-    """
-    Run a command and return the return code, stdout, and stderr.
-    Optionally run the command with sudo.
-    """
+async def run_command_async(cmd: List[str]) -> Tuple[int, str, str]:
+    """Run a command and capture stdout and stderr."""
     try:
-        if sudo and os.geteuid() != 0:
-            cmd = ["sudo"] + cmd
-
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=OPERATION_TIMEOUT,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        return result.returncode, result.stdout.strip(), result.stderr.strip()
-    except subprocess.TimeoutExpired:
-        raise Exception("Command timed out.")
+
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=OPERATION_TIMEOUT
+        )
+
+        # Decode bytes to strings
+        stdout = stdout_bytes.decode("utf-8").strip() if stdout_bytes else ""
+        stderr = stderr_bytes.decode("utf-8").strip() if stderr_bytes else ""
+
+        return proc.returncode or 0, stdout, stderr
+    except asyncio.TimeoutError:
+        raise Exception(f"Command timed out: {' '.join(cmd)}")
+    except Exception as e:
+        raise Exception(f"Command failed: {e}")
 
 
-def download_package(url: str, destination: str) -> bool:
-    """
-    Download the Nextcloud zip package from the given URL and save it to 'destination'.
-    A Rich progress bar displays the download progress.
-    """
-    console.print(
-        f"[bold {NordColors.FROST_2}]Starting download of Nextcloud package...[/]"
-    )
+async def check_docker_installed() -> bool:
+    """Check if Docker is installed and available."""
     try:
-        with requests.get(url, stream=True, timeout=60) as response:
-            response.raise_for_status()
-            total_length = int(response.headers.get("content-length", 0))
-            with (
-                open(destination, "wb") as zip_file,
-                Progress(
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                    " • ",
-                    DownloadColumn(),
-                    TimeRemainingColumn(),
-                    console=console,
-                ) as progress,
-            ):
-                task = progress.add_task("Downloading", total=total_length)
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        zip_file.write(chunk)
-                        progress.update(task, advance=len(chunk))
-        console.print(f"[bold {NordColors.GREEN}]Download completed successfully.[/]")
-        return True
-    except Exception as err:
-        print_error(f"Download failed: {err}")
+        returncode, stdout, stderr = await run_command_async(
+            [DOCKER_COMMAND, "--version"]
+        )
+        if returncode == 0:
+            print_success(f"Docker is installed: {stdout}")
+            return True
+        else:
+            print_error(f"Docker not available: {stderr}")
+            return False
+    except Exception as e:
+        print_error(f"Error checking Docker: {e}")
         return False
 
 
-def install_dependencies() -> bool:
-    """
-    Install all required dependencies for Nextcloud using nala.
-    First checks for and fixes problematic repositories.
-    """
-    global DEFAULT_PHP_VERSION
-
-    print_section("Installing Dependencies")
-
-    # Fix any interrupted dpkg installations first
-    print_step("Checking for interrupted package installations...")
-    returncode, _, stderr = run_command(["dpkg", "--configure", "-a"], sudo=True)
-    if returncode != 0:
-        print_error(f"Failed to fix interrupted dpkg: {stderr}")
-        print_warning("Continuing, but this might cause problems with installation.")
-
-    # Install nala if it's not already installed
-    print_step("Checking if nala is installed...")
-    returncode, _, _ = run_command(["which", "nala"])
-    if returncode != 0:
-        print_step("Installing nala package manager...")
-        returncode, _, stderr = run_command(["apt", "install", "-y", "nala"], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to install nala: {stderr}")
-            return False
-        print_success("Nala package manager installed.")
-    else:
-        print_success("Nala package manager is already installed.")
-
-    # Detect PHP versions
-    php_versions = detect_available_php_versions()
-
-    if not php_versions:
-        print_error(
-            "No PHP versions could be detected. Trying to install without specifying version."
-        )
-        DEFAULT_PHP_VERSION = ""
-    else:
-        print_step(f"Available PHP versions: {', '.join(php_versions)}")
-        # Choose the newest PHP version that's >= 7.4 (Nextcloud requirement)
-        suitable_versions = [v for v in php_versions if float(v) >= 7.4]
-
-        if suitable_versions:
-            DEFAULT_PHP_VERSION = suitable_versions[-1]  # Get the newest version
-            print_success(
-                f"Selected PHP version {DEFAULT_PHP_VERSION} for installation."
-            )
-        else:
-            print_warning(
-                "No suitable PHP version found (>= 7.4). Trying to use oldest available."
-            )
-            DEFAULT_PHP_VERSION = php_versions[0] if php_versions else ""
-
-    # Update the config with the detected PHP version
-    config = load_config()
-    config.php_version = DEFAULT_PHP_VERSION
-    save_config(config)
-
-    # Define base dependencies
-    base_dependencies = [
-        "postgresql",
-        "postgresql-contrib",
-        "unzip",
-        "curl",
-        "ssl-cert",
-        "openssl",
-    ]
-
-    # Define PHP dependencies based on detected version
-    php_dependencies = []
-    if DEFAULT_PHP_VERSION:
-        php_dependencies = [
-            f"php{DEFAULT_PHP_VERSION}-fpm",
-            f"php{DEFAULT_PHP_VERSION}-gd",
-            f"php{DEFAULT_PHP_VERSION}-xml",
-            f"php{DEFAULT_PHP_VERSION}-mbstring",
-            f"php{DEFAULT_PHP_VERSION}-zip",
-            f"php{DEFAULT_PHP_VERSION}-pgsql",
-            f"php{DEFAULT_PHP_VERSION}-curl",
-            f"php{DEFAULT_PHP_VERSION}-intl",
-            f"php{DEFAULT_PHP_VERSION}-gmp",
-            f"php{DEFAULT_PHP_VERSION}-bcmath",
-            f"php{DEFAULT_PHP_VERSION}-imagick",
-        ]
-    else:
-        # Try generic packages if no version could be determined
-        php_dependencies = [
-            "php-fpm",
-            "php-gd",
-            "php-xml",
-            "php-mbstring",
-            "php-zip",
-            "php-pgsql",
-            "php-curl",
-            "php-intl",
-            "php-gmp",
-            "php-bcmath",
-            "php-imagick",
-        ]
-
-    # Combine dependencies
-    dependencies = base_dependencies + php_dependencies
-
+async def check_docker_compose_installed() -> bool:
+    """Check if Docker Compose is installed and available."""
     try:
+        # First try with docker compose (newer Docker versions)
+        returncode, stdout, stderr = await run_command_async(
+            DOCKER_COMPOSE_COMMAND.split() + ["--version"]
+        )
+        if returncode == 0:
+            print_success(f"Docker Compose is installed: {stdout}")
+            return True
+
+        # If that fails, try with docker-compose (older versions)
+        returncode, stdout, stderr = await run_command_async(
+            ["docker-compose", "--version"]
+        )
+        if returncode == 0:
+            print_success(f"Docker Compose is installed: {stdout}")
+            global DOCKER_COMPOSE_COMMAND
+            DOCKER_COMPOSE_COMMAND = "docker-compose"
+            return True
+
+        print_error("Docker Compose not available")
+        return False
+    except Exception as e:
+        print_error(f"Error checking Docker Compose: {e}")
+        return False
+
+
+async def check_prerequisites() -> bool:
+    """Check all prerequisites for installation."""
+    print_section("Checking Prerequisites")
+
+    docker_ok = await check_docker_installed()
+    compose_ok = await check_docker_compose_installed()
+
+    if not (docker_ok and compose_ok):
+        print_error(
+            "Missing required dependencies. Please install Docker and Docker Compose first."
+        )
+        return False
+
+    return True
+
+
+async def create_docker_compose_file(config: NextcloudConfig) -> bool:
+    """Create the Docker Compose file for Nextcloud and PostgreSQL."""
+    try:
+        # Ensure the docker directory exists
+        os.makedirs(DOCKER_DIR, exist_ok=True)
+
+        # Create required directories
+        os.makedirs(config.data_dir, exist_ok=True)
+        os.makedirs(config.db_data_dir, exist_ok=True)
+        os.makedirs(config.custom_apps_dir, exist_ok=True)
+        os.makedirs(config.config_dir, exist_ok=True)
+        os.makedirs(config.theme_dir, exist_ok=True)
+
+        # Create the docker-compose.yml file
+        compose_config = {
+            "version": "3",
+            "services": {
+                "db": {
+                    "image": "postgres:15",
+                    "restart": "always",
+                    "volumes": [f"{config.db_data_dir}:/var/lib/postgresql/data"],
+                    "environment": {
+                        "POSTGRES_DB": config.db_name,
+                        "POSTGRES_USER": config.db_username,
+                        "POSTGRES_PASSWORD": config.db_password,
+                    },
+                },
+                "app": {
+                    "image": "nextcloud:apache",
+                    "restart": "always",
+                    "depends_on": ["db"],
+                    "volumes": [
+                        f"{config.data_dir}:/var/www/html/data",
+                        f"{config.custom_apps_dir}:/var/www/html/custom_apps",
+                        f"{config.config_dir}:/var/www/html/config",
+                        f"{config.theme_dir}:/var/www/html/themes/custom",
+                    ],
+                    "environment": {
+                        "POSTGRES_DB": config.db_name,
+                        "POSTGRES_USER": config.db_username,
+                        "POSTGRES_PASSWORD": config.db_password,
+                        "POSTGRES_HOST": config.db_host,
+                        "NEXTCLOUD_ADMIN_USER": config.admin_username,
+                        "NEXTCLOUD_ADMIN_PASSWORD": config.admin_password,
+                        "NEXTCLOUD_TRUSTED_DOMAINS": config.domain,
+                    },
+                },
+            },
+        }
+
+        # Add port mapping if not using Traefik
+        if not config.use_traefik:
+            compose_config["services"]["app"]["ports"] = [f"{config.port}:80"]
+        else:
+            # Add Traefik labels for reverse proxy
+            compose_config["services"]["app"]["labels"] = [
+                "traefik.enable=true",
+                f"traefik.http.routers.nextcloud.rule=Host(`{config.domain}`)",
+                "traefik.http.routers.nextcloud.entrypoints=websecure",
+                "traefik.http.routers.nextcloud.tls=true",
+                "traefik.http.routers.nextcloud.tls.certresolver=letsencrypt",
+            ]
+            # Make sure app is on the same network as Traefik
+            compose_config["services"]["app"]["networks"] = ["traefik-public"]
+            # Add the network definition
+            compose_config["networks"] = {"traefik-public": {"external": True}}
+
+        # Write the compose file
+        with open(DOCKER_COMPOSE_FILE, "w") as f:
+            yaml.dump(compose_config, f, default_flow_style=False)
+
+        print_success(f"Created Docker Compose configuration at {DOCKER_COMPOSE_FILE}")
+        return True
+
+    except Exception as e:
+        print_error(f"Failed to create Docker Compose file: {e}")
+        return False
+
+
+async def start_docker_containers() -> bool:
+    """Start the Docker containers defined in the compose file."""
+    try:
+        print_step("Starting Nextcloud containers...")
+
+        # Change to the directory containing docker-compose.yml
+        os.chdir(DOCKER_DIR)
+
+        # Run docker-compose up -d
+        returncode, stdout, stderr = await run_command_async(
+            DOCKER_COMPOSE_COMMAND.split() + ["up", "-d"]
+        )
+
+        if returncode == 0:
+            print_success("Nextcloud containers started successfully")
+            return True
+        else:
+            print_error(f"Failed to start containers: {stderr}")
+            return False
+
+    except Exception as e:
+        print_error(f"Error starting containers: {e}")
+        return False
+
+
+async def check_nextcloud_status() -> bool:
+    """Check if Nextcloud is running and accessible."""
+    try:
+        # Check if the containers are running
+        os.chdir(DOCKER_DIR)
+
+        returncode, stdout, stderr = await run_command_async(
+            DOCKER_COMPOSE_COMMAND.split() + ["ps", "-q", "app"]
+        )
+
+        if not stdout:
+            print_error("Nextcloud container is not running")
+            return False
+
+        print_success("Nextcloud container is running")
+        return True
+
+    except Exception as e:
+        print_error(f"Error checking Nextcloud status: {e}")
+        return False
+
+
+async def stop_docker_containers() -> bool:
+    """Stop the Docker containers."""
+    try:
+        print_step("Stopping Nextcloud containers...")
+
+        # Change to the directory containing docker-compose.yml
+        os.chdir(DOCKER_DIR)
+
+        # Run docker-compose down
+        returncode, stdout, stderr = await run_command_async(
+            DOCKER_COMPOSE_COMMAND.split() + ["down"]
+        )
+
+        if returncode == 0:
+            print_success("Nextcloud containers stopped successfully")
+            return True
+        else:
+            print_error(f"Failed to stop containers: {stderr}")
+            return False
+
+    except Exception as e:
+        print_error(f"Error stopping containers: {e}")
+        return False
+
+
+async def execute_occ_command(command: List[str]) -> Tuple[bool, str]:
+    """Execute Nextcloud occ command inside the container."""
+    try:
+        os.chdir(DOCKER_DIR)
+
+        full_command = (
+            DOCKER_COMPOSE_COMMAND.split()
+            + ["exec", "--user", "www-data", "app", "php", "occ"]
+            + command
+        )
+
+        returncode, stdout, stderr = await run_command_async(full_command)
+
+        if returncode == 0:
+            return True, stdout
+        else:
+            return False, stderr
+
+    except Exception as e:
+        return False, str(e)
+
+
+async def async_confirm(message: str, default: bool = False) -> bool:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, lambda: Confirm.ask(message, default=default)
+    )
+
+
+async def async_prompt(message: str, default: str = "") -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, lambda: Prompt.ask(message, default=default)
+    )
+
+
+async def async_int_prompt(message: str, default: int = 0) -> int:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, lambda: IntPrompt.ask(message, default=default)
+    )
+
+
+async def async_password_prompt(message: str) -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: Prompt.ask(message, password=True))
+
+
+async def configure_nextcloud() -> NextcloudConfig:
+    """Interactive configuration for Nextcloud installation."""
+    config = await load_config()
+
+    clear_screen()
+    console.print(create_header())
+    display_panel(
+        "Nextcloud Configuration",
+        "Please provide the configuration details for your Nextcloud installation",
+        NordColors.FROST_2,
+    )
+
+    # Domain configuration
+    config.domain = await async_prompt(
+        f"[bold {NordColors.FROST_2}]Domain name for Nextcloud[/]",
+        default=config.domain,
+    )
+
+    # Admin account
+    config.admin_username = await async_prompt(
+        f"[bold {NordColors.FROST_2}]Admin username[/]", default=config.admin_username
+    )
+
+    config.admin_password = await async_password_prompt(
+        f"[bold {NordColors.FROST_2}]Admin password[/]"
+    )
+
+    # Database configuration
+    print_section("Database Configuration")
+    config.db_name = await async_prompt(
+        f"[bold {NordColors.FROST_2}]Database name[/]", default=config.db_name
+    )
+
+    config.db_username = await async_prompt(
+        f"[bold {NordColors.FROST_2}]Database user[/]", default=config.db_username
+    )
+
+    config.db_password = await async_password_prompt(
+        f"[bold {NordColors.FROST_2}]Database password[/]"
+    )
+
+    # Networking configuration
+    print_section("Network Configuration")
+
+    config.use_traefik = await async_confirm(
+        f"[bold {NordColors.FROST_2}]Use Traefik reverse proxy?[/]",
+        default=config.use_traefik,
+    )
+
+    if not config.use_traefik:
+        config.port = await async_int_prompt(
+            f"[bold {NordColors.FROST_2}]Port to expose Nextcloud on[/]",
+            default=config.port,
+        )
+
+    config.use_https = await async_confirm(
+        f"[bold {NordColors.FROST_2}]Enable HTTPS?[/]", default=config.use_https
+    )
+
+    # Data directories
+    print_section("Data Directories")
+
+    data_dir_default = os.path.join(os.path.expanduser("~"), "nextcloud_data")
+    config.data_dir = await async_prompt(
+        f"[bold {NordColors.FROST_2}]Nextcloud data directory[/]",
+        default=config.data_dir,
+    )
+
+    # Confirm the config
+    print_section("Configuration Summary")
+
+    table = Table(show_header=True, box=box.ROUNDED)
+    table.add_column("Setting", style=f"bold {NordColors.FROST_2}")
+    table.add_column("Value", style=NordColors.SNOW_STORM_1)
+
+    table.add_row("Domain", config.domain)
+    table.add_row("Admin User", config.admin_username)
+    table.add_row("Database Name", config.db_name)
+    table.add_row("Database User", config.db_username)
+    table.add_row("Using Traefik", "Yes" if config.use_traefik else "No")
+    if not config.use_traefik:
+        table.add_row("Port", str(config.port))
+    table.add_row("HTTPS Enabled", "Yes" if config.use_https else "No")
+    table.add_row("Data Directory", config.data_dir)
+
+    console.print(table)
+    console.print()
+
+    if not await async_confirm(
+        f"[bold {NordColors.FROST_2}]Is this configuration correct?[/]", default=True
+    ):
+        print_warning("Configuration cancelled. Please start over.")
+        return await configure_nextcloud()
+
+    # Save the configuration
+    await save_config(config)
+    print_success("Configuration saved successfully")
+
+    return config
+
+
+async def install_nextcloud(config: NextcloudConfig) -> bool:
+    """Install Nextcloud with the given configuration."""
+    try:
+        # Create progress tracker
         with Progress(
             SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
             TextColumn("[bold]{task.description}[/bold]"),
@@ -418,1481 +622,485 @@ def install_dependencies() -> bool:
             TimeRemainingColumn(),
             console=console,
         ) as progress:
-            # Update package lists
-            task_update = progress.add_task(
-                f"[{NordColors.FROST_2}]Updating package lists...", total=1
+            # Create task for overall progress
+            task_id = progress.add_task(
+                f"[{NordColors.FROST_2}]Installing Nextcloud...", total=100
             )
 
-            _, stdout, stderr = run_command(["nala", "update"], sudo=True)
-            if stderr and "error" in stderr.lower():
-                print_warning(
-                    f"Package list update has warnings/errors, but continuing: {stderr}"
-                )
-
-            progress.update(task_update, completed=1)
-
-            # Install Caddy
-            task_caddy = progress.add_task(
-                f"[{NordColors.FROST_2}]Installing Caddy...", total=6
+            # Check prerequisites
+            progress.update(
+                task_id,
+                description=f"[{NordColors.FROST_2}]Checking prerequisites...",
+                advance=10,
             )
-
-            # Step 0: Fix any interrupted dpkg installations
-            print_step("Checking and fixing any interrupted package installations...")
-            returncode, _, stderr = run_command(
-                ["dpkg", "--configure", "-a"], sudo=True
-            )
-            if returncode != 0:
-                print_error(f"Failed to fix interrupted dpkg: {stderr}")
-                return False
-            progress.update(task_caddy, advance=1)
-
-            # Step 1: Install prerequisites
-            print_step("Installing Caddy prerequisites...")
-            returncode, _, stderr = run_command(
-                [
-                    "apt",
-                    "install",
-                    "-y",
-                    "debian-keyring",
-                    "debian-archive-keyring",
-                    "apt-transport-https",
-                    "curl",
-                ],
-                sudo=True,
-            )
-            if returncode != 0:
-                print_error(f"Failed to install Caddy prerequisites: {stderr}")
-                return False
-            progress.update(task_caddy, advance=1)
-
-            # Install other dependencies
-            task_install = progress.add_task(
-                f"[{NordColors.FROST_2}]Installing dependencies...",
-                total=len(dependencies),
-            )
-
-            failed_packages = []
-
-            for dependency in dependencies:
-                progress.update(
-                    task_install,
-                    description=f"[{NordColors.FROST_2}]Installing {dependency}...",
-                )
-
-                returncode, stdout, stderr = run_command(
-                    ["nala", "install", "-y", dependency], sudo=True
-                )
-
-                if returncode != 0:
-                    print_error(f"Failed to install {dependency}: {stderr}")
-                    failed_packages.append(dependency)
-                    print_warning(
-                        "Continuing with installation. Some features might not work properly."
-                    )
-
-                progress.advance(task_install)
-
-            # If PHP installation failed, try alternative approaches
-            if failed_packages and any(
-                pkg.startswith("php") for pkg in failed_packages
-            ):
-                print_warning(
-                    "PHP package installation had issues. Trying alternative approaches..."
-                )
-
-                # Try adding the PHP repository
-                if Confirm.ask(
-                    "Would you like to add the PHP repository and try again?",
-                    default=True,
-                ):
-                    print_step("Adding PHP repository...")
-                    returncode, _, stderr = run_command(
-                        ["add-apt-repository", "-y", "ppa:ondrej/php"], sudo=True
-                    )
-
-                    if returncode == 0:
-                        print_step("Updating package lists...")
-                        run_command(["nala", "update"], sudo=True)
-
-                        # Detect PHP versions again
-                        php_versions = detect_available_php_versions()
-                        if php_versions:
-                            # Choose PHP version
-                            print_step(
-                                f"Available PHP versions after adding repository: {', '.join(php_versions)}"
-                            )
-                            suitable_versions = [
-                                v for v in php_versions if float(v) >= 7.4
-                            ]
-
-                            if suitable_versions:
-                                DEFAULT_PHP_VERSION = suitable_versions[-1]
-                                config.php_version = DEFAULT_PHP_VERSION
-                                save_config(config)
-                                print_success(
-                                    f"Selected PHP version {DEFAULT_PHP_VERSION} for installation."
-                                )
-
-                                # Try installing PHP packages again
-                                print_step("Retrying PHP package installation...")
-                                for dep in [
-                                    d for d in failed_packages if d.startswith("php")
-                                ]:
-                                    if DEFAULT_PHP_VERSION:
-                                        fixed_dep = dep.replace(
-                                            "php8.1", f"php{DEFAULT_PHP_VERSION}"
-                                        )
-                                    else:
-                                        fixed_dep = dep
-
-                                    print_step(f"Installing {fixed_dep}...")
-                                    run_command(
-                                        ["nala", "install", "-y", fixed_dep], sudo=True
-                                    )
-                    else:
-                        print_warning(f"Failed to add PHP repository: {stderr}")
-
-        print_success("Dependencies installation completed.")
-        return True
-    except Exception as e:
-        print_error(f"Error installing dependencies: {e}")
-        return False
-
-
-def setup_postgresql(config: NextcloudConfig) -> bool:
-    """
-    Set up the PostgreSQL database for Nextcloud.
-    """
-    print_section("Setting up PostgreSQL Database")
-
-    try:
-        # Ensure PostgreSQL is running
-        returncode, _, _ = run_command(
-            ["systemctl", "is-active", "postgresql"], sudo=True
-        )
-        if returncode != 0:
-            print_step("Starting PostgreSQL service...")
-            returncode, _, stderr = run_command(
-                ["systemctl", "start", "postgresql"], sudo=True
-            )
-            if returncode != 0:
-                print_error(f"Failed to start PostgreSQL: {stderr}")
+            if not await check_prerequisites():
                 return False
 
-        # Create database user
-        print_step(f"Creating database user '{config.db_user}'...")
-        create_user_cmd = [
-            "sudo",
-            "-u",
-            "postgres",
-            "psql",
-            "-c",
-            f"CREATE USER {config.db_user} WITH PASSWORD '{config.db_pass}';",
-        ]
-        returncode, _, stderr = run_command(create_user_cmd)
-        if returncode != 0 and "already exists" not in stderr:
-            print_error(f"Failed to create database user: {stderr}")
-            return False
-
-        # Create database
-        print_step(f"Creating database '{config.db_name}'...")
-        create_db_cmd = [
-            "sudo",
-            "-u",
-            "postgres",
-            "psql",
-            "-c",
-            f"CREATE DATABASE {config.db_name} OWNER {config.db_user};",
-        ]
-        returncode, _, stderr = run_command(create_db_cmd)
-        if returncode != 0 and "already exists" not in stderr:
-            print_error(f"Failed to create database: {stderr}")
-            return False
-
-        # Grant privileges
-        print_step("Setting database permissions...")
-        grant_cmd = [
-            "sudo",
-            "-u",
-            "postgres",
-            "psql",
-            "-c",
-            f"GRANT ALL PRIVILEGES ON DATABASE {config.db_name} TO {config.db_user};",
-        ]
-        returncode, _, stderr = run_command(grant_cmd)
-        if returncode != 0:
-            print_error(f"Failed to grant database privileges: {stderr}")
-            return False
-
-        print_success("PostgreSQL setup completed successfully.")
-        return True
-    except Exception as e:
-        print_error(f"Error setting up PostgreSQL: {e}")
-        return False
-
-
-def detect_available_php_versions() -> List[str]:
-    """
-    Detect available PHP versions in the system.
-    Returns a list of available PHP version strings (e.g., ["7.4", "8.0", "8.1"])
-    """
-    available_versions = []
-
-    try:
-        # Try to find PHP packages using apt/nala
-        returncode, stdout, _ = run_command(
-            ["nala", "list", "--installed", "php*-common"], sudo=True
-        )
-        if returncode == 0:
-            for line in stdout.splitlines():
-                if "php" in line and "-common" in line:
-                    parts = line.split()[0].split("-")[
-                        0
-                    ]  # Get "php7.4" from "php7.4-common"
-                    version = parts[3:]  # Get "7.4" from "php7.4"
-                    if version and version not in available_versions:
-                        available_versions.append(version)
-
-        # If no versions found, try using apt-cache search
-        if not available_versions:
-            returncode, stdout, _ = run_command(
-                ["apt-cache", "search", "^php[0-9]+\\.[0-9]+-common$"], sudo=True
+            # Create the Docker Compose file
+            progress.update(
+                task_id,
+                description=f"[{NordColors.FROST_2}]Creating Docker configuration...",
+                advance=20,
             )
-            if returncode == 0:
-                for line in stdout.splitlines():
-                    # Extract version from package name (e.g., php7.4-common)
-                    if line.startswith("php"):
-                        parts = line.split(" - ")[0].split("-")[
-                            0
-                        ]  # Get "php7.4" from "php7.4-common"
-                        version = parts[3:]  # Get "7.4" from "php7.4"
-                        if version and version not in available_versions:
-                            available_versions.append(version)
-    except Exception as e:
-        print_warning(f"Error detecting PHP versions: {e}")
+            if not await create_docker_compose_file(config):
+                return False
 
-    # If no versions found, try to check installed PHP
-    if not available_versions:
-        try:
-            returncode, stdout, _ = run_command(["php", "-v"])
-            if returncode == 0 and "PHP" in stdout:
-                # Extract version from PHP -v output
-                version_line = stdout.splitlines()[0]
-                if "PHP " in version_line:
-                    version = version_line.split("PHP ")[1].split(" ")[0]
-                    major_minor = ".".join(
-                        version.split(".")[:2]
-                    )  # Get "7.4" from "7.4.3"
-                    available_versions.append(major_minor)
-        except Exception:
-            pass
-
-    # Add PPA repository if no supported versions found
-    if not available_versions or not any(float(v) >= 7.4 for v in available_versions):
-        print_warning("No suitable PHP versions found. Will try to add PHP repository.")
-        try:
-            # Try to add the PHP repository
-            returncode, _, _ = run_command(
-                ["add-apt-repository", "-y", "ppa:ondrej/php"], sudo=True
+            # Start the containers
+            progress.update(
+                task_id,
+                description=f"[{NordColors.FROST_2}]Starting containers...",
+                advance=30,
             )
-            if returncode == 0:
-                print_step("Updating package lists after adding repository...")
-                run_command(["nala", "update"], sudo=True)
+            if not await start_docker_containers():
+                return False
 
-                # Check again for available versions
-                returncode, stdout, _ = run_command(
-                    ["apt-cache", "search", "^php[0-9]+\\.[0-9]+-common$"], sudo=True
-                )
-                if returncode == 0:
-                    for line in stdout.splitlines():
-                        if line.startswith("php"):
-                            parts = line.split(" - ")[0].split("-")[0]
-                            version = parts[3:]
-                            if version and version not in available_versions:
-                                available_versions.append(version)
-        except Exception as e:
-            print_warning(f"Error adding PHP repository: {e}")
+            # Wait for containers to be ready
+            progress.update(
+                task_id,
+                description=f"[{NordColors.FROST_2}]Waiting for containers to be ready...",
+                advance=20,
+            )
+            await asyncio.sleep(5)  # Give some time for containers to start
 
-    # Sort versions
-    available_versions.sort(key=lambda v: [int(x) for x in v.split(".")])
+            # Check if Nextcloud is running
+            progress.update(
+                task_id,
+                description=f"[{NordColors.FROST_2}]Verifying installation...",
+                advance=10,
+            )
+            if not await check_nextcloud_status():
+                return False
 
-    return available_versions
+            # Complete
+            progress.update(
+                task_id,
+                description=f"[{NordColors.GREEN}]Installation complete!",
+                advance=10,
+            )
 
+        # Update config with installation status
+        config.installation_status = "installed"
+        config.installed_at = time.time()
+        await save_config(config)
 
-def check_port_in_use(port: int) -> Tuple[bool, Optional[str], Optional[int]]:
-    """
-    Check if a port is already in use and if so, by which process.
-    Returns a tuple (is_in_use, process_name, process_pid)
-    """
-    try:
-        # First try with ss command (most modern)
-        returncode, stdout, _ = run_command(["ss", "-tulpn"], sudo=True)
-        if returncode == 0:
-            for line in stdout.splitlines():
-                if f":{port}" in line and "LISTEN" in line:
-                    # Extract process info - format: users:(("process",pid,fd))
-                    if "users:" in line:
-                        process_info = line.split("users:")[1].strip()
-                        if "pid=" in process_info:
-                            # Extract from newer format: pid=1234,fd=5
-                            pid_str = process_info.split("pid=")[1].split(",")[0]
-                            process = (
-                                process_info.split('"')[1]
-                                if '"' in process_info
-                                else "unknown"
-                            )
-                            try:
-                                return True, process, int(pid_str)
-                            except ValueError:
-                                return True, process, None
-                        elif '(("' in process_info:
-                            # Extract from format: ((\"process\",pid,fd))
-                            parts = process_info.strip("()").split(",")
-                            if len(parts) >= 2:
-                                process = parts[0].strip('("')
-                                try:
-                                    pid = int(parts[1])
-                                    return True, process, pid
-                                except ValueError:
-                                    return True, process, None
-                    return True, None, None
-
-        # Try with netstat if ss failed
-        returncode, stdout, _ = run_command(["netstat", "-tulpn"], sudo=True)
-        if returncode == 0:
-            for line in stdout.splitlines():
-                if f":{port}" in line and "LISTEN" in line:
-                    # Extract process info - format: process_name/pid
-                    parts = line.split()
-                    if len(parts) >= 7:
-                        process_info = parts[6]
-                        if "/" in process_info:
-                            process, pid_str = process_info.split("/")
-                            try:
-                                return True, process, int(pid_str)
-                            except ValueError:
-                                return True, process, None
-                    return True, None, None
-
-        # Try with lsof as a fallback
-        returncode, stdout, _ = run_command(["lsof", "-i", f":{port}"], sudo=True)
-        if returncode == 0 and stdout.strip():
-            lines = stdout.splitlines()
-            if len(lines) > 1:  # First line is headers
-                parts = lines[1].split()
-                if len(parts) > 1:
-                    process_name = parts[0]
-                    pid_str = parts[1]
-                    try:
-                        return True, process_name, int(pid_str)
-                    except ValueError:
-                        return True, process_name, None
-
-        return False, None, None
-    except Exception as e:
-        print_warning(f"Error checking port: {e}")
-        # If command failed, try a basic socket check
-        import socket
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            s.bind(("0.0.0.0", port))
-            s.close()
-            return False, None, None
-        except socket.error:
-            return True, None, None
-
-
-def free_port(port: int) -> bool:
-    """
-    Find and kill any process using the specified port.
-    Uses multiple methods to ensure the port is freed.
-    Returns True if the port was successfully freed, False otherwise.
-    """
-    # First try using fuser (most direct method)
-    try:
-        print_step(f"Forcibly freeing port {port} with fuser...")
-        run_command(["fuser", "-k", f"{port}/tcp"], sudo=True)
-
-        # Give it a moment
-        time.sleep(2)
-
-        # Check if port is now free
-        port_still_in_use, _, _ = check_port_in_use(port)
-        if not port_still_in_use:
-            print_success(f"Successfully freed port {port}.")
-            return True
-    except Exception:
-        pass  # Continue with other methods if fuser fails
-
-    # Try using ss -K (socket statistics kill)
-    try:
-        print_step(f"Attempting to free port {port} with ss...")
-        run_command(["ss", "-K", f"sport = :{port}"], sudo=True)
-
-        time.sleep(2)
-
-        # Check if port is now free
-        port_still_in_use, _, _ = check_port_in_use(port)
-        if not port_still_in_use:
-            print_success(f"Successfully freed port {port}.")
-            return True
-    except Exception:
-        pass  # Continue with other methods if ss fails
-
-    # Fall back to identifying and killing processes
-    attempts = 0
-    max_attempts = 3
-
-    while attempts < max_attempts:
-        port_in_use, process_name, pid = check_port_in_use(port)
-
-        if not port_in_use:
-            print_success(f"Port {port} is now free.")
-            return True
-
-        attempts += 1
-        print_warning(f"Attempt {attempts}/{max_attempts} to free port {port}...")
-
-        if pid:
-            print_step(f"Killing process {process_name or 'unknown'} (PID: {pid})...")
-            # Always use force kill (-9) to ensure termination
-            run_command(["kill", "-9", str(pid)], sudo=True)
-
-            # Give it time to die
-            time.sleep(2)
-        else:
-            # If we can't get PID, try more aggressive methods
-            print_warning(f"Cannot identify PID for process using port {port}")
-            try:
-                # Try using lsof with kill
-                run_command(
-                    ["bash", "-c", f"lsof -ti:{port} | xargs kill -9"], sudo=True
-                )
-                time.sleep(1)
-            except Exception:
-                pass
-
-    # As a last resort, try restarting networking
-    print_step("Attempting to restart networking services...")
-    try:
-        run_command(["systemctl", "restart", "networking"], sudo=True)
-        time.sleep(5)  # Give enough time for networking to restart
-    except Exception:
-        pass
-
-    # One final check
-    port_in_use, _, _ = check_port_in_use(port)
-    if not port_in_use:
-        print_success(f"Successfully freed port {port} after multiple attempts.")
         return True
 
-    print_error(f"Failed to free port {port} after {max_attempts} attempts.")
-    return False
-
-
-def setup_caddy(config: NextcloudConfig) -> bool:
-    """
-    Configure Caddy for Nextcloud with SSL support using the provided certificates.
-    """
-    print_section("Configuring Caddy Web Server")
-
-    try:
-        # Check if ports 80 and 443 are already in use
-        port80_in_use, process80_name, pid80 = check_port_in_use(80)
-        port443_in_use, process443_name, pid443 = check_port_in_use(443)
-
-        if port80_in_use and process80_name != "caddy":
-            print_warning(
-                f"Port 80 is already in use by {process80_name or 'unknown process'}{f' (PID: {pid80})' if pid80 else ''}."
-            )
-
-            if free_port(80):
-                print_success("Successfully freed port 80 for Caddy.")
-            else:
-                print_error("Failed to free port 80. Caddy may not start correctly.")
-
-        if port443_in_use and process443_name != "caddy":
-            print_warning(
-                f"Port 443 is already in use by {process443_name or 'unknown process'}{f' (PID: {pid443})' if pid443 else ''}."
-            )
-
-            if free_port(443):
-                print_success("Successfully freed port 443 for Caddy.")
-            else:
-                print_error("Failed to free port 443. Caddy may not start correctly.")
-
-        # Create Caddy directory if it doesn't exist
-        print_step("Creating Caddy configuration directory...")
-        run_command(["mkdir", "-p", CADDY_CONFIG_DIR], sudo=True)
-
-        # Determine which PHP-FPM socket to use
-        php_version = (
-            config.php_version if config.php_version else "7.4"
-        )  # Default fallback
-        php_fpm_sock = f"/run/php/php{php_version}-fpm.sock"
-
-        # Check if the socket exists
-        returncode, _, _ = run_command(["test", "-S", php_fpm_sock], sudo=True)
-        if returncode != 0:
-            print_warning(
-                f"PHP-FPM socket {php_fpm_sock} not found. Checking alternatives..."
-            )
-
-            # Try to find any PHP-FPM socket
-            returncode, stdout, _ = run_command(
-                ["find", "/run/php", "-name", "*.sock"], sudo=True
-            )
-            if returncode == 0 and stdout.strip():
-                php_fpm_sock = stdout.splitlines()[0].strip()
-                print_success(f"Found alternative PHP-FPM socket: {php_fpm_sock}")
-            else:
-                print_error(
-                    "No PHP-FPM socket found. PHP might not be properly installed."
-                )
-                return False
-
-        # Create Caddyfile configuration
-        # Create a minimal Caddyfile configuration with auto HTTPS and Let's Encrypt
-        caddyfile_content = f"""{config.domain} {{
-    root * {config.install_dir}
-    php_fastcgi unix/{php_fpm_sock}
-    file_server
-
-    # Security headers
-    header {{
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options nosniff
-        X-Frame-Options "SAMEORIGIN"
-        X-XSS-Protection "1; mode=block"
-    }}
-
-    # Log configuration
-    log {{
-        output file /var/log/caddy/nextcloud.log
-        format console
-    }}
-}}
-"""
-
-        # Create temporary file for the Caddyfile
-        caddy_config_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
-        caddy_config_file.write(caddyfile_content)
-        caddy_config_file.close()
-
-        # Copy configuration to Caddy directory
-        print_step("Creating Caddy configuration...")
-        returncode, _, stderr = run_command(
-            ["cp", caddy_config_file.name, CADDYFILE_PATH], sudo=True
-        )
-
-        if returncode != 0:
-            print_error(f"Failed to create Caddy configuration: {stderr}")
-            os.unlink(caddy_config_file.name)
-            return False
-
-        os.unlink(caddy_config_file.name)
-
-        # Create log directory for Caddy
-        print_step("Creating Caddy log directory...")
-        run_command(["mkdir", "-p", "/var/log/caddy"], sudo=True)
-        run_command(["chown", "-R", "caddy:caddy", "/var/log/caddy"], sudo=True)
-
-        # Validate Caddy configuration
-        print_step("Validating Caddy configuration...")
-        returncode, _, stderr = run_command(
-            ["caddy", "validate", "--config", CADDYFILE_PATH], sudo=True
-        )
-        if returncode != 0:
-            print_error(f"Caddy configuration validation failed: {stderr}")
-            if not Confirm.ask("Continue anyway?", default=False):
-                return False
-
-        # Reload Caddy to apply the new configuration
-        print_step("Reloading Caddy service...")
-        returncode, _, stderr = run_command(["systemctl", "reload", "caddy"], sudo=True)
-
-        # If reload fails, try restart
-        if returncode != 0:
-            print_warning(f"Failed to reload Caddy: {stderr}")
-            print_step("Trying to restart Caddy...")
-            returncode, _, stderr = run_command(
-                ["systemctl", "restart", "caddy"], sudo=True
-            )
-            if returncode != 0:
-                print_error(f"Failed to restart Caddy: {stderr}")
-                return False
-
-        # Verify Caddy is running
-        print_step("Verifying Caddy service status...")
-        returncode, _, _ = run_command(["systemctl", "is-active", "caddy"], sudo=True)
-        if returncode != 0:
-            print_error("Caddy is not running after configuration.")
-            print_step("Checking Caddy logs for errors...")
-            run_command(["journalctl", "-u", "caddy", "-n", "20"], sudo=True)
-            return False
-
-        print_success("Caddy configuration completed successfully.")
-        return True
     except Exception as e:
-        print_error(f"Error configuring Caddy: {e}")
+        print_error(f"Installation failed: {e}")
         return False
 
 
-def verify_ssl_certificates(config: NextcloudConfig) -> bool:
-    """
-    Verify that the Cloudflare SSL certificates exist and are readable.
-    """
-    print_section("Verifying SSL Certificates")
+async def show_nextcloud_info(config: NextcloudConfig) -> None:
+    """Display information about the Nextcloud installation."""
+    clear_screen()
+    console.print(create_header())
 
-    # Check if certificate files exist
-    print_step(f"Checking certificate file: {config.cert_file}")
-    returncode, _, _ = run_command(["test", "-f", config.cert_file], sudo=True)
-    if returncode != 0:
-        print_error(f"Certificate file not found: {config.cert_file}")
-        return False
+    if config.installation_status != "installed":
+        display_panel(
+            "Nextcloud Status",
+            "Nextcloud is not installed yet. Please install it first.",
+            NordColors.YELLOW,
+        )
+        return
 
-    print_step(f"Checking key file: {config.key_file}")
-    returncode, _, _ = run_command(["test", "-f", config.key_file], sudo=True)
-    if returncode != 0:
-        print_error(f"Key file not found: {config.key_file}")
-        return False
+    # Check if containers are running
+    running = await check_nextcloud_status()
 
-    # Ensure correct permissions for SSL certificate files
-    print_step("Setting correct permissions for SSL files...")
-    run_command(["chmod", "644", config.cert_file], sudo=True)
-    run_command(["chmod", "600", config.key_file], sudo=True)
+    # Create the info panel
+    status_color = NordColors.GREEN if running else NordColors.RED
+    status_text = "Running" if running else "Stopped"
 
-    # Verify the certificate is valid
-    print_step("Verifying SSL certificate format...")
-    returncode, stdout, stderr = run_command(
-        ["openssl", "x509", "-in", config.cert_file, "-text", "-noout"], sudo=True
+    display_panel(
+        "Nextcloud Status",
+        f"Status: [{status_color}]{status_text}[/]",
+        NordColors.FROST_2,
     )
-    if returncode != 0:
-        print_error(f"Certificate file is not valid: {stderr}")
-        return False
 
-    print_success("SSL certificates verified successfully.")
-    return True
+    # Display access information
+    access_url = (
+        f"https://{config.domain}" if config.use_https else f"http://{config.domain}"
+    )
+    if not config.use_traefik:
+        access_url = f"http://localhost:{config.port}"
+
+    info_table = Table(show_header=False, box=box.ROUNDED)
+    info_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
+    info_table.add_column("Value", style=NordColors.SNOW_STORM_1)
+
+    info_table.add_row("Access URL", access_url)
+    info_table.add_row("Admin User", config.admin_username)
+    info_table.add_row("Installed At", time.ctime(config.installed_at or 0))
+    info_table.add_row("Data Directory", config.data_dir)
+    info_table.add_row("Docker Directory", DOCKER_DIR)
+
+    console.print(info_table)
+    console.print()
+
+    # Wait for user to press a key
+    await async_prompt("Press Enter to return to the main menu")
 
 
-def extract_nextcloud(zip_path: str, install_dir: str) -> bool:
-    """
-    Extract the Nextcloud zip file to the installation directory.
-    """
-    print_section("Extracting Nextcloud Files")
+async def start_nextcloud() -> bool:
+    """Start the Nextcloud containers."""
+    clear_screen()
+    console.print(create_header())
+    display_panel(
+        "Starting Nextcloud", "Starting Nextcloud containers...", NordColors.FROST_2
+    )
 
-    try:
-        temp_extract_dir = os.path.join(TEMP_DIR, "nextcloud_extract")
-        os.makedirs(temp_extract_dir, exist_ok=True)
-
-        # Extract to temporary directory first
-        print_step(f"Extracting files to temporary location...")
-        returncode, _, stderr = run_command(
-            ["unzip", "-q", zip_path, "-d", temp_extract_dir]
-        )
-        if returncode != 0:
-            print_error(f"Failed to extract Nextcloud archive: {stderr}")
-            return False
-
-        # Create installation directory if it doesn't exist
-        print_step(f"Creating installation directory at {install_dir}...")
-        returncode, _, stderr = run_command(["mkdir", "-p", install_dir], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to create installation directory: {stderr}")
-            return False
-
-        # Move files to installation directory
-        print_step("Moving files to installation directory...")
-        src_dir = os.path.join(temp_extract_dir, "nextcloud")
-        returncode, _, stderr = run_command(
-            ["cp", "-a", f"{src_dir}/.", install_dir], sudo=True
-        )
-        if returncode != 0:
-            print_error(f"Failed to move files to installation directory: {stderr}")
-            return False
-
-        # Set proper permissions
-        print_step("Setting file permissions...")
-        returncode, _, stderr = run_command(
-            ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", install_dir],
-            sudo=True,
-        )
-        if returncode != 0:
-            print_error(f"Failed to set file permissions: {stderr}")
-            return False
-
-        # Clean up temporary directory
-        shutil.rmtree(temp_extract_dir, ignore_errors=True)
-
-        print_success("Nextcloud files extracted successfully.")
+    if await start_docker_containers():
+        print_success("Nextcloud started successfully")
+        await async_prompt("Press Enter to return to the main menu")
         return True
-    except Exception as e:
-        print_error(f"Error extracting Nextcloud files: {e}")
+    else:
+        print_error("Failed to start Nextcloud")
+        await async_prompt("Press Enter to return to the main menu")
         return False
 
 
-def configure_nextcloud(config: NextcloudConfig) -> bool:
-    """
-    Configure Nextcloud using the occ command or direct configuration.
-    """
-    print_section("Configuring Nextcloud")
+async def stop_nextcloud() -> bool:
+    """Stop the Nextcloud containers."""
+    clear_screen()
+    console.print(create_header())
+    display_panel(
+        "Stopping Nextcloud", "Stopping Nextcloud containers...", NordColors.FROST_2
+    )
 
+    if await stop_docker_containers():
+        print_success("Nextcloud stopped successfully")
+        await async_prompt("Press Enter to return to the main menu")
+        return True
+    else:
+        print_error("Failed to stop Nextcloud")
+        await async_prompt("Press Enter to return to the main menu")
+        return False
+
+
+async def uninstall_nextcloud() -> bool:
+    """Uninstall Nextcloud and remove all data."""
+    clear_screen()
+    console.print(create_header())
+    display_panel(
+        "Uninstall Nextcloud",
+        "⚠️ This will remove Nextcloud and all its data!",
+        NordColors.RED,
+    )
+
+    confirm = await async_confirm(
+        f"[bold {NordColors.RED}]Are you sure you want to uninstall Nextcloud? This cannot be undone![/]",
+        default=False,
+    )
+
+    if not confirm:
+        print_warning("Uninstallation cancelled")
+        await async_prompt("Press Enter to return to the main menu")
+        return False
+
+    # Double confirm for data deletion
+    confirm_data = await async_confirm(
+        f"[bold {NordColors.RED}]Should we also delete all data directories? This will PERMANENTLY DELETE all your Nextcloud files![/]",
+        default=False,
+    )
+
+    # Stop containers
+    print_step("Stopping Nextcloud containers...")
+    await stop_docker_containers()
+
+    # Remove containers and images
+    print_step("Removing Docker containers...")
     try:
-        # Create data directory if it doesn't exist
-        print_step(f"Creating data directory at {config.data_dir}...")
-        returncode, _, stderr = run_command(["mkdir", "-p", config.data_dir], sudo=True)
-        if returncode != 0:
-            print_error(f"Failed to create data directory: {stderr}")
-            return False
-
-        # Set proper permissions on data directory
-        returncode, _, stderr = run_command(
-            ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", config.data_dir],
-            sudo=True,
+        os.chdir(DOCKER_DIR)
+        returncode, stdout, stderr = await run_command_async(
+            DOCKER_COMPOSE_COMMAND.split() + ["down", "--rmi", "all", "--volumes"]
         )
-        if returncode != 0:
-            print_error(f"Failed to set data directory permissions: {stderr}")
-            return False
+    except Exception as e:
+        print_error(f"Error removing containers: {e}")
 
-        # Verify the occ command exists
-        occ_path = os.path.join(config.install_dir, "occ")
-        returncode, _, _ = run_command(["test", "-f", occ_path], sudo=True)
-        if returncode != 0:
-            print_warning(f"OCC command not found at {occ_path}")
-            print_step("Looking for OCC in alternative locations...")
+    # Load config to get data directories
+    config = await load_config()
 
-            # Try to find occ in subdirectories
-            returncode, stdout, _ = run_command(
-                ["find", config.install_dir, "-name", "occ", "-type", "f"], sudo=True
-            )
-
-            if returncode == 0 and stdout.strip():
-                occ_path = stdout.splitlines()[0].strip()
-                print_success(f"Found OCC at {occ_path}")
-            else:
-                print_error(
-                    "OCC command not found. Nextcloud may not be properly extracted."
-                )
-                return False
-
-        # Verify PHP is working properly
-        php_check_cmd = ["php", "-v"]
-        returncode, stdout, stderr = run_command(php_check_cmd)
-        if returncode != 0:
-            print_error(f"PHP is not working properly: {stderr}")
-            return False
-
-        print_step("Verifying Nextcloud installation...")
-
-        # First method: Try using setup-nextcloud.php if it exists
-        setup_php_path = os.path.join(config.install_dir, "setup-nextcloud.php")
-        returncode, _, _ = run_command(["test", "-f", setup_php_path], sudo=True)
-        if returncode == 0:
-            print_step("Using setup-nextcloud.php for installation...")
-            # Create config file content
-            setup_content = f"""<?php
-$CONFIG = array (
-  'instanceid' => '{os.urandom(16).hex()}',
-  'passwordsalt' => '{os.urandom(30).hex()}',
-  'datadirectory' => '{config.data_dir}',
-  'dbtype' => '{config.db_type}',
-  'dbname' => '{config.db_name}',
-  'dbhost' => '{config.db_host}',
-  'dbport' => '{config.db_port}',
-  'dbtableprefix' => 'oc_',
-  'dbuser' => '{config.db_user}',
-  'dbpassword' => '{config.db_pass}',
-  'installed' => true,
-);
-"""
-            # Write to a temporary file
-            temp_config = tempfile.NamedTemporaryFile(delete=False, mode="w")
-            temp_config.write(setup_content)
-            temp_config.close()
-
-            # Copy to the Nextcloud config directory
-            config_dir = os.path.join(config.install_dir, "config")
-            run_command(["mkdir", "-p", config_dir], sudo=True)
-            run_command(
-                ["cp", temp_config.name, os.path.join(config_dir, "config.php")],
-                sudo=True,
-            )
-            run_command(
-                [
-                    "chown",
-                    f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}",
-                    os.path.join(config_dir, "config.php"),
-                ],
-                sudo=True,
-            )
-            os.unlink(temp_config.name)
-
-            # Run the setup script
-            setup_cmd = [
-                "sudo",
-                "-u",
-                DEFAULT_WEB_USER,
-                "php",
-                setup_php_path,
-                "--admin-user",
-                config.admin_user,
-                "--admin-pass",
-                config.admin_pass,
-            ]
-            returncode, stdout, stderr = run_command(setup_cmd)
-            if returncode != 0:
-                print_warning(f"Setup script method failed: {stderr}")
-                # Continue to try other methods
-            else:
-                print_success("Nextcloud installed via setup script")
-                # Skip to the occ configuration for trusted domains
-
-        # Second method: Try direct occ command
-        print_step("Running Nextcloud installation via OCC command...")
-        # Make sure occ is executable
-        run_command(["chmod", "+x", occ_path], sudo=True)
-
-        occ_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            occ_path,
-            "maintenance:install",
-            "--database",
-            config.db_type,
-            "--database-name",
-            config.db_name,
-            "--database-user",
-            config.db_user,
-            "--database-pass",
-            config.db_pass,
-            "--database-host",
-            config.db_host,
-            "--database-port",
-            config.db_port,
-            "--admin-user",
-            config.admin_user,
-            "--admin-pass",
-            config.admin_pass,
-            "--data-dir",
+    # Delete data directories if confirmed
+    if confirm_data:
+        print_step("Removing data directories...")
+        for directory in [
             config.data_dir,
-        ]
-
-        returncode, stdout, stderr = run_command(occ_cmd)
-        if returncode != 0:
-            print_warning(f"OCC installation method failed: {stderr}")
-
-            # Third method: Manual config file creation
-            print_step("Trying manual configuration method...")
-
-            # Create autoconfig.php
-            autoconfig_content = f"""<?php
-$AUTOCONFIG = array (
-  'dbtype' => '{config.db_type}',
-  'dbname' => '{config.db_name}',
-  'dbuser' => '{config.db_user}',
-  'dbpass' => '{config.db_pass}',
-  'dbhost' => '{config.db_host}',
-  'dbport' => '{config.db_port}',
-  'dbtableprefix' => 'oc_',
-  'directory' => '{config.data_dir}',
-  'adminlogin' => '{config.admin_user}',
-  'adminpass' => '{config.admin_pass}',
-);
-"""
-            # Write to a temporary file
-            temp_autoconfig = tempfile.NamedTemporaryFile(delete=False, mode="w")
-            temp_autoconfig.write(autoconfig_content)
-            temp_autoconfig.close()
-
-            # Copy to the Nextcloud config directory
-            config_dir = os.path.join(config.install_dir, "config")
-            run_command(["mkdir", "-p", config_dir], sudo=True)
-            run_command(
-                [
-                    "cp",
-                    temp_autoconfig.name,
-                    os.path.join(config_dir, "autoconfig.php"),
-                ],
-                sudo=True,
-            )
-            run_command(
-                [
-                    "chown",
-                    f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}",
-                    os.path.join(config_dir, "autoconfig.php"),
-                ],
-                sudo=True,
-            )
-            os.unlink(temp_autoconfig.name)
-
-            # Now try to access the web UI to trigger installation
-            print_step("Manual configuration files created.")
-            print_step("Web-based installation should trigger on first access.")
-
-            # Create a status.php access to try to initialize
-            status_url = f"http://localhost/status.php"
+            config.db_data_dir,
+            config.custom_apps_dir,
+            config.config_dir,
+            config.theme_dir,
+        ]:
             try:
-                response = requests.get(status_url, timeout=10)
-                if response.status_code == 200:
-                    print_success("Installation verification successful")
-                else:
-                    print_warning(
-                        f"Installation verification returned status {response.status_code}"
-                    )
+                if os.path.exists(directory):
+                    shutil.rmtree(directory)
+                    print_success(f"Removed {directory}")
             except Exception as e:
-                print_warning(f"Could not verify installation: {e}")
+                print_error(f"Error removing directory {directory}: {e}")
 
-            # Final verification: check if config.php exists
-            config_php_path = os.path.join(config_dir, "config.php")
-            returncode, _, _ = run_command(["test", "-f", config_php_path], sudo=True)
-            if returncode != 0:
-                print_warning("Could not verify successful installation.")
-                print_warning(
-                    "You may need to complete setup through the web interface."
-                )
-                print_warning(
-                    f"Visit https://{config.domain}/ to complete installation if needed."
-                )
-            else:
-                print_success("Nextcloud configuration files detected.")
-
-        # Set trusted domain
-        print_step(f"Setting trusted domain to {config.domain}...")
-        trusted_domain_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            os.path.join(config.install_dir, "occ"),
-            "config:system:set",
-            "trusted_domains",
-            "1",
-            "--value",
-            config.domain,
-        ]
-
-        returncode, _, stderr = run_command(trusted_domain_cmd)
-        if returncode != 0:
-            print_error(f"Failed to set trusted domain: {stderr}")
-            return False
-
-        # Configure overwrite.cli.url for proper redirects
-        overwrite_url_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            os.path.join(config.install_dir, "occ"),
-            "config:system:set",
-            "overwrite.cli.url",
-            "--value",
-            f"https://{config.domain}",
-        ]
-
-        returncode, _, stderr = run_command(overwrite_url_cmd)
-        if returncode != 0:
-            print_error(f"Failed to set overwrite URL: {stderr}")
-            return False
-
-        # Force HTTPS
-        print_step("Configuring Nextcloud to use HTTPS...")
-        force_https_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            os.path.join(config.install_dir, "occ"),
-            "config:system:set",
-            "force_https",
-            "--type",
-            "boolean",
-            "--value",
-            "true",
-        ]
-        run_command(force_https_cmd)
-
-        # Configure trusted proxies for Cloudflare
-        print_step("Configuring trusted proxies for Cloudflare...")
-
-        # Cloudflare IPv4 ranges
-        cf_ranges = [
-            "173.245.48.0/20",
-            "103.21.244.0/22",
-            "103.22.200.0/22",
-            "103.31.4.0/22",
-            "141.101.64.0/18",
-            "108.162.192.0/18",
-            "190.93.240.0/20",
-            "188.114.96.0/20",
-            "197.234.240.0/22",
-            "198.41.128.0/17",
-            "162.158.0.0/15",
-            "104.16.0.0/12",
-            "172.64.0.0/13",
-            "131.0.72.0/22",
-        ]
-
-        # Add each Cloudflare range as a trusted proxy
-        for i, ip_range in enumerate(cf_ranges):
-            trusted_proxy_cmd = [
-                "sudo",
-                "-u",
-                DEFAULT_WEB_USER,
-                "php",
-                os.path.join(config.install_dir, "occ"),
-                "config:system:set",
-                "trusted_proxies",
-                str(i),
-                "--value",
-                ip_range,
-            ]
-            run_command(trusted_proxy_cmd)
-
-        # Set reverse proxy headers
-        proxy_headers_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            os.path.join(config.install_dir, "occ"),
-            "config:system:set",
-            "overwriteprotocol",
-            "--value",
-            "https",
-        ]
-        run_command(proxy_headers_cmd)
-
-        print_success("Nextcloud configuration completed successfully.")
-        return True
-    except Exception as e:
-        print_error(f"Error configuring Nextcloud: {e}")
-        return False
-
-
-def optimize_nextcloud(config: NextcloudConfig) -> bool:
-    """
-    Apply optimizations to Nextcloud.
-    """
-    print_section("Optimizing Nextcloud")
-
+    # Remove Docker directory
     try:
-        # Enable caching
-        print_step("Enabling memory cache...")
-        cache_cmd = [
-            "sudo",
-            "-u",
-            DEFAULT_WEB_USER,
-            "php",
-            os.path.join(config.install_dir, "occ"),
-            "config:system:set",
-            "memcache.local",
-            "--value",
-            "\\OC\\Memcache\\APCu",
-        ]
+        print_step("Removing Docker configuration...")
+        if os.path.exists(DOCKER_COMPOSE_FILE):
+            os.remove(DOCKER_COMPOSE_FILE)
+            print_success(f"Removed {DOCKER_COMPOSE_FILE}")
 
-        returncode, _, stderr = run_command(cache_cmd)
-        if returncode != 0:
-            print_error(f"Failed to enable memory cache: {stderr}")
-            return False
-
-        # Find the correct PHP ini path
-        php_version = config.php_version
-
-        if not php_version:
-            # Try to detect PHP version if not set in config
-            print_step("PHP version not set in config, detecting installed version...")
-            php_versions = detect_available_php_versions()
-            if php_versions:
-                php_version = php_versions[-1]  # Get the newest version
-                print_step(f"Using detected PHP version: {php_version}")
-            else:
-                print_warning(
-                    "Could not detect PHP version. Skipping PHP optimization."
-                )
-                return True
-
-        # Verify PHP ini path exists
-        potential_paths = [
-            f"/etc/php/{php_version}/fpm/php.ini",  # Debian/Ubuntu with PHP-FPM
-            f"/etc/php/{php_version}/cli/php.ini",  # CLI version
-            "/etc/php.ini",  # Generic fallback
-        ]
-
-        php_ini_path = None
-        for path in potential_paths:
-            returncode, _, _ = run_command(["test", "-f", path], sudo=True)
-            if returncode == 0:
-                php_ini_path = path
-                print_step(f"Found PHP configuration at: {php_ini_path}")
-                break
-
-        if not php_ini_path:
-            print_warning(
-                "Could not find PHP configuration file. Skipping PHP optimization."
-            )
-            return True
-
-        # Create PHP optimization settings
-        php_settings = """
-; Nextcloud recommended PHP settings
-opcache.enable=1
-opcache.interned_strings_buffer=8
-opcache.max_accelerated_files=10000
-opcache.memory_consumption=128
-opcache.save_comments=1
-opcache.revalidate_freq=1
-"""
-
-        # Create temporary file for PHP settings
-        php_settings_file = tempfile.NamedTemporaryFile(delete=False, mode="w")
-        php_settings_file.write(php_settings)
-        php_settings_file.close()
-
-        # Append settings to php.ini
-        print_step("Optimizing PHP settings...")
-        returncode, _, stderr = run_command(
-            ["bash", "-c", f"cat {php_settings_file.name} >> {php_ini_path}"], sudo=True
-        )
-        if returncode != 0:
-            print_error(f"Failed to update PHP settings: {stderr}")
-            os.unlink(php_settings_file.name)
-            return False
-
-        os.unlink(php_settings_file.name)
-
-        # Restart PHP-FPM to apply changes
-        print_step("Restarting PHP-FPM to apply changes...")
-        returncode, _, stderr = run_command(
-            ["systemctl", "restart", f"php{php_version}-fpm"], sudo=True
-        )
-        if returncode != 0:
-            print_warning(f"Failed to restart PHP-FPM: {stderr}")
-            print_warning(
-                "PHP optimizations may not be applied until PHP-FPM is restarted."
-            )
-            # Continue anyway as this is not critical
-
-        print_success("Nextcloud optimization completed successfully.")
-        return True
+        # Don't remove the DOCKER_DIR if we're keeping data
+        if confirm_data and os.path.exists(DOCKER_DIR):
+            shutil.rmtree(DOCKER_DIR)
+            print_success(f"Removed {DOCKER_DIR}")
     except Exception as e:
-        print_error(f"Error optimizing Nextcloud: {e}")
-        return False
+        print_error(f"Error removing Docker configuration: {e}")
 
+    # Update config
+    config.installation_status = "not_installed"
+    config.installed_at = None
+    await save_config(config)
 
-def display_cloudflare_instructions(config: NextcloudConfig) -> None:
-    """
-    Display helpful instructions for configuring Cloudflare with Nextcloud.
-    """
-    print_section("Cloudflare Configuration Instructions")
-
-    instructions = f"""
-Your Nextcloud instance is configured to work with Cloudflare using the origin certificates:
-- Certificate: {config.cert_file}
-- Key: {config.key_file}
-
-To complete your Cloudflare configuration:
-
-1. Login to your Cloudflare account and go to the DNS settings for {config.domain}
-
-2. Ensure you have an A record pointing to your server's IP address:
-   - Type: A
-   - Name: {config.domain.split(".")[0] if "." in config.domain else "@"}
-   - Content: Your server IP
-   - Proxy status: ON (orange cloud)
-
-3. SSL/TLS settings:
-   - Set SSL/TLS encryption mode to "Full (strict)"
-   - This ensures secure communication between Cloudflare and your origin server
-
-4. Page Rules (recommended):
-   - Create a page rule for https://{config.domain}/*
-   - Set Cache Level to "Bypass"
-   - This prevents Cloudflare from caching your Nextcloud content
-
-5. Additional SSL/TLS settings:
-   - Enable "Always Use HTTPS"
-   - Set Minimum TLS Version to TLS 1.2
-
-Your Nextcloud server has been configured with Caddy and the necessary settings to work with Cloudflare's proxy.
-"""
-
-    display_panel("Cloudflare Configuration", instructions, NordColors.FROST_2)
-
-
-def setup_nextcloud(config: NextcloudConfig) -> bool:
-    """
-    Perform the complete Nextcloud setup process.
-    """
-    # Define zip file path
-    zip_path = os.path.join(TEMP_DIR, "nextcloud-latest.zip")
-
-    # Verify the certificate files exist and are valid
-    if not verify_ssl_certificates(config):
-        return False
-
-    # Download Nextcloud
-    if not download_package(DOWNLOAD_URL, zip_path):
-        return False
-
-    # Fix any interrupted dpkg installations
-    print_step("Checking for interrupted package installations...")
-    run_command(["dpkg", "--configure", "-a"], sudo=True)
-
-    # Install dependencies
-    if not install_dependencies():
-        return False
-
-    # Set up PostgreSQL
-    if not setup_postgresql(config):
-        return False
-
-    # Extract Nextcloud
-    if not extract_nextcloud(zip_path, config.install_dir):
-        return False
-
-    # Configure permissions properly before Caddy setup
-    print_step("Setting proper permissions for all Nextcloud files...")
-    run_command(
-        ["find", config.install_dir, "-type", "f", "-exec", "chmod", "0640", "{}", ";"],
-        sudo=True,
-    )
-    run_command(
-        ["find", config.install_dir, "-type", "d", "-exec", "chmod", "0750", "{}", ";"],
-        sudo=True,
-    )
-    run_command(
-        ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", config.install_dir],
-        sudo=True,
-    )
-
-    # Set up Caddy with SSL
-    if not setup_caddy(config):
-        return False
-
-    # Configure Nextcloud
-    if not configure_nextcloud(config):
-        print_warning("Automatic Nextcloud configuration had issues.")
-        print_warning("You may need to complete the setup through the web interface.")
-        print_step("Setting permissions to ensure web setup can work...")
-
-        # Make sure config directory is writable for web setup
-        config_dir = os.path.join(config.install_dir, "config")
-        run_command(["mkdir", "-p", config_dir], sudo=True)
-        run_command(
-            ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", config_dir],
-            sudo=True,
-        )
-        run_command(["chmod", "0770", config_dir], sudo=True)
-
-    # Optimize Nextcloud
-    optimize_nextcloud(config)
-
-    # Make sure web server has proper file access
-    print_step("Ensuring web server has proper access to Nextcloud files...")
-    run_command(
-        ["chown", "-R", f"{DEFAULT_WEB_USER}:{DEFAULT_WEB_USER}", config.data_dir],
-        sudo=True,
-    )
-    run_command(
-        ["chmod", "0770", config.data_dir],
-        sudo=True,
-    )
-
-    # Display Cloudflare-specific instructions
-    display_cloudflare_instructions(config)
-
-    # Restart Caddy one final time
-    print_step("Restarting Caddy for final configuration...")
-    run_command(["systemctl", "restart", "caddy"], sudo=True)
-
-    # Clean up
-    try:
-        os.remove(zip_path)
-    except Exception:
-        pass
-
+    print_success("Nextcloud has been uninstalled")
+    await async_prompt("Press Enter to return to the main menu")
     return True
 
 
-def get_nextcloud_config() -> NextcloudConfig:
-    """
-    Get Nextcloud configuration through interactive prompts.
-    """
-    config = NextcloudConfig()
-
-    print_section("Nextcloud Configuration")
-
-    # Admin account
-    config.admin_user = Prompt.ask(
-        "[bold]Enter Nextcloud admin username[/]", default="sawyer"
-    )
-
-    # Admin password with confirmation
-    while True:
-        config.admin_pass = Prompt.ask(
-            "[bold]Enter Nextcloud admin password[/]", password=True
-        )
-        admin_pass_confirm = Prompt.ask(
-            "[bold]Confirm Nextcloud admin password[/]", password=True
-        )
-
-        if config.admin_pass == admin_pass_confirm:
-            break
-        else:
-            print_error("Passwords do not match. Please try again.")
-
-    # Database configuration
-    print_section("Database Configuration")
-    config.db_name = Prompt.ask("[bold]Enter database name[/]", default="nextcloud")
-    config.db_user = Prompt.ask("[bold]Enter database user[/]", default="sawyer")
-
-    # Database password with confirmation
-    while True:
-        config.db_pass = Prompt.ask("[bold]Enter database password[/]", password=True)
-        db_pass_confirm = Prompt.ask(
-            "[bold]Confirm database password[/]", password=True
-        )
-
-        if config.db_pass == db_pass_confirm:
-            break
-        else:
-            print_error("Passwords do not match. Please try again.")
-
-    config.db_host = Prompt.ask("[bold]Enter database host[/]", default="localhost")
-    config.db_port = Prompt.ask("[bold]Enter database port[/]", default="5432")
-
-    # Server configuration
-    print_section("Server Configuration")
-    config.domain = Prompt.ask(
-        "[bold]Enter domain name for Nextcloud[/]", default="nextcloud.dunamismax.com"
-    )
-    config.email = Prompt.ask(
-        "[bold]Enter email address (for admin notifications)[/]",
-        default="dunamismax@tutamail.com",
-    )
-
-    # Installation directories
-    use_custom_dir = Confirm.ask(
-        "[bold]Use custom installation directory?[/]", default=False
-    )
-    if use_custom_dir:
-        config.install_dir = Prompt.ask(
-            "[bold]Enter installation directory[/]", default="/var/www/nextcloud"
-        )
-        config.data_dir = Prompt.ask(
-            "[bold]Enter data directory[/]", default=f"{config.install_dir}/data"
-        )
-
-    return config
-
-
-def cleanup() -> None:
+async def main_menu_async() -> None:
+    """Main menu for the Nextcloud installer."""
     try:
-        # Simply print a cleanup message
+        while True:
+            # Load current config
+            config = await load_config()
+
+            clear_screen()
+            console.print(create_header())
+
+            # Check installation status
+            is_installed = config.installation_status == "installed"
+            is_running = False
+
+            if is_installed:
+                is_running = await check_nextcloud_status()
+
+            # Create status indicator
+            status_text = "Not Installed"
+            status_color = NordColors.YELLOW
+
+            if is_installed:
+                if is_running:
+                    status_text = "Running"
+                    status_color = NordColors.GREEN
+                else:
+                    status_text = "Stopped"
+                    status_color = NordColors.RED
+
+            # Display menu
+            menu_panel = Panel(
+                f"Status: [{status_color}]{status_text}[/]\n\n"
+                "1. Configure Nextcloud\n"
+                "2. Install Nextcloud\n"
+                "3. Start Nextcloud\n"
+                "4. Stop Nextcloud\n"
+                "5. Show Nextcloud Information\n"
+                "6. Uninstall Nextcloud\n"
+                "q. Quit",
+                title="Main Menu",
+                border_style=NordColors.FROST_1,
+                box=box.ROUNDED,
+            )
+            console.print(menu_panel)
+
+            choice = await async_prompt("Enter your choice")
+            choice = choice.strip().lower()
+
+            if choice in ("q", "quit", "exit"):
+                clear_screen()
+                console.print(
+                    Panel(
+                        Text("Goodbye!", style=f"bold {NordColors.FROST_2}"),
+                        border_style=NordColors.FROST_1,
+                    )
+                )
+                break
+            elif choice == "1":
+                await configure_nextcloud()
+            elif choice == "2":
+                # Make sure we have config first
+                if not config.admin_password or not config.db_password:
+                    print_warning("Please configure Nextcloud first")
+                    config = await configure_nextcloud()
+
+                await install_nextcloud(config)
+            elif choice == "3":
+                if not is_installed:
+                    print_warning(
+                        "Nextcloud is not installed yet. Please install it first."
+                    )
+                    await async_prompt("Press Enter to continue")
+                    continue
+
+                await start_nextcloud()
+            elif choice == "4":
+                if not is_installed:
+                    print_warning(
+                        "Nextcloud is not installed yet. Please install it first."
+                    )
+                    await async_prompt("Press Enter to continue")
+                    continue
+
+                await stop_nextcloud()
+            elif choice == "5":
+                await show_nextcloud_info(config)
+            elif choice == "6":
+                await uninstall_nextcloud()
+            else:
+                print_error(f"Invalid choice: {choice}")
+                await async_prompt("Press Enter to continue")
+    except Exception as e:
+        print_error(f"An error occurred in the main menu: {str(e)}")
+        console.print_exception()
+
+
+async def async_cleanup() -> None:
+    try:
+        # Cancel any pending asyncio tasks
+        for task in asyncio.all_tasks():
+            if not task.done() and task != asyncio.current_task():
+                task.cancel()
+
         print_message("Cleaning up resources...", NordColors.FROST_3)
     except Exception as e:
         print_error(f"Error during cleanup: {e}")
 
 
-def signal_handler(sig: int, frame: Any) -> None:
+async def signal_handler_async(sig: int, frame: Any) -> None:
+    """Handle signals in an async-friendly way without creating new event loops."""
     try:
         sig_name = signal.Signals(sig).name
         print_warning(f"Process interrupted by {sig_name}")
     except Exception:
         print_warning(f"Process interrupted by signal {sig}")
 
-    cleanup()
-    sys.exit(128 + sig)
+    # Get the current running loop instead of creating a new one
+    loop = asyncio.get_running_loop()
+
+    # Cancel all tasks except the current one
+    for task in asyncio.all_tasks(loop):
+        if task is not asyncio.current_task():
+            task.cancel()
+
+    # Clean up resources
+    await async_cleanup()
+
+    # Stop the loop instead of exiting directly
+    loop.stop()
+
+
+def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
+    """Set up signal handlers that work with the main event loop."""
+
+    # Use asyncio's built-in signal handling
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(
+            sig, lambda sig=sig: asyncio.create_task(signal_handler_async(sig, None))
+        )
+
+
+async def proper_shutdown_async():
+    """Clean up resources at exit, specifically asyncio tasks."""
+    try:
+        # Try to get the current running loop, but don't fail if there isn't one
+        try:
+            loop = asyncio.get_running_loop()
+            tasks = [
+                t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()
+            ]
+
+            # Cancel all tasks
+            for task in tasks:
+                task.cancel()
+
+            # Wait for all tasks to complete cancellation with a timeout
+            if tasks:
+                await asyncio.wait(tasks, timeout=2.0)
+
+        except RuntimeError:
+            # No running event loop
+            pass
+
+    except Exception as e:
+        print_error(f"Error during async shutdown: {e}")
 
 
 def proper_shutdown():
-    """Clean up resources at exit."""
+    """Synchronous wrapper for the async shutdown function.
+    This is called by atexit and should be safe to call from any context."""
     try:
-        cleanup()
+        # Check if there's a running loop first
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If a loop is already running, we can't run a new one
+                # Just log and return
+                print_warning("Event loop already running during shutdown")
+                return
+        except RuntimeError:
+            # No event loop, create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        # Run the async cleanup
+        loop.run_until_complete(proper_shutdown_async())
+        loop.close()
     except Exception as e:
-        print_error(f"Error during shutdown: {e}")
+        print_error(f"Error during synchronous shutdown: {e}")
 
 
-# Simplified Menu with just two options: Full Setup and Exit
-def show_menu() -> None:
-    """
-    Display a simplified menu system with just full setup and exit options.
-    """
-    while True:
-        clear_screen()
-        console.print(create_header())
-
-        console.print(
-            Panel.fit(
-                "MAIN MENU",
-                title="[bold]Nextcloud Setup",
-                border_style=NordColors.FROST_3,
-            )
-        )
-        console.print(f"[bold {NordColors.FROST_2}]1.[/] Complete Nextcloud Setup")
-        console.print(f"[bold {NordColors.FROST_2}]2.[/] Exit\n")
-
-        choice = Prompt.ask(
-            f"[bold {NordColors.FROST_1}]Enter your choice[/]",
-            choices=["1", "2"],
-            default="1",
-        )
-
-        if choice == "1":
-            config = get_nextcloud_config()
-            if setup_nextcloud(config):
-                display_panel(
-                    "Installation Complete",
-                    f"Nextcloud has been successfully installed and configured!\n\n"
-                    f"You can access your Nextcloud instance at: https://{config.domain}/\n"
-                    f"Admin user: {config.admin_user}\n\n"
-                    f"SSL is properly configured with your Cloudflare origin certificates.\n\n"
-                    f"Cloudflare proxy configuration has been applied.",
-                    NordColors.GREEN,
-                )
-            else:
-                display_panel(
-                    "Installation Failed",
-                    "There were errors during the Nextcloud installation process.\n"
-                    "Please check the error messages above and try again.",
-                    NordColors.RED,
-                )
-            Prompt.ask("\nPress Enter to return to the menu")
-        elif choice == "2":
-            console.print(
-                Panel(
-                    "[bold green]Exiting Nextcloud Setup. Goodbye![/]",
-                    border_style=NordColors.GREEN,
-                )
-            )
-            sys.exit(0)
-
-
-def main() -> None:
-    """
-    Main function that sets up signal handlers and launches the interactive menu.
-    """
+async def main_async() -> None:
     try:
-        # Register signal handlers
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        # Initialize stuff
+        await ensure_config_directory()
 
-        # Register the proper shutdown function
-        atexit.register(proper_shutdown)
-
-        # Ensure config directory exists
-        ensure_config_directory()
-
-        # Clear screen and show menu
-        clear_screen()
-        show_menu()
+        # Run the main menu
+        await main_menu_async()
     except Exception as e:
         print_error(f"An unexpected error occurred: {e}")
         console.print_exception()
         sys.exit(1)
+
+
+def main() -> None:
+    """Main entry point of the application."""
+    try:
+        # Create and get a reference to the event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        # Setup signal handlers with the specific loop
+        setup_signal_handlers(loop)
+
+        # Register shutdown handler
+        atexit.register(proper_shutdown)
+
+        # Run the main async function
+        loop.run_until_complete(main_async())
+    except KeyboardInterrupt:
+        print_warning("Received keyboard interrupt, shutting down...")
+    except Exception as e:
+        print_error(f"An unexpected error occurred: {e}")
+        console.print_exception()
+    finally:
+        try:
+            # Cancel all remaining tasks
+            tasks = asyncio.all_tasks(loop)
+            for task in tasks:
+                task.cancel()
+
+            # Allow cancelled tasks to complete
+            if tasks:
+                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+
+            # Close the loop
+            loop.close()
+        except Exception as e:
+            print_error(f"Error during shutdown: {e}")
+
+        print_message("Application terminated.", NordColors.FROST_3)
 
 
 if __name__ == "__main__":
