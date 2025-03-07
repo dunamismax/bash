@@ -223,6 +223,7 @@ class Config:
             "tcpdump",
             "fail2ban",
             "nala",
+            "restic",
         ]
     )
 
@@ -264,13 +265,11 @@ class Config:
             "iftop",
             "traceroute",
             "mtr",
-            "iotop",
             "glances",
             "whois",
             "dnsutils",
             "iproute2",
             "iputils-ping",
-            "iperf3",
         ]
     )
 
