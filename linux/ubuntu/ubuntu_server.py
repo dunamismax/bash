@@ -1,24 +1,4 @@
 #!/usr/bin/env python3
-"""
-Ubuntu Desktop Setup & Hardening Utility (Unattended)
--------------------------------------------------------
-
-This fully automated utility performs:
-  • Pre-flight checks & backups (including ZFS snapshot)
-  • System update & basic configuration (timezone, packages)
-  • Repository & shell setup (cloning GitHub repos, updating shell configs)
-  • Security hardening (SSH, sudoers, firewall, Fail2ban)
-  • Essential service installations (Docker, Plex, Fastfetch, Brave, VS Code)
-  • User customization & script deployment
-  • Maintenance tasks (cron job, log rotation, configuration backups)
-  • Certificates & performance tuning (SSL renewals, sysctl tweaks)
-  • Permissions & advanced storage configuration (home permissions, ZFS)
-  • Additional applications (Flatpak apps, VS Code configuration)
-  • Automatic updates & further security (unattended upgrades, AppArmor)
-  • Final system checks & reboot
-
-Run this script with root privileges.
-"""
 
 # ----------------------------------------------------------------
 # Dependencies and Imports
@@ -62,6 +42,7 @@ try:
     from rich.prompt import Prompt, Confirm
     from rich.text import Text
     from rich.traceback import install as install_rich_traceback
+    from rich import box
 except ImportError:
     print("Required libraries not found. Installing dependencies...")
     try:
@@ -76,6 +57,51 @@ except ImportError:
             "Please install the required packages manually: pip install rich pyfiglet"
         )
         sys.exit(1)
+
+
+def main() -> None:
+    """Main entry point of the application."""
+    try:
+        # Create and get a reference to the event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        # Setup signal handlers with the specific loop
+        setup_signal_handlers(loop)
+
+        # Initialize global instance variable
+        global setup_instance
+        setup_instance = None
+
+        # Run the main async function
+        loop.run_until_complete(main_async())
+    except KeyboardInterrupt:
+        print_warning("Received keyboard interrupt, shutting down...")
+    except Exception as e:
+        print_error(f"An unexpected error occurred: {e}")
+        console.print_exception()
+    finally:
+        try:
+            # Cancel all remaining tasks
+            loop = asyncio.get_event_loop()
+            tasks = asyncio.all_tasks(loop)
+            for task in tasks:
+                task.cancel()
+
+            # Allow cancelled tasks to complete
+            if tasks:
+                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+
+            # Close the loop
+            loop.close()
+        except Exception as e:
+            print_error(f"Error during shutdown: {e}")
+
+        print_message("Application terminated.", NordColors.FROST_3)
+
+
+if __name__ == "__main__":
+    main()
 
 install_rich_traceback(show_locals=True)
 
@@ -128,24 +154,24 @@ console = Console(theme=nord_theme)
 # ----------------------------------------------------------------
 # Global Configuration & Status Tracking
 # ----------------------------------------------------------------
-APP_NAME: str = "Ubuntu Setup & Hardening"
-VERSION: str = "9.0.0"
+APP_NAME: str = "Ubuntu Server Setup"
+VERSION: str = "1.0.0"
 OPERATION_TIMEOUT: int = 300  # 5 minutes default timeout for operations
 
 # Status tracking for each phase of the setup
 SETUP_STATUS: Dict[str, Dict[str, str]] = {
     "preflight": {"status": "pending", "message": ""},
     "system_update": {"status": "pending", "message": ""},
-    "repo_shell": {"status": "pending", "message": ""},
+    "user_setup": {"status": "pending", "message": ""},
     "security": {"status": "pending", "message": ""},
-    "services": {"status": "pending", "message": ""},
-    "user_custom": {"status": "pending", "message": ""},
-    "maintenance": {"status": "pending", "message": ""},
-    "certs_perf": {"status": "pending", "message": ""},
-    "permissions_storage": {"status": "pending", "message": ""},
-    "additional_apps": {"status": "pending", "message": ""},
+    "essential_packages": {"status": "pending", "message": ""},
+    "dev_tools": {"status": "pending", "message": ""},
+    "docker_setup": {"status": "pending", "message": ""},
+    "network_tools": {"status": "pending", "message": ""},
+    "storage_config": {"status": "pending", "message": ""},
+    "custom_apps": {"status": "pending", "message": ""},
     "auto_updates": {"status": "pending", "message": ""},
-    "cleanup_final": {"status": "pending", "message": ""},
+    "cleanup": {"status": "pending", "message": ""},
     "final": {"status": "pending", "message": ""},
 }
 
@@ -158,54 +184,119 @@ T = TypeVar("T")
 # ----------------------------------------------------------------
 @dataclass
 class Config:
-    """Configuration for the Ubuntu setup process."""
+    """Configuration for the Ubuntu server setup process."""
 
-    LOG_FILE: str = "/var/log/ubuntu_setup.log"
-    USERNAME: str = "sawyer"
-    USER_HOME: Path = field(default_factory=lambda: Path("/home/sawyer"))
-    PACKAGES: List[str] = field(
+    LOG_FILE: str = "/var/log/ubuntu_server_setup.log"
+    USERNAME: str = "admin"
+    USER_HOME: Path = field(default_factory=lambda: Path("/home/admin"))
+    SSH_PORT: int = 22
+    HOSTNAME: str = "ubuntu-server"
+    TIMEZONE: str = "UTC"
+    ESSENTIAL_PACKAGES: List[str] = field(
         default_factory=lambda: [
             "bash",
             "vim",
             "nano",
+            "screen",
             "tmux",
+            "htop",
+            "btop",
+            "tree",
             "git",
             "openssh-server",
             "ufw",
             "curl",
             "wget",
+            "rsync",
+            "sudo",
+            "bash-completion",
             "python3",
             "python3-pip",
-            "fail2ban",
-            "zfsutils-linux",
-            "zfs-dkms",
-            "gnome-tweaks",
-            "gnome-shell-extensions",
-            "aptitude",
-            "dconf-editor",
+            "python3-venv",
+            "ca-certificates",
+            "software-properties-common",
+            "apt-transport-https",
+            "gnupg",
+            "lsb-release",
             "net-tools",
+            "nmap",
+            "tcpdump",
+            "fail2ban",
+            "nala",
         ]
     )
 
-    # Flatpak applications to install
-    FLATPAK_APPS: List[str] = field(
+    DEV_PACKAGES: List[str] = field(
         default_factory=lambda: [
-            "com.discordapp.Discord",
-            "org.videolan.VLC",
-            "org.gnome.Extensions",
-            "com.spotify.Client",
+            "build-essential",
+            "cmake",
+            "ninja-build",
+            "meson",
+            "gettext",
+            "pkg-config",
+            "python3-dev",
+            "libssl-dev",
+            "libffi-dev",
+            "zlib1g-dev",
+            "libreadline-dev",
+            "libbz2-dev",
+            "tk-dev",
+            "xz-utils",
+            "libncurses-dev",
+            "libgdbm-dev",
+            "libnss3-dev",
+            "liblzma-dev",
+            "libxml2-dev",
+            "libxmlsec1-dev",
+            "clang",
+            "llvm",
+            "golang-go",
+            "gdb",
+            "cargo",
+            "rustc",
+            "jq",
+            "yq",
+        ]
+    )
+
+    NETWORK_PACKAGES: List[str] = field(
+        default_factory=lambda: [
+            "iftop",
+            "traceroute",
+            "mtr",
+            "iotop",
+            "glances",
+            "whois",
+            "dnsutils",
+            "iproute2",
+            "iputils-ping",
+            "iperf3",
+        ]
+    )
+
+    CUSTOM_APPS: List[str] = field(
+        default_factory=lambda: [
+            "tailscale",
+            "docker",
+            "docker-compose",
+            "fastfetch",
         ]
     )
 
     # SSH hardening configuration
     SSH_CONFIG: Dict[str, str] = field(
         default_factory=lambda: {
+            "Port": "22",
             "PermitRootLogin": "no",
             "PasswordAuthentication": "no",
             "X11Forwarding": "no",
             "MaxAuthTries": "3",
             "ClientAliveInterval": "300",
             "ClientAliveCountMax": "3",
+            "AllowTcpForwarding": "yes",
+            "AllowAgentForwarding": "yes",
+            "AuthorizedKeysFile": ".ssh/authorized_keys",
+            "PubkeyAuthentication": "yes",
         }
     )
 
@@ -265,8 +356,11 @@ def create_header(title: str = APP_NAME) -> Panel:
         padding=(1, 2),
         title=Text(f"{APP_NAME} v{VERSION}", style=f"bold {NordColors.SNOW_STORM_2}"),
         title_align="right",
-        subtitle=Text("Unattended Mode", style=f"bold {NordColors.SNOW_STORM_1}"),
+        subtitle=Text(
+            "Server Configuration Tool", style=f"bold {NordColors.SNOW_STORM_1}"
+        ),
         subtitle_align="center",
+        box=box.ROUNDED,
     )
 
 
@@ -313,13 +407,14 @@ def display_panel(
         border_style=f"{style}",
         padding=(1, 2),
         title=f"[bold {style}]{title}[/{style}]" if title else None,
+        box=box.ROUNDED,
     )
     console.print(panel)
 
 
 def print_status_report() -> None:
     """Print a status report table for all setup phases."""
-    table = Table(title="Setup Status Report", style="banner")
+    table = Table(title="Setup Status Report", style="banner", box=box.ROUNDED)
     table.add_column("Task", style="header")
     table.add_column("Status", style="info")
     table.add_column("Message", style="info")
@@ -341,8 +436,9 @@ def print_status_report() -> None:
     console.print(
         Panel(
             table,
-            title="[banner]Ubuntu Setup Status[/banner]",
+            title="[banner]Ubuntu Server Setup Status[/banner]",
             border_style=NordColors.FROST_3,
+            box=box.ROUNDED,
         )
     )
 
@@ -355,7 +451,7 @@ def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
     log_file = Path(log_file)
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger("ubuntu_setup")
+    logger = logging.getLogger("ubuntu_server_setup")
     logger.setLevel(logging.DEBUG)
 
     # Remove any existing handlers
@@ -396,7 +492,7 @@ async def signal_handler_async(signum: int, frame: Any) -> None:
         else f"signal {signum}"
     )
 
-    logger = logging.getLogger("ubuntu_setup")
+    logger = logging.getLogger("ubuntu_server_setup")
     logger.error(f"Script interrupted by {sig}. Initiating cleanup.")
 
     try:
@@ -445,12 +541,12 @@ def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
 
 async def cleanup_temp_files_async() -> None:
     """Clean up temporary files asynchronously."""
-    logger = logging.getLogger("ubuntu_setup")
+    logger = logging.getLogger("ubuntu_server_setup")
     logger.info("Cleaning up temporary files.")
 
     tmp = Path(tempfile.gettempdir())
     for item in tmp.iterdir():
-        if item.name.startswith("ubuntu_setup_"):
+        if item.name.startswith("ubuntu_server_setup_"):
             try:
                 if item.is_file():
                     item.unlink()
@@ -475,7 +571,7 @@ def cleanup_temp_files() -> None:
         # Run the async cleanup
         loop.run_until_complete(cleanup_temp_files_async())
     except Exception as e:
-        logger = logging.getLogger("ubuntu_setup")
+        logger = logging.getLogger("ubuntu_server_setup")
         logger.error(f"Error during temp file cleanup: {e}")
 
 
@@ -484,79 +580,77 @@ atexit.register(cleanup_temp_files)
 
 
 # ----------------------------------------------------------------
-# Download Helper
+# Command Execution Utilities
 # ----------------------------------------------------------------
-async def download_file_async(
-    url: str, dest: Union[str, Path], timeout: int = 300
-) -> None:
-    """
-    Download a file from the given URL to the destination asynchronously.
-    """
-    dest = Path(dest)
-    logger = logging.getLogger("ubuntu_setup")
+async def run_command_async(
+    cmd: List[str],
+    capture_output: bool = False,
+    text: bool = False,
+    check: bool = True,
+    timeout: Optional[int] = OPERATION_TIMEOUT,
+) -> subprocess.CompletedProcess:
+    """Run a system command asynchronously."""
+    logger = logging.getLogger("ubuntu_server_setup")
+    logger.debug(f"Running command: {' '.join(cmd)}")
 
-    if dest.exists():
-        logger.info(f"File {dest} already exists; skipping download.")
-        return
-
-    logger.info(f"Downloading {url} to {dest}...")
-    loop = asyncio.get_running_loop()
+    # Set up pipes based on capture_output flag
+    stdout = asyncio.subprocess.PIPE if capture_output else None
+    stderr = asyncio.subprocess.PIPE if capture_output else None
 
     try:
-        if shutil.which("wget"):
-            # Use wget for download with subprocess
-            proc = await asyncio.create_subprocess_exec(
-                "wget",
-                "-q",
-                "--show-progress",
-                url,
-                "-O",
-                str(dest),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+        # Start the process
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+        # Wait for the process to complete with optional timeout
+        stdout_data, stderr_data = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
+
+        # Convert to text if requested
+        if text and stdout_data is not None:
+            stdout_data = stdout_data.decode("utf-8")
+        if text and stderr_data is not None:
+            stderr_data = stderr_data.decode("utf-8")
+
+        # Create a CompletedProcess object for compatibility
+        result = subprocess.CompletedProcess(
+            args=cmd,
+            returncode=proc.returncode,
+            stdout=stdout_data if capture_output else None,
+            stderr=stderr_data if capture_output else None,
+        )
+
+        # Check the return code if requested
+        if check and proc.returncode != 0:
+            error_message = (
+                stderr_data.decode("utf-8") if stderr_data else "Unknown error"
+            )
+            raise subprocess.CalledProcessError(
+                proc.returncode, cmd, output=stdout_data, stderr=stderr_data
             )
 
-            await asyncio.wait_for(proc.communicate(), timeout=timeout)
-
-            if proc.returncode != 0:
-                raise Exception(f"wget failed with return code {proc.returncode}")
-
-        elif shutil.which("curl"):
-            # Use curl for download with subprocess
-            proc = await asyncio.create_subprocess_exec(
-                "curl",
-                "-L",
-                "-o",
-                str(dest),
-                url,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            await asyncio.wait_for(proc.communicate(), timeout=timeout)
-
-            if proc.returncode != 0:
-                raise Exception(f"curl failed with return code {proc.returncode}")
-
-        else:
-            # Use urllib.request for download in a separate thread
-            import urllib.request
-
-            await loop.run_in_executor(None, urllib.request.urlretrieve, url, dest)
-
-        logger.info(f"Download complete: {dest}")
+        return result
 
     except asyncio.TimeoutError:
-        logger.error(f"Download timed out after {timeout} seconds")
-        if dest.exists():
-            dest.unlink()
-        raise
+        logger.error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        raise Exception(f"Command timed out: {' '.join(cmd)}")
 
-    except Exception as e:
-        logger.error(f"Download failed: {e}")
-        if dest.exists():
-            dest.unlink()
-        raise
+
+async def command_exists_async(cmd: str) -> bool:
+    """Check if a command exists in the system path."""
+    try:
+        await run_command_async(
+            ["which", cmd],
+            check=True,
+            capture_output=True,
+        )
+        return True
+    except (subprocess.CalledProcessError, Exception):
+        return False
 
 
 # ----------------------------------------------------------------
@@ -630,83 +724,87 @@ async def run_with_progress_async(
 
 
 # ----------------------------------------------------------------
-# Command Execution Utilities
+# Download Helper
 # ----------------------------------------------------------------
-async def run_command_async(
-    cmd: List[str],
-    capture_output: bool = False,
-    text: bool = False,
-    check: bool = True,
-    timeout: Optional[int] = OPERATION_TIMEOUT,
-) -> subprocess.CompletedProcess:
-    """Run a system command asynchronously."""
-    logger = logging.getLogger("ubuntu_setup")
-    logger.debug(f"Running command: {' '.join(cmd)}")
+async def download_file_async(
+    url: str, dest: Union[str, Path], timeout: int = 300
+) -> None:
+    """
+    Download a file from the given URL to the destination asynchronously.
+    """
+    dest = Path(dest)
+    logger = logging.getLogger("ubuntu_server_setup")
 
-    # Set up pipes based on capture_output flag
-    stdout = asyncio.subprocess.PIPE if capture_output else None
-    stderr = asyncio.subprocess.PIPE if capture_output else None
+    if dest.exists():
+        logger.info(f"File {dest} already exists; skipping download.")
+        return
+
+    logger.info(f"Downloading {url} to {dest}...")
+    loop = asyncio.get_running_loop()
 
     try:
-        # Start the process
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=stdout,
-            stderr=stderr,
-        )
-
-        # Wait for the process to complete with optional timeout
-        stdout_data, stderr_data = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-
-        # Convert to text if requested
-        if text and stdout_data is not None:
-            stdout_data = stdout_data.decode("utf-8")
-        if text and stderr_data is not None:
-            stderr_data = stderr_data.decode("utf-8")
-
-        # Create a CompletedProcess object for compatibility
-        result = subprocess.CompletedProcess(
-            args=cmd,
-            returncode=proc.returncode,
-            stdout=stdout_data if capture_output else None,
-            stderr=stderr_data if capture_output else None,
-        )
-
-        # Check the return code if requested
-        if check and proc.returncode != 0:
-            error_message = (
-                stderr_data.decode("utf-8") if stderr_data else "Unknown error"
-            )
-            raise subprocess.CalledProcessError(
-                proc.returncode, cmd, output=stdout_data, stderr=stderr_data
+        if shutil.which("wget"):
+            # Use wget for download with subprocess
+            proc = await asyncio.create_subprocess_exec(
+                "wget",
+                "-q",
+                "--show-progress",
+                url,
+                "-O",
+                str(dest),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
 
-        return result
+            await asyncio.wait_for(proc.communicate(), timeout=timeout)
+
+            if proc.returncode != 0:
+                raise Exception(f"wget failed with return code {proc.returncode}")
+
+        elif shutil.which("curl"):
+            # Use curl for download with subprocess
+            proc = await asyncio.create_subprocess_exec(
+                "curl",
+                "-L",
+                "-o",
+                str(dest),
+                url,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            await asyncio.wait_for(proc.communicate(), timeout=timeout)
+
+            if proc.returncode != 0:
+                raise Exception(f"curl failed with return code {proc.returncode}")
+
+        else:
+            # Use urllib.request for download in a separate thread
+            import urllib.request
+
+            await loop.run_in_executor(None, urllib.request.urlretrieve, url, dest)
+
+        logger.info(f"Download complete: {dest}")
 
     except asyncio.TimeoutError:
-        logger.error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
-        raise Exception(f"Command timed out: {' '.join(cmd)}")
+        logger.error(f"Download timed out after {timeout} seconds")
+        if dest.exists():
+            dest.unlink()
+        raise
 
-
-async def command_exists_async(cmd: str) -> bool:
-    """Check if a command exists in the system path."""
-    try:
-        await run_command_async(
-            ["which", cmd],
-            check=True,
-            capture_output=True,
-        )
-        return True
-    except (subprocess.CalledProcessError, Exception):
-        return False
+    except Exception as e:
+        logger.error(f"Download failed: {e}")
+        if dest.exists():
+            dest.unlink()
+        raise
 
 
 # ----------------------------------------------------------------
 # Main Setup Class
 # ----------------------------------------------------------------
-class UbuntuDesktopSetup:
+class UbuntuServerSetup:
+    """Main class for Ubuntu Server setup and configuration."""
+
     def __init__(self, config: Config = Config()):
         self.config = config
         self.logger = setup_logger(self.config.LOG_FILE)
@@ -744,7 +842,7 @@ class UbuntuDesktopSetup:
         try:
             # Clean up temp files
             tmp = Path(tempfile.gettempdir())
-            for item in tmp.glob("ubuntu_setup_*"):
+            for item in tmp.glob("ubuntu_server_setup_*"):
                 try:
                     if item.is_file():
                         item.unlink()
@@ -809,48 +907,11 @@ class UbuntuDesktopSetup:
             return False
 
     # ----------------------------------------------------------------
-    # Phase 0: Install Nala
-    # ----------------------------------------------------------------
-    async def phase_install_nala(self) -> bool:
-        """Install and configure the Nala package manager."""
-        await self.print_section_async("Install Nala")
-
-        try:
-            if await command_exists_async("nala"):
-                self.logger.info("Nala is already installed.")
-                self.nala_installed = True
-                return True
-
-            self.logger.info("Installing Nala package manager...")
-            await run_command_async(["apt", "update", "-qq"])
-            await run_command_async(["apt", "install", "nala", "-y"])
-
-            if await command_exists_async("nala"):
-                self.logger.info("Nala installed successfully.")
-                self.nala_installed = True
-
-                try:
-                    self.logger.info("Configuring faster mirrors with Nala...")
-                    # Note: For update, the -y option is not supported
-                    await run_command_async(["nala", "fetch", "--auto"], check=False)
-                    self.logger.info("Mirrors configured successfully.")
-                except subprocess.CalledProcessError as e:
-                    self.logger.warning(f"Failed to configure mirrors: {e}")
-
-                return True
-            else:
-                self.logger.error("Nala installation verification failed.")
-                return False
-        except Exception as e:
-            self.logger.error(f"Failed to install Nala: {e}")
-            return False
-
-    # ----------------------------------------------------------------
-    # Phase 1: Pre-flight Checks & Backups
+    # Phase 0: Preflight Checks
     # ----------------------------------------------------------------
     async def phase_preflight(self) -> bool:
         """Run pre-flight checks and create backups."""
-        await self.print_section_async("Pre-flight Checks & Backups")
+        await self.print_section_async("Pre-flight Checks")
 
         try:
             await run_with_progress_async(
@@ -862,6 +923,12 @@ class UbuntuDesktopSetup:
             await run_with_progress_async(
                 "Checking network connectivity",
                 self.check_network_async,
+                task_name="preflight",
+            )
+
+            await run_with_progress_async(
+                "Installing Nala package manager",
+                self.install_nala_async,
                 task_name="preflight",
             )
 
@@ -892,12 +959,54 @@ class UbuntuDesktopSetup:
             self.logger.error("No network connectivity. Please check your settings.")
             sys.exit(1)
 
+    async def install_nala_async(self) -> bool:
+        """Install and configure the Nala package manager."""
+        try:
+            if await command_exists_async("nala"):
+                self.logger.info("Nala is already installed.")
+                self.nala_installed = True
+                return True
+
+            self.logger.info("Installing Nala package manager...")
+            await run_command_async(["apt", "update", "-qq"])
+            await run_command_async(["apt", "install", "nala", "-y"])
+
+            if await command_exists_async("nala"):
+                self.logger.info("Nala installed successfully.")
+                self.nala_installed = True
+
+                try:
+                    self.logger.info("Configuring faster mirrors with Nala...")
+                    await run_command_async(["nala", "fetch", "--auto"], check=False)
+                    self.logger.info("Mirrors configured successfully.")
+                except subprocess.CalledProcessError as e:
+                    self.logger.warning(f"Failed to configure mirrors: {e}")
+
+                return True
+            else:
+                self.logger.error("Nala installation verification failed.")
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to install Nala: {e}")
+            return False
+
     async def save_config_snapshot_async(self) -> Optional[str]:
         """Save a snapshot of the current configuration."""
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         backup_dir = Path("/var/backups")
         backup_dir.mkdir(exist_ok=True)
         snapshot_file = backup_dir / f"config_snapshot_{timestamp}.tar.gz"
+
+        important_configs = [
+            "/etc/passwd",
+            "/etc/group",
+            "/etc/ssh/sshd_config",
+            "/etc/hostname",
+            "/etc/hosts",
+            "/etc/fstab",
+            "/etc/sudoers",
+            "/etc/netplan",
+        ]
 
         try:
             # Use a thread pool for file operations
@@ -910,13 +1019,18 @@ class UbuntuDesktopSetup:
             def create_archive():
                 nonlocal files_added
                 with tarfile.open(snapshot_file, "w:gz") as tar:
-                    for cfg in (
-                        self.config.PACKAGES
-                    ):  # Replace with actual config files list if needed
-                        cfg_path = Path(cfg)
-                        if cfg_path.is_file():
-                            tar.add(str(cfg_path), arcname=cfg_path.name)
-                            files_added.append(str(cfg_path))
+                    for cfg_path in important_configs:
+                        cfg = Path(cfg_path)
+                        if cfg.is_file():
+                            tar.add(str(cfg), arcname=cfg.name)
+                            files_added.append(str(cfg))
+                        elif cfg.is_dir():
+                            for file in cfg.glob("*"):
+                                if file.is_file():
+                                    tar.add(
+                                        str(file), arcname=f"{cfg.name}/{file.name}"
+                                    )
+                                    files_added.append(str(file))
 
             # Run the archive creation in a thread
             await loop.run_in_executor(None, create_archive)
@@ -935,21 +1049,28 @@ class UbuntuDesktopSetup:
             return None
 
     # ----------------------------------------------------------------
-    # Phase 2: System Update & Basic Configuration
+    # Phase 1: System Update & Basic Configuration
     # ----------------------------------------------------------------
     async def phase_system_update(self) -> bool:
-        """Update system packages and install required packages."""
+        """Update system packages and configure basic settings."""
         await self.print_section_async("System Update & Basic Configuration")
 
         status = True
         if not await run_with_progress_async(
-            "Updating system", self.update_system_async, task_name="system_update"
+            "Updating system packages",
+            self.update_system_async,
+            task_name="system_update",
         ):
             status = False
 
-        success, failed = await self.install_packages_async()
-        if failed and len(failed) > len(self.config.PACKAGES) * 0.1:
-            self.logger.error(f"Failed packages: {', '.join(failed)}")
+        if not await run_with_progress_async(
+            "Setting hostname", self.set_hostname_async, task_name="system_update"
+        ):
+            status = False
+
+        if not await run_with_progress_async(
+            "Setting timezone", self.set_timezone_async, task_name="system_update"
+        ):
             status = False
 
         return status
@@ -975,13 +1096,271 @@ class UbuntuDesktopSetup:
             self.logger.error(f"System update failed: {e}")
             return False
 
-    async def install_packages_async(self) -> Tuple[List[str], List[str]]:
+    async def set_hostname_async(self) -> bool:
+        """Set the system hostname."""
+        try:
+            hostname_file = Path("/etc/hostname")
+
+            # Backup existing hostname file
+            if hostname_file.exists():
+                await self.backup_file_async(hostname_file)
+
+            # Write new hostname
+            hostname_file.write_text(self.config.HOSTNAME)
+
+            # Update /etc/hosts file
+            hosts_file = Path("/etc/hosts")
+            if hosts_file.exists():
+                await self.backup_file_async(hosts_file)
+
+                # Read current hosts file
+                hosts_content = hosts_file.read_text()
+
+                # Process and update hosts file
+                new_hosts = []
+                for line in hosts_content.splitlines():
+                    if "127.0.1.1" in line:
+                        new_hosts.append(f"127.0.1.1\t{self.config.HOSTNAME}")
+                    else:
+                        new_hosts.append(line)
+
+                # Write updated hosts file
+                hosts_file.write_text("\n".join(new_hosts) + "\n")
+
+            # Apply hostname change immediately
+            await run_command_async(["hostname", self.config.HOSTNAME])
+
+            self.logger.info(f"Hostname set to {self.config.HOSTNAME}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to set hostname: {e}")
+            return False
+
+    async def set_timezone_async(self) -> bool:
+        """Set the system timezone."""
+        try:
+            await run_command_async(
+                ["timedatectl", "set-timezone", self.config.TIMEZONE]
+            )
+            self.logger.info(f"Timezone set to {self.config.TIMEZONE}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to set timezone: {e}")
+            return False
+
+    # ----------------------------------------------------------------
+    # Phase 2: User Setup
+    # ----------------------------------------------------------------
+    async def phase_user_setup(self) -> bool:
+        """Set up user accounts and configurations."""
+        await self.print_section_async("User Setup")
+
+        status = True
+        if not await run_with_progress_async(
+            "Creating user account", self.create_user_async, task_name="user_setup"
+        ):
+            status = False
+
+        if not await run_with_progress_async(
+            "Setting up SSH keys", self.setup_ssh_keys_async, task_name="user_setup"
+        ):
+            status = False
+
+        if not await run_with_progress_async(
+            "Configuring sudo access", self.configure_sudo_async, task_name="user_setup"
+        ):
+            status = False
+
+        return status
+
+    async def create_user_async(self) -> bool:
+        """Create the user account if it doesn't exist."""
+        try:
+            # Check if user exists
+            try:
+                result = await run_command_async(
+                    ["id", self.config.USERNAME],
+                    check=False,
+                    capture_output=True,
+                )
+                if result.returncode == 0:
+                    self.logger.info(f"User {self.config.USERNAME} already exists.")
+                    return True
+            except Exception:
+                pass
+
+            # Create the user
+            self.logger.info(f"Creating user {self.config.USERNAME}...")
+            await run_command_async(
+                ["useradd", "-m", "-s", "/bin/bash", "-G", "sudo", self.config.USERNAME]
+            )
+
+            # Create home directories
+            user_home = Path(f"/home/{self.config.USERNAME}")
+            user_ssh_dir = user_home / ".ssh"
+            user_ssh_dir.mkdir(mode=0o700, exist_ok=True)
+
+            # Set ownership
+            await run_command_async(
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(user_home),
+                ]
+            )
+
+            self.logger.info(f"User {self.config.USERNAME} created successfully.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to create user: {e}")
+            return False
+
+    async def setup_ssh_keys_async(self) -> bool:
+        """Set up SSH keys for the user."""
+        try:
+            ssh_dir = self.config.USER_HOME / ".ssh"
+            ssh_dir.mkdir(mode=0o700, exist_ok=True)
+
+            authorized_keys = ssh_dir / "authorized_keys"
+
+            # Ask user for SSH public key or create a new key pair
+            console.print()
+            choice = Prompt.ask(
+                "[bold]Do you want to [1] add an existing SSH public key or [2] generate a new key pair?[/]",
+                choices=["1", "2"],
+                default="1",
+            )
+
+            if choice == "1":
+                # Add existing public key
+                pub_key = Prompt.ask("[bold]Paste your SSH public key[/]")
+
+                if pub_key.strip():
+                    # Write to authorized_keys
+                    with open(authorized_keys, "a") as f:
+                        f.write(f"{pub_key.strip()}\n")
+
+                    self.logger.info("SSH public key added to authorized_keys.")
+                else:
+                    self.logger.warning("No SSH key provided.")
+                    return False
+            else:
+                # Generate new key pair
+                key_file = self.config.USER_HOME / ".ssh" / "id_rsa"
+                await run_command_async(
+                    [
+                        "ssh-keygen",
+                        "-t",
+                        "rsa",
+                        "-b",
+                        "4096",
+                        "-f",
+                        str(key_file),
+                        "-N",
+                        "",  # Empty passphrase
+                    ]
+                )
+
+                # Add to authorized_keys
+                shutil.copy2(f"{key_file}.pub", authorized_keys)
+
+                console.print(
+                    f"[success]New SSH key pair generated at {key_file}[/success]"
+                )
+                console.print(
+                    f"[warning]The private key will be shown once. Save it securely:[/warning]"
+                )
+
+                with open(key_file, "r") as f:
+                    private_key = f.read()
+                    console.print(
+                        Panel(
+                            private_key,
+                            title="Private Key",
+                            border_style=NordColors.YELLOW,
+                        )
+                    )
+
+            # Set proper permissions
+            os.chmod(authorized_keys, 0o600)
+            await run_command_async(
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(ssh_dir),
+                ]
+            )
+
+            self.logger.info("SSH keys configured successfully.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to set up SSH keys: {e}")
+            return False
+
+    async def configure_sudo_async(self) -> bool:
+        """Configure sudo access for the user."""
+        try:
+            sudoers_dir = Path("/etc/sudoers.d")
+            sudoers_dir.mkdir(exist_ok=True)
+
+            user_sudoers = sudoers_dir / self.config.USERNAME
+            sudoers_content = f"{self.config.USERNAME} ALL=(ALL) NOPASSWD:ALL\n"
+
+            # Write to file
+            with open(user_sudoers, "w") as f:
+                f.write(sudoers_content)
+
+            # Set proper permissions
+            os.chmod(user_sudoers, 0o440)
+
+            self.logger.info(f"Sudo access configured for {self.config.USERNAME}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to configure sudo access: {e}")
+            return False
+
+    # ----------------------------------------------------------------
+    # Phase 3: Essential Packages Installation
+    # ----------------------------------------------------------------
+    async def phase_essential_packages(self) -> bool:
+        """Install essential system packages."""
+        await self.print_section_async("Essential Packages Installation")
+
+        status = True
+        success, failed = await self.install_packages_async(
+            self.config.ESSENTIAL_PACKAGES, "essential_packages"
+        )
+
+        if failed and len(failed) > len(self.config.ESSENTIAL_PACKAGES) * 0.1:
+            self.logger.error(
+                f"Failed to install essential packages: {', '.join(failed)}"
+            )
+            status = False
+
+        return status
+
+    async def install_packages_async(
+        self, packages: List[str], task_name: Optional[str] = None
+    ) -> Tuple[List[str], List[str]]:
         """Install required packages."""
-        self.logger.info("Checking for required packages...")
+        description = "Installing packages"
+        if task_name:
+            SETUP_STATUS[task_name] = {
+                "status": "in_progress",
+                "message": f"{description} in progress...",
+            }
+
+        self.logger.info(f"Installing packages: {', '.join(packages)}")
         missing, success, failed = [], [], []
 
         # Check which packages are already installed
-        for pkg in self.config.PACKAGES:
+        for pkg in packages:
             try:
                 result = await run_command_async(
                     ["dpkg", "-s", pkg],
@@ -1000,280 +1379,69 @@ class UbuntuDesktopSetup:
 
         # Install missing packages
         if missing:
-            self.logger.info(f"Installing missing packages: {' '.join(missing)}")
+            total_steps = len(missing)
 
-            try:
-                if self.nala_installed:
-                    await run_command_async(["nala", "install", "-y"] + missing)
-                else:
-                    await run_command_async(["apt", "install", "-y"] + missing)
+            with Progress(
+                SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
+                TextColumn("[bold]{task.description}[/bold]"),
+                BarColumn(
+                    bar_width=40,
+                    style=NordColors.FROST_4,
+                    complete_style=NordColors.FROST_2,
+                ),
+                TaskProgressColumn(),
+                TimeRemainingColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                task_id = progress.add_task(
+                    f"Installing {len(missing)} packages", total=total_steps
+                )
 
-                self.logger.info("Missing packages installed successfully.")
-
-                # Verify installation success
-                for pkg in missing:
+                # Install packages individually for better progress tracking
+                for idx, pkg in enumerate(missing):
                     try:
-                        result = await run_command_async(
-                            ["dpkg", "-s", pkg],
-                            check=False,
-                            capture_output=True,
+                        progress.update(
+                            task_id,
+                            description=f"Installing {pkg} ({idx + 1}/{total_steps})",
                         )
 
-                        if result.returncode == 0:
-                            success.append(pkg)
+                        if self.nala_installed:
+                            await run_command_async(["nala", "install", "-y", pkg])
                         else:
-                            failed.append(pkg)
+                            await run_command_async(["apt", "install", "-y", pkg])
 
-                    except Exception:
+                        success.append(pkg)
+                        progress.update(task_id, advance=1)
+
+                    except subprocess.CalledProcessError as e:
+                        self.logger.error(f"Failed to install {pkg}: {e}")
                         failed.append(pkg)
+                        progress.update(task_id, advance=1)
 
-            except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to install packages: {e}")
-                for pkg in missing:
-                    try:
-                        result = await run_command_async(
-                            ["dpkg", "-s", pkg],
-                            check=False,
-                            capture_output=True,
-                        )
-
-                        if result.returncode == 0:
-                            success.append(pkg)
-                        else:
-                            failed.append(pkg)
-
-                    except Exception:
+                    except Exception as e:
+                        self.logger.error(f"Error installing {pkg}: {e}")
                         failed.append(pkg)
+                        progress.update(task_id, advance=1)
         else:
             self.logger.info("All required packages are installed.")
 
+        # Update task status
+        if task_name:
+            if not failed:
+                SETUP_STATUS[task_name] = {
+                    "status": "success",
+                    "message": f"All {len(success)} packages installed successfully",
+                }
+            else:
+                SETUP_STATUS[task_name] = {
+                    "status": "failed"
+                    if len(failed) > len(packages) * 0.1
+                    else "success",
+                    "message": f"{len(success)} installed, {len(failed)} failed",
+                }
+
         return success, failed
-
-    # ----------------------------------------------------------------
-    # Phase 3: Repository & Shell Setup
-    # ----------------------------------------------------------------
-    async def phase_repo_shell_setup(self) -> bool:
-        """Set up GitHub repositories and shell configurations."""
-        await self.print_section_async("Repository & Shell Setup")
-
-        status = True
-        if not await run_with_progress_async(
-            "Setting up GitHub repositories",
-            self.setup_repos_async,
-            task_name="repo_shell",
-        ):
-            status = False
-
-        if not await run_with_progress_async(
-            "Copying shell configurations", self.copy_shell_configs_async
-        ):
-            status = False
-
-        if not await run_with_progress_async(
-            "Copying configuration folders", self.copy_config_folders_async
-        ):
-            status = False
-
-        if not await run_with_progress_async(
-            "Setting default shell to bash", self.set_bash_shell_async
-        ):
-            status = False
-
-        return status
-
-    async def setup_repos_async(self) -> bool:
-        """Clone or update GitHub repositories."""
-        gh_dir = self.config.USER_HOME / "github"
-        gh_dir.mkdir(exist_ok=True)
-        all_success = True
-
-        # For brevity, using a dummy list of repositories
-        repos = ["bash", "python"]
-
-        for repo in repos:
-            repo_dir = gh_dir / repo
-            if (repo_dir / ".git").is_dir():
-                self.logger.info(f"Repository '{repo}' exists; pulling updates...")
-                try:
-                    await run_command_async(["git", "-C", str(repo_dir), "pull"])
-                except subprocess.CalledProcessError:
-                    self.logger.warning(f"Failed to update repository '{repo}'.")
-                    all_success = False
-            else:
-                self.logger.info(f"Cloning repository '{repo}'...")
-                try:
-                    await run_command_async(
-                        [
-                            "git",
-                            "clone",
-                            f"https://github.com/dunamismax/{repo}.git",
-                            str(repo_dir),
-                        ]
-                    )
-                except subprocess.CalledProcessError:
-                    self.logger.warning(f"Failed to clone repository '{repo}'.")
-                    all_success = False
-
-        try:
-            await run_command_async(
-                [
-                    "chown",
-                    "-R",
-                    f"{self.config.USERNAME}:{self.config.USERNAME}",
-                    str(gh_dir),
-                ]
-            )
-        except subprocess.CalledProcessError:
-            self.logger.warning(f"Failed to set ownership of {gh_dir}.")
-            all_success = False
-
-        return all_success
-
-    async def copy_shell_configs_async(self) -> bool:
-        """Copy shell configuration files."""
-        source_dir = (
-            self.config.USER_HOME / "github" / "bash" / "linux" / "ubuntu" / "dotfiles"
-        )
-        destination_dirs = [self.config.USER_HOME, Path("/root")]
-        overall = True
-
-        for file_name in [".bashrc", ".profile"]:
-            src = source_dir / file_name
-            if not src.is_file():
-                self.logger.warning(f"Source file {src} not found; skipping.")
-                continue
-
-            for dest_dir in destination_dirs:
-                dest = dest_dir / file_name
-
-                # Use a thread pool for file comparisons and copies
-                loop = asyncio.get_running_loop()
-
-                # Check if files are identical
-                files_identical = False
-                if dest.is_file():
-                    files_identical = await loop.run_in_executor(
-                        None, lambda: filecmp.cmp(src, dest)
-                    )
-
-                if dest.is_file() and files_identical:
-                    self.logger.info(f"File {dest} is already up-to-date.")
-                else:
-                    try:
-                        if dest.is_file():
-                            await self.backup_file_async(dest)
-
-                        # Copy the file
-                        await loop.run_in_executor(
-                            None, lambda: shutil.copy2(src, dest)
-                        )
-
-                        owner = (
-                            f"{self.config.USERNAME}:{self.config.USERNAME}"
-                            if dest_dir == self.config.USER_HOME
-                            else "root:root"
-                        )
-
-                        await run_command_async(["chown", owner, str(dest)])
-                        self.logger.info(f"Copied {src} to {dest}.")
-
-                    except Exception as e:
-                        self.logger.warning(f"Failed to copy {src} to {dest}: {e}")
-                        overall = False
-
-        return overall
-
-    async def copy_config_folders_async(self) -> bool:
-        """Copy configuration folders to .config directory."""
-        src = (
-            self.config.USER_HOME / "github" / "bash" / "linux" / "ubuntu" / "dotfiles"
-        )
-        dest = self.config.USER_HOME / ".config"
-        dest.mkdir(exist_ok=True)
-        overall = True
-
-        try:
-            loop = asyncio.get_running_loop()
-
-            # Get list of directories to copy
-            src_dirs = [item for item in src.iterdir() if item.is_dir()]
-
-            for item in src_dirs:
-                dest_path = dest / item.name
-
-                # Use thread pool for directory copying
-                await loop.run_in_executor(
-                    None, lambda: shutil.copytree(item, dest_path, dirs_exist_ok=True)
-                )
-
-                await run_command_async(
-                    [
-                        "chown",
-                        "-R",
-                        f"{self.config.USERNAME}:{self.config.USERNAME}",
-                        str(dest_path),
-                    ]
-                )
-
-                self.logger.info(f"Copied {item} to {dest_path}.")
-
-            return overall
-
-        except Exception as e:
-            self.logger.error(f"Error copying config folders: {e}")
-            return False
-
-    async def set_bash_shell_async(self) -> bool:
-        """Set bash as the default shell for the user."""
-        if not await command_exists_async("bash"):
-            self.logger.info("Bash not found; installing...")
-            try:
-                if self.nala_installed:
-                    await run_command_async(["nala", "install", "-y", "bash"])
-                else:
-                    await run_command_async(["apt", "install", "-y", "bash"])
-            except subprocess.CalledProcessError:
-                self.logger.warning("Bash installation failed.")
-                return False
-
-        shells_file = Path("/etc/shells")
-        loop = asyncio.get_running_loop()
-
-        try:
-            if shells_file.exists():
-                content = await loop.run_in_executor(None, shells_file.read_text)
-                if "/bin/bash" not in content:
-
-                    async def append_bash():
-                        with open(shells_file, "a") as f:
-                            f.write("/bin/bash\n")
-
-                    await loop.run_in_executor(None, append_bash)
-                    self.logger.info("Added /bin/bash to /etc/shells.")
-            else:
-
-                async def create_shells_file():
-                    with open(shells_file, "w") as f:
-                        f.write("/bin/bash\n")
-
-                await loop.run_in_executor(None, create_shells_file)
-                self.logger.info("Created /etc/shells with /bin/bash.")
-
-        except Exception as e:
-            self.logger.warning(f"Failed to update /etc/shells: {e}")
-            return False
-
-        try:
-            await run_command_async(["chsh", "-s", "/bin/bash", self.config.USERNAME])
-            self.logger.info(
-                f"Default shell for {self.config.USERNAME} set to /bin/bash."
-            )
-            return True
-        except subprocess.CalledProcessError:
-            self.logger.warning(
-                f"Failed to set default shell for {self.config.USERNAME}."
-            )
-            return False
 
     # ----------------------------------------------------------------
     # Phase 4: Security Hardening
@@ -1289,12 +1457,17 @@ class UbuntuDesktopSetup:
             status = False
 
         if not await run_with_progress_async(
-            "Configuring firewall", self.configure_firewall_async
+            "Configuring firewall", self.configure_firewall_async, task_name="security"
         ):
             status = False
 
         if not await run_with_progress_async(
-            "Configuring Fail2ban", self.configure_fail2ban_async
+            "Configuring Fail2ban", self.configure_fail2ban_async, task_name="security"
+        ):
+            status = False
+
+        if not await run_with_progress_async(
+            "Hardening system settings", self.harden_system_async, task_name="security"
         ):
             status = False
 
@@ -1350,21 +1523,30 @@ class UbuntuDesktopSetup:
 
             # Process the content
             new_lines = []
-            for key, val in self.config.SSH_CONFIG.items():
-                found = False
-                for i, line in enumerate(lines):
-                    if line.strip().startswith(key):
-                        lines[i] = f"{key} {val}"
-                        found = True
-                        break
+            for line in lines:
+                # Skip lines with these configs as we'll add them later
+                if any(
+                    line.strip().startswith(key)
+                    for key in self.config.SSH_CONFIG.keys()
+                ):
+                    continue
+                new_lines.append(line)
 
-                if not found:
-                    lines.append(f"{key} {val}")
+            # Add our configurations
+            for key, val in self.config.SSH_CONFIG.items():
+                new_lines.append(f"{key} {val}")
 
             # Write back the file
             await loop.run_in_executor(
-                None, lambda: sshd_config.write_text("\n".join(lines) + "\n")
+                None, lambda: sshd_config.write_text("\n".join(new_lines) + "\n")
             )
+
+            # Update port in firewall rules if changed
+            if self.config.SSH_PORT != 22:
+                self.config.FIREWALL_PORTS = [
+                    str(self.config.SSH_PORT) if port == "22" else port
+                    for port in self.config.FIREWALL_PORTS
+                ]
 
             await run_command_async(["systemctl", "restart", "ssh"])
             self.logger.info("SSH configuration updated and service restarted.")
@@ -1408,6 +1590,9 @@ class UbuntuDesktopSetup:
                 return False
 
         try:
+            # Reset existing rules
+            await run_command_async([ufw_cmd, "reset"])
+
             # Configure firewall rules
             await run_command_async([ufw_cmd, "default", "deny", "incoming"])
             await run_command_async([ufw_cmd, "default", "allow", "outgoing"])
@@ -1439,6 +1624,18 @@ class UbuntuDesktopSetup:
 
     async def configure_fail2ban_async(self) -> bool:
         """Configure Fail2ban for brute force protection."""
+        try:
+            # Check if fail2ban is installed
+            if not await command_exists_async("fail2ban-client"):
+                self.logger.info("fail2ban not installed. Installing...")
+                if self.nala_installed:
+                    await run_command_async(["nala", "install", "-y", "fail2ban"])
+                else:
+                    await run_command_async(["apt", "install", "-y", "fail2ban"])
+        except Exception as e:
+            self.logger.error(f"Failed to install fail2ban: {e}")
+            return False
+
         jail_local = Path("/etc/fail2ban/jail.local")
 
         # Ensure parent directory exists
@@ -1446,14 +1643,14 @@ class UbuntuDesktopSetup:
 
         config_content = (
             "[DEFAULT]\n"
-            "bantime  = 600\n"
+            "bantime  = 3600\n"
             "findtime = 600\n"
             "maxretry = 3\n"
             "backend  = systemd\n"
             "usedns   = warn\n\n"
             "[sshd]\n"
             "enabled  = true\n"
-            "port     = ssh\n"
+            f"port     = {self.config.SSH_PORT}\n"
             "logpath  = /var/log/auth.log\n"
             "maxretry = 3\n"
         )
@@ -1480,818 +1677,957 @@ class UbuntuDesktopSetup:
             self.logger.warning(f"Failed to configure Fail2ban: {e}")
             return False
 
-    # ----------------------------------------------------------------
-    # Phase 5: Essential Service Installation
-    # ----------------------------------------------------------------
-    async def phase_service_installation(self) -> bool:
-        """Install essential services."""
-        await self.print_section_async("Essential Service Installation")
-
-        status = True
-        if not await run_with_progress_async(
-            "Installing Plex Media Server",
-            self.install_plex_async,
-            task_name="services",
-        ):
-            status = False
-
-        if not await run_with_progress_async(
-            "Installing Fastfetch", self.install_fastfetch_async, task_name="services"
-        ):
-            status = False
-
-        return status
-
-    async def install_plex_async(self) -> bool:
-        """Install and configure Plex Media Server."""
+    async def harden_system_async(self) -> bool:
+        """Implement additional system hardening measures."""
         try:
-            result = await run_command_async(
-                ["dpkg", "-s", "plexmediaserver"],
-                check=False,
-                capture_output=True,
-            )
+            # Harden sysctl settings
+            sysctl_config = Path("/etc/sysctl.d/99-security.conf")
 
-            if result.returncode == 0:
-                self.logger.info("Plex Media Server already installed; skipping.")
-                return True
-        except Exception:
-            pass
+            sysctl_settings = [
+                # Disable IPv4 forwarding
+                "net.ipv4.ip_forward = 0",
+                # Enable TCP SYN cookies
+                "net.ipv4.tcp_syncookies = 1",
+                # Disable packet forwarding
+                "net.ipv4.conf.all.send_redirects = 0",
+                "net.ipv4.conf.default.send_redirects = 0",
+                # Disable IP source routing
+                "net.ipv4.conf.all.accept_source_route = 0",
+                "net.ipv4.conf.default.accept_source_route = 0",
+                # Enable IP spoofing protection
+                "net.ipv4.conf.all.rp_filter = 1",
+                "net.ipv4.conf.default.rp_filter = 1",
+                # Log suspicious packets
+                "net.ipv4.conf.all.log_martians = 1",
+                "net.ipv4.conf.default.log_martians = 1",
+                # Disable ICMP redirect acceptance
+                "net.ipv4.conf.all.accept_redirects = 0",
+                "net.ipv4.conf.default.accept_redirects = 0",
+                "net.ipv6.conf.all.accept_redirects = 0",
+                "net.ipv6.conf.default.accept_redirects = 0",
+                # Disable secure ICMP redirect acceptance
+                "net.ipv4.conf.all.secure_redirects = 0",
+                "net.ipv4.conf.default.secure_redirects = 0",
+                # Ignore broadcast requests
+                "net.ipv4.icmp_echo_ignore_broadcasts = 1",
+                # Enable bad error message protection
+                "net.ipv4.icmp_ignore_bogus_error_responses = 1",
+            ]
 
-        temp_deb = Path("/tmp/plexmediaserver.deb")
+            # Write sysctl settings
+            with open(sysctl_config, "w") as f:
+                f.write("\n".join(sysctl_settings) + "\n")
 
-        try:
-            await download_file_async(
-                "https://downloads.plex.tv/plex-media-server-new/1.41.4.9463-630c9f557/debian/plexmediaserver_1.41.4.9463-630c9f557_amd64.deb",
-                temp_deb,
-            )
+            # Apply settings
+            await run_command_async(["sysctl", "-p", str(sysctl_config)])
 
-            await run_command_async(["dpkg", "-i", str(temp_deb)])
-        except subprocess.CalledProcessError:
-            self.logger.warning("dpkg issues with Plex; fixing dependencies...")
-            try:
-                if self.nala_installed:
-                    await run_command_async(["nala", "install", "-f", "-y"])
-                else:
-                    await run_command_async(["apt", "install", "-f", "-y"])
-            except subprocess.CalledProcessError:
-                self.logger.error("Failed to fix Plex dependencies.")
-                return False
+            # Harden user resource limits
+            limits_config = Path("/etc/security/limits.d/99-resource-limits.conf")
 
-        plex_conf = Path("/etc/default/plexmediaserver")
-        if plex_conf.is_file():
-            try:
-                loop = asyncio.get_running_loop()
+            limits_settings = [
+                "# Limit user processes",
+                "* soft nproc 1024",
+                "* hard nproc 2048",
+                "# Limit file descriptors",
+                "* soft nofile 4096",
+                "* hard nofile 8192",
+                "# Limit core dumps",
+                "* soft core 0",
+                "* hard core 0",
+            ]
 
-                # Read configuration
-                conf = await loop.run_in_executor(None, plex_conf.read_text)
+            # Write limits settings
+            with open(limits_config, "w") as f:
+                f.write("\n".join(limits_settings) + "\n")
 
-                if f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}" not in conf:
-                    # Update the user
-                    new_conf = [
-                        f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}"
-                        if line.startswith("PLEX_MEDIA_SERVER_USER=")
-                        else line
-                        for line in conf.splitlines()
-                    ]
-
-                    # Write updated configuration
-                    await loop.run_in_executor(
-                        None, lambda: plex_conf.write_text("\n".join(new_conf) + "\n")
-                    )
-
-                    self.logger.info(
-                        f"Configured Plex to run as {self.config.USERNAME}."
-                    )
-                else:
-                    self.logger.info("Plex user already configured.")
-            except Exception as e:
-                self.logger.warning(f"Failed to update {plex_conf}: {e}")
-        else:
-            self.logger.warning(f"{plex_conf} not found; skipping user configuration.")
-
-        try:
-            await run_command_async(["systemctl", "enable", "plexmediaserver"])
-            self.logger.info("Plex service enabled.")
-        except subprocess.CalledProcessError:
-            self.logger.warning("Failed to enable Plex service.")
-
-        try:
-            if temp_deb.exists():
-                await asyncio.get_running_loop().run_in_executor(None, temp_deb.unlink)
-        except Exception:
-            pass
-
-        self.logger.info("Plex Media Server installation complete.")
-        return True
-
-    async def install_fastfetch_async(self) -> bool:
-        """Install and configure Fastfetch."""
-        try:
-            result = await run_command_async(
-                ["dpkg", "-s", "fastfetch"],
-                check=False,
-                capture_output=True,
-            )
-
-            if result.returncode == 0:
-                self.logger.info("Fastfetch already installed; skipping.")
-                return True
-        except Exception:
-            pass
-
-        temp_deb = Path("/tmp/fastfetch-linux-amd64.deb")
-
-        try:
-            await download_file_async(
-                "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-linux-amd64.deb",
-                temp_deb,
-            )
-
-            await run_command_async(["dpkg", "-i", str(temp_deb)])
-        except subprocess.CalledProcessError:
-            self.logger.warning("Fastfetch installation issues; fixing dependencies...")
-            try:
-                if self.nala_installed:
-                    await run_command_async(["nala", "install", "-f", "-y"])
-                else:
-                    await run_command_async(["apt", "install", "-f", "-y"])
-            except subprocess.CalledProcessError:
-                self.logger.error("Failed to fix Fastfetch dependencies.")
-                return False
-
-        try:
-            if temp_deb.exists():
-                await asyncio.get_running_loop().run_in_executor(None, temp_deb.unlink)
-        except Exception:
-            pass
-
-        self.logger.info("Fastfetch installed successfully.")
-        return True
-
-    # ----------------------------------------------------------------
-    # Phase 6: User Customization & Script Deployment
-    # ----------------------------------------------------------------
-    async def phase_user_customization(self) -> bool:
-        """Deploy user customization scripts."""
-        await self.print_section_async("User Customization & Script Deployment")
-
-        return await run_with_progress_async(
-            "Deploying user scripts",
-            self.deploy_user_scripts_async,
-            task_name="user_custom",
-        )
-
-    async def deploy_user_scripts_async(self) -> bool:
-        """Deploy user scripts from repository to bin directory."""
-        src = (
-            self.config.USER_HOME / "github" / "bash" / "linux" / "ubuntu" / "_scripts"
-        )
-        target = self.config.USER_HOME / "bin"
-
-        if not src.is_dir():
-            self.logger.error(f"Script source directory {src} does not exist.")
-            return False
-
-        target.mkdir(exist_ok=True)
-
-        try:
-            # Use rsync for efficient directory synchronization
-            await run_command_async(
-                ["rsync", "-ah", "--delete", f"{src}/", f"{target}/"]
-            )
-
-            # Set executable permissions
-            await run_command_async(
-                ["find", str(target), "-type", "f", "-exec", "chmod", "755", "{}", ";"]
-            )
-
-            # Set ownership
-            await run_command_async(
-                [
-                    "chown",
-                    "-R",
-                    f"{self.config.USERNAME}:{self.config.USERNAME}",
-                    str(target),
-                ]
-            )
-
-            self.logger.info("User scripts deployed successfully.")
+            self.logger.info("System hardening complete.")
             return True
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Script deployment failed: {e}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to harden system: {e}")
             return False
 
     # ----------------------------------------------------------------
-    # Phase 7: Permissions & Advanced Storage Setup
+    # Phase 5: Development Tools Installation
     # ----------------------------------------------------------------
-    async def phase_permissions_storage(self) -> bool:
-        """Configure permissions and ZFS storage."""
-        await self.print_section_async("Permissions & Advanced Storage Setup")
+    async def phase_dev_tools(self) -> bool:
+        """Install development tools and libraries."""
+        await self.print_section_async("Development Tools Installation")
 
         status = True
-        if not await run_with_progress_async(
-            "Configuring home directory permissions",
-            self.home_permissions_async,
-            task_name="permissions_storage",
-        ):
+        success, failed = await self.install_packages_async(
+            self.config.DEV_PACKAGES, "dev_tools"
+        )
+
+        if failed and len(failed) > len(self.config.DEV_PACKAGES) * 0.1:
+            self.logger.error(
+                f"Failed to install development packages: {', '.join(failed)}"
+            )
             status = False
 
         if not await run_with_progress_async(
-            "Installing & Configuring ZFS",
-            self.install_configure_zfs_async,
-            task_name="permissions_storage",
+            "Configuring Python environment",
+            self.configure_python_async,
+            task_name="dev_tools",
         ):
             status = False
 
         return status
 
-    async def home_permissions_async(self) -> bool:
-        """Configure home directory permissions."""
+    async def configure_python_async(self) -> bool:
+        """Configure Python development environment."""
         try:
-            await run_command_async(
-                [
-                    "chown",
-                    "-R",
-                    f"{self.config.USERNAME}:{self.config.USERNAME}",
-                    str(self.config.USER_HOME),
-                ]
-            )
+            # Install pip packages globally
+            global_pip_packages = [
+                "ipython",
+                "virtualenv",
+                "pipenv",
+                "pylint",
+                "flake8",
+                "black",
+                "mypy",
+                "requests",
+                "rich",
+                "pyfiglet",
+            ]
 
             self.logger.info(
-                f"Ownership of {self.config.USER_HOME} set to {self.config.USERNAME}."
-            )
-        except subprocess.CalledProcessError:
-            self.logger.error(f"Failed to change ownership of {self.config.USER_HOME}.")
-            return False
-
-        try:
-            await run_command_async(
-                [
-                    "find",
-                    str(self.config.USER_HOME),
-                    "-type",
-                    "d",
-                    "-exec",
-                    "chmod",
-                    "g+s",
-                    "{}",
-                    ";",
-                ]
+                f"Installing global pip packages: {', '.join(global_pip_packages)}"
             )
 
-            self.logger.info("Setgid bit applied on home directories.")
-        except subprocess.CalledProcessError:
-            self.logger.warning("Failed to set setgid bit.")
-
-        if await command_exists_async("setfacl"):
             try:
                 await run_command_async(
-                    [
-                        "setfacl",
-                        "-R",
-                        "-d",
-                        "-m",
-                        f"u:{self.config.USERNAME}:rwx",
-                        str(self.config.USER_HOME),
-                    ]
+                    ["pip3", "install", "--upgrade"] + global_pip_packages
                 )
+                self.logger.info("Global pip packages installed successfully.")
+            except Exception as e:
+                self.logger.warning(f"Failed to install some pip packages: {e}")
 
-                self.logger.info("Default ACLs applied on home directory.")
-            except subprocess.CalledProcessError:
-                self.logger.warning("Failed to apply default ACLs.")
-        else:
-            self.logger.warning("setfacl not found; skipping ACL configuration.")
-
-        return True
-
-    async def install_configure_zfs_async(self) -> bool:
-        """Install and configure ZFS filesystem."""
-        pool = "WD_BLACK"
-        mount_point = Path("/media/WD_BLACK")
-
-        try:
-            if self.nala_installed:
-                await run_command_async(
-                    ["nala", "install", "-y", "zfs-dkms", "zfsutils-linux"]
-                )
-            else:
-                await run_command_async(
-                    ["apt", "install", "-y", "zfs-dkms", "zfsutils-linux"]
-                )
-
-            self.logger.info("ZFS packages installed.")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to install ZFS packages: {e}")
-            return False
-
-        for service in ["zfs-import-cache.service", "zfs-mount.service"]:
-            try:
-                await run_command_async(["systemctl", "enable", service])
-                self.logger.info(f"Enabled {service}.")
-            except subprocess.CalledProcessError:
-                self.logger.warning(f"Could not enable {service}.")
-
-        try:
-            mount_point.mkdir(parents=True, exist_ok=True)
-            self.logger.info(f"Mount point {mount_point} ensured.")
-        except Exception as e:
-            self.logger.warning(f"Failed to create mount point {mount_point}: {e}")
-
-        pool_imported = False
-        try:
-            result = await run_command_async(
-                ["zpool", "list", pool],
-                check=False,
-                capture_output=True,
-            )
-
-            if result.returncode == 0:
-                self.logger.info(f"ZFS pool '{pool}' already imported.")
-                pool_imported = True
-            else:
-                try:
-                    await run_command_async(["zpool", "import", "-f", pool])
-                    self.logger.info(f"Imported ZFS pool '{pool}'.")
-                    pool_imported = True
-                except subprocess.CalledProcessError:
-                    self.logger.warning(
-                        f"ZFS pool '{pool}' not found or failed to import."
-                    )
-        except Exception as e:
-            self.logger.warning(f"Error checking ZFS pool status: {e}")
-
-        if not pool_imported:
-            return False
-
-        try:
-            await run_command_async(["zfs", "set", f"mountpoint={mount_point}", pool])
-            self.logger.info(f"Set mountpoint for pool '{pool}' to {mount_point}.")
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to set mountpoint: {e}")
-
-        try:
-            cache_file = Path("/etc/zfs/zpool.cache")
-            await run_command_async(["zpool", "set", f"cachefile={cache_file}", pool])
-            self.logger.info(f"Cachefile for pool '{pool}' updated to {cache_file}.")
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to update cachefile: {e}")
-
-        try:
-            await run_command_async(["zfs", "mount", "-a"])
-            self.logger.info("Mounted all ZFS datasets.")
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to mount ZFS datasets: {e}")
-
-        try:
-            result = await run_command_async(
-                ["zfs", "list", "-o", "name,mountpoint", "-H"],
-                capture_output=True,
-                text=True,
-            )
-
-            if any(str(mount_point) in line for line in result.stdout.splitlines()):
-                self.logger.info(f"ZFS pool '{pool}' mounted at {mount_point}.")
-                return True
-            else:
-                self.logger.warning(f"ZFS pool '{pool}' not mounted at {mount_point}.")
-                return False
-        except Exception as e:
-            self.logger.warning(f"Error verifying ZFS mount status: {e}")
-            return False
-
-    # ----------------------------------------------------------------
-    # Phase 8: Additional Applications & Tools
-    # ----------------------------------------------------------------
-    async def phase_additional_apps(self) -> bool:
-        """Install additional applications and tools."""
-        await self.print_section_async("Additional Applications & Tools")
-
-        status = True
-        if not await run_with_progress_async(
-            "Installing Brave browser",
-            self.install_brave_browser_async,
-            task_name="additional_apps",
-        ):
-            status = False
-
-        apps_success, apps_failed = await self.install_flatpak_and_apps_async()
-        if apps_failed and len(apps_failed) > len(apps_success) * 0.1:
-            self.logger.error(
-                f"Flatpak app installation failures: {', '.join(apps_failed)}"
-            )
-            status = False
-
-        if not await run_with_progress_async(
-            "Installing VS Code Stable",
-            self.install_configure_vscode_stable_async,
-            task_name="additional_apps",
-        ):
-            status = False
-
-        return status
-
-    async def install_brave_browser_async(self) -> bool:
-        """Install Brave web browser."""
-        try:
-            await run_command_async(
-                ["sh", "-c", "curl -fsS https://dl.brave.com/install.sh | sh"]
-            )
-            self.logger.info("Brave browser installed.")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to install Brave browser: {e}")
-            return False
-
-    async def install_flatpak_and_apps_async(self) -> Tuple[List[str], List[str]]:
-        """Install Flatpak and specified applications."""
-        try:
-            if self.nala_installed:
-                await run_command_async(["nala", "install", "-y", "flatpak"])
-            else:
-                await run_command_async(["apt", "install", "-y", "flatpak"])
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to install Flatpak: {e}")
-            return [], []
-
-        try:
-            if self.nala_installed:
-                await run_command_async(
-                    ["nala", "install", "-y", "gnome-software-plugin-flatpak"]
-                )
-            else:
-                await run_command_async(
-                    ["apt", "install", "-y", "gnome-software-plugin-flatpak"]
-                )
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to install Flatpak plugin: {e}")
-
-        try:
-            await run_command_async(
-                [
-                    "flatpak",
-                    "remote-add",
-                    "--if-not-exists",
-                    "flathub",
-                    "https://dl.flathub.org/repo/flathub.flatpakrepo",
-                ]
-            )
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to add Flathub repository: {e}")
-            return [], []
-
-        successful, failed = [], []
-        for app in self.config.FLATPAK_APPS:
-            try:
-                await run_command_async(
-                    ["flatpak", "install", "--assumeyes", "flathub", app]
-                )
-                self.logger.info(f"Installed Flatpak app: {app}")
-                successful.append(app)
-            except subprocess.CalledProcessError:
-                self.logger.warning(f"Failed to install Flatpak app: {app}")
-                failed.append(app)
-
-        return successful, failed
-
-    async def install_configure_vscode_stable_async(self) -> bool:
-        """Install and configure VS Code."""
-        vscode_url = "https://vscode.download.prss.microsoft.com/dbazure/download/stable/e54c774e0add60467559eb0d1e229c6452cf8447/code_1.97.2-1739406807_amd64.deb"
-        deb_path = Path("/tmp/code.deb")
-
-        try:
-            self.logger.info("Downloading VS Code Stable...")
-            await download_file_async(vscode_url, deb_path)
-        except Exception as e:
-            self.logger.error(f"Failed to download VS Code: {e}")
-            return False
-
-        try:
-            self.logger.info("Installing VS Code Stable...")
-            await run_command_async(["dpkg", "-i", str(deb_path)])
-        except subprocess.CalledProcessError:
-            self.logger.warning("dpkg issues; fixing dependencies...")
-            try:
-                if self.nala_installed:
-                    await run_command_async(["nala", "install", "-f", "-y"])
-                else:
-                    await run_command_async(["apt", "install", "-f", "-y"])
-            except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to fix VS Code dependencies: {e}")
-                return False
-
-        try:
-            if deb_path.exists():
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, deb_path.unlink)
-        except Exception:
-            pass
-
-        desktop_file = Path("/usr/share/applications/code.desktop")
-        desktop_content = (
-            "[Desktop Entry]\nName=Visual Studio Code\nComment=Code Editing. Redefined.\n"
-            "GenericName=Text Editor\nExec=/usr/share/code/code --enable-features=UseOzonePlatform --ozone-platform=wayland %F\n"
-            "Icon=vscode\nType=Application\nStartupNotify=false\nStartupWMClass=Code\nCategories=TextEditor;Development;IDE;\n"
-            "MimeType=application/x-code-workspace;\nActions=new-empty-window;\n\n"
-            "[Desktop Action new-empty-window]\nName=New Empty Window\nExec=/usr/share/code/code --new-window --enable-features=UseOzonePlatform --ozone-platform=wayland %F\nIcon=vscode\n"
-        )
-
-        try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
-                None, lambda: desktop_file.write_text(desktop_content)
-            )
-            self.logger.info(f"Updated desktop file: {desktop_file}")
-        except Exception as e:
-            self.logger.warning(f"Failed to update desktop file: {e}")
-
-        local_dir = self.config.USER_HOME / ".local" / "share" / "applications"
-        local_file = local_dir / "code.desktop"
-
-        try:
-            local_dir.mkdir(parents=True, exist_ok=True)
-
-            # Copy the desktop file
-            await loop.run_in_executor(
-                None, lambda: shutil.copy2(desktop_file, local_file)
-            )
-
-            self.logger.info(f"Copied desktop file to {local_file}")
-
-            # Update the file content
-            content = await loop.run_in_executor(None, local_file.read_text)
-            updated = content.replace("StartupWMClass=Code", "StartupWMClass=code")
-
-            await loop.run_in_executor(None, lambda: local_file.write_text(updated))
-
-            self.logger.info("Updated local desktop file for Wayland compatibility.")
-            return True
-        except Exception as e:
-            self.logger.warning(f"Failed to update local desktop file: {e}")
-            return False
-
-    # ----------------------------------------------------------------
-    # Phase 9: Cleanup & Final Configurations
-    # ----------------------------------------------------------------
-    async def phase_cleanup_final(self) -> bool:
-        """Perform cleanup and final configurations."""
-        await self.print_section_async("Cleanup & Final Configurations")
-
-        status = True
-        try:
-            if self.nala_installed:
-                await run_command_async(["nala", "autoremove", "-y"])
-                await run_command_async(["nala", "clean"])  # Removed unsupported -y
-            else:
-                await run_command_async(["apt", "autoremove", "-y"])
-                await run_command_async(["apt", "autoclean", "-y"])
-
-            self.logger.info("System cleanup completed.")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"System cleanup failed: {e}")
-            status = False
-
-        if not await run_with_progress_async(
-            "Configuring Wayland environment",
-            self.configure_wayland_async,
-            task_name="cleanup_final",
-        ):
-            status = False
-
-        if not await run_with_progress_async(
-            "Installing and enabling Tailscale",
-            self.install_enable_tailscale_async,
-            task_name="cleanup_final",
-        ):
-            status = False
-
-        return status
-
-    async def configure_wayland_async(self) -> bool:
-        """Configure Wayland environment variables."""
-        etc_env = Path("/etc/environment")
-        loop = asyncio.get_running_loop()
-
-        try:
-            # Read current environment file
-            if etc_env.is_file():
-                current = await loop.run_in_executor(None, etc_env.read_text)
-            else:
-                current = ""
-
-            # Parse variables
-            vars_current = {}
-            for line in current.splitlines():
-                if "=" in line:
-                    key, val = line.split("=", 1)
-                    vars_current[key] = val
-
-            # Update Wayland variables
-            updated = False
-            wayland_vars = {
-                "GDK_BACKEND": "wayland",
-                "QT_QPA_PLATFORM": "wayland",
-                "SDL_VIDEODRIVER": "wayland",
-            }
-
-            for key, val in wayland_vars.items():
-                if vars_current.get(key) != val:
-                    vars_current[key] = val
-                    updated = True
-
-            # Write updated environment file if needed
-            if updated:
-                new_content = (
-                    "\n".join(f"{k}={v}" for k, v in vars_current.items()) + "\n"
-                )
-
-                await loop.run_in_executor(
-                    None, lambda: etc_env.write_text(new_content)
-                )
-
-                self.logger.info(f"{etc_env} updated with Wayland variables.")
-            else:
-                self.logger.info(f"No changes needed in {etc_env}.")
-        except Exception as e:
-            self.logger.warning(f"Failed to update {etc_env}: {e}")
-
-        # Configure user environment directory
-        user_env_dir = self.config.USER_HOME / ".config" / "environment.d"
-        user_env_file = user_env_dir / "myenvvars.conf"
-
-        try:
-            await loop.run_in_executor(
-                None, lambda: user_env_dir.mkdir(parents=True, exist_ok=True)
-            )
-
-            # Prepare environment content
-            content = (
-                "\n".join(
-                    f"{k}={v}"
-                    for k, v in {
-                        "GDK_BACKEND": "wayland",
-                        "QT_QPA_PLATFORM": "wayland",
-                        "SDL_VIDEODRIVER": "wayland",
-                    }.items()
-                )
-                + "\n"
-            )
-
-            # Check if file exists
-            file_exists = await loop.run_in_executor(
-                None, lambda: user_env_file.is_file()
-            )
-
-            if file_exists:
-                current_content = await loop.run_in_executor(
-                    None, lambda: user_env_file.read_text()
-                )
-
-                if current_content.strip() != content.strip():
-                    await self.backup_file_async(user_env_file)
-
-                    await loop.run_in_executor(
-                        None, lambda: user_env_file.write_text(content)
-                    )
-
-                    self.logger.info(f"Updated {user_env_file} with Wayland variables.")
-            else:
-                await loop.run_in_executor(
-                    None, lambda: user_env_file.write_text(content)
-                )
-
-                self.logger.info(f"Created {user_env_file} with Wayland variables.")
+            # Create Python virtual environment directory
+            venv_dir = self.config.USER_HOME / "venvs"
+            venv_dir.mkdir(exist_ok=True)
 
             await run_command_async(
                 [
                     "chown",
+                    "-R",
                     f"{self.config.USERNAME}:{self.config.USERNAME}",
-                    str(user_env_file),
+                    str(venv_dir),
                 ]
             )
 
+            self.logger.info("Python environment configured.")
             return True
+
         except Exception as e:
-            self.logger.warning(f"Failed to update {user_env_file}: {e}")
+            self.logger.error(f"Failed to configure Python environment: {e}")
             return False
 
-    async def install_enable_tailscale_async(self) -> bool:
+    # ----------------------------------------------------------------
+    # Phase 6: Docker Installation and Setup
+    # ----------------------------------------------------------------
+    async def phase_docker_setup(self) -> bool:
+        """Install and configure Docker."""
+        await self.print_section_async("Docker Installation and Setup")
+
+        status = True
+        if not await run_with_progress_async(
+            "Installing Docker", self.install_docker_async, task_name="docker_setup"
+        ):
+            status = False
+
+        if not await run_with_progress_async(
+            "Setting up Docker Compose",
+            self.setup_docker_compose_async,
+            task_name="docker_setup",
+        ):
+            status = False
+
+        return status
+
+    async def install_docker_async(self) -> bool:
+        """Install Docker using the official script."""
+        try:
+            # Check if Docker is already installed
+            if await command_exists_async("docker"):
+                self.logger.info("Docker is already installed.")
+
+                # Ensure Docker service is enabled
+                await run_command_async(["systemctl", "enable", "docker"])
+                await run_command_async(["systemctl", "start", "docker"])
+
+                return True
+
+            # Add Docker GPG key and repository
+            self.logger.info("Adding Docker repository...")
+
+            # Make sure prerequisites are installed
+            await run_command_async(
+                [
+                    "apt",
+                    "install",
+                    "-y",
+                    "apt-transport-https",
+                    "ca-certificates",
+                    "curl",
+                    "gnupg",
+                    "lsb-release",
+                ]
+            )
+
+            # Add Docker's official GPG key
+            keyring_dir = Path("/etc/apt/keyrings")
+            keyring_dir.mkdir(exist_ok=True)
+
+            await run_command_async(
+                [
+                    "sh",
+                    "-c",
+                    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
+                ]
+            )
+
+            # Add repository
+            await run_command_async(
+                [
+                    "sh",
+                    "-c",
+                    "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' > /etc/apt/sources.list.d/docker.list",
+                ]
+            )
+
+            # Update package lists
+            if self.nala_installed:
+                await run_command_async(["nala", "update"])
+            else:
+                await run_command_async(["apt", "update"])
+
+            # Install Docker packages
+            docker_packages = [
+                "docker-ce",
+                "docker-ce-cli",
+                "containerd.io",
+                "docker-buildx-plugin",
+                "docker-compose-plugin",
+            ]
+
+            if self.nala_installed:
+                await run_command_async(["nala", "install", "-y"] + docker_packages)
+            else:
+                await run_command_async(["apt", "install", "-y"] + docker_packages)
+
+            # Check if Docker was installed
+            if not await command_exists_async("docker"):
+                self.logger.error("Docker installation failed.")
+                return False
+
+            # Enable and start Docker
+            await run_command_async(["systemctl", "enable", "docker"])
+            await run_command_async(["systemctl", "start", "docker"])
+
+            # Add user to docker group
+            await run_command_async(["usermod", "-aG", "docker", self.config.USERNAME])
+
+            self.logger.info("Docker installed and configured successfully.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to install Docker: {e}")
+            return False
+
+    async def setup_docker_compose_async(self) -> bool:
+        """Set up Docker Compose."""
+        try:
+            # Check if Docker Compose plugin is installed
+            if await command_exists_async("docker") and await command_exists_async(
+                "docker-compose"
+            ):
+                self.logger.info("Docker Compose is already installed.")
+                return True
+
+            # Docker Compose should be installed with Docker plugin by default
+            if await command_exists_async("docker") and await command_exists_async(
+                "docker compose"
+            ):
+                # Create symlink for compatibility
+                docker_compose_path = Path("/usr/local/bin/docker-compose")
+                if not docker_compose_path.exists():
+                    docker_compose_path.parent.mkdir(exist_ok=True)
+                    os.symlink(
+                        "/usr/libexec/docker/cli-plugins/docker-compose",
+                        docker_compose_path,
+                    )
+                    self.logger.info(
+                        "Created docker-compose symlink for compatibility."
+                    )
+                return True
+
+            # If we don't have the plugin, install compose separately
+            self.logger.info("Installing Docker Compose as standalone...")
+
+            # Download latest compose release
+            await download_file_async(
+                "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64",
+                "/usr/local/bin/docker-compose",
+            )
+
+            # Make it executable
+            os.chmod("/usr/local/bin/docker-compose", 0o755)
+
+            if await command_exists_async("docker-compose"):
+                self.logger.info("Docker Compose installed successfully.")
+                return True
+            else:
+                self.logger.error("Docker Compose installation failed.")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to set up Docker Compose: {e}")
+            return False
+
+    # ----------------------------------------------------------------
+    # Phase 7: Network Tools Installation
+    # ----------------------------------------------------------------
+    async def phase_network_tools(self) -> bool:
+        """Install network monitoring and analysis tools."""
+        await self.print_section_async("Network Tools Installation")
+
+        status = True
+        success, failed = await self.install_packages_async(
+            self.config.NETWORK_PACKAGES, "network_tools"
+        )
+
+        if failed and len(failed) > len(self.config.NETWORK_PACKAGES) * 0.1:
+            self.logger.error(
+                f"Failed to install network packages: {', '.join(failed)}"
+            )
+            status = False
+
+        return status
+
+    # ----------------------------------------------------------------
+    # Phase 8: Storage Configuration
+    # ----------------------------------------------------------------
+    async def phase_storage_config(self) -> bool:
+        """Configure storage and backup solutions."""
+        await self.print_section_async("Storage Configuration")
+
+        status = True
+        if not await run_with_progress_async(
+            "Configuring storage directories",
+            self.setup_storage_directories_async,
+            task_name="storage_config",
+        ):
+            status = False
+
+        return status
+
+    async def setup_storage_directories_async(self) -> bool:
+        """Create and configure storage directories."""
+        try:
+            # Create common directories
+            directories = {
+                "/data": 0o755,  # Main data directory
+                "/data/backups": 0o750,  # Backups
+                "/data/logs": 0o755,  # Logs
+                "/data/docker": 0o755,  # Docker volumes
+                "/data/www": 0o755,  # Web content
+                f"/home/{self.config.USERNAME}/scripts": 0o750,  # User scripts
+                f"/home/{self.config.USERNAME}/bin": 0o750,  # User binaries
+            }
+
+            for directory, permissions in directories.items():
+                dir_path = Path(directory)
+                dir_path.mkdir(exist_ok=True, parents=True)
+                os.chmod(directory, permissions)
+
+                # Set ownership for user directories
+                if directory.startswith(f"/home/{self.config.USERNAME}"):
+                    await run_command_async(
+                        [
+                            "chown",
+                            "-R",
+                            f"{self.config.USERNAME}:{self.config.USERNAME}",
+                            directory,
+                        ]
+                    )
+
+            # Link Docker data directory
+            docker_dir = Path("/var/lib/docker")
+            docker_data_dir = Path("/data/docker")
+
+            if docker_dir.exists() and not docker_dir.is_symlink():
+                # Stop Docker service
+                await run_command_async(["systemctl", "stop", "docker"])
+
+                # Move existing Docker data
+                if docker_dir.exists() and docker_dir.is_dir():
+                    temp_backup = Path("/var/lib/docker.bak")
+                    shutil.move(docker_dir, temp_backup)
+
+                    # Create the new directory and copy data
+                    docker_data_dir.mkdir(exist_ok=True, parents=True)
+                    await run_command_async(
+                        ["rsync", "-a", f"{temp_backup}/", f"{docker_data_dir}/"]
+                    )
+
+                    # Remove the original directory
+                    shutil.rmtree(temp_backup, ignore_errors=True)
+
+                # Create symlink
+                docker_dir.symlink_to(docker_data_dir)
+
+                # Start Docker service
+                await run_command_async(["systemctl", "start", "docker"])
+
+                self.logger.info("Docker data directory moved to /data/docker")
+
+            self.logger.info("Storage directories configured.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to configure storage directories: {e}")
+            return False
+
+    # ----------------------------------------------------------------
+    # Phase 9: Custom Applications Installation
+    # ----------------------------------------------------------------
+    async def phase_custom_apps(self) -> bool:
+        """Install custom applications."""
+        await self.print_section_async("Custom Applications Installation")
+
+        status = True
+        for app in self.config.CUSTOM_APPS:
+            if not await run_with_progress_async(
+                f"Installing {app}",
+                self.install_custom_app_async,
+                app,
+                task_name="custom_apps",
+            ):
+                status = False
+
+        return status
+
+    async def install_custom_app_async(self, app_name: str) -> bool:
+        """Install a custom application."""
+        try:
+            if app_name.lower() == "tailscale":
+                return await self.install_tailscale_async()
+            elif app_name.lower() == "fastfetch":
+                return await self.install_fastfetch_async()
+            else:
+                self.logger.warning(f"No installation method defined for {app_name}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to install {app_name}: {e}")
+            return False
+
+    async def install_tailscale_async(self) -> bool:
         """Install and configure Tailscale."""
         self.logger.info("Installing and configuring Tailscale...")
 
         if await command_exists_async("tailscale"):
             self.logger.info("Tailscale is already installed.")
-            tailscale_installed = True
-        else:
-            try:
-                self.logger.info("Installing Tailscale using official script...")
-                await run_command_async(
-                    ["sh", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]
-                )
-
-                tailscale_installed = await command_exists_async("tailscale")
-
-                if tailscale_installed:
-                    self.logger.info("Tailscale installed successfully.")
-                else:
-                    self.logger.error("Tailscale installation failed.")
-                    return False
-            except Exception as e:
-                self.logger.error(f"Failed to install Tailscale: {e}")
-                return False
+            return True
 
         try:
-            await run_command_async(["systemctl", "enable", "tailscaled"])
-            await run_command_async(["systemctl", "start", "tailscaled"])
-
-            status = await run_command_async(
-                ["systemctl", "is-active", "tailscaled"],
-                capture_output=True,
-                text=True,
-                check=False,
+            # Add Tailscale repository
+            await run_command_async(
+                [
+                    "sh",
+                    "-c",
+                    "curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null",
+                ]
             )
 
-            if status.stdout.strip() == "active":
-                self.logger.info("Tailscale service is active.")
+            await run_command_async(
+                [
+                    "sh",
+                    "-c",
+                    "curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list",
+                ]
+            )
+
+            # Update and install
+            if self.nala_installed:
+                await run_command_async(["nala", "update"])
+                await run_command_async(["nala", "install", "-y", "tailscale"])
+            else:
+                await run_command_async(["apt", "update"])
+                await run_command_async(["apt", "install", "-y", "tailscale"])
+
+            # Enable and start service
+            await run_command_async(["systemctl", "enable", "--now", "tailscaled"])
+
+            console.print(
+                Panel(
+                    "Tailscale installed. Run 'sudo tailscale up' to connect to your Tailscale network.",
+                    title="Tailscale Setup",
+                    border_style=NordColors.FROST_2,
+                    box=box.ROUNDED,
+                )
+            )
+
+            # Check if installation was successful
+            if await command_exists_async("tailscale"):
+                self.logger.info("Tailscale installed successfully.")
                 return True
             else:
-                self.logger.warning("Tailscale service may not be running correctly.")
-                return tailscale_installed
+                self.logger.error("Tailscale installation verification failed.")
+                return False
+
         except Exception as e:
-            self.logger.error(f"Failed to enable/start Tailscale: {e}")
-            return tailscale_installed
+            self.logger.error(f"Failed to install Tailscale: {e}")
+            return False
+
+    async def install_fastfetch_async(self) -> bool:
+        """Install Fastfetch for system information display."""
+        try:
+            if await command_exists_async("fastfetch"):
+                self.logger.info("Fastfetch is already installed.")
+                return True
+
+            # Download and install Fastfetch
+            temp_deb = Path("/tmp/fastfetch-linux-amd64.deb")
+
+            await download_file_async(
+                "https://github.com/fastfetch-cli/fastfetch/releases/download/2.8.3/fastfetch-linux-amd64.deb",
+                temp_deb,
+            )
+
+            await run_command_async(["dpkg", "-i", str(temp_deb)])
+
+            # Fix dependencies if needed
+            try:
+                if self.nala_installed:
+                    await run_command_async(["nala", "install", "-f", "-y"])
+                else:
+                    await run_command_async(["apt", "install", "-f", "-y"])
+            except subprocess.CalledProcessError:
+                self.logger.warning("Failed to fix Fastfetch dependencies.")
+
+            # Clean up
+            if temp_deb.exists():
+                temp_deb.unlink()
+
+            # Check if installation was successful
+            if await command_exists_async("fastfetch"):
+                self.logger.info("Fastfetch installed successfully.")
+                return True
+            else:
+                self.logger.error("Fastfetch installation verification failed.")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to install Fastfetch: {e}")
+            return False
 
     # ----------------------------------------------------------------
-    # Phase 10: Final Checks
+    # Phase 10: Automatic Updates Configuration
+    # ----------------------------------------------------------------
+    async def phase_auto_updates(self) -> bool:
+        """Configure automatic security updates."""
+        await self.print_section_async("Automatic Updates Configuration")
+
+        return await run_with_progress_async(
+            "Setting up automatic security updates",
+            self.configure_auto_updates_async,
+            task_name="auto_updates",
+        )
+
+    async def configure_auto_updates_async(self) -> bool:
+        """Configure unattended-upgrades for automatic security updates."""
+        try:
+            # Install unattended-upgrades
+            if self.nala_installed:
+                await run_command_async(
+                    ["nala", "install", "-y", "unattended-upgrades", "apt-listchanges"]
+                )
+            else:
+                await run_command_async(
+                    ["apt", "install", "-y", "unattended-upgrades", "apt-listchanges"]
+                )
+
+            # Configure unattended-upgrades
+            config_file = Path("/etc/apt/apt.conf.d/50unattended-upgrades")
+            auto_update_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
+
+            if config_file.exists():
+                await self.backup_file_async(config_file)
+
+            # Configuration content
+            config_content = """// Automatically upgrade packages from these (origin:archive) pairs
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}";
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+    "${distro_id}:${distro_codename}-updates";
+};
+
+// List of packages to not update
+Unattended-Upgrade::Package-Blacklist {
+//    "vim";
+//    "libc6";
+//    "libc6-dev";
+//    "libc6-i686";
+};
+
+// This option will controls whether the updates should be downloaded and installed immediately
+// or should be just downloaded (and installed later)
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+
+// Split the upgrade into the smallest possible chunks so that
+// they can be interrupted with SIGTERM.
+Unattended-Upgrade::MinimalSteps "true";
+
+// Install all unattended-upgrades when the machine is shutting down
+// instead of doing it in the background while the machine is running
+// This will (obviously) make shutdown slower
+Unattended-Upgrade::InstallOnShutdown "false";
+
+// Send email to this address for problems or packages upgrades
+// If empty or unset then no email is sent, make sure that you
+// have a working mail setup on your system. A package that provides
+// 'mailx' must be installed. E.g. "user@example.com"
+Unattended-Upgrade::Mail "";
+
+// Set this value to "true" to get emails only on errors. Default
+// is to always send a mail if Unattended-Upgrade::Mail is set
+Unattended-Upgrade::MailOnlyOnError "true";
+
+// Remove unused automatically installed kernel-related packages
+// (kernel images, kernel headers and kernel version dependent packages).
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+// Do automatic removal of newly unused dependencies after the upgrade
+Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+
+// Do automatic removal of unused packages after the upgrade
+// (equivalent to apt-get autoremove)
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+// Automatically reboot *WITHOUT CONFIRMATION*
+// if the file /var/run/reboot-required is found after the upgrade
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// If automatic reboot is enabled and needed, reboot at the specific
+// time instead of immediately
+// Default: "now"
+Unattended-Upgrade::Automatic-Reboot-Time "02:00";
+
+// Use apt bandwidth limit feature, this example limits the download
+// speed to 70kb/sec
+//Acquire::http::Dl-Limit "70";
+"""
+
+            # Write configuration
+            with open(config_file, "w") as f:
+                f.write(config_content)
+
+            # Configure auto-upgrades
+            auto_update_content = """APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+"""
+
+            with open(auto_update_file, "w") as f:
+                f.write(auto_update_content)
+
+            # Enable the service
+            await run_command_async(["systemctl", "enable", "unattended-upgrades"])
+            await run_command_async(["systemctl", "restart", "unattended-upgrades"])
+
+            self.logger.info("Automatic security updates configured.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to configure automatic updates: {e}")
+            return False
+
+    # ----------------------------------------------------------------
+    # Phase 11: Cleanup & Final Configuration
+    # ----------------------------------------------------------------
+    async def phase_cleanup(self) -> bool:
+        """Perform final cleanup and optimization."""
+        await self.print_section_async("Cleanup & Final Configuration")
+
+        status = True
+        if not await run_with_progress_async(
+            "Cleaning up system", self.system_cleanup_async, task_name="cleanup"
+        ):
+            status = False
+
+        if not await run_with_progress_async(
+            "Configuring .bashrc", self.configure_bashrc_async, task_name="cleanup"
+        ):
+            status = False
+
+        return status
+
+    async def system_cleanup_async(self) -> bool:
+        """Clean up unnecessary packages and files."""
+        try:
+            # Remove unnecessary packages
+            if self.nala_installed:
+                await run_command_async(["nala", "autoremove", "-y"])
+                await run_command_async(["nala", "clean"])
+            else:
+                await run_command_async(["apt", "autoremove", "-y"])
+                await run_command_async(["apt", "clean"])
+
+            # Clear logs
+            log_dir = Path("/var/log")
+            for log_file in log_dir.glob("*.log.*"):
+                try:
+                    log_file.unlink()
+                except:
+                    pass
+
+            # Clear temporary files
+            tmp_dir = Path("/tmp")
+            for item in tmp_dir.glob("*"):
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                except:
+                    pass
+
+            self.logger.info("System cleanup completed.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error during system cleanup: {e}")
+            return False
+
+    async def configure_bashrc_async(self) -> bool:
+        """Configure user .bashrc with useful aliases and settings."""
+        try:
+            # Create bashrc file
+            bashrc_file = self.config.USER_HOME / ".bashrc"
+            bashrc_backup = None
+
+            if bashrc_file.exists():
+                bashrc_backup = await self.backup_file_async(bashrc_file)
+
+            bashrc_content = """# ~/.bashrc: executed by bash(1) for non-login shells.
+
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# don't put duplicate lines or lines starting with space in the history
+HISTCONTROL=ignoreboth
+
+# append to the history file, don't overwrite it
+shopt -s histappend
+
+# for setting history length
+HISTSIZE=10000
+HISTFILESIZE=20000
+
+# check the window size after each command
+shopt -s checkwinsize
+
+# make less more friendly for non-text input files
+[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+
+# set variable identifying the chroot you work in
+if [ -z "${debian_chroot:-}" ] && [ -r /etc/debian_chroot ]; then
+    debian_chroot=$(cat /etc/debian_chroot)
+fi
+
+# set a fancy prompt
+PS1='${debian_chroot:+($debian_chroot)}\\[\\033[01;32m\\]\\u@\\h\\[\\033[00m\\]:\\[\\033[01;34m\\]\\w\\[\\033[00m\\]\\$ '
+
+# enable color support
+if [ -x /usr/bin/dircolors ]; then
+    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+    alias dir='dir --color=auto'
+    alias vdir='vdir --color=auto'
+
+    alias grep='grep --color=auto'
+    alias fgrep='fgrep --color=auto'
+    alias egrep='egrep --color=auto'
+fi
+
+# colored GCC warnings and errors
+export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
+
+# some more ls aliases
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+
+# Add an "alert" alias
+alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\\s*[0-9]\\+\\s*//;s/[;&|]\\s*alert$//'\'')"'
+
+# enable programmable completion features
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+
+# User specific aliases and functions
+alias update='sudo nala update && sudo nala upgrade -y'
+alias install='sudo nala install -y'
+alias remove='sudo nala remove'
+alias search='nala search'
+alias dpurge='docker system prune -af'
+alias dcup='docker-compose up -d'
+alias dcdown='docker-compose down'
+alias dcps='docker-compose ps'
+alias dclogs='docker-compose logs -f'
+
+# Add user's bin directory to PATH
+if [ -d "$HOME/bin" ] ; then
+    PATH="$HOME/bin:$PATH"
+fi
+
+if [ -d "$HOME/.local/bin" ] ; then
+    PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Display system information on login if available
+if command -v fastfetch &> /dev/null; then
+    fastfetch
+elif command -v neofetch &> /dev/null; then
+    neofetch
+fi
+
+# Set default editor
+export EDITOR=vim
+export VISUAL=vim
+
+# Customize history
+export HISTTIMEFORMAT="%F %T "
+export HISTIGNORE="ls:ll:history:pwd:exit:clear"
+
+# Set terminal colors
+export TERM=xterm-256color
+
+# User specific environment variables
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+"""
+
+            with open(bashrc_file, "w") as f:
+                f.write(bashrc_content)
+
+            # Set correct ownership
+            await run_command_async(
+                [
+                    "chown",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(bashrc_file),
+                ]
+            )
+
+            # Set correct permissions
+            os.chmod(bashrc_file, 0o644)
+
+            self.logger.info("Configured .bashrc for enhanced user experience.")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to configure .bashrc: {e}")
+            return False
+
+    # ----------------------------------------------------------------
+    # Phase 12: Final Checks & Summary
     # ----------------------------------------------------------------
     async def phase_final_checks(self) -> bool:
         """Perform final system checks and display summary."""
         await self.print_section_async("Final System Checks")
 
-        info = await self.final_checks_async()
+        system_info = await self.get_system_info_async()
         elapsed = time.time() - self.start_time
         hours, remainder = divmod(elapsed, 3600)
         minutes, seconds = divmod(remainder, 60)
 
         summary = f"""
-✅ Ubuntu Setup & Hardening completed successfully!
+✅ Ubuntu Server Setup completed successfully!
 
 ⏱️ Total runtime: {int(hours)}h {int(minutes)}m {int(seconds)}s
 
-Kernel Version: {info.get("kernel", "Unknown")}
+System Information:
+- Hostname: {system_info.get("hostname", "Unknown")}
+- IP Address: {system_info.get("ip_address", "Unknown")}
+- SSH Port: {self.config.SSH_PORT}
+- Username: {self.config.USERNAME}
 
-No automatic reboot is scheduled.
+Storage Information:
+{system_info.get("disk_usage", "Disk usage information not available")}
+
+A reboot is recommended to apply all changes.
 """
 
         display_panel(summary, style=NordColors.GREEN, title="Success")
         print_status_report()
-        self.logger.info("Final system checks completed. No reboot scheduled.")
+
+        # Ask about reboot
+        if Confirm.ask("Would you like to reboot the system now?", default=False):
+            self.logger.info("Rebooting system...")
+            await run_command_async(["reboot"])
+        else:
+            self.logger.info("System ready. Reboot recommended when convenient.")
+
         return True
 
-    async def final_checks_async(self) -> Dict[str, str]:
-        """Gather final system information."""
+    async def get_system_info_async(self) -> Dict[str, str]:
+        """Gather system information for the final report."""
         info = {}
 
         try:
-            kernel = await run_command_async(
+            # Get hostname
+            hostname_result = await run_command_async(
+                ["hostname"], capture_output=True, text=True
+            )
+            info["hostname"] = hostname_result.stdout.strip()
+
+            # Get IP address (prefer non-loopback IP)
+            ip_result = await run_command_async(
+                ["hostname", "-I"], capture_output=True, text=True
+            )
+            ip_addresses = ip_result.stdout.strip().split()
+            if ip_addresses:
+                info["ip_address"] = ip_addresses[0]
+            else:
+                info["ip_address"] = "Not available"
+
+            # Get kernel version
+            kernel_result = await run_command_async(
                 ["uname", "-r"], capture_output=True, text=True
             )
-            self.logger.info(f"Kernel version: {kernel.stdout.strip()}")
-            info["kernel"] = kernel.stdout.strip()
-        except Exception as e:
-            self.logger.warning(f"Failed to get kernel version: {e}")
+            info["kernel"] = kernel_result.stdout.strip()
 
-        try:
-            uptime = await run_command_async(
-                ["uptime", "-p"], capture_output=True, text=True
+            # Get disk usage
+            df_result = await run_command_async(
+                ["df", "-h"], capture_output=True, text=True
             )
-            self.logger.info(f"System uptime: {uptime.stdout.strip()}")
-            info["uptime"] = uptime.stdout.strip()
-        except Exception as e:
-            self.logger.warning(f"Failed to get uptime: {e}")
+            info["disk_usage"] = df_result.stdout
 
-        try:
-            df_output = await run_command_async(
-                ["df", "-h", "/"], capture_output=True, text=True
-            )
-            df_line = df_output.stdout.splitlines()[1]
-            self.logger.info(f"Disk usage (root): {df_line}")
-            info["disk_usage"] = df_line
-        except Exception as e:
-            self.logger.warning(f"Failed to get disk usage: {e}")
-
-        try:
-            free_output = await run_command_async(
+            # Get memory usage
+            free_result = await run_command_async(
                 ["free", "-h"], capture_output=True, text=True
             )
-            mem_line = next(
-                (l for l in free_output.stdout.splitlines() if l.startswith("Mem:")), ""
-            )
-            self.logger.info(f"Memory usage: {mem_line}")
-            info["memory"] = mem_line
-        except Exception as e:
-            self.logger.warning(f"Failed to get memory usage: {e}")
+            info["memory"] = free_result.stdout
 
-        return info
+            return info
+
+        except Exception as e:
+            self.logger.error(f"Error gathering system information: {e}")
+            return {"error": str(e)}
 
 
 # ----------------------------------------------------------------
@@ -2302,23 +2638,26 @@ async def main_async() -> None:
     console.print(create_header(APP_NAME))
 
     try:
-        setup = UbuntuDesktopSetup()
+        # Create setup instance
+        config = Config()  # Default config or parse command line arguments
+        setup = UbuntuServerSetup(config)
         global setup_instance
         setup_instance = setup
 
-        # Execute phases sequentially:
-        await setup.check_root_async()
-        await setup.phase_install_nala()
+        # Execute phases sequentially
         await setup.phase_preflight()
         await setup.phase_system_update()
-        await setup.phase_repo_shell_setup()
+        await setup.phase_user_setup()
+        await setup.phase_essential_packages()
         await setup.phase_security_hardening()
-        await setup.phase_service_installation()
-        await setup.phase_user_customization()
-        await setup.phase_permissions_storage()
-        await setup.phase_additional_apps()
-        await setup.phase_cleanup_final()
-        await setup.phase_final_checks()  # Final checks without rebooting
+        await setup.phase_dev_tools()
+        await setup.phase_docker_setup()
+        await setup.phase_network_tools()
+        await setup.phase_storage_config()
+        await setup.phase_custom_apps()
+        await setup.phase_auto_updates()
+        await setup.phase_cleanup()
+        await setup.phase_final_checks()
 
     except KeyboardInterrupt:
         console.print("\n[warning]Setup interrupted by user.[/warning]")
@@ -2329,54 +2668,10 @@ async def main_async() -> None:
         sys.exit(130)
     except Exception as e:
         console.print(f"[error]Fatal error: {e}[/error]")
+        console.print_exception()
         try:
             if "setup_instance" in globals():
                 await setup_instance.cleanup_async()
         except Exception as cleanup_error:
             console.print(f"[error]Cleanup after error failed: {cleanup_error}[/error]")
         sys.exit(1)
-
-
-def main() -> None:
-    """Main entry point of the application."""
-    try:
-        # Create and get a reference to the event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Setup signal handlers with the specific loop
-        setup_signal_handlers(loop)
-
-        # Initialize global instance variable
-        global setup_instance
-        setup_instance = None
-
-        # Run the main async function
-        loop.run_until_complete(main_async())
-    except KeyboardInterrupt:
-        print_warning("Received keyboard interrupt, shutting down...")
-    except Exception as e:
-        print_error(f"An unexpected error occurred: {e}")
-        console.print_exception()
-    finally:
-        try:
-            # Cancel all remaining tasks
-            loop = asyncio.get_event_loop()
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-
-            # Allow cancelled tasks to complete
-            if tasks:
-                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-
-            # Close the loop
-            loop.close()
-        except Exception as e:
-            print_error(f"Error during shutdown: {e}")
-
-        print_message("Application terminated.", NordColors.FROST_3)
-
-
-if __name__ == "__main__":
-    main()
