@@ -1,16 +1,16 @@
----------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
-rewrite (claude 3.7 sonnet)
-using new prompt
+Rewrite (Claude 3.7 Sonnet Thinking)
+using new prompt / template
 
----------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------
 
 ```
 └── 📁_scripts
     *└── _bashrc_cheat_sheet.md
     *└── _template.md
     *└── _to-to.md
-    └── deploy_scripts.py
+    *└── deploy_scripts.py
     └── fail2ban_toolkit.py
     └── file_toolkit.py
     └── fix_ssh_tool.py
@@ -18,10 +18,11 @@ using new prompt
     └── hacker_toolkit.py
     └── hacking_tools.py
     └── hello_world.py
-    *└── log_monitor.py
+    └── log_monitor.py
     └── metasploit.py
     └── network_toolkit.py
-    *└── nextcloud_setup.py
+    └── nextcloud_setup.py
+    └── nextcloud_uninstaller.py
     └── python_dev_setup.py
     └── raspberry_pi_5_overclocking_utility.py
     └── reset_tailscale.py
