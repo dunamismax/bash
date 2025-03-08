@@ -1164,33 +1164,31 @@ class FedoraDesktopSetup:
         return status
 
     async def install_flatpak_and_apps_async(self) -> Tuple[List[str], List[str]]:
+    successful = []
+    failed = []
+    self.logger.info("Installing Flatpak Apps.")
+    for app in self.config.FLATPAK_APPS:
         try:
-            await run_command_async(["dnf", "install", "-y", "flatpak", "gnome-software-plugin-flatpak"])
-            self.logger.info("Flatpak and its plugin installed using dnf.")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to install Flatpak: {e}")
-            return [], []
-        try:
-            await run_command_async(["flatpak", "remote-add", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"])
-            self.logger.info("Flathub repository added.")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to add Flathub repository: {e}")
-            return [], []
-        successful, failed = [], []
-        for app in self.config.FLATPAK_APPS:
-            try:
-                result = await run_command_async(["flatpak", "list", "--app"], capture_output=True, text=True)
-                if app in result.stdout:
-                    self.logger.info(f"Flatpak app {app} is already installed.")
-                    successful.append(app)
-                    continue
-                await run_command_async(["flatpak", "install", "--assumeyes", "flathub", app])
-                self.logger.info(f"Installed Flatpak app: {app}")
+            # Check if the app is already installed
+            result = await run_command_async(
+                ["flatpak", "list", "--app"],
+                capture_output=True,
+                text=True
+            )
+            if app in result.stdout:
+                self.logger.info(f"Flatpak app {app} is already installed.")
                 successful.append(app)
-            except subprocess.CalledProcessError:
-                self.logger.warning(f"Failed to install Flatpak app: {app}")
-                failed.append(app)
-        return successful, failed
+                continue
+            # Install the app from the Flathub repository
+            await run_command_async(
+                ["flatpak", "install", "--assumeyes", "flathub", app]
+            )
+            self.logger.info(f"Installed Flatpak app: {app}")
+            successful.append(app)
+        except subprocess.CalledProcessError as e:
+            self.logger.warning(f"Failed to install Flatpak app {app}: {e}")
+            failed.append(app)
+    return successful, failed
 
     async def install_configure_vscode_async(self) -> bool:
         try:
