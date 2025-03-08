@@ -1363,18 +1363,6 @@ class FedoraDesktopSetup:
         try:
             # Enable and start the tailscaled service in one step.
             await run_command_async(["systemctl", "enable", "--now", "tailscaled"])
-            # Connect the machine to the Tailscale network (this will open your browser for authentication).
-            self.logger.info("Connecting machine to Tailscale network. Please complete authentication in your browser...")
-            await run_command_async(["tailscale", "up"])
-            # Verify that the tailscaled service is active.
-            status = await run_command_async(
-                ["systemctl", "is-active", "tailscaled"],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            if status.stdout.strip() == "active":
-                self.logger.info("Tailscale service is active.")
                 return True
             else:
                 self.logger.warning("Tailscale service may not be running correctly.")
