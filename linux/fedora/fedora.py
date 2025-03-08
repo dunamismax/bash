@@ -1155,70 +1155,91 @@ class FedoraDesktopSetup:
     async def phase_additional_apps(self) -> bool:
         await self.print_section_async("Additional Applications & Tools")
         status = True
-        apps_success, apps_failed = await run_with_progress_async("Installing Flatpak and applications", self.install_flatpak_and_apps_async, task_name="additional_apps")
+    
+        # Install all Flatpak apps from the configured list.
+        apps_success, apps_failed = await run_with_progress_async(
+            "Installing Flatpak Apps",
+            self.install_flatpak_and_apps_async,
+            task_name="additional_apps"
+        )
         if apps_failed and len(apps_failed) > len(self.config.FLATPAK_APPS) * 0.5:
             self.logger.error(f"Flatpak app installation failures: {', '.join(apps_failed)}")
             status = False
-        if not await run_with_progress_async("Installing VS Code", self.install_configure_vscode_async, task_name="additional_apps"):
+    
+        # Install VS Code using the provided download link.
+        if not await run_with_progress_async(
+            "Installing VS Code",
+            self.install_configure_vscode_async,
+            task_name="additional_apps"
+        ):
             status = False
+    
         return status
-
+    
     async def install_flatpak_and_apps_async(self) -> Tuple[List[str], List[str]]:
-    successful = []
-    failed = []
-    self.logger.info("Installing Flatpak Apps.")
-    for app in self.config.FLATPAK_APPS:
-        try:
-            # Check if the app is already installed
-            result = await run_command_async(
-                ["flatpak", "list", "--app"],
-                capture_output=True,
-                text=True
-            )
-            if app in result.stdout:
-                self.logger.info(f"Flatpak app {app} is already installed.")
+        successful = []
+        failed = []
+        self.logger.info("Installing Flatpak Apps.")
+        for app in self.config.FLATPAK_APPS:
+            try:
+                # Check if the app is already installed.
+                result = await run_command_async(
+                    ["flatpak", "list", "--app"],
+                    capture_output=True,
+                    text=True
+                )
+                if app in result.stdout:
+                    self.logger.info(f"Flatpak app {app} is already installed.")
+                    successful.append(app)
+                    continue
+                # Install the app from the Flathub repository.
+                await run_command_async(
+                    ["flatpak", "install", "--assumeyes", "flathub", app]
+                )
+                self.logger.info(f"Installed Flatpak app: {app}")
                 successful.append(app)
-                continue
-            # Install the app from the Flathub repository
-            await run_command_async(
-                ["flatpak", "install", "--assumeyes", "flathub", app]
-            )
-            self.logger.info(f"Installed Flatpak app: {app}")
-            successful.append(app)
-        except subprocess.CalledProcessError as e:
-            self.logger.warning(f"Failed to install Flatpak app {app}: {e}")
-            failed.append(app)
-    return successful, failed
-
+            except subprocess.CalledProcessError as e:
+                self.logger.warning(f"Failed to install Flatpak app {app}: {e}")
+                failed.append(app)
+        return successful, failed
+    
     async def install_configure_vscode_async(self) -> bool:
         try:
             if await command_exists_async("code"):
                 self.logger.info("VS Code is already installed.")
                 return True
-            repo_file = Path("/etc/yum.repos.d/vscode.repo")
-            content = (
-                "[code]\n"
-                "name=Visual Studio Code\n"
-                "baseurl=https://packages.microsoft.com/yumrepos/vscode\n"
-                "enabled=1\n"
-                "gpgcheck=1\n"
-                "gpgkey=https://packages.microsoft.com/keys/microsoft.asc\n"
-            )
+    
+            # Download the VS Code RPM from the provided link.
+            vscode_url = "https://code.visualstudio.com/sha/download?build=stable&os=linux-rpm-x64"
+            tmp_file = Path(tempfile.gettempdir()) / "vscode.rpm"
+            self.logger.info(f"Downloading VS Code from {vscode_url} to {tmp_file}...")
+            await download_file_async(vscode_url, tmp_file)
+    
+            # Install the downloaded RPM using dnf.
+            await run_command_async(["dnf", "install", "-y", str(tmp_file)])
+            self.logger.info("VS Code installed successfully from RPM.")
+    
+            # Clean up the downloaded file.
+            tmp_file.unlink(missing_ok=True)
+    
+            # Optionally configure VS Code for Wayland support.
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: repo_file.write_text(content))
-            await run_command_async(["dnf", "makecache"])
-            await run_command_async(["dnf", "install", "-y", "code"])
             desktop_file = Path("/usr/share/applications/code.desktop")
             if desktop_file.exists():
                 file_content = await loop.run_in_executor(None, desktop_file.read_text)
                 if "--enable-features=UseOzonePlatform --ozone-platform=wayland" not in file_content:
-                    new_content = file_content.replace("Exec=/usr/share/code/code", "Exec=/usr/share/code/code --enable-features=UseOzonePlatform --ozone-platform=wayland")
+                    new_content = file_content.replace(
+                        "Exec=/usr/share/code/code",
+                        "Exec=/usr/share/code/code --enable-features=UseOzonePlatform --ozone-platform=wayland"
+                    )
                     await loop.run_in_executor(None, lambda: desktop_file.write_text(new_content))
                     self.logger.info("VS Code configured for Wayland support.")
+    
+            # Ensure user configuration directory exists and set proper ownership.
             config_dir = self.config.USER_HOME / ".config" / "Code" / "User"
             config_dir.mkdir(parents=True, exist_ok=True)
             await run_command_async(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(config_dir)])
-            self.logger.info("VS Code installed and configured successfully.")
+            self.logger.info("VS Code installation and configuration completed successfully.")
             return True
         except Exception as e:
             self.logger.error(f"Failed to install/configure VS Code: {e}")
