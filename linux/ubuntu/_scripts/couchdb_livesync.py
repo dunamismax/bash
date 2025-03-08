@@ -1052,9 +1052,25 @@ async def configure_nginx(config: CouchDBConfig) -> bool:
             return False
 
 
-async def run_livesync_init() -> bool:
-    """Run the LiveSync initialization script with more detailed error capture."""
+async def run_livesync_init(config: CouchDBConfig = None) -> bool:
+    """Run the LiveSync initialization script with more detailed error capture.
+
+    Args:
+        config: Optional CouchDBConfig object to use for hostname. If None, localhost will be used.
+    """
     print_step("Initializing Obsidian LiveSync...")
+
+    # If config is not provided, load it
+    if config is None:
+        config = await load_config()
+
+    # Determine the hostname to use
+    hostname = (
+        config.domain
+        if config.domain and config.domain != DEFAULT_DOMAIN
+        else "localhost"
+    )
+    print_step(f"Using hostname: {hostname}")
 
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
@@ -1116,14 +1132,30 @@ async def run_livesync_init() -> bool:
                 print_error("CouchDB not accessible. Cannot initialize LiveSync.")
                 return False
 
-            # Run the script with 'yes' to automatically answer all prompts and capture full output
+            # Run the script with hostname parameter and auto-yes
+            # Using environment variables to pass the hostname and yes for all prompts
+            env_vars = f"HOSTNAME={hostname} COUCH_URL=http://{hostname}:5984"
+
             returncode, stdout, stderr = await run_command_async(
                 [
                     "bash",
                     "-c",
-                    f"yes | {temp_script_path} > {temp_output_path} 2>&1",
+                    f"{env_vars} yes | {temp_script_path} > {temp_output_path} 2>&1",
                 ]
             )
+
+            # If that doesn't work, try with explicit parameters
+            if returncode != 0:
+                print_warning(
+                    "First initialization attempt failed, trying with explicit parameters..."
+                )
+                returncode, stdout, stderr = await run_command_async(
+                    [
+                        "bash",
+                        "-c",
+                        f"yes | {temp_script_path} -h {hostname} > {temp_output_path} 2>&1",
+                    ]
+                )
 
             # Read the output log for diagnostics
             try:
@@ -1703,7 +1735,7 @@ async def install_manager_async() -> None:
     if not status.livesync_initialized:
         proceed = await async_confirm("Initialize Obsidian LiveSync?", default=True)
         if proceed:
-            status.livesync_initialized = await run_livesync_init()
+            status.livesync_initialized = await run_livesync_init(config)
             await save_status(status)
         else:
             print_warning("LiveSync initialization skipped")
@@ -1797,7 +1829,7 @@ async def main_menu_async() -> None:
             await troubleshoot_async(config, status)
         elif choice == "6":
             print_section("Running LiveSync Initialization")
-            success = await run_livesync_init()
+            success = await run_livesync_init(config)
             if success:
                 status.livesync_initialized = True
                 await save_status(status)
