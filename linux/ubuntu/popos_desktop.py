@@ -240,10 +240,40 @@ class Config:
     FLATPAK_APPS: List[str] = field(
         default_factory=lambda: [
             "com.discordapp.Discord",
-            "org.videolan.VLC",
-            "org.gnome.Extensions",
+            "com.usebottles.bottles",
+            "com.valvesoftware.Steam",
             "com.spotify.Client",
-            "com.slack.Slack",
+            "org.videolan.VLC",
+            "org.libretro.RetroArch",
+            "com.obsproject.Studio",
+            "com.github.tchx84.Flatseal",
+            "net.lutris.Lutris",
+            "net.davidotek.pupgui2",
+            "org.gimp.GIMP",
+            "org.qbittorrent.qBittorrent",
+            "com.github.Matoking.protontricks",
+            "md.obsidian.Obsidian",
+            "org.prismlauncher.PrismLauncher",
+            "com.bitwarden.desktop",
+            "org.kde.kdenlive",
+            "org.signal.Signal",
+            "org.gnome.Boxes",
+            "com.stremio.Stremio",
+            "org.blender.Blender",
+            "org.localsend.localsend_app",
+            "fr.handbrake.ghb",
+            "org.remmina.Remmina",
+            "org.audacityteam.Audacity",
+            "com.rustdesk.RustDesk",
+            "com.getpostman.Postman",
+            "io.github.aandrew_me.ytdn",
+            "org.shotcut.Shotcut",
+            "com.calibre_ebook.calibre",
+            "tv.plex.PlexDesktop",
+            "org.filezillaproject.Filezilla",
+            "com.github.k4zmu2a.spacecadetpinball",
+            "org.virt_manager.virt-manager",
+            "org.raspberrypi.rpi-imager",
         ]
     )
 
@@ -252,7 +282,7 @@ class Config:
         default_factory=lambda: {
             "PermitRootLogin": "no",
             "PasswordAuthentication": "yes",
-            "X11Forwarding": "no",
+            "X11Forwarding": "yes",
             "MaxAuthTries": "3",
             "ClientAliveInterval": "300",
             "ClientAliveCountMax": "3",
@@ -2355,20 +2385,41 @@ class PopOSDesktopSetup:
 
             # Add Brave repository
             await run_command_async(
-                [
-                    "curl",
-                    "-fsSL",
-                    "https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg",
-                    "-o",
-                    "/usr/share/keyrings/brave-browser-archive-keyring.gpg",
-                ]
-            )
-
-            repo_file = Path("/etc/apt/sources.list.d/brave-browser-release.list")
-            content = "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main\n"
-
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: repo_file.write_text(content))
+                ["com.discordapp.Discord",
+            "com.usebottles.bottles",
+            "com.valvesoftware.Steam",
+            "com.spotify.Client",
+            "org.videolan.VLC",
+            "org.libretro.RetroArch",
+            "com.obsproject.Studio",
+            "com.github.tchx84.Flatseal",
+            "net.lutris.Lutris",
+            "net.davidotek.pupgui2",
+            "org.gimp.GIMP",
+            "org.qbittorrent.qBittorrent",
+            "com.github.Matoking.protontricks",
+            "md.obsidian.Obsidian",
+            "org.prismlauncher.PrismLauncher",
+            "com.bitwarden.desktop",
+            "org.kde.kdenlive",
+            "org.signal.Signal",
+            "org.gnome.Boxes",
+            "com.stremio.Stremio",
+            "org.blender.Blender",
+            "org.localsend.localsend_app",
+            "fr.handbrake.ghb",
+            "org.remmina.Remmina",
+            "org.audacityteam.Audacity",
+            "com.rustdesk.RustDesk",
+            "com.getpostman.Postman",
+            "io.github.aandrew_me.ytdn",
+            "org.shotcut.Shotcut",
+            "com.calibre_ebook.calibre",
+            "tv.plex.PlexDesktop",
+            "org.filezillaproject.Filezilla",
+            "com.github.k4zmu2a.spacecadetpinball",
+            "org.virt_manager.virt-manager",
+            "org.raspberrypi.rpi-imager",
 
             # Update and install
             if self.nala_installed:
