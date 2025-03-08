@@ -8,7 +8,7 @@ This fully automated utility performs:
   • System update & basic configuration (timezone, packages)
   • Repository & shell setup (cloning GitHub repos, updating shell configs)
   • Security hardening (SSH, sudoers, firewall using firewalld, Fail2ban)
-  • Essential service installations (Plex, Fastfetch, Brave, VS Code)
+  • Essential service installations (Fastfetch, Brave, VS Code)
   • User customization & script deployment
   • Maintenance tasks (cron job, log rotation, configuration backups)
   • Certificates & performance tuning (SSL renewals, sysctl tweaks)
@@ -952,65 +952,10 @@ class FedoraDesktopSetup:
     async def phase_service_installation(self) -> bool:
         await self.print_section_async("Essential Service Installation")
         status = True
-        if not await run_with_progress_async("Installing Plex Media Server", self.install_plex_async, task_name="services"):
-            status = False
         if not await run_with_progress_async("Installing Fastfetch", self.install_fastfetch_async, task_name="services"):
             status = False
         return status
 
-    async def install_plex_async(self) -> bool:
-        try:
-            result = await run_command_async(["rpm", "-q", "plexmediaserver"], check=False, capture_output=True)
-            if result.returncode == 0:
-                self.logger.info("Plex Media Server already installed; skipping.")
-                return True
-        except Exception:
-            pass
-        temp_rpm = Path("/tmp/plexmediaserver.rpm")
-        try:
-            # Use the Fedora-specific Plex RPM (update URL as needed)
-            await download_file_async("https://downloads.plex.tv/plex-media-server-new/1.41.4.9463-630c9f557/fedora/plexmediaserver-1.41.4.9463-630c9f557.x86_64.rpm", temp_rpm)
-            await run_command_async(["dnf", "install", "-y", str(temp_rpm)])
-        except subprocess.CalledProcessError:
-            self.logger.warning("dnf issues with Plex; attempting to fix dependencies...")
-            try:
-                await run_command_async(["dnf", "install", "-y", "--best", "--allowerasing"])
-                try:
-                    await run_command_async(["dnf", "install", "-y", str(temp_rpm)])
-                except subprocess.CalledProcessError:
-                    self.logger.error("Failed to install Plex even after fixing dependencies.")
-                    return False
-            except subprocess.CalledProcessError:
-                self.logger.error("Failed to fix Plex dependencies.")
-                return False
-        plex_conf = Path("/etc/sysconfig/plexmediaserver")
-        if plex_conf.is_file():
-            try:
-                loop = asyncio.get_running_loop()
-                conf = await loop.run_in_executor(None, plex_conf.read_text)
-                if f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}" not in conf:
-                    new_conf = [f"PLEX_MEDIA_SERVER_USER={self.config.USERNAME}" if line.startswith("PLEX_MEDIA_SERVER_USER=") else line for line in conf.splitlines()]
-                    await loop.run_in_executor(None, lambda: plex_conf.write_text("\n".join(new_conf) + "\n"))
-                    self.logger.info(f"Configured Plex to run as {self.config.USERNAME}.")
-                else:
-                    self.logger.info("Plex user already configured.")
-            except Exception as e:
-                self.logger.warning(f"Failed to update {plex_conf}: {e}")
-        else:
-            self.logger.warning(f"{plex_conf} not found; skipping user configuration.")
-        try:
-            await run_command_async(["systemctl", "enable", "plexmediaserver"])
-            await run_command_async(["systemctl", "restart", "plexmediaserver"])
-            self.logger.info("Plex service enabled and started.")
-        except subprocess.CalledProcessError:
-            self.logger.warning("Failed to enable/start Plex service.")
-        try:
-            if temp_rpm.exists():
-                await asyncio.get_running_loop().run_in_executor(None, temp_rpm.unlink)
-        except Exception:
-            pass
-        self.logger.info("Plex Media Server installation complete.")
-        return True
 
     async def install_fastfetch_async(self) -> bool:
         try:
