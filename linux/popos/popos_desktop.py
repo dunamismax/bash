@@ -1954,6 +1954,12 @@ class PopOSDesktopSetup:
             task_name="cleanup_final",
         ):
             status = False
+        if not await run_with_progress_async(
+            "Cleaning up temporary files",
+            self.cleanup_temp_files_async,
+            task_name="cleanup_final",
+        ):
+            status = False
         return status
 
     async def configure_wayland_async(self) -> bool:
