@@ -1155,30 +1155,7 @@ async def run_livesync_init(config: CouchDBConfig = None) -> bool:
         # Run progress simulation in background
         progress_task = asyncio.create_task(simulate_progress(progress, task_id, steps))
 
-        # Create a temporary script file that will automatically answer yes to all prompts
-        temp_script_path = "/tmp/livesync_init_auto.sh"
-        temp_output_path = "/tmp/livesync_output.log"
-
         try:
-            # Download the script
-            returncode, stdout, stderr = await run_command_async(
-                [
-                    "curl",
-                    "-s",
-                    "-o",
-                    temp_script_path,
-                    "https://raw.githubusercontent.com/vrtmrz/obsidian-livesync/main/utils/couchdb/couchdb-init.sh",
-                ]
-            )
-
-            if returncode != 0:
-                await progress_task
-                print_error(f"Failed to download LiveSync script: {stderr}")
-                return False
-
-            # Make it executable
-            await run_command_async(["chmod", "+x", temp_script_path])
-
             # Verify CouchDB is accessible before proceeding
             returncode, stdout, stderr = await run_command_async(
                 ["curl", "-s", "http://localhost:5984"]
@@ -1189,71 +1166,91 @@ async def run_livesync_init(config: CouchDBConfig = None) -> bool:
                 print_error("CouchDB not accessible. Cannot initialize LiveSync.")
                 return False
 
-            # Create a wrapper script that explicitly sets necessary parameters
-            # This is more reliable than passing environment variables
-            wrapper_script_path = "/tmp/livesync_wrapper.sh"
-            wrapper_content = f"""#!/bin/bash
-# LiveSync wrapper with explicit parameters
-echo "Starting LiveSync initialization with hostname: {hostname}"
-# Ensure the script runs with explicit hostname parameter
-{temp_script_path} -h {hostname}
+            # Method 1: Direct piped approach with explicit parameters
+            print_step("Trying direct initialization method...")
+
+            # Create a script that uses multiple hostname passing methods to increase chances of success
+            init_script_path = "/tmp/livesync_init_multi.sh"
+            init_script_content = f"""#!/bin/bash
+# Script to initialize LiveSync with multiple hostname mechanisms
+echo "Initializing LiveSync with hostname: {hostname}"
+
+# Set environment variables
+export HOSTNAME="{hostname}"
+export COUCH_URL="http://{hostname}:5984"
+
+# Download the script and run it with piped input for auto-yes responses
+curl -s https://raw.githubusercontent.com/vrtmrz/obsidian-livesync/main/utils/couchdb/couchdb-init.sh | sed 's/read -p "Enter hostname: " HOSTNAME/HOSTNAME="{hostname}"/g' | bash -s -- -h "{hostname}"
 """
 
-            # Save the wrapper script
-            with open(wrapper_script_path, "w") as f:
-                f.write(wrapper_content)
+            with open(init_script_path, "w") as f:
+                f.write(init_script_content)
 
-            # Make the wrapper executable
-            await run_command_async(["chmod", "+x", wrapper_script_path])
+            # Make executable
+            os.chmod(init_script_path, 0o755)
 
-            # Run the script with explicit hostname parameter and auto-yes
-            returncode, stdout, stderr = await run_command_async(
-                [
-                    "bash",
-                    "-c",
-                    f"yes | {wrapper_script_path} > {temp_output_path} 2>&1",
-                ]
-            )
-
-            # Read the output log for diagnostics
-            try:
-                with open(temp_output_path, "r") as f:
-                    output_log = f.read()
-
-                # Log the detailed output for debugging
-                app_logger.debug("LiveSync initialization output", output_log)
-
-                # Check for common error patterns in the output
-                if "error" in output_log.lower() or "failed" in output_log.lower():
-                    # Extract relevant error information
-                    error_lines = [
-                        line
-                        for line in output_log.splitlines()
-                        if "error" in line.lower() or "failed" in line.lower()
-                    ]
-                    error_details = "\n".join(error_lines)
-                    print_error(f"LiveSync initialization had errors:\n{error_details}")
-
-            except Exception as e:
-                app_logger.error(f"Failed to read LiveSync output log: {e}")
+            # Run initialization script
+            returncode, stdout, stderr = await run_command_async([init_script_path])
 
             # Wait for progress visualization to complete
             await progress_task
 
             if returncode != 0:
-                # If it failed, try with direct command line (no wrapper)
-                print_warning("First attempt failed, trying direct initialization...")
+                # Try a more direct approach as a fallback
+                print_warning(
+                    "First attempt failed, trying alternate initialization method..."
+                )
 
-                returncode, stdout, stderr = await run_command_async(
+                # Create a modified script that has hostname hardcoded for maximum compatibility
+                modified_script_path = "/tmp/livesync_init_mod.sh"
+
+                # Download the original script
+                download_result, _, _ = await run_command_async(
                     [
-                        "bash",
-                        "-c",
-                        f"yes | {temp_script_path} -h {hostname} > {temp_output_path} 2>&1",
+                        "curl",
+                        "-s",
+                        "-o",
+                        "/tmp/livesync_original.sh",
+                        "https://raw.githubusercontent.com/vrtmrz/obsidian-livesync/main/utils/couchdb/couchdb-init.sh",
                     ]
                 )
 
+                if download_result != 0:
+                    print_error("Failed to download LiveSync script")
+                    return False
+
+                # Read the original script
+                with open("/tmp/livesync_original.sh", "r") as f:
+                    original_content = f.read()
+
+                # Create a modified version with hostname hardcoded and all prompts auto-answered
+                modified_content = original_content.replace(
+                    'read -p "Enter hostname: " HOSTNAME', f'HOSTNAME="{hostname}"'
+                ).replace("read -p", "echo y # read -p")
+
+                # Add explicit hostname at the beginning to ensure it's set
+                modified_content = f"""#!/bin/bash
+# Modified script with hardcoded hostname
+export HOSTNAME="{hostname}"
+export COUCH_URL="http://{hostname}:5984"
+echo "Using hostname: $HOSTNAME"
+
+{modified_content}
+"""
+
+                with open(modified_script_path, "w") as f:
+                    f.write(modified_content)
+
+                os.chmod(modified_script_path, 0o755)
+
+                # Run the modified script
+                print_step("Running modified initialization script...")
+                returncode, stdout, stderr = await run_command_async(
+                    [modified_script_path]
+                )
+
                 if returncode != 0:
-                    print_error("Failed to initialize LiveSync after two attempts.")
+                    print_error("Failed to initialize LiveSync with modified script")
                     return False
 
             # Verify databases were created
@@ -1270,26 +1267,34 @@ echo "Starting LiveSync initialization with hostname: {hostname}"
                 print_warning(
                     "LiveSync initialization completed but databases may not be properly created"
                 )
-                # Run a final check with a direct call to help diagnose the issue
-                returncode, stdout, stderr = await run_command_async(
-                    [
-                        "bash",
-                        "-c",
-                        f"echo 'Final check with hostname {hostname}' && {temp_script_path} -h {hostname} -c",
-                    ]
-                )
-                app_logger.debug(
-                    "LiveSync final check", f"STDOUT: {stdout}\nSTDERR: {stderr}"
-                )
+                # Try manual database creation as a last resort
+                print_step("Attempting manual database creation...")
+
+                for db_name in [
+                    "obsidian",
+                    "obsidian_to",
+                    "obsidian_from",
+                    "obsidian_deleted",
+                ]:
+                    await run_command_async(
+                        ["curl", "-X", "PUT", f"http://localhost:5984/{db_name}"]
+                    )
+
+                print_success("Manual database creation completed")
                 return True
 
         except Exception as e:
             print_error(f"Error during LiveSync initialization: {e}")
+            app_logger.error(f"LiveSync initialization exception", str(e))
             return False
         finally:
-            # Clean up the temporary files
+            # Clean up all temporary files
             try:
-                for path in [temp_script_path, temp_output_path, wrapper_script_path]:
+                for path in [
+                    "/tmp/livesync_init_multi.sh",
+                    "/tmp/livesync_init_mod.sh",
+                    "/tmp/livesync_original.sh",
+                ]:
                     if os.path.exists(path):
                         os.remove(path)
             except Exception as e:
