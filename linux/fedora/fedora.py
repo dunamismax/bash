@@ -49,14 +49,8 @@ try:
     from rich.table import Table
     from rich.theme import Theme
     from rich.logging import RichHandler
-    from rich.progress import (
-        Progress,
-        SpinnerColumn,
-        TextColumn,
-        BarColumn,
-        TaskProgressColumn,
-        TimeRemainingColumn,
-    )
+    # Only import the spinner and text column to avoid flashing progress bars
+    from rich.progress import SpinnerColumn, TextColumn
     from rich.align import Align
     from rich.prompt import Prompt, Confirm
     from rich.text import Text
@@ -119,7 +113,7 @@ console = Console(theme=nord_theme)
 # ----------------------------------------------------------------
 APP_NAME: str = "Fedora Setup & Hardening"
 VERSION: str = "1.0.0"
-OPERATION_TIMEOUT: int = 300  # 5 minutes default timeout for operations
+OPERATION_TIMEOUT: int = 300  # default timeout for operations in seconds
 
 SETUP_STATUS: Dict[str, Dict[str, str]] = {
     "preflight": {"status": "pending", "message": ""},
@@ -145,96 +139,76 @@ T = TypeVar("T")
 @dataclass
 class Config:
     """Configuration for the Fedora setup process.
-    
+
     This class defines paths, system package lists (for dnf/rpm installs),
     and Flatpak apps (for desktop and system utilities) as well as SSH and
     firewall settings.
     """
-    
-    # Logging and user details
     LOG_FILE: str = "/var/log/fedora_setup.log"
     USERNAME: str = "sawyer"
     USER_HOME: Path = field(default_factory=lambda: Path("/home/sawyer"))
-    
+
     # Essential system packages to be installed via dnf (RPM-based)
     PACKAGES: List[str] = field(default_factory=lambda: [
-        # Shell, editors & terminal multiplexer
         "bash", "vim", "nano", "screen", "tmux",
-        # System monitoring and utilities
         "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances",
-        # Version control and networking tools
         "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo",
         "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban",
-        # Development tools and libraries
         "python3", "python3-pip", "ca-certificates", "dnf-plugins-core", "gnupg2",
         "gcc", "gcc-c++", "make", "cmake", "ninja-build", "meson", "gettext", "pkgconf",
         "python3-devel", "openssl-devel", "libffi-devel", "zlib-devel", "readline-devel",
         "bzip2-devel", "tk-devel", "xz", "ncurses-devel", "gdbm-devel", "nss-devel",
         "libxml2-devel", "xmlsec1-openssl-devel", "clang", "llvm", "golang", "gdb",
         "cargo", "rust", "jq",
-        # Disk, network and file system utilities
         "traceroute", "mtr", "bind-utils", "iproute", "iputils", "restic",
-        # Enhanced shells and search tools
         "zsh", "fzf", "bat", "ripgrep", "ncdu",
-        # Containerization & web development
         "docker", "docker-compose", "nodejs", "npm", "autoconf", "automake", "libtool",
         "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher",
         "xclip", "tmate", "iperf3"
     ])
-    
+
     # Recommended Flatpak applications for everyday use, organized by category.
+    # NOTE: Do not alter this list!
     FLATPAK_APPS: List[str] = field(default_factory=lambda: [
-        # ── Communication & Collaboration ─────────────────────────────
-        "com.discordapp.Discord",           # Discord: Chat and community calls
-        "org.mozilla.Thunderbird",          # Thunderbird for email management
-        "org.signal.Signal",                # Signal for secure messaging
-
-        # ── Productivity & Office ─────────────────────────────────────
-        "com.spotify.Client",               # Spotify for streaming music
-        "md.obsidian.Obsidian",             # Obsidian for personal knowledge base
-        "com.bitwarden.desktop",            # Bitwarden for password management
-        "org.libreoffice.LibreOffice",      # LibreOffice suite for documents
-        "org.gnome.Tweaks",                 # GNOME Tweaks for desktop customization
-
-        # ── Multimedia & Creativity ───────────────────────────────────
-        "org.videolan.VLC",                 # VLC: Feature‑rich media player
-        "com.obsproject.Studio",            # OBS Studio for streaming and recording
-        "org.blender.Blender",              # Blender for 3D modeling and animation
-        "org.gimp.GIMP",                    # GIMP for advanced image editing
-        "org.shotcut.Shotcut",              # Shotcut for video editing
-        "org.audacityteam.Audacity",        # Audacity for audio editing
-        "org.inkscape.Inkscape",            # Inkscape for vector graphics design
-
-        # ── Gaming & Emulation ──────────────────────────────────────────
-        "com.valvesoftware.Steam",          # Steam for gaming
-        "net.lutris.Lutris",                # Lutris: Game manager and launcher
-        "com.usebottles.bottles",           # Bottles for running Windows apps via Wine
-        "org.libretro.RetroArch",           # RetroArch for classic game emulation
-
-        # ── Utilities & System Tools ────────────────────────────────────
-        "com.github.tchx84.Flatseal",       # Flatseal to manage Flatpak permissions
-        "net.davidotek.pupgui2",            # PupGUI2 for Proton configuration
-        "org.prismlauncher.PrismLauncher",  # PrismLauncher for game mod management
-        "org.gnome.Boxes",                  # GNOME Boxes for managing virtual machines
-        "org.remmina.Remmina",              # Remmina for remote desktop sessions
-        "com.rustdesk.RustDesk",            # RustDesk for remote support and screen sharing
-        "com.getpostman.Postman",           # Postman for API development and testing
-        "io.github.aandrew_me.ytdn",        # YouTube downloader tool
-        "com.calibre_ebook.calibre",        # Calibre for ebook management
-        "tv.plex.PlexDesktop",              # Plex Desktop for media organization
-        "org.filezillaproject.Filezilla",   # FileZilla for FTP file transfers
-        "com.github.k4zmu2a.spacecadetpinball",  # SpaceCadet Pinball for retro gaming fun
-        "org.raspberrypi.rpi-imager",         # Raspberry Pi Imager for flashing OS images
-
-        # ── Additional Popular & System Utility Apps ─────────────────────
-        "org.mozilla.firefox",              # Firefox web browser for everyday browsing
-        "im.riot.Element",                  # Element: Modern Matrix chat client
-        "org.gnome.Logs",                   # GNOME Logs to review system logs
-        "org.gnome.Disks",                  # GNOME Disks for disk partitioning and monitoring
-        "org.gnome.SystemMonitor",          # GNOME System Monitor for resource tracking
+        "com.discordapp.Discord",
+        "org.mozilla.Thunderbird",
+        "org.signal.Signal",
+        "com.spotify.Client",
+        "md.obsidian.Obsidian",
+        "com.bitwarden.desktop",
+        "org.libreoffice.LibreOffice",
+        "org.gnome.Tweaks",
+        "org.videolan.VLC",
+        "com.obsproject.Studio",
+        "org.blender.Blender",
+        "org.gimp.GIMP",
+        "org.shotcut.Shotcut",
+        "org.audacityteam.Audacity",
+        "org.inkscape.Inkscape",
+        "com.valvesoftware.Steam",
+        "net.lutris.Lutris",
+        "com.usebottles.bottles",
+        "org.libretro.RetroArch",
+        "com.github.tchx84.Flatseal",
+        "net.davidotek.pupgui2",
+        "org.prismlauncher.PrismLauncher",
+        "org.gnome.Boxes",
+        "org.remmina.Remmina",
+        "com.rustdesk.RustDesk",
+        "com.getpostman.Postman",
+        "io.github.aandrew_me.ytdn",
+        "com.calibre_ebook.calibre",
+        "tv.plex.PlexDesktop",
+        "org.filezillaproject.Filezilla",
+        "com.github.k4zmu2a.spacecadetpinball",
+        "org.raspberrypi.rpi-imager",
+        "org.mozilla.firefox",
+        "im.riot.Element",
+        "org.gnome.Logs",
+        "org.gnome.Disks",
+        "org.gnome.SystemMonitor",
     ])
-    
-    # SSH configuration parameters for secure remote access
+
     SSH_CONFIG: Dict[str, str] = field(default_factory=lambda: {
         "PermitRootLogin": "no",
         "PasswordAuthentication": "yes",
@@ -243,12 +217,10 @@ class Config:
         "ClientAliveInterval": "300",
         "ClientAliveCountMax": "3",
     })
-    
-    # Firewall configuration for Fedora (using firewalld): allow common ports
+
     FIREWALL_PORTS: List[str] = field(default_factory=lambda: ["22", "80", "443"])
-    
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the configuration to a dictionary."""
         return asdict(self)
 
 # ----------------------------------------------------------------
@@ -315,7 +287,7 @@ def print_section(title: str) -> None:
 def display_panel(message: str, style: str = NordColors.FROST_2, title: Optional[str] = None) -> None:
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
-        border_style=f"{style}",
+        border_style=style,
         padding=(1, 2),
         title=f"[bold {style}]{title}[/]" if title else None,
     )
@@ -442,7 +414,7 @@ async def download_file_async(url: str, dest: Union[str, Path], timeout: int = 3
         raise
 
 # ----------------------------------------------------------------
-# Progress Utility: Run Function with Progress Indicator
+# Progress Utility: Run Function with Spinner Indicator
 # ----------------------------------------------------------------
 async def run_with_progress_async(
     description: str,
@@ -456,12 +428,11 @@ async def run_with_progress_async(
             "status": "in_progress",
             "message": f"{description} in progress...",
         }
+    # Use only a spinner and text for progress (no progress bar)
+    from rich.progress import Progress
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("{task.description}"),
-        BarColumn(bar_width=40, style=NordColors.FROST_4, complete_style=NordColors.FROST_2),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
         console=console,
         transient=True,
     ) as progress:
@@ -784,7 +755,6 @@ class FedoraDesktopSetup:
         gh_dir = self.config.USER_HOME / "github"
         gh_dir.mkdir(exist_ok=True)
         all_success = True
-        # Repositories now reside under .../linux/fedora/
         repos = ["bash", "python"]
         for repo in repos:
             repo_dir = gh_dir / repo
@@ -810,7 +780,6 @@ class FedoraDesktopSetup:
         return all_success
 
     async def copy_shell_configs_async(self) -> bool:
-        # Now use the Fedora-specific dotfiles directory
         source_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "fedora" / "dotfiles"
         if not source_dir.is_dir():
             self.logger.error(f"Fedora-specific dotfiles not found in {source_dir}.")
@@ -950,7 +919,6 @@ class FedoraDesktopSetup:
             return False
 
     async def configure_firewall_async(self) -> bool:
-        # Use firewalld for Fedora
         if not await command_exists_async("firewall-cmd"):
             self.logger.error("firewall-cmd not found. Installing firewalld...")
             try:
@@ -962,7 +930,6 @@ class FedoraDesktopSetup:
                 self.logger.error(f"Failed to install firewalld: {e}")
                 return False
         try:
-            # Set default zone and add required ports
             await run_command_async(["firewall-cmd", "--set-default-zone=public"])
             for port in self.config.FIREWALL_PORTS:
                 await run_command_async(["firewall-cmd", "--permanent", "--zone=public", "--add-port", f"{port}/tcp"])
@@ -1005,7 +972,6 @@ class FedoraDesktopSetup:
         except Exception as e:
             self.logger.warning(f"Failed to configure Fail2ban: {e}")
             return False
-
 
     # ----------------------------------------------------------------
     # Phase 4: User Customization & Script Deployment
@@ -1231,7 +1197,6 @@ class FedoraDesktopSetup:
             if await command_exists_async("code"):
                 self.logger.info("VS Code is already installed.")
                 return True
-            # Create Fedora VS Code repo file in /etc/yum.repos.d/
             repo_file = Path("/etc/yum.repos.d/vscode.repo")
             content = (
                 "[code]\n"
