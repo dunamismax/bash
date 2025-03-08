@@ -1,4 +1,4 @@
-Please review the following Python script and use it as a reference template for all future scripts you generate for me. The goal is for all future scripts to follow the structure, style, and best practices shown in this example. Let me know once you've reviewed it.
+# Please review the following Python script and use it as a reference template for all future scripts you generate for me. The goal is for all future scripts to follow the structure, style, and best practices shown in this example. You should always use Rich, Pyfiglet, prompt_toolkit and paramiko and any other libraries you need for the task at hand. Let me know once you've reviewed it
 
 ```python
 #!/usr/bin/env python3
