@@ -14,6 +14,10 @@ import re
 import getpass
 import secrets
 import string
+import logging
+import datetime
+from pathlib import Path
+from collections import deque
 from dataclasses import dataclass, field, asdict
 from typing import List, Tuple, Dict, Optional, Any, Callable, Union, TypeVar, cast
 
@@ -52,15 +56,21 @@ DEFAULT_USERNAME: str = os.environ.get("USER") or "user"
 OPERATION_TIMEOUT: int = 60  # Extended for longer operations
 DEFAULT_COUCHDB_PORT: int = 5984
 DEFAULT_DOMAIN: str = "obsidian-livesync.example.com"
+RETRY_COUNT: int = 3  # Number of retries for failed operations
+RETRY_DELAY: int = 3  # Seconds to wait between retries
 
 # Configuration file paths
 CONFIG_DIR: str = os.path.expanduser("~/.config/couchdb_installer")
 CONFIG_FILE: str = os.path.join(CONFIG_DIR, "config.json")
 NGINX_CONFIG_PATH: str = "/etc/nginx/sites-available"
 NGINX_ENABLED_PATH: str = "/etc/nginx/sites-enabled"
+LOG_FILE: str = os.path.join(CONFIG_DIR, "couchdb_installer.log")
+MAX_LOG_ENTRIES: int = 10000  # For in-memory log storage
 
 
 class NordColors:
+    """Color constants using the Nord color palette."""
+
     POLAR_NIGHT_1: str = "#2E3440"
     POLAR_NIGHT_2: str = "#3B4252"
     POLAR_NIGHT_3: str = "#434C5E"
@@ -85,7 +95,142 @@ class NordColors:
 
 
 @dataclass
+class LogEntry:
+    """Represents a log entry with timestamp, level, and message."""
+
+    timestamp: float
+    level: str
+    message: str
+    details: Optional[str] = None
+
+    def formatted_time(self) -> str:
+        """Return a formatted timestamp string."""
+        return datetime.datetime.fromtimestamp(self.timestamp).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    def get_color(self) -> str:
+        """Return the appropriate color for this log level."""
+        if self.level == "ERROR":
+            return NordColors.RED
+        elif self.level == "WARNING":
+            return NordColors.YELLOW
+        elif self.level == "SUCCESS":
+            return NordColors.GREEN
+        elif self.level == "DEBUG":
+            return NordColors.PURPLE
+        else:
+            return NordColors.FROST_2
+
+
+class Logger:
+    """Custom logger that outputs to console, file, and keeps in-memory logs."""
+
+    def __init__(self, log_file: str, max_entries: int = 1000):
+        self.log_file = log_file
+        self.max_entries = max_entries
+        self.logs = deque(maxlen=max_entries)
+
+        # Ensure log directory exists
+        log_dir = os.path.dirname(log_file)
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Set up file logger
+        logging.basicConfig(
+            filename=log_file,
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+        # Add console handler for stdout
+        self.console_handler = logging.StreamHandler(sys.stdout)
+        self.console_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        self.console_handler.setFormatter(formatter)
+
+        # Create logger
+        self.logger = logging.getLogger("couchdb_installer")
+        self.logger.setLevel(logging.DEBUG)
+
+        # Prevent duplicate logs
+        if not self.logger.handlers:
+            self.logger.addHandler(self.console_handler)
+
+    def _add_to_memory(
+        self, level: str, message: str, details: Optional[str] = None
+    ) -> None:
+        """Add a log entry to the in-memory log storage."""
+        entry = LogEntry(
+            timestamp=time.time(), level=level, message=message, details=details
+        )
+        self.logs.append(entry)
+
+    def debug(self, message: str, details: Optional[str] = None) -> None:
+        """Log a debug message."""
+        self.logger.debug(message)
+        self._add_to_memory("DEBUG", message, details)
+
+    def info(self, message: str, details: Optional[str] = None) -> None:
+        """Log an info message."""
+        self.logger.info(message)
+        self._add_to_memory("INFO", message, details)
+
+    def warning(self, message: str, details: Optional[str] = None) -> None:
+        """Log a warning message."""
+        self.logger.warning(message)
+        self._add_to_memory("WARNING", message, details)
+
+    def error(self, message: str, details: Optional[str] = None) -> None:
+        """Log an error message."""
+        self.logger.error(message)
+        self._add_to_memory("ERROR", message, details)
+
+    def success(self, message: str, details: Optional[str] = None) -> None:
+        """Log a success message."""
+        self.logger.info(f"SUCCESS: {message}")
+        self._add_to_memory("SUCCESS", message, details)
+
+    def command(
+        self, cmd: List[str], returncode: int, stdout: str, stderr: str
+    ) -> None:
+        """Log a command execution with its output."""
+        cmd_str = " ".join(cmd)
+        if returncode == 0:
+            self.info(f"Command executed successfully: {cmd_str}")
+            if stdout:
+                self.debug("Command stdout", stdout)
+        else:
+            self.error(
+                f"Command failed with code {returncode}: {cmd_str}",
+                f"STDOUT: {stdout}\nSTDERR: {stderr}",
+            )
+
+    def get_logs(self, level: Optional[str] = None, count: int = 100) -> List[LogEntry]:
+        """Get the most recent logs, optionally filtered by level."""
+        if level:
+            filtered = [log for log in self.logs if log.level == level.upper()]
+            return list(filtered)[-count:]
+        return list(self.logs)[-count:]
+
+    def get_log_file_content(self, max_lines: int = 1000) -> str:
+        """Read the log file and return its content, limited to max_lines."""
+        try:
+            with open(self.log_file, "r") as f:
+                lines = f.readlines()
+                return "".join(lines[-max_lines:])
+        except Exception as e:
+            return f"Error reading log file: {e}"
+
+
+# Initialize the global logger
+app_logger = Logger(LOG_FILE, MAX_LOG_ENTRIES)
+
+
+@dataclass
 class CouchDBConfig:
+    """Configuration for CouchDB setup."""
+
     domain: str = DEFAULT_DOMAIN
     port: int = DEFAULT_COUCHDB_PORT
     admin_username: str = "admin"
@@ -105,6 +250,8 @@ class CouchDBConfig:
 
 @dataclass
 class InstallStatus:
+    """Installation status tracking."""
+
     snapd_installed: bool = False
     couchdb_installed: bool = False
     couchdb_configured: bool = False
@@ -127,6 +274,7 @@ T = TypeVar("T")
 
 # UI Helper Functions
 def clear_screen() -> None:
+    """Clear the terminal screen."""
     console.clear()
 
 
@@ -145,6 +293,7 @@ async def async_confirm(message: str, default: bool = False) -> bool:
 
 
 def create_header() -> Panel:
+    """Create a header panel with the app name."""
     term_width, _ = shutil.get_terminal_size((80, 24))
     fonts: List[str] = ["slant", "small", "mini", "digital"]
     font_to_use: str = fonts[0]
@@ -178,32 +327,43 @@ def create_header() -> Panel:
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
+    """Print a formatted message with a prefix."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def print_error(message: str) -> None:
+    """Print and log an error message."""
     print_message(message, NordColors.RED, "✗")
+    app_logger.error(message)
 
 
 def print_success(message: str) -> None:
+    """Print and log a success message."""
     print_message(message, NordColors.GREEN, "✓")
+    app_logger.success(message)
 
 
 def print_warning(message: str) -> None:
+    """Print and log a warning message."""
     print_message(message, NordColors.YELLOW, "⚠")
+    app_logger.warning(message)
 
 
 def print_step(message: str) -> None:
+    """Print and log a step message."""
     print_message(message, NordColors.FROST_2, "→")
+    app_logger.info(message)
 
 
 def print_section(title: str) -> None:
+    """Print a section title."""
     console.print()
     console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
     console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
 
 
 def display_panel(title: str, message: str, style: str = NordColors.FROST_2) -> None:
+    """Display a panel with a title and message."""
     panel = Panel(
         message,
         title=title,
@@ -214,8 +374,9 @@ def display_panel(title: str, message: str, style: str = NordColors.FROST_2) -> 
     console.print(panel)
 
 
-# Core Functionality - Installation Steps
+# Core Functionality - Configuration Management
 async def ensure_config_directory() -> None:
+    """Ensure the configuration directory exists."""
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
     except Exception as e:
@@ -223,6 +384,7 @@ async def ensure_config_directory() -> None:
 
 
 async def save_config(config: CouchDBConfig) -> bool:
+    """Save the configuration to the config file."""
     await ensure_config_directory()
     try:
         # Use async file operations for more consistent async behavior
@@ -237,6 +399,7 @@ async def save_config(config: CouchDBConfig) -> bool:
 
 
 async def save_status(status: InstallStatus) -> bool:
+    """Save the installation status to a file."""
     await ensure_config_directory()
     try:
         status_file = os.path.join(CONFIG_DIR, "status.json")
@@ -251,6 +414,7 @@ async def save_status(status: InstallStatus) -> bool:
 
 
 async def load_config() -> CouchDBConfig:
+    """Load the configuration from the config file."""
     try:
         if os.path.exists(CONFIG_FILE):
             loop = asyncio.get_running_loop()
@@ -264,6 +428,7 @@ async def load_config() -> CouchDBConfig:
 
 
 async def load_status() -> InstallStatus:
+    """Load the installation status from a file."""
     try:
         status_file = os.path.join(CONFIG_DIR, "status.json")
         if os.path.exists(status_file):
@@ -277,6 +442,7 @@ async def load_status() -> InstallStatus:
     return InstallStatus()
 
 
+# Core Functionality - Command Execution and Utils
 async def run_command_async(
     cmd: List[str], check_sudo: bool = False
 ) -> Tuple[int, str, str]:
@@ -352,6 +518,7 @@ async def check_service_status(service_name: str) -> Tuple[bool, str]:
 
 
 async def simulate_progress(progress, task_id, steps, delay=0.3):
+    """Simulate progress updates for a task."""
     for step, pct in steps:
         await asyncio.sleep(delay)
         progress.update(task_id, description=step, completed=pct)
@@ -375,6 +542,7 @@ async def generate_cookie(length: int = 32) -> str:
     )
 
 
+# Core Functionality - Installation Steps
 async def check_snapd_installed() -> bool:
     """Check if snapd is installed."""
     exists = await check_command_exists("snap")
@@ -977,6 +1145,306 @@ async def display_summary(config: CouchDBConfig, status: InstallStatus) -> None:
         print_step("Complete the installation process to get connection details")
 
 
+# Core Application Functions
+async def view_logs_async() -> None:
+    """Display the application logs with filtering and paging."""
+    logs_viewed = False
+    current_filter = None
+    page_size = 20
+    current_page = 0
+
+    while True:
+        clear_screen()
+        console.print(create_header())
+
+        print_section("Log Viewer")
+
+        # Get the logs with current filter
+        logs = app_logger.get_logs(level=current_filter)
+        total_pages = max(1, (len(logs) + page_size - 1) // page_size)
+        current_page = min(current_page, total_pages - 1)
+
+        # Display filter info
+        if current_filter:
+            print_message(f"Filter: {current_filter.upper()}", NordColors.YELLOW)
+        else:
+            print_message("Showing all logs", NordColors.FROST_2)
+
+        print_message(f"Page {current_page + 1} of {total_pages}", NordColors.FROST_3)
+        console.print()
+
+        # Display the logs for the current page
+        start_idx = current_page * page_size
+        end_idx = min(start_idx + page_size, len(logs))
+
+        if logs:
+            for log in logs[start_idx:end_idx]:
+                level_style = log.get_color()
+                timestamp = log.formatted_time()
+                console.print(
+                    f"[{NordColors.FROST_4}]{timestamp}[/] [{level_style}][{log.level}][/] {log.message}"
+                )
+
+                if log.details:
+                    # Split details into lines and indent them
+                    details_lines = log.details.split("\n")
+                    for line in details_lines:
+                        if line.strip():
+                            console.print(f"  [{NordColors.POLAR_NIGHT_4}]{line}[/]")
+        else:
+            print_message("No logs found", NordColors.YELLOW)
+
+        console.print()
+        print_section("Commands")
+        console.print(f"[bold {NordColors.FROST_2}]n[/]: Next page")
+        console.print(f"[bold {NordColors.FROST_2}]p[/]: Previous page")
+        console.print(f"[bold {NordColors.FROST_2}]f[/]: Filter logs")
+        console.print(f"[bold {NordColors.FROST_2}]c[/]: Clear filter")
+        console.print(f"[bold {NordColors.FROST_2}]s[/]: Save logs to file")
+        console.print(f"[bold {NordColors.FROST_2}]q[/]: Return to main menu")
+
+        choice = await async_prompt("Enter command")
+        choice = choice.lower()
+
+        if choice == "q":
+            break
+        elif choice == "n":
+            if current_page < total_pages - 1:
+                current_page += 1
+        elif choice == "p":
+            if current_page > 0:
+                current_page -= 1
+        elif choice == "f":
+            filter_choice = await async_prompt(
+                "Filter by (i)nfo, (e)rror, (w)arning, (s)uccess, (d)ebug"
+            )
+            if filter_choice:
+                filter_type = None
+                if filter_choice.lower() in ("i", "info"):
+                    filter_type = "INFO"
+                elif filter_choice.lower() in ("e", "error"):
+                    filter_type = "ERROR"
+                elif filter_choice.lower() in ("w", "warning"):
+                    filter_type = "WARNING"
+                elif filter_choice.lower() in ("s", "success"):
+                    filter_type = "SUCCESS"
+                elif filter_choice.lower() in ("d", "debug"):
+                    filter_type = "DEBUG"
+
+                if filter_type:
+                    current_filter = filter_type
+                    current_page = 0
+                    print_success(f"Filtering logs by {filter_type}")
+                else:
+                    print_error("Invalid filter type")
+                    await async_prompt("Press Enter to continue")
+        elif choice == "c":
+            current_filter = None
+            current_page = 0
+        elif choice == "s":
+            save_path = await async_prompt(
+                "Enter path to save logs (default: ~/couchdb_installer_logs.txt)"
+            )
+            if not save_path:
+                save_path = os.path.expanduser("~/couchdb_installer_logs.txt")
+
+            try:
+                log_content = app_logger.get_log_file_content()
+                with open(save_path, "w") as f:
+                    f.write(log_content)
+                print_success(f"Logs saved to {save_path}")
+            except Exception as e:
+                print_error(f"Failed to save logs: {e}")
+
+            await async_prompt("Press Enter to continue")
+
+        logs_viewed = True
+
+    if logs_viewed:
+        print_success("Returning to main menu")
+        await async_prompt("Press Enter to continue")
+
+
+async def troubleshoot_async(config: CouchDBConfig, status: InstallStatus) -> None:
+    """Provide troubleshooting steps for common issues."""
+    clear_screen()
+    console.print(create_header())
+
+    print_section("Troubleshooting Assistant")
+
+    # Check which components failed
+    failed_components = []
+
+    if not status.snapd_installed:
+        failed_components.append("Snapd")
+    if not status.couchdb_installed:
+        failed_components.append("CouchDB")
+    if not status.couchdb_configured:
+        failed_components.append("CouchDB Configuration")
+    if not status.nginx_installed:
+        failed_components.append("Nginx")
+    if not status.nginx_configured:
+        failed_components.append("Nginx Configuration")
+    if not status.livesync_initialized:
+        failed_components.append("LiveSync")
+
+    if not failed_components:
+        print_success("All components appear to be installed and configured correctly!")
+        print_step(
+            "If you're still experiencing issues, please check the logs for more details."
+        )
+        await async_prompt("Press Enter to return to the main menu")
+        return
+
+    # Display failed components
+    table = Table(
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_1}",
+        box=box.ROUNDED,
+        padding=(0, 2),
+    )
+
+    table.add_column("Failed Component", style=f"bold {NordColors.RED}")
+    table.add_column("Troubleshooting Steps", style=f"{NordColors.SNOW_STORM_1}")
+
+    # Add rows with troubleshooting steps
+    for component in failed_components:
+        if component == "Snapd":
+            table.add_row(
+                "Snapd",
+                "1. Check if your system supports snap\n"
+                "2. Try installing manually: sudo apt update && sudo apt install snapd\n"
+                "3. Check if snapd service is running: systemctl status snapd",
+            )
+
+        elif component == "CouchDB":
+            table.add_row(
+                "CouchDB",
+                "1. Try installing manually: sudo snap install couchdb\n"
+                "2. Check if the CouchDB snap is available: snap find couchdb\n"
+                "3. Verify snap is working: snap list",
+            )
+
+        elif component == "CouchDB Configuration":
+            table.add_row(
+                "CouchDB Configuration",
+                "1. Check CouchDB status: sudo snap services couchdb\n"
+                "2. Check logs: sudo snap logs couchdb -f\n"
+                "3. Try manual config:\n   sudo snap set couchdb admin=password\n   sudo snap set couchdb setcookie=cookie\n   sudo snap restart couchdb\n"
+                "4. Verify CouchDB is running: curl http://localhost:5984",
+            )
+
+        elif component == "Nginx":
+            table.add_row(
+                "Nginx",
+                "1. Try installing manually: sudo apt update && sudo apt install nginx\n"
+                "2. Check if any other web server is using port 80\n"
+                "3. Check nginx status: systemctl status nginx",
+            )
+
+        elif component == "Nginx Configuration":
+            table.add_row(
+                "Nginx Configuration",
+                "1. Check nginx configuration: sudo nginx -t\n"
+                "2. Check nginx error logs: sudo cat /var/log/nginx/error.log\n"
+                "3. Ensure nginx sites-enabled directory exists\n"
+                "4. Verify permissions on config files",
+            )
+
+        elif component == "LiveSync":
+            table.add_row(
+                "LiveSync",
+                "1. Check if CouchDB is running: curl http://localhost:5984\n"
+                "2. Try running script manually:\n   curl -s https://raw.githubusercontent.com/vrtmrz/obsidian-livesync/main/utils/couchdb/couchdb-init.sh | bash\n"
+                "3. Verify internet connection and GitHub access\n"
+                "4. Check if the required databases exist in CouchDB",
+            )
+
+    console.print(table)
+    console.print()
+
+    # Offer automatic repair for specific components
+    print_section("Automatic Repair")
+
+    if "CouchDB Configuration" in failed_components:
+        proceed = await async_confirm(
+            "Attempt to automatically repair CouchDB configuration?", default=True
+        )
+        if proceed:
+            print_step("Attempting to repair CouchDB configuration...")
+
+            # Perform CouchDB configuration repair
+            success = await configure_couchdb(config)
+
+            if success:
+                print_success("CouchDB configuration repaired successfully!")
+                status.couchdb_configured = True
+                await save_status(status)
+            else:
+                print_error("Failed to repair CouchDB configuration")
+
+    if "LiveSync" in failed_components:
+        proceed = await async_confirm(
+            "Attempt to automatically initialize LiveSync?", default=True
+        )
+        if proceed:
+            print_step("Attempting to initialize LiveSync...")
+
+            # Perform LiveSync initialization repair
+            success = await run_livesync_init()
+
+            if success:
+                print_success("LiveSync initialized successfully!")
+                status.livesync_initialized = True
+                await save_status(status)
+            else:
+                print_error("Failed to initialize LiveSync")
+
+    print_section("Diagnostics")
+
+    # Offer to collect diagnostic information
+    proceed = await async_confirm(
+        "Run diagnostics to gather more information?", default=True
+    )
+    if proceed:
+        # Create a diagnostic report
+        print_step("Running diagnostics...")
+
+        # Check system information
+        returncode, stdout, stderr = await run_command_async(["uname", "-a"])
+        system_info = stdout if returncode == 0 else "Unknown"
+
+        # Check free disk space
+        returncode, stdout, stderr = await run_command_async(["df", "-h", "/var"])
+        disk_space = stdout if returncode == 0 else "Unknown"
+
+        # Check CouchDB status
+        returncode, stdout, stderr = await run_command_async(
+            ["curl", "-s", f"http://localhost:{config.port}"]
+        )
+        couchdb_response = stdout if returncode == 0 else "Not responding"
+
+        # Display diagnostic info
+        print_section("Diagnostic Results")
+
+        diagnostics_table = Table(show_header=False, box=None, padding=(0, 3))
+        diagnostics_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
+        diagnostics_table.add_column("Value", style=f"{NordColors.SNOW_STORM_2}")
+
+        diagnostics_table.add_row("System Info", system_info)
+        diagnostics_table.add_row("Disk Space", disk_space)
+        diagnostics_table.add_row("CouchDB Response", couchdb_response)
+
+        console.print(diagnostics_table)
+
+    print_section("Next Steps")
+    print_step("Check the application logs for detailed error messages")
+    print_step("Consider re-running the installer for failed components")
+    print_step("Consult the CouchDB and Nginx documentation for manual configuration")
+
+    await async_prompt("Press Enter to return to the main menu")
+
+
 async def install_manager_async() -> None:
     """Main installer function that walks through all installation steps."""
     # Load or initialize configuration and status
@@ -1130,6 +1598,12 @@ async def main_menu_async() -> None:
             f"[bold {NordColors.FROST_2}]3. [/][{NordColors.SNOW_STORM_2}]Change Domain Configuration[/]"
         )
         console.print(
+            f"[bold {NordColors.FROST_2}]4. [/][{NordColors.SNOW_STORM_2}]View Logs[/]"
+        )
+        console.print(
+            f"[bold {NordColors.FROST_2}]5. [/][{NordColors.SNOW_STORM_2}]Troubleshooting[/]"
+        )
+        console.print(
             f"[bold {NordColors.FROST_2}]q. [/][{NordColors.SNOW_STORM_2}]Quit[/]"
         )
 
@@ -1162,6 +1636,10 @@ async def main_menu_async() -> None:
                         await save_status(status)
 
             await async_prompt("Press Enter to return to the menu")
+        elif choice == "4":
+            await view_logs_async()
+        elif choice == "5":
+            await troubleshoot_async(config, status)
         else:
             print_error(f"Invalid choice: {choice}")
             await async_prompt("Press Enter to continue")
