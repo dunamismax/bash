@@ -245,6 +245,9 @@ if command -v docker >/dev/null 2>&1; then
     alias dc-logs='docker-compose logs -f'
 fi
 
+# User aliases
+alias sftp='python /home/sawyer/bin/sftp_toolkit.py'
+
 # 12. Functions and Utility Scripts
 # ------------------------------------------------------------------------------
 # Virtual Environment Setup

@@ -2,26 +2,81 @@ Please review the following Python script and use it as a reference template for
 
 ```python
 #!/usr/bin/env python3
+"""
+SFTP Toolkit
+--------------------------------------------------
+A fully interactive, menu-driven SFTP toolkit for performing
+SFTP file transfer operations with a production-grade, polished
+CLI that integrates prompt_toolkit for auto-completion, Rich for
+stylish output, and Pyfiglet for dynamic ASCII banners.
 
+Features:
+  • Interactive, menu-driven interface with dynamic ASCII banners.
+  • SFTP operations including manual connection, device-based connection,
+    directory listing, file upload/download, deletion, renaming, and remote
+    directory management.
+  • Predefined device lists (Tailscale and local) for quick connection setup.
+  • Real-time progress tracking during file transfers.
+  • Robust error handling and cross-platform compatibility.
+  • Fully integrated prompt_toolkit auto-completion for both local and remote
+    file/directory selection.
+  • Nord-themed color styling throughout the application.
+
+Version: 3.0.0
+"""
+
+# ----------------------------------------------------------------
+# Dependency Check and Imports
+# ----------------------------------------------------------------
+import atexit
 import os
-import signal
-import subprocess
 import sys
 import time
-import shutil
 import socket
-import json
-import asyncio
-import atexit
-from dataclasses import dataclass, field, asdict
-from typing import List, Tuple, Dict, Optional, Any, Callable, Union, TypeVar, cast
+import getpass
+import platform
+import signal
+import subprocess
+import shutil
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Dict, Optional, Any
+
+
+# Function to install dependencies for non-root user when script is run with sudo
+def install_dependencies():
+    """Install required dependencies for the non-root user when run with sudo."""
+    required_packages = ["paramiko", "rich", "pyfiglet", "prompt_toolkit"]
+
+    user = os.environ.get("SUDO_USER", os.environ.get("USER", getpass.getuser()))
+    if os.geteuid() != 0:
+        print(f"Installing dependencies for user: {user}")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--user"] + required_packages
+        )
+        return
+
+    print(f"Running as sudo. Installing dependencies for user: {user}")
+    real_user_home = os.path.expanduser(f"~{user}")
+    try:
+        subprocess.check_call(
+            ["sudo", "-u", user, sys.executable, "-m", "pip", "install", "--user"]
+            + required_packages
+        )
+        print(f"Successfully installed dependencies for user: {user}")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install dependencies: {e}")
+        sys.exit(1)
+
 
 try:
+    import paramiko
     import pyfiglet
-    from rich import box
-    from rich.align import Align
     from rich.console import Console
+    from rich.text import Text
+    from rich.table import Table
     from rich.panel import Panel
+    from rich.prompt import Prompt, Confirm, IntPrompt
     from rich.progress import (
         Progress,
         SpinnerColumn,
@@ -29,36 +84,83 @@ try:
         BarColumn,
         TaskProgressColumn,
         TimeRemainingColumn,
+        DownloadColumn,
     )
-    from rich.prompt import Prompt, Confirm
-    from rich.table import Table
-    from rich.text import Text
+    from rich.align import Align
+    from rich.style import Style
+    from rich.columns import Columns
     from rich.traceback import install as install_rich_traceback
+
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.completion import PathCompleter, Completer, Completion
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    from prompt_toolkit.styles import Style as PtStyle
+
 except ImportError:
-    print(
-        "Required libraries not found. Please install them using:\n"
-        "pip install rich pyfiglet"
-    )
-    sys.exit(1)
+    print("Required libraries not found. Installing dependencies...")
+    try:
+        if os.geteuid() != 0:
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "paramiko",
+                    "rich",
+                    "pyfiglet",
+                    "prompt_toolkit",
+                ]
+            )
+        else:
+            install_dependencies()
+
+        print("Dependencies installed successfully. Restarting script...")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        print(f"Error installing dependencies: {e}")
+        print("Please install the required packages manually:")
+        print("pip install paramiko rich pyfiglet prompt_toolkit")
+        sys.exit(1)
 
 install_rich_traceback(show_locals=True)
-console: Console = Console()
 
-# Configuration and Constants
-APP_NAME: str = "ssh connector"
-VERSION: str = "1.0.0"
-DEFAULT_USERNAME: str = os.environ.get("USER") or "user"
-SSH_COMMAND: str = "ssh"
-PING_TIMEOUT: float = 0.4  # Reduced timeout for faster checks
-PING_COUNT: int = 1
-OPERATION_TIMEOUT: int = 30
-DEFAULT_SSH_PORT: int = 22
+# ----------------------------------------------------------------
+# Configuration & Constants
+# ----------------------------------------------------------------
+HOSTNAME: str = socket.gethostname()
+DEFAULT_USERNAME: str = (
+    os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()
+)
+SFTP_DEFAULT_PORT: int = 22
+VERSION: str = "3.0.0"
+APP_NAME: str = "SFTP Toolkit"
+APP_SUBTITLE: str = "Advanced File Transfer Manager"
+OPERATION_TIMEOUT: int = 30  # seconds
 
-# Configuration file paths
-CONFIG_DIR: str = os.path.expanduser("~/.config/ssh_manager")
-CONFIG_FILE: str = os.path.join(CONFIG_DIR, "config.json")
+if os.environ.get("SUDO_USER"):
+    DEFAULT_LOCAL_FOLDER = os.path.expanduser(
+        f"~{os.environ.get('SUDO_USER')}/Downloads"
+    )
+else:
+    DEFAULT_LOCAL_FOLDER = os.path.expanduser("~/Downloads")
+
+HISTORY_DIR = os.path.expanduser(
+    f"~{os.environ.get('SUDO_USER', DEFAULT_USERNAME)}/.sftp_toolkit"
+)
+os.makedirs(HISTORY_DIR, exist_ok=True)
+COMMAND_HISTORY = os.path.join(HISTORY_DIR, "command_history")
+PATH_HISTORY = os.path.join(HISTORY_DIR, "path_history")
+for history_file in [COMMAND_HISTORY, PATH_HISTORY]:
+    if not os.path.exists(history_file):
+        with open(history_file, "w") as f:
+            pass
 
 
+# ----------------------------------------------------------------
+# Nord-Themed Colors
+# ----------------------------------------------------------------
 class NordColors:
     POLAR_NIGHT_1: str = "#2E3440"
     POLAR_NIGHT_2: str = "#3B4252"
@@ -77,656 +179,66 @@ class NordColors:
     GREEN: str = "#A3BE8C"
     PURPLE: str = "#B48EAD"
 
-    @classmethod
-    def get_frost_gradient(cls, steps: int = 4) -> List[str]:
-        frosts = [cls.FROST_1, cls.FROST_2, cls.FROST_3, cls.FROST_4]
-        return frosts[:steps]
+
+console: Console = Console()
 
 
+# ----------------------------------------------------------------
+# Data Structures
+# ----------------------------------------------------------------
 @dataclass
 class Device:
+    """
+    Represents an SFTP-accessible device with connection details.
+    """
+
     name: str
     ip_address: str
-    device_type: str = "local"
-    description: Optional[str] = None
-    port: int = DEFAULT_SSH_PORT
+    description: str
+    device_type: str = "local"  # 'tailscale' or 'local'
     username: Optional[str] = None
-    status: Optional[bool] = None
-    last_ping_time: float = field(default_factory=time.time)
-    response_time: Optional[float] = None
+    port: int = SFTP_DEFAULT_PORT
+    favorite: bool = False
+    last_connected: Optional[datetime] = None
 
-    def get_connection_string(self, username: Optional[str] = None) -> str:
-        user: str = username or self.username or DEFAULT_USERNAME
-        if self.port == DEFAULT_SSH_PORT:
-            return f"{user}@{self.ip_address}"
-        return f"{user}@{self.ip_address} -p {self.port}"
-
-    def get_status_indicator(self) -> Text:
-        if self.status is True:
-            return Text("● ONLINE", style=f"bold {NordColors.GREEN}")
-        else:
-            return Text("● OFFLINE", style=f"bold {NordColors.RED}")
+    def get_favorite_indicator(self) -> str:
+        """Return a star indicator if the device is marked as favorite."""
+        return "★ " if self.favorite else ""
 
 
-T = TypeVar("T")
-
-
+# Global SFTP connection object
 @dataclass
-class AppConfig:
-    default_username: str = DEFAULT_USERNAME
-    ssh_options: Dict[str, Tuple[str, str]] = field(
-        default_factory=lambda: {
-            "ServerAliveInterval": ("30", "Interval in sec to send keepalive packets"),
-            "ServerAliveCountMax": ("3", "Packets to send before disconnecting"),
-            "ConnectTimeout": ("10", "Timeout in sec for connection"),
-            "StrictHostKeyChecking": ("accept-new", "Auto-accept new host keys"),
-            "Compression": ("yes", "Enable compression"),
-            "LogLevel": ("ERROR", "SSH logging level"),
-        }
-    )
-    last_refresh: float = field(default_factory=time.time)
-    device_check_interval: int = 300
+class SFTPConnection:
+    sftp: Optional[paramiko.SFTPClient] = None
+    transport: Optional[paramiko.Transport] = None
+    hostname: Optional[str] = None
+    username: Optional[str] = None
+    port: int = SFTP_DEFAULT_PORT
+    connected_at: Optional[datetime] = None
 
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-
-# UI Helper Functions
-def clear_screen() -> None:
-    console.clear()
-
-
-def create_header() -> Panel:
-    term_width, _ = shutil.get_terminal_size((80, 24))
-    fonts: List[str] = ["slant", "small", "mini", "digital"]
-    font_to_use: str = fonts[0]
-    if term_width < 60:
-        font_to_use = fonts[1]
-    elif term_width < 40:
-        font_to_use = fonts[2]
-    try:
-        fig = pyfiglet.Figlet(font=font_to_use, width=min(term_width - 10, 120))
-        ascii_art = fig.renderText(APP_NAME)
-    except Exception:
-        ascii_art = f"  {APP_NAME}  "
-    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
-    colors = NordColors.get_frost_gradient(len(ascii_lines))
-    combined_text = Text()
-    for i, line in enumerate(ascii_lines):
-        color = colors[i % len(colors)]
-        combined_text.append(Text(line, style=f"bold {color}"))
-        if i < len(ascii_lines) - 1:
-            combined_text.append("\n")
-    return Panel(
-        combined_text,
-        border_style=NordColors.FROST_1,
-        padding=(1, 2),
-        title=Text(f"v{VERSION}", style=f"bold {NordColors.SNOW_STORM_2}"),
-        title_align="right",
-        box=box.ROUNDED,
-    )
-
-
-def print_message(
-    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
-) -> None:
-    console.print(f"[{style}]{prefix} {text}[/{style}]")
-
-
-def print_error(message: str) -> None:
-    print_message(message, NordColors.RED, "✗")
-
-
-def print_success(message: str) -> None:
-    print_message(message, NordColors.GREEN, "✓")
-
-
-def print_warning(message: str) -> None:
-    print_message(message, NordColors.YELLOW, "⚠")
-
-
-def print_step(message: str) -> None:
-    print_message(message, NordColors.FROST_2, "→")
-
-
-def print_section(title: str) -> None:
-    console.print()
-    console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
-    console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
-
-
-def display_panel(title: str, message: str, style: str = NordColors.FROST_2) -> None:
-    panel = Panel(
-        message,
-        title=title,
-        border_style=style,
-        padding=(1, 2),
-        box=box.ROUNDED,
-    )
-    console.print(panel)
-
-
-# Core Functionality - Made Async
-async def ensure_config_directory() -> None:
-    try:
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-    except Exception as e:
-        print_error(f"Could not create config directory: {e}")
-
-
-async def save_config(config: AppConfig) -> bool:
-    await ensure_config_directory()
-    try:
-        # Use async file operations for more consistent async behavior
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None, lambda: json.dump(config.to_dict(), open(CONFIG_FILE, "w"), indent=2)
-        )
-        return True
-    except Exception as e:
-        print_error(f"Failed to save configuration: {e}")
-        return False
-
-
-async def load_config() -> AppConfig:
-    try:
-        if os.path.exists(CONFIG_FILE):
-            loop = asyncio.get_running_loop()
-            data = await loop.run_in_executor(
-                None, lambda: json.load(open(CONFIG_FILE, "r"))
-            )
-            return AppConfig(**data)
-    except Exception as e:
-        print_error(f"Failed to load configuration: {e}")
-    return AppConfig()
-
-
-async def run_command_async(cmd: List[str]) -> Tuple[int, str]:
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            text=True,
+    def is_connected(self) -> bool:
+        return (
+            self.sftp is not None
+            and self.transport is not None
+            and self.transport.is_active()
         )
 
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=OPERATION_TIMEOUT
+    def get_connection_info(self) -> str:
+        if not self.is_connected():
+            return "Not connected"
+        connected_time = (
+            f"Connected at: {self.connected_at.strftime('%Y-%m-%d %H:%M:%S')}"
+            if self.connected_at
+            else ""
         )
+        return f"{self.username}@{self.hostname}:{self.port} | {connected_time}"
 
-        if proc.returncode != 0:
-            raise Exception(stderr.strip())
 
-        return proc.returncode, stdout.strip()
-    except asyncio.TimeoutError:
-        raise Exception("Command timed out.")
+sftp_connection = SFTPConnection()
 
-
-async def async_ping_device(ip_address: str) -> Tuple[bool, Optional[float]]:
-    start_time = time.time()
-    try:
-        cmd = [
-            "ping",
-            "-c",
-            str(PING_COUNT),
-            "-W",
-            str(int(PING_TIMEOUT)),
-            ip_address,
-        ]
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-
-        try:
-            await asyncio.wait_for(proc.communicate(), timeout=PING_TIMEOUT + 0.5)
-            end_time = time.time()
-            response_time = (end_time - start_time) * 1000  # in ms
-            return proc.returncode == 0, response_time if proc.returncode == 0 else None
-        except asyncio.TimeoutError:
-            if proc.returncode is None:
-                try:
-                    proc.terminate()
-                except ProcessLookupError:
-                    pass
-            return False, None
-
-    except Exception:
-        return False, None
-
-
-async def async_check_device_status(device: Device) -> None:
-    success, response_time = await async_ping_device(device.ip_address)
-    device.status = success
-    device.response_time = response_time
-    device.last_ping_time = time.time()
-
-
-async def async_check_device_statuses(
-    devices: List[Device],
-    progress_callback: Optional[Callable[[int, Device], None]] = None,
-) -> None:
-    """Check the status of all devices asynchronously.
-
-    If a progress_callback is provided, it will be called after each device check.
-    Otherwise, all devices are checked in parallel.
-    """
-    try:
-        if progress_callback:
-            for i, device in enumerate(devices):
-                try:
-                    await async_check_device_status(device)
-                except Exception as e:
-                    print_error(f"Error checking {device.name}: {e}")
-                    device.status = False
-                    device.response_time = None
-                finally:
-                    progress_callback(i, device)
-        else:
-            # Create tasks for checking each device
-            tasks = []
-            for device in devices:
-                task = asyncio.create_task(async_check_device_status(device))
-                # Add error handling for each task
-                task.add_done_callback(
-                    lambda t, d=device: handle_device_check_result(t, d)
-                )
-                tasks.append(task)
-
-            # Wait for all tasks to complete
-            await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception as e:
-        print_error(f"Error during device status check: {e}")
-
-
-def handle_device_check_result(task, device):
-    """Handle the result of a device status check task."""
-    try:
-        # Get the result or exception
-        task.result()
-    except Exception as e:
-        # If there was an exception, mark the device as offline
-        device.status = False
-        device.response_time = None
-
-
-def create_device_table(devices: List[Device], prefix: str, title: str) -> Table:
-    table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        box=box.ROUNDED,
-        title=title,
-        padding=(0, 1),
-    )
-    table.add_column("#", style=f"bold {NordColors.FROST_4}", width=3, justify="right")
-    table.add_column("Name", style=f"bold {NordColors.FROST_1}", width=20)
-    table.add_column("IP Address", style=f"{NordColors.SNOW_STORM_1}", width=15)
-    table.add_column("Status", justify="center", width=12)
-    table.add_column("Response", justify="right", width=10)
-    table.add_column("Description", style=f"dim {NordColors.SNOW_STORM_1}", width=20)
-
-    for idx, device in enumerate(devices, 1):
-        response_time = (
-            f"{device.response_time:.1f} ms"
-            if device.response_time is not None
-            else "—"
-        )
-        table.add_row(
-            f"{prefix}{idx}",
-            device.name,
-            device.ip_address,
-            device.get_status_indicator(),
-            response_time,
-            device.description or "",
-        )
-    return table
-
-
-async def get_username_async(default_username: str) -> str:
-    # Prompt is synchronous, but wrap in run_in_executor to maintain async pattern
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        None,
-        lambda: Prompt.ask(
-            f"[bold {NordColors.FROST_2}]Username for SSH connection[/]",
-            default=default_username,
-        ),
-    )
-
-
-async def simulate_progress(progress, task_id, steps, delay=0.3):
-    for step, pct in steps:
-        await asyncio.sleep(delay)
-        progress.update(task_id, description=step, completed=pct)
-
-
-async def connect_to_device_async(
-    device: Device, username: Optional[str] = None
-) -> None:
-    clear_screen()
-    console.print(create_header())
-    display_panel(
-        "SSH Connection",
-        f"Connecting to {device.name} ({device.ip_address})",
-        NordColors.FROST_2,
-    )
-
-    effective_username: str = username or device.username or DEFAULT_USERNAME
-
-    details_table = Table(show_header=False, box=None, padding=(0, 3))
-    details_table.add_column("Property", style=f"bold {NordColors.FROST_2}")
-    details_table.add_column("Value", style=f"{NordColors.SNOW_STORM_2}")
-    details_table.add_row("Address", device.ip_address)
-    details_table.add_row("User", effective_username)
-    if device.description:
-        details_table.add_row("Description", device.description)
-    if device.port != DEFAULT_SSH_PORT:
-        details_table.add_row("Port", str(device.port))
-    details_table.add_row("Status", "Online" if device.status else "Offline")
-    if device.response_time:
-        details_table.add_row("Latency", f"{device.response_time:.1f} ms")
-    console.print(details_table)
-    console.print()
-
-    try:
-        with Progress(
-            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
-            TextColumn("[bold]{task.description}[/bold]"),
-            BarColumn(
-                bar_width=40,
-                style=NordColors.FROST_4,
-                complete_style=NordColors.FROST_2,
-            ),
-            TaskProgressColumn(),
-            TimeRemainingColumn(),
-            console=console,
-        ) as progress:
-            task_id = progress.add_task(
-                f"[{NordColors.FROST_2}]Establishing connection...", total=100
-            )
-
-            steps = [
-                (f"[{NordColors.FROST_2}]Resolving hostname...", 20),
-                (f"[{NordColors.FROST_2}]Establishing connection...", 40),
-                (f"[{NordColors.FROST_2}]Negotiating SSH protocol...", 60),
-                (f"[{NordColors.FROST_2}]Authenticating...", 80),
-                (f"[{NordColors.GREEN}]Connection established.", 100),
-            ]
-
-            # Run progress simulation in the background
-            await simulate_progress(progress, task_id, steps)
-
-        ssh_args: List[str] = [SSH_COMMAND]
-        config = await load_config()
-        for option, (value, _) in config.ssh_options.items():
-            ssh_args.extend(["-o", f"{option}={value}"])
-        if device.port != DEFAULT_SSH_PORT:
-            ssh_args.extend(["-p", str(device.port)])
-        ssh_args.append(f"{effective_username}@{device.ip_address}")
-        print_success(f"Connecting to {device.name} as {effective_username}...")
-
-        # This is a system exec call that replaces the current process
-        # We can't make this async, but it's the end of processing anyway
-        os.execvp(SSH_COMMAND, ssh_args)
-    except Exception as e:
-        print_error(f"Connection failed: {str(e)}")
-        console.print_exception()
-        print_section("Troubleshooting Tips")
-        print_step("Check that the device is online using ping.")
-        print_step("Verify that the SSH service is running on the target device.")
-        print_step("Check your SSH key configuration.")
-        print_step("Try connecting with verbose output: ssh -v user@host")
-
-        # Wait for user input in an async-compatible way
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None, lambda: Prompt.ask("Press Enter to return to the main menu")
-        )
-
-
-async def refresh_device_statuses_async(devices: List[Device]) -> None:
-    """Refresh the status of all devices with a progress indicator.
-
-    This function shows a progress bar while checking device statuses
-    and handles user input in an async-friendly way.
-    """
-    # Store the current task so we can check for cancellation
-    current_task = asyncio.current_task()
-
-    clear_screen()
-    console.print(create_header())
-    display_panel(
-        "Network Scan",
-        "Checking connectivity for all configured devices",
-        NordColors.FROST_3,
-    )
-
-    try:
-        with Progress(
-            SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
-            TextColumn("[bold]{task.description}[/bold]"),
-            BarColumn(
-                bar_width=40,
-                style=NordColors.FROST_4,
-                complete_style=NordColors.FROST_2,
-            ),
-            TaskProgressColumn(),
-            TimeRemainingColumn(),
-            console=console,
-        ) as progress:
-            scan_task = progress.add_task(
-                f"[{NordColors.FROST_2}]Scanning", total=len(devices)
-            )
-
-            def update_progress(index: int, device: Device) -> None:
-                # Check if our task has been cancelled
-                if current_task and current_task.cancelled():
-                    raise asyncio.CancelledError()
-
-                progress.advance(scan_task)
-                progress.update(
-                    scan_task,
-                    description=f"[{NordColors.FROST_2}]Checking {device.name} ({device.ip_address})",
-                )
-
-            # Use the async version that updates progress as it goes
-            await async_check_device_statuses(devices, update_progress)
-
-        online_count = sum(1 for d in devices if d.status is True)
-        offline_count = sum(1 for d in devices if d.status is False)
-        print_success(f"Scan complete: {online_count} online, {offline_count} offline")
-
-        # Update config with last refresh time
-        config = await load_config()
-        config.last_refresh = time.time()
-        await save_config(config)
-
-        # Wait for user input in an async-compatible way
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None, lambda: Prompt.ask("Press Enter to return to the main menu")
-        )
-    except asyncio.CancelledError:
-        print_warning("Refresh operation cancelled")
-    except Exception as e:
-        print_error(f"Error during refresh: {e}")
-        # Still allow the user to return to the main menu
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None, lambda: Prompt.ask("Press Enter to return to the main menu")
-        )
-
-
-async def async_confirm(message: str, default: bool = False) -> bool:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        None, lambda: Confirm.ask(message, default=default)
-    )
-
-
-async def async_prompt(message: str) -> str:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, lambda: Prompt.ask(message))
-
-
-async def main_menu_async() -> None:
-    devices = DEVICES
-
-    # Wait for initial device status check before displaying the menu
-    # This ensures we have status information on first launch
-    print_message("Performing initial device scan...", NordColors.FROST_3)
-    await async_check_device_statuses(devices)
-
-    # Now start background refresh task
-    refresh_interval = 300  # seconds
-    last_refresh = time.time()
-
-    # Use asyncio.create_task for background status checks
-    background_refresh_task = None
-
-    try:
-        while True:
-            # Refresh the device status in the background periodically
-            current_time = time.time()
-            if current_time - last_refresh > refresh_interval:
-                if background_refresh_task is None or background_refresh_task.done():
-                    background_refresh_task = asyncio.create_task(
-                        async_check_device_statuses(devices)
-                    )
-                    last_refresh = current_time
-
-            clear_screen()
-            console.print(create_header())
-
-            tailscale_devices = [d for d in devices if d.device_type == "tailscale"]
-            local_devices = [d for d in devices if d.device_type == "local"]
-
-            console.print(
-                create_device_table(tailscale_devices, "", "Tailscale Devices")
-            )
-            console.print()
-            console.print(create_device_table(local_devices, "L", "Local Devices"))
-            console.print()
-            console.print("r: refresh q: exit")
-            console.print()
-            console.print()
-
-            choice = await async_prompt("Enter your choice")
-            choice = choice.strip().lower()
-
-            if choice in ("q", "quit", "exit"):
-                clear_screen()
-                console.print(
-                    Panel(
-                        Text("Goodbye!", style=f"bold {NordColors.FROST_2}"),
-                        border_style=NordColors.FROST_1,
-                    )
-                )
-                break
-            elif choice in ("r", "refresh"):
-                # This now runs fully async
-                await refresh_device_statuses_async(devices)
-            elif choice.startswith("l"):
-                try:
-                    idx = int(choice[1:]) - 1
-                    if 0 <= idx < len(local_devices):
-                        device = local_devices[idx]
-                        if device.status is False and not await async_confirm(
-                            f"This device appears offline. Connect anyway?",
-                            default=False,
-                        ):
-                            continue
-                        username = await get_username_async(
-                            device.username or DEFAULT_USERNAME
-                        )
-                        await connect_to_device_async(device, username)
-                    else:
-                        print_error(f"Invalid device number: {choice}")
-                        await async_prompt("Press Enter to continue")
-                except ValueError:
-                    print_error(f"Invalid choice: {choice}")
-                    await async_prompt("Press Enter to continue")
-            else:
-                try:
-                    idx = int(choice) - 1
-                    if 0 <= idx < len(tailscale_devices):
-                        device = tailscale_devices[idx]
-                        if device.status is False and not await async_confirm(
-                            f"This device appears offline. Connect anyway?",
-                            default=False,
-                        ):
-                            continue
-                        username = await get_username_async(
-                            device.username or DEFAULT_USERNAME
-                        )
-                        await connect_to_device_async(device, username)
-                    else:
-                        print_error(f"Invalid device number: {choice}")
-                        await async_prompt("Press Enter to continue")
-                except ValueError:
-                    print_error(f"Invalid choice: {choice}")
-                    await async_prompt("Press Enter to continue")
-    except Exception as e:
-        print_error(f"An error occurred in the main menu: {str(e)}")
-        console.print_exception()
-    finally:
-        # Make sure we clean up our background task
-        if background_refresh_task is not None and not background_refresh_task.done():
-            background_refresh_task.cancel()
-            try:
-                await background_refresh_task
-            except asyncio.CancelledError:
-                pass
-
-
-async def async_cleanup() -> None:
-    try:
-        # Cancel any pending asyncio tasks
-        for task in asyncio.all_tasks():
-            if not task.done() and task != asyncio.current_task():
-                task.cancel()
-
-        config = await load_config()
-        config.last_refresh = time.time()
-        await save_config(config)
-        print_message("Cleaning up resources...", NordColors.FROST_3)
-    except Exception as e:
-        print_error(f"Error during cleanup: {e}")
-
-
-async def signal_handler_async(sig: int, frame: Any) -> None:
-    """Handle signals in an async-friendly way without creating new event loops."""
-    try:
-        sig_name = signal.Signals(sig).name
-        print_warning(f"Process interrupted by {sig_name}")
-    except Exception:
-        print_warning(f"Process interrupted by signal {sig}")
-
-    # Get the current running loop instead of creating a new one
-    loop = asyncio.get_running_loop()
-
-    # Cancel all tasks except the current one
-    for task in asyncio.all_tasks(loop):
-        if task is not asyncio.current_task():
-            task.cancel()
-
-    # Clean up resources
-    await async_cleanup()
-
-    # Stop the loop instead of exiting directly
-    loop.stop()
-
-
-def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    """Set up signal handlers that work with the main event loop."""
-
-    # Use asyncio's built-in signal handling
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(
-            sig, lambda sig=sig: asyncio.create_task(signal_handler_async(sig, None))
-        )
-
-
+# ----------------------------------------------------------------
+# Static Device Lists
+# ----------------------------------------------------------------
 STATIC_TAILSCALE_DEVICES: List[Device] = [
     Device(
         name="ubuntu-server",
@@ -740,20 +252,6 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
         ip_address="100.88.172.104",
         device_type="tailscale",
         description="Lenovo Laptop",
-        username="sawyer",
-    ),
-    Device(
-        name="raspberrypi-5",
-        ip_address="100.105.117.18",
-        device_type="tailscale",
-        description="Raspberry Pi 5",
-        username="sawyer",
-    ),
-    Device(
-        name="raspberrypi-3",
-        ip_address="100.116.191.42",
-        device_type="tailscale",
-        description="Raspberry Pi 3",
         username="sawyer",
     ),
     Device(
@@ -789,135 +287,1180 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
 STATIC_LOCAL_DEVICES: List[Device] = [
     Device(
         name="ubuntu-server",
-        ip_address="192.168.0.73",
+        ip_address="192.168.68.52",
         device_type="local",
         description="Main Server",
     ),
     Device(
         name="ubuntu-lenovo",
-        ip_address="192.168.0.45",
+        ip_address="192.168.68.54",
         device_type="local",
         description="Lenovo Laptop",
     ),
-    Device(
-        name="raspberrypi-5",
-        ip_address="192.168.0.40",
-        device_type="local",
-        description="Raspberry Pi 5",
-    ),
-    Device(
-        name="raspberrypi-3",
-        ip_address="192.168.0.100",
-        device_type="local",
-        description="Raspberry Pi 3",
-    ),
 ]
 
-DEVICES: List[Device] = STATIC_TAILSCALE_DEVICES + STATIC_LOCAL_DEVICES
+
+def load_tailscale_devices() -> List[Device]:
+    """Return the preset Tailscale devices."""
+    return STATIC_TAILSCALE_DEVICES
 
 
-async def proper_shutdown_async():
-    """Clean up resources at exit, specifically asyncio tasks."""
-    try:
-        # Try to get the current running loop, but don't fail if there isn't one
+def load_local_devices() -> List[Device]:
+    """Return the preset local network devices."""
+    return STATIC_LOCAL_DEVICES
+
+
+# ----------------------------------------------------------------
+# Custom Remote Path Completer
+# ----------------------------------------------------------------
+class RemotePathCompleter(Completer):
+    def __init__(self, sftp_client, base_path="."):
+        self.sftp = sftp_client
+        self.base_path = base_path
+
+    def get_completions(self, document, complete_event):
+        text = document.text
+        if not text or text == ".":
+            dir_path = self.base_path
+            prefix = ""
+        elif "/" in text:
+            dir_path = os.path.dirname(text) or "."
+            prefix = os.path.basename(text)
+        else:
+            dir_path = self.base_path
+            prefix = text
         try:
-            loop = asyncio.get_running_loop()
-            tasks = [
-                t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()
-            ]
-
-            # Cancel all tasks
-            for task in tasks:
-                task.cancel()
-
-            # Wait for all tasks to complete cancellation with a timeout
-            if tasks:
-                await asyncio.wait(tasks, timeout=2.0)
-
-        except RuntimeError:
-            # No running event loop
+            files = self.sftp.listdir(dir_path)
+            for filename in files:
+                if not filename.startswith(prefix):
+                    continue
+                full_path = os.path.join(dir_path, filename)
+                try:
+                    attrs = self.sftp.stat(full_path)
+                    is_dir = attrs.st_mode & 0o40000
+                    display = filename + ("/" if is_dir else "")
+                    yield Completion(
+                        filename,
+                        start_position=-len(prefix),
+                        display=display,
+                        style="bg:#3B4252 fg:#A3BE8C"
+                        if is_dir
+                        else "bg:#3B4252 fg:#88C0D0",
+                    )
+                except Exception:
+                    continue
+        except Exception:
             pass
 
-    except Exception as e:
-        print_error(f"Error during async shutdown: {e}")
 
-
-def proper_shutdown():
-    """Synchronous wrapper for the async shutdown function.
-    This is called by atexit and should be safe to call from any context."""
-    try:
-        # Check if there's a running loop first
+# ----------------------------------------------------------------
+# UI Helper Functions
+# ----------------------------------------------------------------
+def create_header() -> Panel:
+    term_width = shutil.get_terminal_size().columns
+    adjusted_width = min(term_width - 4, 80)
+    fonts = ["slant", "big", "digital", "standard", "small"]
+    ascii_art = ""
+    for font in fonts:
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If a loop is already running, we can't run a new one
-                # Just log and return
-                print_warning("Event loop already running during shutdown")
-                return
-        except RuntimeError:
-            # No event loop, create a new one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            fig = pyfiglet.Figlet(font=font, width=adjusted_width)
+            ascii_art = fig.renderText(APP_NAME)
+            if ascii_art.strip():
+                break
+        except Exception:
+            continue
+    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
+    colors = [
+        NordColors.FROST_1,
+        NordColors.FROST_2,
+        NordColors.FROST_3,
+        NordColors.FROST_4,
+    ]
+    styled_text = ""
+    for i, line in enumerate(ascii_lines):
+        color = colors[i % len(colors)]
+        escaped_line = line.replace("[", "\\[").replace("]", "\\]")
+        styled_text += f"[bold {color}]{escaped_line}[/]\n"
+    border = f"[{NordColors.FROST_3}]{'━' * (adjusted_width - 6)}[/]"
+    styled_text = border + "\n" + styled_text + border
+    header_panel = Panel(
+        Text.from_markup(styled_text),
+        border_style=Style(color=NordColors.FROST_1),
+        padding=(1, 2),
+        title=f"[bold {NordColors.SNOW_STORM_2}]v{VERSION}[/]",
+        title_align="right",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{APP_SUBTITLE}[/]",
+        subtitle_align="center",
+    )
+    return header_panel
 
-        # Run the async cleanup
-        loop.run_until_complete(proper_shutdown_async())
-        loop.close()
-    except Exception as e:
-        print_error(f"Error during synchronous shutdown: {e}")
+
+def print_message(
+    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
+) -> None:
+    console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
-async def main_async() -> None:
+def print_success(message: str) -> None:
+    print_message(message, NordColors.GREEN, "✓")
+
+
+def print_warning(message: str) -> None:
+    print_message(message, NordColors.YELLOW, "⚠")
+
+
+def print_error(message: str) -> None:
+    print_message(message, NordColors.RED, "✗")
+
+
+def print_step(message: str) -> None:
+    print_message(message, NordColors.FROST_2, "→")
+
+
+def display_panel(
+    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
+) -> None:
+    panel = Panel(
+        Text.from_markup(f"[{style}]{message}[/]"),
+        border_style=Style(color=style),
+        padding=(1, 2),
+        title=f"[bold {style}]{title}[/]" if title else None,
+    )
+    console.print(panel)
+
+
+def print_section(title: str) -> None:
+    console.print()
+    console.print(f"[bold {NordColors.FROST_3}]{title}[/]")
+    console.print(f"[{NordColors.FROST_3}]{'─' * len(title)}[/]")
+    console.print()
+
+
+def show_help() -> None:
+    help_text = f"""
+[bold]Available Commands:[/]
+
+[bold {NordColors.FROST_2}]1-9, A, 0[/]:   Menu selection numbers
+[bold {NordColors.FROST_2}]Tab[/]:         Auto-complete file paths and commands
+[bold {NordColors.FROST_2}]Up/Down[/]:     Navigate command history
+[bold {NordColors.FROST_2}]Ctrl+C[/]:      Cancel current operation
+[bold {NordColors.FROST_2}]h[/]:           Show this help screen
+"""
+    console.print(
+        Panel(
+            Text.from_markup(help_text),
+            title=f"[bold {NordColors.FROST_1}]Help & Commands[/]",
+            border_style=Style(color=NordColors.FROST_3),
+            padding=(1, 2),
+        )
+    )
+
+
+def get_prompt_style() -> PtStyle:
+    return PtStyle.from_dict({"prompt": f"bold {NordColors.PURPLE}"})
+
+
+# ----------------------------------------------------------------
+# Environment Loader and SSH Key Helper Functions
+# ----------------------------------------------------------------
+def load_env() -> Dict[str, str]:
+    env_vars = {}
+    env_file = os.path.join(HISTORY_DIR, ".env")
     try:
-        # Initialize stuff
-        await ensure_config_directory()
-
-        # Run the main menu
-        await main_menu_async()
+        if os.path.exists(env_file):
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        env_vars[key.strip()] = value.strip().strip('"').strip("'")
+                        os.environ[key.strip()] = value.strip().strip('"').strip("'")
     except Exception as e:
-        print_error(f"An unexpected error occurred: {e}")
-        console.print_exception()
-        sys.exit(1)
+        console.print(f"[bold {NordColors.RED}]Error loading .env file: {e}[/]")
+    return env_vars
+
+
+def get_default_username() -> str:
+    return os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()
+
+
+def get_ssh_key_path() -> str:
+    if os.environ.get("SUDO_USER"):
+        return os.path.expanduser(f"~{os.environ.get('SUDO_USER')}/.ssh/id_rsa")
+    else:
+        return os.path.expanduser("~/.ssh/id_rsa")
+
+
+def load_private_key():
+    key_path = get_ssh_key_path()
+    try:
+        key = paramiko.RSAKey.from_private_key_file(key_path)
+        return key
+    except paramiko.PasswordRequiredException:
+        key_password = os.environ.get("SSH_KEY_PASSWORD")
+        if not key_password:
+            key_password = pt_prompt(
+                "Enter SSH key password: ", is_password=True, style=get_prompt_style()
+            )
+            os.environ["SSH_KEY_PASSWORD"] = key_password
+        try:
+            key = paramiko.RSAKey.from_private_key_file(key_path, password=key_password)
+            return key
+        except Exception as e:
+            console.print(
+                f"[bold {NordColors.RED}]Error loading private key with passphrase: {e}[/]"
+            )
+            return None
+    except Exception as e:
+        console.print(f"[bold {NordColors.RED}]Error loading private key: {e}[/]")
+        return None
+
+
+# ----------------------------------------------------------------
+# Signal Handling and Cleanup
+# ----------------------------------------------------------------
+def cleanup() -> None:
+    print_message("Cleaning up session resources...", NordColors.FROST_3)
+    if sftp_connection.is_connected():
+        try:
+            if sftp_connection.sftp:
+                sftp_connection.sftp.close()
+            if sftp_connection.transport:
+                sftp_connection.transport.close()
+        except Exception as e:
+            print_error(f"Error during connection cleanup: {e}")
+
+
+def signal_handler(sig: int, frame: Any) -> None:
+    try:
+        sig_name = signal.Signals(sig).name
+        print_warning(f"Process interrupted by {sig_name}")
+    except Exception:
+        print_warning(f"Process interrupted by signal {sig}")
+    cleanup()
+    sys.exit(128 + sig)
+
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(cleanup)
+
+
+# ----------------------------------------------------------------
+# Device Data Functions
+# ----------------------------------------------------------------
+def select_device_menu() -> Optional[Device]:
+    console.print(
+        Panel(f"[bold {NordColors.FROST_2}]Select Device Type[/]", expand=False)
+    )
+    device_type = Prompt.ask(
+        f"[bold {NordColors.PURPLE}]Choose device type[/]",
+        choices=["tailscale", "local", "cancel"],
+        default="local",
+    )
+    if device_type == "cancel":
+        print_warning("Device selection canceled")
+        return None
+    devices = (
+        load_tailscale_devices() if device_type == "tailscale" else load_local_devices()
+    )
+    table = Table(
+        title=f"Available {device_type.capitalize()} Devices",
+        show_header=True,
+        header_style=f"bold {NordColors.FROST_3}",
+    )
+    table.add_column("No.", style="bold", width=4)
+    table.add_column("Name", style="bold")
+    table.add_column("IP Address", style=f"bold {NordColors.GREEN}")
+    table.add_column("Type", style="bold")
+    table.add_column("Description", style="italic")
+    for idx, device in enumerate(devices, start=1):
+        table.add_row(
+            str(idx),
+            f"{device.get_favorite_indicator()}{device.name}",
+            device.ip_address,
+            device.device_type,
+            device.description,
+        )
+    console.print(table)
+    console.print(f"[{NordColors.YELLOW}]Enter 0 to cancel selection[/]")
+    choice = IntPrompt.ask(
+        f"[bold {NordColors.PURPLE}]Select device number[/]", default=1
+    )
+    if choice == 0:
+        print_warning("Device selection canceled")
+        return None
+    try:
+        selected_device = devices[choice - 1]
+        console.print(
+            f"[bold {NordColors.GREEN}]Selected device:[/] {selected_device.name} ({selected_device.ip_address})"
+        )
+        return selected_device
+    except (IndexError, TypeError):
+        console.print(f"[bold {NordColors.RED}]Invalid selection. Please try again.[/]")
+        return None
+
+
+def connect_device_via_menu() -> bool:
+    device = select_device_menu()
+    if device:
+        return connect_sftp_device(device)
+    return False
+
+
+# ----------------------------------------------------------------
+# SFTP Connection Operations
+# ----------------------------------------------------------------
+def connect_sftp() -> bool:
+    console.print(
+        Panel(f"[bold {NordColors.FROST_2}]SFTP Connection Setup[/]", expand=False)
+    )
+    hostname = pt_prompt(
+        "Enter SFTP Hostname: ",
+        history=FileHistory(COMMAND_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    if not hostname:
+        print_warning("Connection canceled - hostname required")
+        return False
+    port = IntPrompt.ask(
+        f"[bold {NordColors.PURPLE}]Enter Port[/]", default=SFTP_DEFAULT_PORT
+    )
+    username = pt_prompt(
+        "Enter Username: ",
+        default=get_default_username(),
+        history=FileHistory(COMMAND_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    key = load_private_key()
+    if key is None:
+        console.print(
+            f"[bold {NordColors.RED}]Could not load SSH private key. Connection aborted.[/]"
+        )
+        return False
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Connecting...",
+                message="Initializing secure channel...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            transport = paramiko.Transport((hostname, port))
+            progress.update(
+                task,
+                message="Negotiating encryption parameters...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            transport.connect(username=username, pkey=key)
+            progress.update(
+                task,
+                message=f"Establishing SFTP connection to {hostname}...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            sftp = paramiko.SFTPClient.from_transport(transport)
+            progress.update(
+                task,
+                message="Connection established successfully!",
+                message_color=NordColors.GREEN,
+            )
+            time.sleep(0.5)
+        sftp_connection.sftp = sftp
+        sftp_connection.transport = transport
+        sftp_connection.hostname = hostname
+        sftp_connection.username = username
+        sftp_connection.port = port
+        sftp_connection.connected_at = datetime.now()
+        console.print(
+            f"[bold {NordColors.GREEN}]Successfully connected to SFTP server using key-based authentication.[/]"
+        )
+        return True
+    except Exception as e:
+        console.print(f"[bold {NordColors.RED}]Error connecting to SFTP server: {e}[/]")
+        return False
+
+
+def connect_sftp_device(device: Device) -> bool:
+    console.print(
+        Panel(
+            f"[bold {NordColors.FROST_2}]Connecting to {device.name} ({device.ip_address})[/]",
+            expand=False,
+        )
+    )
+    port = IntPrompt.ask(
+        f"[bold {NordColors.PURPLE}]Enter Port[/]", default=device.port
+    )
+    default_user = device.username if device.username else get_default_username()
+    username = pt_prompt(
+        "Enter Username: ",
+        default=default_user,
+        history=FileHistory(COMMAND_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    key = load_private_key()
+    if key is None:
+        console.print(
+            f"[bold {NordColors.RED}]Could not load SSH private key. Connection aborted.[/]"
+        )
+        return False
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Connecting...",
+                message="Initializing secure channel...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            transport = paramiko.Transport((device.ip_address, port))
+            progress.update(
+                task,
+                message="Negotiating encryption parameters...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            transport.connect(username=username, pkey=key)
+            progress.update(
+                task,
+                message=f"Establishing SFTP connection to {device.name}...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            sftp = paramiko.SFTPClient.from_transport(transport)
+            progress.update(
+                task,
+                message="Connection established successfully!",
+                message_color=NordColors.GREEN,
+            )
+            time.sleep(0.5)
+        sftp_connection.sftp = sftp
+        sftp_connection.transport = transport
+        sftp_connection.hostname = device.ip_address
+        sftp_connection.username = username
+        sftp_connection.port = port
+        sftp_connection.connected_at = datetime.now()
+        device.last_connected = datetime.now()
+        console.print(
+            f"[bold {NordColors.GREEN}]Successfully connected to {device.name} using key-based authentication.[/]"
+        )
+        return True
+    except Exception as e:
+        console.print(
+            f"[bold {NordColors.RED}]Error connecting to {device.name}: {e}[/]"
+        )
+        return False
+
+
+def disconnect_sftp() -> None:
+    if not sftp_connection.is_connected():
+        console.print(f"[bold {NordColors.YELLOW}]Not currently connected.[/]")
+        return
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Disconnecting...",
+                message="Closing SFTP channel...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            if sftp_connection.sftp:
+                sftp_connection.sftp.close()
+            progress.update(
+                task,
+                message="Terminating transport...",
+                message_color=NordColors.FROST_2,
+            )
+            time.sleep(0.5)
+            if sftp_connection.transport:
+                sftp_connection.transport.close()
+            progress.update(
+                task,
+                message="Connection closed successfully",
+                message_color=NordColors.GREEN,
+            )
+            time.sleep(0.5)
+        sftp_connection.sftp = None
+        sftp_connection.transport = None
+        sftp_connection.connected_at = None
+        console.print(f"[bold {NordColors.YELLOW}]Disconnected from SFTP server.[/]")
+    except Exception as e:
+        console.print(f"[bold {NordColors.RED}]Error during disconnect: {e}[/]")
+
+
+def check_connection() -> bool:
+    if sftp_connection.is_connected():
+        return True
+    console.print(f"[bold {NordColors.RED}]Not connected to any SFTP server.[/]")
+    if Confirm.ask(
+        f"[bold {NordColors.YELLOW}]Would you like to establish a connection now?[/]",
+        default=True,
+    ):
+        connect_method = Prompt.ask(
+            f"[bold {NordColors.PURPLE}]Connection method[/]",
+            choices=["device", "manual", "cancel"],
+            default="device",
+        )
+        if connect_method == "cancel":
+            return False
+        elif connect_method == "device":
+            return connect_device_via_menu()
+        else:
+            return connect_sftp()
+    return False
+
+
+# ----------------------------------------------------------------
+# SFTP File Operations
+# ----------------------------------------------------------------
+def list_remote_directory() -> None:
+    if not check_connection():
+        return
+    remote_completer = RemotePathCompleter(sftp_connection.sftp)
+    remote_path = pt_prompt(
+        "Enter remote directory path: ",
+        completer=remote_completer,
+        default=".",
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_1}"),
+            TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "Listing...",
+                message=f"Retrieving directory listing for {remote_path}...",
+                message_color=NordColors.FROST_2,
+            )
+            file_list = sftp_connection.sftp.listdir_attr(remote_path)
+            progress.update(
+                task,
+                message=f"Retrieved {len(file_list)} items",
+                message_color=NordColors.GREEN,
+            )
+            time.sleep(0.5)
+        sorted_items = sorted(
+            file_list, key=lambda x: (not (x.st_mode & 0o40000), x.filename.lower())
+        )
+        table = Table(
+            title=f"Contents of {remote_path}",
+            show_header=True,
+            header_style=f"bold {NordColors.FROST_3}",
+            expand=True,
+        )
+        table.add_column("Type", style="bold", width=4)
+        table.add_column("Name", style="bold")
+        table.add_column("Size", justify="right")
+        table.add_column("Permissions", width=10)
+        table.add_column("Modified Time")
+        dir_count = 0
+        file_count = 0
+        total_size = 0
+        for item in sorted_items:
+            is_dir = item.st_mode & 0o40000
+            if is_dir:
+                size_str = "<DIR>"
+                dir_count += 1
+            else:
+                size = item.st_size
+                total_size += size
+                if size < 1024:
+                    size_str = f"{size} B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size / 1024:.1f} KB"
+                elif size < 1024 * 1024 * 1024:
+                    size_str = f"{size / (1024 * 1024):.1f} MB"
+                else:
+                    size_str = f"{size / (1024 * 1024 * 1024):.2f} GB"
+                file_count += 1
+            mod_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item.st_mtime))
+            perm = ""
+            modes = [
+                (0o400, "r"),
+                (0o200, "w"),
+                (0o100, "x"),
+                (0o040, "r"),
+                (0o020, "w"),
+                (0o010, "x"),
+                (0o004, "r"),
+                (0o002, "w"),
+                (0o001, "x"),
+            ]
+            for mask, char in modes:
+                perm += char if (item.st_mode & mask) else "-"
+            type_indicator = "📁" if is_dir else "📄"
+            name_style = f"link {NordColors.FROST_3}" if is_dir else ""
+            table.add_row(
+                type_indicator,
+                f"[{name_style}]{item.filename}[/]",
+                size_str,
+                perm,
+                mod_time,
+            )
+        console.print(table)
+        size_display = (
+            f"{total_size / 1024:.2f} KB"
+            if total_size < 1024 * 1024
+            else f"{total_size / (1024 * 1024):.2f} MB"
+        )
+        console.print(
+            f"[{NordColors.FROST_3}]Total: {dir_count} directories, {file_count} files, {size_display}[/]"
+        )
+    except Exception as e:
+        console.print(f"[bold {NordColors.RED}]Failed to list directory: {e}[/]")
+
+
+def upload_file() -> None:
+    if not check_connection():
+        return
+    path_completer = PathCompleter(only_directories=False, expanduser=True)
+    local_path = pt_prompt(
+        "Enter the local file path to upload: ",
+        completer=path_completer,
+        default=DEFAULT_LOCAL_FOLDER,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    if not os.path.isfile(local_path):
+        console.print(
+            f"[bold {NordColors.RED}]Local file does not exist: {local_path}[/]"
+        )
+        return
+    remote_completer = RemotePathCompleter(sftp_connection.sftp)
+    default_remote_name = os.path.basename(local_path)
+    remote_path = pt_prompt(
+        "Enter the remote destination path: ",
+        completer=remote_completer,
+        default=default_remote_name,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    file_size = os.path.getsize(local_path)
+    if not Confirm.ask(
+        f"[bold {NordColors.YELLOW}]Upload {os.path.basename(local_path)} ({file_size / 1024:.1f} KB) to {remote_path}?[/]",
+        default=True,
+    ):
+        print_warning("Upload canceled")
+        return
+
+    def progress_callback(transferred, total):
+        progress.update(task, completed=transferred)
+
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_2}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Uploading..."),
+            BarColumn(),
+            TaskProgressColumn(),
+            DownloadColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("upload", total=file_size)
+            sftp_connection.sftp.put(
+                local_path, remote_path, callback=progress_callback
+            )
+        print_success(f"Upload completed: {local_path} → {remote_path}")
+    except Exception as e:
+        print_error(f"Upload failed: {e}")
+
+
+def download_file() -> None:
+    if not check_connection():
+        return
+    remote_completer = RemotePathCompleter(sftp_connection.sftp)
+    remote_path = pt_prompt(
+        "Enter the remote file path to download: ",
+        completer=remote_completer,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    path_completer = PathCompleter(only_directories=True, expanduser=True)
+    local_dest = pt_prompt(
+        "Enter the local destination directory: ",
+        completer=path_completer,
+        default=DEFAULT_LOCAL_FOLDER,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    if not os.path.isdir(local_dest):
+        console.print(
+            f"[bold {NordColors.RED}]Local directory does not exist: {local_dest}[/]"
+        )
+        if Confirm.ask(
+            f"[bold {NordColors.YELLOW}]Would you like to create this directory?[/]",
+            default=True,
+        ):
+            try:
+                os.makedirs(local_dest, exist_ok=True)
+                print_success(f"Created directory: {local_dest}")
+            except Exception as e:
+                print_error(f"Failed to create directory: {e}")
+                return
+        else:
+            return
+    try:
+        file_stat = sftp_connection.sftp.stat(remote_path)
+        file_size = file_stat.st_size
+        if file_stat.st_mode & 0o40000:
+            print_error(f"{remote_path} is a directory, not a file")
+            return
+        remote_filename = os.path.basename(remote_path)
+        dest_path = os.path.join(local_dest, remote_filename)
+        if os.path.exists(dest_path):
+            if not Confirm.ask(
+                f"[bold {NordColors.YELLOW}]File {dest_path} already exists. Overwrite?[/]",
+                default=False,
+            ):
+                print_warning("Download canceled")
+                return
+    except Exception as e:
+        console.print(
+            f"[bold {NordColors.RED}]Could not retrieve file information: {e}[/]"
+        )
+        return
+    if not Confirm.ask(
+        f"[bold {NordColors.YELLOW}]Download {os.path.basename(remote_path)} ({file_size / 1024:.1f} KB) to {local_dest}?[/]",
+        default=True,
+    ):
+        print_warning("Download canceled")
+        return
+
+    def progress_callback(transferred, total):
+        progress.update(task, completed=transferred)
+
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_2}"),
+            TextColumn(f"[bold {NordColors.FROST_2}]Downloading..."),
+            BarColumn(),
+            TaskProgressColumn(),
+            DownloadColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("download", total=file_size)
+            sftp_connection.sftp.get(remote_path, dest_path, callback=progress_callback)
+        print_success(f"Download completed: {remote_path} → {dest_path}")
+    except Exception as e:
+        print_error(f"Download failed: {e}")
+
+
+def delete_remote_file() -> None:
+    if not check_connection():
+        return
+    remote_completer = RemotePathCompleter(sftp_connection.sftp)
+    remote_path = pt_prompt(
+        "Enter the remote file path to delete: ",
+        completer=remote_completer,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    try:
+        stat = sftp_connection.sftp.stat(remote_path)
+        is_dir = stat.st_mode & 0o40000
+    except Exception as e:
+        print_error(f"Cannot access {remote_path}: {e}")
+        return
+    if is_dir:
+        print_warning(
+            f"{remote_path} is a directory. Use the delete directory option instead."
+        )
+        return
+    if Confirm.ask(
+        f"[bold {NordColors.RED}]Are you sure you want to delete {remote_path}?[/]",
+        default=False,
+    ):
+        try:
+            with Progress(
+                SpinnerColumn("dots", style=f"bold {NordColors.RED}"),
+                TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task(
+                    "deleting",
+                    message=f"Deleting {remote_path}...",
+                    message_color=NordColors.RED,
+                )
+                sftp_connection.sftp.remove(remote_path)
+                progress.update(
+                    task,
+                    message=f"File deleted successfully",
+                    message_color=NordColors.GREEN,
+                )
+                time.sleep(0.5)
+            print_success(f"Deleted remote file: {remote_path}")
+        except Exception as e:
+            print_error(f"Failed to delete file: {e}")
+
+
+def rename_remote_file() -> None:
+    if not check_connection():
+        return
+    remote_completer = RemotePathCompleter(sftp_connection.sftp)
+    old_name = pt_prompt(
+        "Enter the current remote file path: ",
+        completer=remote_completer,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    try:
+        stat = sftp_connection.sftp.stat(old_name)
+        is_dir = stat.st_mode & 0o40000
+    except Exception as e:
+        print_error(f"Cannot access {old_name}: {e}")
+        return
+    parent_dir = os.path.dirname(old_name)
+    file_name = os.path.basename(old_name)
+    same_dir_completer = RemotePathCompleter(
+        sftp_connection.sftp, parent_dir if parent_dir else "."
+    )
+    new_name = pt_prompt(
+        "Enter the new remote file name/path: ",
+        completer=same_dir_completer,
+        default=file_name,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    if "/" not in new_name and parent_dir:
+        new_name = f"{parent_dir}/{new_name}"
+    entity_type = "directory" if is_dir else "file"
+    if not Confirm.ask(
+        f"[bold {NordColors.YELLOW}]Rename {entity_type} from {old_name} to {new_name}?[/]",
+        default=True,
+    ):
+        print_warning("Rename canceled")
+        return
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_2}"),
+            TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "renaming",
+                message=f"Renaming {old_name} to {new_name}...",
+                message_color=NordColors.FROST_2,
+            )
+            sftp_connection.sftp.rename(old_name, new_name)
+            progress.update(
+                task,
+                message=f"{entity_type.capitalize()} renamed successfully",
+                message_color=NordColors.GREEN,
+            )
+            time.sleep(0.5)
+        print_success(f"Renamed remote {entity_type}: {old_name} → {new_name}")
+    except Exception as e:
+        print_error(f"Failed to rename {entity_type}: {e}")
+
+
+def create_remote_directory() -> None:
+    if not check_connection():
+        return
+    remote_completer = RemotePathCompleter(sftp_connection.sftp)
+    remote_dir = pt_prompt(
+        "Enter the remote directory to create: ",
+        completer=remote_completer,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    try:
+        sftp_connection.sftp.stat(remote_dir)
+        print_warning(f"Directory {remote_dir} already exists")
+        return
+    except IOError:
+        pass
+    try:
+        with Progress(
+            SpinnerColumn("dots", style=f"bold {NordColors.FROST_2}"),
+            TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                "creating",
+                message=f"Creating directory {remote_dir}...",
+                message_color=NordColors.FROST_2,
+            )
+            sftp_connection.sftp.mkdir(remote_dir)
+            progress.update(
+                task,
+                message=f"Directory created successfully",
+                message_color=NordColors.GREEN,
+            )
+            time.sleep(0.5)
+        print_success(f"Created remote directory: {remote_dir}")
+    except Exception as e:
+        print_error(f"Failed to create directory: {e}")
+
+
+def delete_remote_directory() -> None:
+    if not check_connection():
+        return
+    remote_completer = RemotePathCompleter(sftp_connection.sftp)
+    remote_dir = pt_prompt(
+        "Enter the remote directory to delete: ",
+        completer=remote_completer,
+        history=FileHistory(PATH_HISTORY),
+        auto_suggest=AutoSuggestFromHistory(),
+        style=get_prompt_style(),
+    )
+    try:
+        stat = sftp_connection.sftp.stat(remote_dir)
+        is_dir = stat.st_mode & 0o40000
+        if not is_dir:
+            print_error(f"{remote_dir} is not a directory.")
+            return
+    except Exception as e:
+        print_error(f"Cannot access {remote_dir}: {e}")
+        return
+    try:
+        contents = sftp_connection.sftp.listdir(remote_dir)
+        if contents:
+            print_warning(f"Directory is not empty. Contains {len(contents)} items.")
+            if not Confirm.ask(
+                f"[bold {NordColors.RED}]Force delete non-empty directory?[/]",
+                default=False,
+            ):
+                return
+            if Confirm.ask(
+                f"[bold {NordColors.RED}]WARNING: This will delete ALL contents. Proceed?[/]",
+                default=False,
+            ):
+
+                def rm_rf(path):
+                    try:
+                        files = sftp_connection.sftp.listdir(path)
+                        for f in files:
+                            filepath = os.path.join(path, f)
+                            try:
+                                try:
+                                    sftp_connection.sftp.listdir(filepath)
+                                    rm_rf(filepath)
+                                except:
+                                    sftp_connection.sftp.remove(filepath)
+                                    print_step(f"Deleted file: {filepath}")
+                            except Exception as e:
+                                print_error(f"Failed to remove {filepath}: {e}")
+                                return False
+                        sftp_connection.sftp.rmdir(path)
+                        return True
+                    except Exception as e:
+                        print_error(f"Failed operation on {path}: {e}")
+                        return False
+
+                with Progress(
+                    SpinnerColumn("dots", style=f"bold {NordColors.RED}"),
+                    TextColumn(
+                        "[bold {task.fields[message_color]}]{task.fields[message]}"
+                    ),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task(
+                        "deleting",
+                        message=f"Recursively deleting {remote_dir}...",
+                        message_color=NordColors.RED,
+                    )
+                    success = rm_rf(remote_dir)
+                    if success:
+                        progress.update(
+                            task,
+                            message=f"Directory and all contents deleted",
+                            message_color=NordColors.GREEN,
+                        )
+                        print_success(
+                            f"Recursively deleted remote directory: {remote_dir}"
+                        )
+                    else:
+                        progress.update(
+                            task,
+                            message=f"Failed to delete all contents",
+                            message_color=NordColors.RED,
+                        )
+                        print_error(
+                            f"Failed to recursively delete directory: {remote_dir}"
+                        )
+                return
+            else:
+                return
+    except Exception as e:
+        print_error(f"Failed to check directory contents: {e}")
+        return
+    if Confirm.ask(
+        f"[bold {NordColors.RED}]Are you sure you want to delete this directory?[/]",
+        default=False,
+    ):
+        try:
+            with Progress(
+                SpinnerColumn("dots", style=f"bold {NordColors.RED}"),
+                TextColumn("[bold {task.fields[message_color]}]{task.fields[message]}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task(
+                    "deleting",
+                    message=f"Deleting directory {remote_dir}...",
+                    message_color=NordColors.RED,
+                )
+                sftp_connection.sftp.rmdir(remote_dir)
+                progress.update(
+                    task,
+                    message=f"Directory deleted successfully",
+                    message_color=NordColors.GREEN,
+                )
+                time.sleep(0.5)
+            print_success(f"Deleted remote directory: {remote_dir}")
+        except Exception as e:
+            print_error(f"Failed to delete directory: {e}")
+
+
+# ----------------------------------------------------------------
+# Main Menu and Program Control
+# ----------------------------------------------------------------
+def display_status_bar() -> None:
+    connection_status = sftp_connection.get_connection_info()
+    status_color = (
+        NordColors.GREEN if sftp_connection.is_connected() else NordColors.RED
+    )
+    status_text = "CONNECTED" if sftp_connection.is_connected() else "DISCONNECTED"
+    console.print(
+        Panel(
+            Text.from_markup(
+                f"[bold {status_color}]Status: {status_text}[/] | [dim]{connection_status}[/]"
+            ),
+            border_style=NordColors.FROST_4,
+            padding=(0, 2),
+        )
+    )
+
+
+def wait_for_key() -> None:
+    pt_prompt(
+        "Press Enter to continue...",
+        style=PtStyle.from_dict({"prompt": f"{NordColors.FROST_2}"}),
+    )
+
+
+def main_menu() -> None:
+    menu_options = [
+        ("1", "Connect to SFTP Server (manual)", lambda: connect_sftp()),
+        (
+            "2",
+            "Connect to SFTP Server (select device)",
+            lambda: connect_device_via_menu(),
+        ),
+        ("3", "List Remote Directory", lambda: list_remote_directory()),
+        ("4", "Upload File", lambda: upload_file()),
+        ("5", "Download File", lambda: download_file()),
+        ("6", "Rename Remote File/Directory", lambda: rename_remote_file()),
+        ("7", "Create Remote Directory", lambda: create_remote_directory()),
+        ("8", "Delete Remote File", lambda: delete_remote_file()),
+        ("9", "Delete Remote Directory", lambda: delete_remote_directory()),
+        ("A", "Disconnect from SFTP Server", lambda: disconnect_sftp()),
+        ("H", "Show Help", lambda: show_help()),
+        ("0", "Exit", lambda: None),
+    ]
+    while True:
+        console.clear()
+        console.print(create_header())
+        display_status_bar()
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        console.print(
+            Align.center(
+                f"[{NordColors.SNOW_STORM_1}]Current Time: {current_time}[/] | [{NordColors.SNOW_STORM_1}]Host: {HOSTNAME}[/]"
+            )
+        )
+        console.print()
+        console.print(f"[bold {NordColors.PURPLE}]SFTP Toolkit Menu[/]")
+        table = Table(
+            show_header=True, header_style=f"bold {NordColors.FROST_3}", expand=True
+        )
+        table.add_column("Option", style="bold", width=8)
+        table.add_column("Description", style="bold")
+        for option, description, _ in menu_options:
+            if (
+                option in ["3", "4", "5", "6", "7", "8", "9"]
+                and not sftp_connection.is_connected()
+            ):
+                table.add_row(option, f"[dim]{description} (requires connection)[/dim]")
+            elif option == "A" and not sftp_connection.is_connected():
+                table.add_row(option, f"[dim]{description} (not connected)[/dim]")
+            else:
+                table.add_row(option, description)
+        console.print(table)
+        command_history = FileHistory(COMMAND_HISTORY)
+        choice = pt_prompt(
+            "Enter your choice: ",
+            history=command_history,
+            auto_suggest=AutoSuggestFromHistory(),
+            style=get_prompt_style(),
+        ).upper()
+        if choice == "0":
+            if sftp_connection.is_connected():
+                disconnect_sftp()
+            console.print()
+            console.print(
+                Panel(
+                    Text(
+                        f"Thank you for using SFTP Toolkit!",
+                        style=f"bold {NordColors.FROST_2}",
+                    ),
+                    border_style=Style(color=NordColors.FROST_1),
+                    padding=(1, 2),
+                )
+            )
+            sys.exit(0)
+        else:
+            for option, _, func in menu_options:
+                if choice == option:
+                    func()
+                    wait_for_key()
+                    break
+            else:
+                print_error(f"Invalid selection: {choice}")
+                wait_for_key()
 
 
 def main() -> None:
-    """Main entry point of the application."""
-    try:
-        # Create and get a reference to the event loop
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Setup signal handlers with the specific loop
-        setup_signal_handlers(loop)
-
-        # Register shutdown handler
-        atexit.register(proper_shutdown)
-
-        # Run the main async function
-        loop.run_until_complete(main_async())
-    except KeyboardInterrupt:
-        print_warning("Received keyboard interrupt, shutting down...")
-    except Exception as e:
-        print_error(f"An unexpected error occurred: {e}")
-        console.print_exception()
-    finally:
-        try:
-            # Cancel all remaining tasks
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-
-            # Allow cancelled tasks to complete
-            if tasks:
-                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-
-            # Close the loop
-            loop.close()
-        except Exception as e:
-            print_error(f"Error during shutdown: {e}")
-
-        print_message("Application terminated.", NordColors.FROST_3)
+    load_env()
+    console.clear()
+    main_menu()
 
 
 if __name__ == "__main__":
-    main()
-```
+    try:
+        main()
+    except KeyboardInterrupt:
+        print_warning("Operation cancelled by user")
+        if sftp_connection.is_connected():
+            disconnect_sftp()
+        sys.exit(0)
+    except Exception as e:
+        console.print_exception()
+        print_error(f"An unexpected error occurred: {e}")
+        sys.exit(1)

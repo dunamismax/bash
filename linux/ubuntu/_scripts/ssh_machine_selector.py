@@ -740,20 +740,6 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
         username="sawyer",
     ),
     Device(
-        name="raspberrypi-5",
-        ip_address="100.105.117.18",
-        device_type="tailscale",
-        description="Raspberry Pi 5",
-        username="sawyer",
-    ),
-    Device(
-        name="raspberrypi-3",
-        ip_address="100.116.191.42",
-        device_type="tailscale",
-        description="Raspberry Pi 3",
-        username="sawyer",
-    ),
-    Device(
         name="ubuntu-server-vm-01",
         ip_address="100.84.119.114",
         device_type="tailscale",
@@ -786,27 +772,15 @@ STATIC_TAILSCALE_DEVICES: List[Device] = [
 STATIC_LOCAL_DEVICES: List[Device] = [
     Device(
         name="ubuntu-server",
-        ip_address="192.168.0.73",
+        ip_address="192.168.68.52",
         device_type="local",
         description="Main Server",
     ),
     Device(
         name="ubuntu-lenovo",
-        ip_address="192.168.0.45",
+        ip_address="192.168.68.54",
         device_type="local",
         description="Lenovo Laptop",
-    ),
-    Device(
-        name="raspberrypi-5",
-        ip_address="192.168.0.40",
-        device_type="local",
-        description="Raspberry Pi 5",
-    ),
-    Device(
-        name="raspberrypi-3",
-        ip_address="192.168.0.100",
-        device_type="local",
-        description="Raspberry Pi 3",
     ),
 ]
 
