@@ -867,13 +867,43 @@ async def install_nginx() -> bool:
 
 
 async def configure_nginx(config: CouchDBConfig) -> bool:
-    """Configure Nginx for CouchDB access."""
+    """Configure Nginx for CouchDB access with Cloudflare compatibility."""
     print_step(f"Configuring Nginx for domain: {config.domain}...")
 
-    # Prepare Nginx config content
+    # Prepare Nginx config content with Cloudflare compatibility
     nginx_config = f"""server {{
     listen 80;
     server_name {config.domain};
+    
+    # Logging configuration
+    access_log /var/log/nginx/{config.domain}-access.log;
+    error_log /var/log/nginx/{config.domain}-error.log;
+
+    # Cloudflare real IP restoration
+    # Allows proper client IP to be logged and passed to CouchDB
+    real_ip_header CF-Connecting-IP;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2c0f:f248::/32;
+    set_real_ip_from 2a06:98c0::/29;
 
     location / {{
         proxy_pass http://localhost:{config.port};
@@ -883,9 +913,15 @@ async def configure_nginx(config: CouchDBConfig) -> bool:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
+        # Increase timeout for larger attachments/uploads
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        
         # CORS configuration - important for Obsidian LiveSync
+        # Extended to include the specific domain
         if ($request_method = 'OPTIONS') {{
-            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost';
+            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost https://{config.domain} http://{config.domain}';
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS';
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization';
             add_header 'Access-Control-Max-Age' 1728000;
@@ -894,25 +930,25 @@ async def configure_nginx(config: CouchDBConfig) -> bool:
             return 204;
         }}
         if ($request_method = 'POST') {{
-            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost' always;
+            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost https://{config.domain} http://{config.domain}' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
             add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }}
         if ($request_method = 'GET') {{
-            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost' always;
+            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost https://{config.domain} http://{config.domain}' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
             add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }}
         if ($request_method = 'PUT') {{
-            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost' always;
+            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost https://{config.domain} http://{config.domain}' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
             add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
         }}
         if ($request_method = 'DELETE') {{
-            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost' always;
+            add_header 'Access-Control-Allow-Origin' 'app://obsidian.md capacitor://localhost http://localhost https://{config.domain} http://{config.domain}' always;
             add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS' always;
             add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
             add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
@@ -1017,7 +1053,7 @@ async def configure_nginx(config: CouchDBConfig) -> bool:
 
 
 async def run_livesync_init() -> bool:
-    """Run the LiveSync initialization script."""
+    """Run the LiveSync initialization script with more detailed error capture."""
     print_step("Initializing Obsidian LiveSync...")
 
     with Progress(
@@ -1037,7 +1073,8 @@ async def run_livesync_init() -> bool:
         )
 
         steps = [
-            (f"[{NordColors.FROST_2}]Downloading initialization script...", 30),
+            (f"[{NordColors.FROST_2}]Downloading initialization script...", 20),
+            (f"[{NordColors.FROST_2}]Preparing script...", 40),
             (f"[{NordColors.FROST_2}]Running script...", 70),
             (f"[{NordColors.GREEN}]Initialization complete.", 100),
         ]
@@ -1047,6 +1084,7 @@ async def run_livesync_init() -> bool:
 
         # Create a temporary script file that will automatically answer yes to all prompts
         temp_script_path = "/tmp/livesync_init_auto.sh"
+        temp_output_path = "/tmp/livesync_output.log"
 
         try:
             # Download the script
@@ -1068,35 +1106,82 @@ async def run_livesync_init() -> bool:
             # Make it executable
             await run_command_async(["chmod", "+x", temp_script_path])
 
-            # Run the script with 'yes' to automatically answer all prompts
-            # Using yes | script approach to handle any interactive prompts
+            # Verify CouchDB is accessible before proceeding
+            returncode, stdout, stderr = await run_command_async(
+                ["curl", "-s", "http://localhost:5984"]
+            )
+
+            if returncode != 0 or "couchdb" not in stdout.lower():
+                await progress_task
+                print_error("CouchDB not accessible. Cannot initialize LiveSync.")
+                return False
+
+            # Run the script with 'yes' to automatically answer all prompts and capture full output
             returncode, stdout, stderr = await run_command_async(
                 [
                     "bash",
                     "-c",
-                    f"yes | {temp_script_path}",
+                    f"yes | {temp_script_path} > {temp_output_path} 2>&1",
                 ]
             )
+
+            # Read the output log for diagnostics
+            try:
+                with open(temp_output_path, "r") as f:
+                    output_log = f.read()
+
+                # Log the detailed output for debugging
+                app_logger.debug("LiveSync initialization output", output_log)
+
+                # Check for common error patterns in the output
+                if "error" in output_log.lower() or "failed" in output_log.lower():
+                    # Extract relevant error information
+                    error_lines = [
+                        line
+                        for line in output_log.splitlines()
+                        if "error" in line.lower() or "failed" in line.lower()
+                    ]
+                    error_details = "\n".join(error_lines)
+                    print_error(f"LiveSync initialization had errors:\n{error_details}")
+
+            except Exception as e:
+                app_logger.error(f"Failed to read LiveSync output log: {e}")
 
             # Wait for progress visualization to complete
             await progress_task
 
             if returncode != 0:
-                print_error(f"Failed to initialize LiveSync: {stderr}")
+                print_error(f"Failed to initialize LiveSync. Check logs for details.")
                 return False
 
-            print_success("Obsidian LiveSync has been initialized")
-            return True
+            # Verify databases were created
+            returncode, stdout, stderr = await run_command_async(
+                ["curl", "-s", "http://localhost:5984/_all_dbs"]
+            )
+
+            if returncode == 0 and (
+                "livesync" in stdout.lower() or "obsidian" in stdout.lower()
+            ):
+                print_success("Obsidian LiveSync has been initialized successfully")
+                return True
+            else:
+                print_warning(
+                    "LiveSync initialization completed but databases may not be properly created"
+                )
+                return True
 
         except Exception as e:
             print_error(f"Error during LiveSync initialization: {e}")
             return False
         finally:
-            # Clean up the temporary script
+            # Clean up the temporary files
             try:
-                os.remove(temp_script_path)
-            except:
-                pass
+                if os.path.exists(temp_script_path):
+                    os.remove(temp_script_path)
+                if os.path.exists(temp_output_path):
+                    os.remove(temp_output_path)
+            except Exception as e:
+                app_logger.warning(f"Failed to clean up temporary files: {e}")
 
 
 async def check_couchdb_access(config: CouchDBConfig) -> bool:
@@ -1668,6 +1753,12 @@ async def main_menu_async() -> None:
             f"[bold {NordColors.FROST_2}]5. [/][{NordColors.SNOW_STORM_2}]Troubleshooting[/]"
         )
         console.print(
+            f"[bold {NordColors.FROST_2}]6. [/][{NordColors.SNOW_STORM_2}]Run LiveSync Initialization Only[/]"
+        )
+        console.print(
+            f"[bold {NordColors.FROST_2}]7. [/][{NordColors.SNOW_STORM_2}]Update Nginx Configuration Only[/]"
+        )
+        console.print(
             f"[bold {NordColors.FROST_2}]q. [/][{NordColors.SNOW_STORM_2}]Quit[/]"
         )
 
@@ -1704,6 +1795,26 @@ async def main_menu_async() -> None:
             await view_logs_async()
         elif choice == "5":
             await troubleshoot_async(config, status)
+        elif choice == "6":
+            print_section("Running LiveSync Initialization")
+            success = await run_livesync_init()
+            if success:
+                status.livesync_initialized = True
+                await save_status(status)
+                print_success("LiveSync initialization completed successfully")
+            else:
+                print_error("LiveSync initialization failed")
+            await async_prompt("Press Enter to return to the menu")
+        elif choice == "7":
+            print_section("Updating Nginx Configuration")
+            success = await configure_nginx(config)
+            if success:
+                status.nginx_configured = True
+                await save_status(status)
+                print_success("Nginx configuration updated successfully")
+            else:
+                print_error("Failed to update Nginx configuration")
+            await async_prompt("Press Enter to return to the menu")
         else:
             print_error(f"Invalid choice: {choice}")
             await async_prompt("Press Enter to continue")
