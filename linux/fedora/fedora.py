@@ -153,8 +153,8 @@ class Config:
     PACKAGES: List[str] = field(default_factory=lambda: [
         "bash", "vim", "nano", "screen", "tmux", "htop", "btop", "tree",
         "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo",
-        "bash-completion", "python3", "python3-pip", "python3-venv", "ca-certificates",
-        "dnf-plugins-core", "gnupg2", "redhat-lsb-core", "net-tools", "nmap", "tcpdump",
+        "bash-completion", "python3", "python3-pip", "ca-certificates",
+        "dnf-plugins-core", "gnupg2", "net-tools", "nmap", "tcpdump",
         "fail2ban", "gcc", "gcc-c++", "make", "cmake", "ninja-build", "meson", "gettext",
         "pkgconf", "python3-devel", "openssl-devel", "libffi-devel", "zlib-devel", "readline-devel",
         "bzip2-devel", "tk-devel", "xz", "ncurses-devel", "gdbm-devel", "nss-devel", "xz-devel",
@@ -162,7 +162,7 @@ class Config:
         "rust", "jq", "iftop", "traceroute", "mtr", "iotop", "glances", "whois", "bind-utils",
         "iproute", "iputils", "restic", "zsh", "fzf", "bat", "ripgrep", "ncdu",
         "docker", "docker-compose", "nodejs", "npm", "autoconf", "automake", "libtool",
-        "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher", "neofetch",
+        "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher", 
         "xclip", "tmate"
     ])
     FLATPAK_APPS: List[str] = field(default_factory=lambda: [
