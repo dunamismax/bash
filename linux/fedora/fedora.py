@@ -8,7 +8,6 @@ This fully automated utility performs:
   • System update & basic configuration (timezone, packages)
   • Repository & shell setup (cloning GitHub repos, updating shell configs)
   • Security hardening (SSH, sudoers, firewall using firewalld, Fail2ban)
-  • Essential service installations (Fastfetch, Brave, VS Code)
   • User customization & script deployment
   • Maintenance tasks (cron job, log rotation, configuration backups)
   • Certificates & performance tuning (SSL renewals, sysctl tweaks)
@@ -152,7 +151,7 @@ class Config:
     # Updated package names for Fedora (using dnf and rpm)
     PACKAGES: List[str] = field(default_factory=lambda: [
         "bash", "vim", "nano", "screen", "tmux", "htop", "btop", "tree",
-        "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo",
+        "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo", "fastfetch", "code", "brave",
         "bash-completion", "python3", "python3-pip", "ca-certificates",
         "dnf-plugins-core", "gnupg2", "net-tools", "nmap", "tcpdump",
         "fail2ban", "gcc", "gcc-c++", "make", "cmake", "ninja-build", "meson", "gettext",
@@ -946,58 +945,9 @@ class FedoraDesktopSetup:
             self.logger.warning(f"Failed to configure Fail2ban: {e}")
             return False
 
-    # ----------------------------------------------------------------
-    # Phase 4: Essential Service Installation
-    # ----------------------------------------------------------------
-    async def phase_service_installation(self) -> bool:
-        await self.print_section_async("Essential Service Installation")
-        status = True
-        if not await run_with_progress_async("Installing Fastfetch", self.install_fastfetch_async, task_name="services"):
-            status = False
-        return status
-
-
-    async def install_fastfetch_async(self) -> bool:
-        try:
-            result = await run_command_async(["rpm", "-q", "fastfetch"], check=False, capture_output=True)
-            if result.returncode == 0:
-                self.logger.info("Fastfetch already installed; skipping.")
-                return True
-        except Exception:
-            pass
-        temp_rpm = Path("/tmp/fastfetch.rpm")
-        try:
-            # Use a hypothetical Fedora RPM for Fastfetch (update URL as needed)
-            await download_file_async("https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-2.37.0-1.fc.rpm", temp_rpm)
-            await run_command_async(["dnf", "install", "-y", str(temp_rpm)])
-        except subprocess.CalledProcessError:
-            self.logger.warning("Fastfetch installation issues; attempting to fix dependencies...")
-            try:
-                await run_command_async(["dnf", "install", "-y", "--best", "--allowerasing"])
-                try:
-                    await run_command_async(["dnf", "install", "-y", str(temp_rpm)])
-                except subprocess.CalledProcessError:
-                    self.logger.error("Failed to install Fastfetch even after fixing dependencies.")
-                    return False
-            except subprocess.CalledProcessError:
-                self.logger.error("Failed to fix Fastfetch dependencies.")
-                return False
-        try:
-            if temp_rpm.exists():
-                await asyncio.get_running_loop().run_in_executor(None, temp_rpm.unlink)
-        except Exception:
-            pass
-        config_dir = self.config.USER_HOME / ".config" / "fastfetch"
-        try:
-            config_dir.mkdir(parents=True, exist_ok=True)
-            await run_command_async(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(config_dir)])
-        except Exception as e:
-            self.logger.warning(f"Failed to create Fastfetch config directory: {e}")
-        self.logger.info("Fastfetch installed successfully.")
-        return True
 
     # ----------------------------------------------------------------
-    # Phase 5: User Customization & Script Deployment
+    # Phase 4: User Customization & Script Deployment
     # ----------------------------------------------------------------
     async def phase_user_customization(self) -> bool:
         await self.print_section_async("User Customization & Script Deployment")
@@ -1057,7 +1007,7 @@ class FedoraDesktopSetup:
             return True
 
     # ----------------------------------------------------------------
-    # Phase 6: Permissions & Advanced Storage Setup
+    # Phase 5: Permissions & Advanced Storage Setup
     # ----------------------------------------------------------------
     async def phase_permissions_storage(self) -> bool:
         await self.print_section_async("Permissions & Advanced Storage Setup")
@@ -1173,7 +1123,7 @@ class FedoraDesktopSetup:
             return True
 
     # ----------------------------------------------------------------
-    # Phase 7: Additional Applications & Tools
+    # Phase 6: Additional Applications & Tools
     # ----------------------------------------------------------------
     async def phase_additional_apps(self) -> bool:
         await self.print_section_async("Additional Applications & Tools")
@@ -1251,7 +1201,7 @@ class FedoraDesktopSetup:
             return False
 
     # ----------------------------------------------------------------
-    # Phase 8: Cleanup & Final Configurations
+    # Phase 7: Cleanup & Final Configurations
     # ----------------------------------------------------------------
     async def phase_cleanup_final(self) -> bool:
         await self.print_section_async("Cleanup & Final Configurations")
@@ -1353,7 +1303,7 @@ class FedoraDesktopSetup:
             return tailscale_installed
 
     # ----------------------------------------------------------------
-    # Phase 9: Final Checks
+    # Phase 8: Final Checks
     # ----------------------------------------------------------------
     async def phase_final_checks(self) -> bool:
         await self.print_section_async("Final System Checks")
@@ -1427,7 +1377,6 @@ async def main_async() -> None:
         await setup.phase_system_update()
         await setup.phase_repo_shell_setup()
         await setup.phase_security_hardening()
-        await setup.phase_service_installation()
         await setup.phase_user_customization()
         await setup.phase_permissions_storage()
         await setup.phase_additional_apps()
