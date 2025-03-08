@@ -140,82 +140,101 @@ SETUP_STATUS: Dict[str, Dict[str, str]] = {
 T = TypeVar("T")
 
 # ----------------------------------------------------------------
-# Data Structures
+# Dataclasses
 # ----------------------------------------------------------------
 @dataclass
 class Config:
-    """Configuration for the Fedora setup process."""
+    """Configuration for the Fedora setup process.
+    
+    This class defines paths, system package lists (for dnf/rpm installs),
+    and Flatpak apps (for desktop and system utilities) as well as SSH and
+    firewall settings.
+    """
+    
+    # Logging and user details
     LOG_FILE: str = "/var/log/fedora_setup.log"
     USERNAME: str = "sawyer"
     USER_HOME: Path = field(default_factory=lambda: Path("/home/sawyer"))
-    # Updated package names for Fedora (using dnf and rpm)
+    
+    # Essential system packages to be installed via dnf (RPM-based)
     PACKAGES: List[str] = field(default_factory=lambda: [
-        "bash", "vim", "nano", "screen", "tmux", "htop", "btop", "tree",
-        "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo", "fastfetch",
-        "bash-completion", "python3", "python3-pip", "ca-certificates",
-        "dnf-plugins-core", "gnupg2", "net-tools", "nmap", "tcpdump",
-        "fail2ban", "gcc", "gcc-c++", "make", "cmake", "ninja-build", "meson", "gettext",
-        "pkgconf", "python3-devel", "openssl-devel", "libffi-devel", "zlib-devel", "readline-devel",
-        "bzip2-devel", "tk-devel", "xz", "ncurses-devel", "gdbm-devel", "nss-devel", "xz-devel",
-        "libxml2-devel", "xmlsec1-openssl-devel", "clang", "llvm", "golang", "gdb", "cargo",
-        "rust", "jq", "iftop", "traceroute", "mtr", "iotop", "glances", "whois", "bind-utils",
-        "iproute", "iputils", "restic", "zsh", "fzf", "bat", "ripgrep", "ncdu",
+        # Shell, editors & terminal multiplexer
+        "bash", "vim", "nano", "screen", "tmux",
+        # System monitoring and utilities
+        "htop", "btop", "tree", "neofetch", "iftop", "mtr", "iotop", "glances",
+        # Version control and networking tools
+        "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo",
+        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban",
+        # Development tools and libraries
+        "python3", "python3-pip", "ca-certificates", "dnf-plugins-core", "gnupg2",
+        "gcc", "gcc-c++", "make", "cmake", "ninja-build", "meson", "gettext", "pkgconf",
+        "python3-devel", "openssl-devel", "libffi-devel", "zlib-devel", "readline-devel",
+        "bzip2-devel", "tk-devel", "xz", "ncurses-devel", "gdbm-devel", "nss-devel",
+        "libxml2-devel", "xmlsec1-openssl-devel", "clang", "llvm", "golang", "gdb",
+        "cargo", "rust", "jq",
+        # Disk, network and file system utilities
+        "traceroute", "mtr", "bind-utils", "iproute", "iputils", "restic",
+        # Enhanced shells and search tools
+        "zsh", "fzf", "bat", "ripgrep", "ncdu",
+        # Containerization & web development
         "docker", "docker-compose", "nodejs", "npm", "autoconf", "automake", "libtool",
-        "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher", 
-        "xclip", "tmate"
+        "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher",
+        "xclip", "tmate", "iperf3"
     ])
-    FLATPAK_APPS: List[str] =           field(default_factory=lambda: [
-              # Communication & Collaboration
-              "com.discordapp.Discord",           # Discord for chat and communities
-              "org.telegram.desktop",             # Telegram Desktop for messaging  [oai_citation_attribution:0‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
-              "org.mozilla.Thunderbird",          # Thunderbird email client  [oai_citation_attribution:1‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
-              "org.signal.Signal",                # Signal for secure messaging
+    
+    # Recommended Flatpak applications for everyday use, organized by category.
+    FLATPAK_APPS: List[str] = field(default_factory=lambda: [
+        # ── Communication & Collaboration ─────────────────────────────
+        "com.discordapp.Discord",           # Discord: Chat and community calls
+        "org.mozilla.Thunderbird",          # Thunderbird for email management
+        "org.signal.Signal",                # Signal for secure messaging
 
-              # Productivity & Office
-              "com.spotify.Client",               # Spotify for music streaming
-              "md.obsidian.Obsidian",             # Obsidian for knowledge management
-              "com.bitwarden.desktop",            # Bitwarden for password management
-              "org.libreoffice.LibreOffice",      # LibreOffice suite for documents  [oai_citation_attribution:2‡tecmint.com](https://www.tecmint.com/flatpak-apps-for-fedora/)
-              "org.vscodium.VSCodium",            # VSCodium as a free code editor  [oai_citation_attribution:3‡news.itsfoss.com](https://news.itsfoss.com/interesting-linux-apps/)
-              "org.gnome.Tweaks",                 # GNOME Tweaks for desktop customization
+        # ── Productivity & Office ─────────────────────────────────────
+        "com.spotify.Client",               # Spotify for streaming music
+        "md.obsidian.Obsidian",             # Obsidian for personal knowledge base
+        "com.bitwarden.desktop",            # Bitwarden for password management
+        "org.libreoffice.LibreOffice",      # LibreOffice suite for documents
+        "org.gnome.Tweaks",                 # GNOME Tweaks for desktop customization
 
-              # Multimedia & Creativity
-              "org.videolan.VLC",                 # VLC media player
-              "com.obsproject.Studio",            # OBS Studio for streaming and recording
-              "org.blender.Blender",              # Blender for 3D modeling and animation
-              "org.gimp.GIMP",                    # GIMP for image editing
-              "org.shotcut.Shotcut",              # Shotcut for video editing
-              "org.audacityteam.Audacity",        # Audacity for audio editing
-              "org.inkscape.Inkscape",            # Inkscape for vector graphics  [oai_citation_attribution:4‡tecmint.com](https://www.tecmint.com/flatpak-apps-for-fedora/)
+        # ── Multimedia & Creativity ───────────────────────────────────
+        "org.videolan.VLC",                 # VLC: Feature‑rich media player
+        "com.obsproject.Studio",            # OBS Studio for streaming and recording
+        "org.blender.Blender",              # Blender for 3D modeling and animation
+        "org.gimp.GIMP",                    # GIMP for advanced image editing
+        "org.shotcut.Shotcut",              # Shotcut for video editing
+        "org.audacityteam.Audacity",        # Audacity for audio editing
+        "org.inkscape.Inkscape",            # Inkscape for vector graphics design
 
-              # Gaming & Emulation
-              "com.valvesoftware.Steam",          # Steam for gaming
-              "net.lutris.Lutris",                # Lutris game manager
-              "com.usebottles.bottles",           # Bottles for running Windows apps
-              "io.github.heroicgameslauncher.Heroic",  # Heroic Games Launcher for Epic/GOG titles  [oai_citation_attribution:5‡github.com](https://github.com/boredsquirrel/Recommended-Flatpak-Apps)
-              "org.libretro.RetroArch",           # RetroArch for emulation
+        # ── Gaming & Emulation ──────────────────────────────────────────
+        "com.valvesoftware.Steam",          # Steam for gaming
+        "net.lutris.Lutris",                # Lutris: Game manager and launcher
+        "com.usebottles.bottles",           # Bottles for running Windows apps via Wine
+        "org.libretro.RetroArch",           # RetroArch for classic game emulation
 
-              # Utilities & System Tools
-              "com.github.tchx84.Flatseal",       # Flatseal to manage Flatpak permissions
-              "net.davidotek.pupgui2",            # PupGUI2 for Proton management
-              "org.prismlauncher.PrismLauncher",  # PrismLauncher for managing game mods
-              "org.gnome.Boxes",                  # GNOME Boxes for virtual machines
-              "org.remmina.Remmina",              # Remmina for remote desktop connections
-              "com.rustdesk.RustDesk",            # RustDesk for remote support
-              "com.getpostman.Postman",           # Postman for API testing
-              "io.github.aandrew_me.ytdn",        # YouTube downloader tool
-              "com.calibre_ebook.calibre",        # Calibre for ebook management
-              "tv.plex.PlexDesktop",              # Plex Desktop for media organization
-              "org.filezillaproject.Filezilla",   # FileZilla for FTP file transfers
-              "com.github.k4zmu2a.spacecadetpinball",  # SpaceCadet Pinball for fun retro gaming
-              "org.virt_manager.virt-manager",    # Virt-manager for virtualization management
-              "org.raspberrypi.rpi-imager",         # Raspberry Pi Imager for OS installation
+        # ── Utilities & System Tools ────────────────────────────────────
+        "com.github.tchx84.Flatseal",       # Flatseal to manage Flatpak permissions
+        "net.davidotek.pupgui2",            # PupGUI2 for Proton configuration
+        "org.prismlauncher.PrismLauncher",  # PrismLauncher for game mod management
+        "org.gnome.Boxes",                  # GNOME Boxes for managing virtual machines
+        "org.remmina.Remmina",              # Remmina for remote desktop sessions
+        "com.rustdesk.RustDesk",            # RustDesk for remote support and screen sharing
+        "com.getpostman.Postman",           # Postman for API development and testing
+        "io.github.aandrew_me.ytdn",        # YouTube downloader tool
+        "com.calibre_ebook.calibre",        # Calibre for ebook management
+        "tv.plex.PlexDesktop",              # Plex Desktop for media organization
+        "org.filezillaproject.Filezilla",   # FileZilla for FTP file transfers
+        "com.github.k4zmu2a.spacecadetpinball",  # SpaceCadet Pinball for retro gaming fun
+        "org.raspberrypi.rpi-imager",         # Raspberry Pi Imager for flashing OS images
 
-              # Additional Popular Choices (New additions)
-              "org.mozilla.firefox",              # Firefox web browser  [oai_citation_attribution:6‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
-              "org.mozilla.Thunderbird",          # (Already added above--but kept here for emphasis in Productivity)
-              "im.riot.Element",                  # Element for Matrix chat  [oai_citation_attribution:7‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
-          ])
+        # ── Additional Popular & System Utility Apps ─────────────────────
+        "org.mozilla.firefox",              # Firefox web browser for everyday browsing
+        "im.riot.Element",                  # Element: Modern Matrix chat client
+        "org.gnome.Logs",                   # GNOME Logs to review system logs
+        "org.gnome.Disks",                  # GNOME Disks for disk partitioning and monitoring
+        "org.gnome.SystemMonitor",          # GNOME System Monitor for resource tracking
+    ])
+    
+    # SSH configuration parameters for secure remote access
     SSH_CONFIG: Dict[str, str] = field(default_factory=lambda: {
         "PermitRootLogin": "no",
         "PasswordAuthentication": "yes",
@@ -224,10 +243,12 @@ class Config:
         "ClientAliveInterval": "300",
         "ClientAliveCountMax": "3",
     })
-    # For Fedora using firewalld, list the ports to allow
+    
+    # Firewall configuration for Fedora (using firewalld): allow common ports
     FIREWALL_PORTS: List[str] = field(default_factory=lambda: ["22", "80", "443"])
-
+    
     def to_dict(self) -> Dict[str, Any]:
+        """Convert the configuration to a dictionary."""
         return asdict(self)
 
 # ----------------------------------------------------------------
