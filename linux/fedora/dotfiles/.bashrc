@@ -1,5 +1,5 @@
 ###############################################################################
-# ~/.bashrc – Enhanced Ubuntu Bash Configuration with Nala Aliases and Nord Theme
+# ~/.bashrc – Enhanced Fedora Bash Configuration with Nord Theme
 ###############################################################################
 
 # 0. Exit if not running in an interactive shell
@@ -10,16 +10,16 @@
 # Prepend essential directories to PATH
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$HOME/go/bin:$PATH"
 
-# Enable useful Bash options
+# Enable useful Bash options (ignoring errors for unsupported options)
 shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify 2>/dev/null || true
 
-# XDG Base Directories (for configuration, data, cache, and state)
+# XDG Base Directories for configuration, data, cache, and state
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-# Wayland settings
+# Wayland settings (if using Wayland)
 export QT_QPA_PLATFORM=wayland
 export XDG_SESSION_TYPE=wayland
 
@@ -96,18 +96,18 @@ fi
 
 # 5. Development Environment Setup
 # ------------------------------------------------------------------------------
+# Pyenv setup (if installed)
 if [ -d "$HOME/.pyenv" ]; then
     export PYENV_ROOT="$HOME/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
     eval "$(pyenv init --path)"
     eval "$(pyenv init -)"
-    # Enable pyenv-virtualenv if available
     if command -v pyenv-virtualenv-init >/dev/null 2>&1; then
         eval "$(pyenv virtualenv-init -)"
     fi
 fi
 
-# Node version manager setup
+# Node Version Manager (NVM) setup
 if [ -d "$HOME/.nvm" ]; then
     export NVM_DIR="$HOME/.nvm"
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -120,9 +120,8 @@ if command -v lesspipe >/dev/null 2>&1; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
-# 7. Prompt Customization – (Do Not Modify the PS1 Prompt)
+# 7. Prompt Customization – (PS1 remains as originally set)
 # ------------------------------------------------------------------------------
-# Using the exact PS1 from your provided file:
 export PS1="[${NORD7}\u${RESET}@${NORD7}\h${RESET}] [${NORD9}\w${RESET}] ${NORD10}> ${NORD6} "
 
 # 8. Colorized Output and Common Command Aliases
@@ -142,13 +141,13 @@ if command -v colordiff >/dev/null 2>&1; then
 fi
 alias ip='ip --color=auto'
 
-# Add bat as cat replacement if available
+# Use bat as a cat replacement if available
 if command -v bat >/dev/null 2>&1; then
     alias cat='bat --style=plain'
     export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 fi
 
-# 9. Navigation and Package Management Aliases
+# 9. Navigation Aliases
 # ------------------------------------------------------------------------------
 alias ..='cd ..'
 alias ...='cd ../..'
@@ -156,28 +155,8 @@ alias ....='cd ../../..'
 alias .....='cd ../../../..'
 alias cd..='cd ..'
 
-# Package Management Aliases using Nala (if installed)
-if command -v nala >/dev/null 2>&1; then
-    alias apt='nala'
-    alias apt-get='nala'
-    alias apt-cache='nala'
-    alias update='sudo nala update && sudo nala upgrade -y'
-    alias install='sudo nala install'
-    alias remove='sudo nala remove'
-    alias autoremove='sudo nala autoremove'
-    alias search='nala search'
-    alias clean='sudo nala clean && sudo nala autoremove'
-else
-    # Fallback to regular apt with better defaults
-    alias update='sudo apt update && sudo apt upgrade -y'
-    alias install='sudo apt install'
-    alias remove='sudo apt remove'
-    alias autoremove='sudo apt autoremove'
-    alias search='apt search'
-    alias clean='sudo apt clean && sudo apt autoremove'
-fi
-
-# Safety Aliases
+# 10. Safety Aliases
+# ------------------------------------------------------------------------------
 alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
@@ -188,7 +167,7 @@ alias df='df -h'
 alias du='du -h'
 alias free='free -h'
 
-# 10. Git Command Shortcuts
+# 11. Git Command Shortcuts
 # ------------------------------------------------------------------------------
 alias gs='git status'
 alias ga='git add'
@@ -204,7 +183,7 @@ alias gf='git fetch'
 alias glog='git log --oneline --graph --decorate'
 alias gsw='git switch'
 
-# 11. Miscellaneous Aliases for Common Tasks
+# 12. Miscellaneous Aliases for Common Tasks
 # ------------------------------------------------------------------------------
 alias h='history'
 alias j='jobs -l'
@@ -217,7 +196,7 @@ alias mem='free -h'
 alias cpu='top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk "{print 100 - \$1}"'
 alias disk='df -h | grep -v "tmpfs\|udev"'
 alias ps-grep='ps aux | grep'
-alias watch='watch '
+alias watch='watch'
 alias weather='curl wttr.in/?0'
 
 # Network utilities
@@ -228,7 +207,7 @@ alias webserver='python3 -m http.server'
 alias ports-in-use='sudo netstat -tulanp'
 alias speedtest='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python3 -'
 
-# Docker Shortcuts
+# Docker Shortcuts (if docker is installed)
 if command -v docker >/dev/null 2>&1; then
     alias d='docker'
     alias dc='docker-compose'
@@ -245,17 +224,16 @@ if command -v docker >/dev/null 2>&1; then
     alias dc-logs='docker-compose logs -f'
 fi
 
-# User aliases
-alias sftp='python /home/sawyer/bin/sftp_toolkit.py'
+# User alias (update tool paths to use $HOME)
+alias sftp="python $HOME/bin/sftp_toolkit.py"
 
-# 12. Functions and Utility Scripts
+# 13. Functions and Utility Scripts
 # ------------------------------------------------------------------------------
-# Virtual Environment Setup
+# Virtual Environment Setup: creates (if needed) and activates a venv,
+# installing requirements if found.
 setup_venv() {
     local venv_name="${1:-.venv}"
-    if type deactivate &>/dev/null; then
-        deactivate
-    fi
+    type deactivate &>/dev/null && deactivate
     if [ ! -d "$venv_name" ]; then
         echo "Creating virtual environment in $venv_name..."
         python3 -m venv "$venv_name"
@@ -266,7 +244,7 @@ setup_venv() {
 }
 alias venv='setup_venv'
 
-# Universal extract function for archives
+# Universal extract function for various archive types
 extract() {
     if [ -z "$1" ]; then
         echo "Usage: extract <archive>"
@@ -295,38 +273,34 @@ extract() {
 }
 
 # Additional helper functions
-mkcd() { mkdir -p "$1" && cd "$1" || return 1; }
-ff() { find . -type f -iname "*$1*"; }
-fd() { find . -type d -iname "*$1*"; }
-bak() { cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"; }
+mkcd()      { mkdir -p "$1" && cd "$1" || return 1; }
+ff()        { find . -type f -iname "*$1*"; }
+fd()        { find . -type d -iname "*$1*"; }
+bak()       { cp "$1" "${1}.bak.$(date +%Y%m%d_%H%M%S)"; }
 mktempdir() {
     local tmpdir
     tmpdir=$(mktemp -d -t tmp.XXXXXX)
     echo "Created temporary directory: $tmpdir"
     cd "$tmpdir" || return
 }
-serve() {
-    local port="${1:-8000}"
-    echo "Serving HTTP on port ${port}..."
-    python3 -m http.server "$port"
-}
+serve()     { local port="${1:-8000}"; echo "Serving HTTP on port ${port}..."; python3 -m http.server "$port"; }
 
 # New utility functions
-transfer() { 
+transfer() {
     # Easy file sharing via transfer.sh
     if [ $# -eq 0 ]; then
         echo "No arguments specified."
         return 1
     fi
-    
-    local tmpfile="$( mktemp -t transferXXX )"
+    local tmpfile
+    tmpfile=$(mktemp -t transferXXX)
     if tty -s; then
+        local basefile
         basefile=$(basename "$1" | sed -e 's/[^a-zA-Z0-9._-]/-/g')
         curl --progress-bar --upload-file "$1" "https://transfer.sh/$basefile" >> "$tmpfile"
     else
         curl --progress-bar --upload-file "-" "https://transfer.sh/stdin" >> "$tmpfile"
     fi
-    
     cat "$tmpfile"
     rm -f "$tmpfile"
     echo
@@ -334,15 +308,18 @@ transfer() {
 
 calc() {
     # Simple calculator function
-    local result=""
-    result="$(printf "scale=10;%s\n" "$*" | bc -l)"
+    local result
+    result=$(printf "scale=10;%s\n" "$*" | bc -l)
     printf "%s\n" "$result"
 }
 
-countdown() { 
-    # Countdown timer function
+countdown() {
+    # Countdown timer function (in seconds)
     local secs=$1
-    [ -z "$secs" ] && { echo "Usage: countdown SECONDS"; return 1; }
+    if [ -z "$secs" ]; then
+        echo "Usage: countdown SECONDS"
+        return 1
+    fi
     while [ $secs -gt 0 ]; do
         printf "\r%02d:%02d:%02d" $((secs/3600)) $(((secs/60)%60)) $((secs%60))
         sleep 1
@@ -352,29 +329,31 @@ countdown() {
 }
 
 # Directory bookmarks
-export MARKPATH=$HOME/.marks
+export MARKPATH="$HOME/.marks"
 [ -d "$MARKPATH" ] || mkdir -p "$MARKPATH"
-jump() { 
+jump() {
     cd -P "$MARKPATH/$1" 2>/dev/null || echo "No such mark: $1"
 }
-mark() { 
-    mkdir -p "$MARKPATH"; ln -s "$(pwd)" "$MARKPATH/$1"
+mark() {
+    mkdir -p "$MARKPATH"
+    ln -s "$(pwd)" "$MARKPATH/$1"
 }
-unmark() { 
+unmark() {
     rm -i "$MARKPATH/$1"
 }
 marks() {
     ls -la "$MARKPATH" | sed 's/  / /g' | cut -d' ' -f9- | grep -v '^$' | sort
 }
 _completemarks() {
-  local curw=${COMP_WORDS[COMP_CWORD]}
-  local wordlist=$(find $MARKPATH -type l -printf "%f\n")
-  COMPREPLY=($(compgen -W '${wordlist[@]}' -- "$curw"))
-  return 0
+    local curw=${COMP_WORDS[COMP_CWORD]}
+    local wordlist
+    wordlist=$(find "$MARKPATH" -type l -printf "%f\n")
+    COMPREPLY=($(compgen -W "${wordlist}" -- "$curw"))
+    return 0
 }
 complete -F _completemarks jump unmark
 
-# 13. Bash Completion
+# 14. Bash Completion
 # ------------------------------------------------------------------------------
 if ! shopt -oq posix; then
     if [ -f /usr/share/bash-completion/bash_completion ]; then
@@ -384,18 +363,16 @@ if ! shopt -oq posix; then
     fi
 fi
 
-# SSH Machine Selector Alias (replaces default ssh command)
+# 15. SSH Machine Selector Alias (replaces default ssh command)
 # ------------------------------------------------------------------------------
-if [ -f "/home/sawyer/bin/ssh_machine_selector.py" ]; then
-    alias ssh='/home/sawyer/bin/ssh_machine_selector.py'
-    # Make sure it's executable
-    [ -x "/home/sawyer/bin/ssh_machine_selector.py" ] || chmod +x "/home/sawyer/bin/ssh_machine_selector.py"
-    # Add backup ssh command in case you need the original
+if [ -f "$HOME/bin/ssh_machine_selector.py" ]; then
+    alias ssh="$HOME/bin/ssh_machine_selector.py"
+    [ -x "$HOME/bin/ssh_machine_selector.py" ] || chmod +x "$HOME/bin/ssh_machine_selector.py"
     alias ssh-orig='command ssh'
-    export SSH_MACHINE_SELECTOR="/home/sawyer/bin/ssh_machine_selector.py"
+    export SSH_MACHINE_SELECTOR="$HOME/bin/ssh_machine_selector.py"
 fi
 
-# 14. Local Customizations
+# 16. Local Customizations
 # ------------------------------------------------------------------------------
 [ -f "$HOME/.bashrc.local" ] && source "$HOME/.bashrc.local"
 
@@ -406,47 +383,46 @@ if [ -d "$HOME/.bashrc.d" ]; then
     done
 fi
 
-# 15. Source Additional Environment Settings
+# 17. Source Additional Environment Settings
 # ------------------------------------------------------------------------------
 [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
 
-# 16. Performance Monitoring & System Maintenance
+# 18. Performance Monitoring & System Maintenance
 # ------------------------------------------------------------------------------
-# Check system load
 check_load() {
-    local load=$(uptime | awk '{print $(NF-2)}' | sed 's/,//')
+    local load
+    load=$(uptime | awk '{print $(NF-2)}' | sed 's/,//')
     echo "Current system load: $load"
 }
 
-# Clean up temporary files
 cleanup_system() {
     echo "Cleaning up system..."
-    sudo apt clean
-    sudo apt autoremove -y
+    if command -v dnf >/dev/null 2>&1; then
+        sudo dnf clean all && sudo dnf autoremove -y
+    else
+        echo "No dnf package manager found."
+    fi
     sudo journalctl --vacuum-time=7d
     echo "Done cleaning up system."
 }
 
-# Memory usage by processes
 mem_usage() {
-    ps aux | awk '{print $4"\t"$11}' | sort -n | tail -20
+    ps aux | awk '{print $4"\t"$11}' | sort -n | tail -n 20
 }
 
-# Find large files
 find_large_files() {
     local size="${1:-+100M}"
     find / -type f -size "$size" -exec ls -lh {} \; 2>/dev/null | sort -k5,5hr | head -n 20
 }
 
-# 17. SSH Key Management
+# 19. SSH Key Management
 # ------------------------------------------------------------------------------
 list_ssh_keys() {
     echo "SSH Keys in ~/.ssh:"
-    for key in ~/.ssh/*.pub; do
-        if [ -f "$key" ]; then
-            echo -n "$(basename "$key" .pub): "
-            ssh-keygen -l -f "${key%.pub}" 2>/dev/null || echo "Invalid key"
-        fi
+    for key in "$HOME/.ssh"/*.pub; do
+        [ -f "$key" ] || continue
+        echo -n "$(basename "$key" .pub): "
+        ssh-keygen -l -f "${key%.pub}" 2>/dev/null || echo "Invalid key"
     done
 }
 
@@ -459,15 +435,12 @@ create_ssh_key() {
     cat "$HOME/.ssh/$name.pub"
 }
 
-# 18. Final PROMPT_COMMAND Consolidation (Logging Sessions)
+# 20. Final PROMPT_COMMAND Consolidation (Session Logging)
 # ------------------------------------------------------------------------------
-export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> ~/.bash_sessions.log'
+export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> "$HOME/.bash_sessions.log"'
 
-# -------------------------------------------------------------------------------
-# Override python command to use sudo with the pyenv Python interpreter
-# This allows you to run "python script.py" and have it execute:
-#   sudo $(pyenv which python) script.py
-# -------------------------------------------------------------------------------
+# 21. Override python command to use sudo with the pyenv Python interpreter
+# ------------------------------------------------------------------------------
 python() {
     sudo -E "$(pyenv which python)" "$@"
 }
