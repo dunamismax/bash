@@ -161,7 +161,7 @@ class Config:
         # Shell, editors & terminal multiplexer
         "bash", "vim", "nano", "screen", "tmux",
         # System monitoring and utilities
-        "htop", "btop", "tree", "neofetch", "iftop", "mtr", "iotop", "glances",
+        "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances",
         # Version control and networking tools
         "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo",
         "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban",
