@@ -1192,64 +1192,64 @@ class FedoraDesktopSetup:
     
         return status
 
-async def install_flatpak_and_apps_async(self) -> Tuple[List[str], List[str]]:
-    successful = []
-    failed = []
-    
-    self.logger.info("Ensuring Flathub remote is added...")
-    try:
-        await run_command_async(
-            ["flatpak", "remote-add", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"]
-        )
-    except Exception as e:
-        self.logger.warning(f"Failed to add Flathub remote: {e}")
-    
-    self.logger.info("Installing Flatpak Apps...")
-    for app in self.config.FLATPAK_APPS:
-        # First, check if the app is already installed.
+    async def install_flatpak_and_apps_async(self) -> Tuple[List[str], List[str]]:
+        successful = []
+        failed = []
+        
+        self.logger.info("Ensuring Flathub remote is added...")
         try:
             await run_command_async(
-                ["flatpak", "info", app],
-                capture_output=True,
-                text=True
+                ["flatpak", "remote-add", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"]
             )
-            self.logger.info(f"Flatpak app {app} is already installed.")
-            successful.append(app)
-            continue
-        except subprocess.CalledProcessError:
-            # App not installed; proceed with installation.
-            pass
-
-        try:
-            self.logger.info(f"Installing Flatpak app: {app}")
-            await run_command_async(
-                ["flatpak", "install", "--assumeyes", "--noninteractive", "flathub", app]
-            )
-            self.logger.info(f"Installed Flatpak app: {app}")
-            successful.append(app)
-            
-            # Special post-install configuration for Postman
-            if app == "com.getpostman.Postman":
-                cert_dir = Path.home() / ".var" / "app" / "com.getpostman.Postman" / "config" / "Postman" / "proxy"
-                cert_file = cert_dir / "postman-proxy-ca.crt"
-                if not cert_file.exists():
-                    self.logger.info("Postman missing proxy certificate; generating it now...")
-                    cert_dir.mkdir(parents=True, exist_ok=True)
-                    await run_command_async([
-                        "openssl", "req",
-                        "-subj", "/C=US/CN=Postman Proxy",
-                        "-new", "-newkey", "rsa:2048",
-                        "-sha256", "-days", "365",
-                        "-nodes", "-x509",
-                        "-keyout", str(cert_dir / "postman-proxy-ca.key"),
-                        "-out", str(cert_file)
-                    ])
-                    self.logger.info("Postman proxy certificate generated successfully.")
         except Exception as e:
-            self.logger.warning(f"Failed to install Flatpak app {app}: {e}")
-            failed.append(app)
+            self.logger.warning(f"Failed to add Flathub remote: {e}")
+        
+        self.logger.info("Installing Flatpak Apps...")
+        for app in self.config.FLATPAK_APPS:
+            # First, check if the app is already installed.
+            try:
+                await run_command_async(
+                    ["flatpak", "info", app],
+                    capture_output=True,
+                    text=True
+                )
+                self.logger.info(f"Flatpak app {app} is already installed.")
+                successful.append(app)
+                continue
+            except subprocess.CalledProcessError:
+                # App not installed; proceed with installation.
+                pass
     
-    return successful, failed
+            try:
+                self.logger.info(f"Installing Flatpak app: {app}")
+                await run_command_async(
+                    ["flatpak", "install", "--assumeyes", "--noninteractive", "flathub", app]
+                )
+                self.logger.info(f"Installed Flatpak app: {app}")
+                successful.append(app)
+                
+                # Special post-install configuration for Postman
+                if app == "com.getpostman.Postman":
+                    cert_dir = Path.home() / ".var" / "app" / "com.getpostman.Postman" / "config" / "Postman" / "proxy"
+                    cert_file = cert_dir / "postman-proxy-ca.crt"
+                    if not cert_file.exists():
+                        self.logger.info("Postman missing proxy certificate; generating it now...")
+                        cert_dir.mkdir(parents=True, exist_ok=True)
+                        await run_command_async([
+                            "openssl", "req",
+                            "-subj", "/C=US/CN=Postman Proxy",
+                            "-new", "-newkey", "rsa:2048",
+                            "-sha256", "-days", "365",
+                            "-nodes", "-x509",
+                            "-keyout", str(cert_dir / "postman-proxy-ca.key"),
+                            "-out", str(cert_file)
+                        ])
+                        self.logger.info("Postman proxy certificate generated successfully.")
+            except Exception as e:
+                self.logger.warning(f"Failed to install Flatpak app {app}: {e}")
+                failed.append(app)
+        
+        return successful, failed
     
     async def install_configure_vscode_async(self) -> bool:
         try:
