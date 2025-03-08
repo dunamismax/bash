@@ -1819,12 +1819,6 @@ class PopOSDesktopSetup:
     async def phase_additional_apps(self) -> bool:
         await self.print_section_async("Additional Applications & Tools")
         status = True
-        if not await run_with_progress_async(
-            "Installing Brave browser",
-            self.install_brave_browser_async,
-            task_name="additional_apps",
-        ):
-            status = False
         apps_success, apps_failed = await run_with_progress_async(
             "Installing Flatpak and applications",
             self.install_flatpak_and_apps_async,
@@ -1842,20 +1836,6 @@ class PopOSDesktopSetup:
         ):
             status = False
         return status
-
-    async def install_brave_browser_async(self) -> bool:
-        try:
-            if await command_exists_async("brave-browser"):
-                self.logger.info("Brave browser is already installed.")
-                return True
-            self.logger.info("Installing Brave browser using nala...")
-            await run_command_async(["nala", "update"])
-            await run_command_async(["nala", "install", "-y", "brave-browser"])
-            self.logger.info("Brave browser installed successfully.")
-            return True
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to install Brave browser: {e}")
-            return False
 
     async def install_flatpak_and_apps_async(self) -> Tuple[List[str], List[str]]:
         try:
