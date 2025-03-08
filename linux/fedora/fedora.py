@@ -164,18 +164,58 @@ class Config:
         "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher", 
         "xclip", "tmate"
     ])
-    FLATPAK_APPS: List[str] = field(default_factory=lambda: [
-        "com.discordapp.Discord", "com.usebottles.bottles", "com.valvesoftware.Steam",
-        "com.spotify.Client", "org.videolan.VLC", "org.libretro.RetroArch", "com.obsproject.Studio",
-        "com.github.tchx84.Flatseal", "net.lutris.Lutris", "net.davidotek.pupgui2", "org.gimp.GIMP",
-        "org.qbittorrent.qBittorrent", "com.github.Matoking.protontricks", "md.obsidian.Obsidian",
-        "org.prismlauncher.PrismLauncher", "com.bitwarden.desktop", "org.kde.kdenlive", "org.signal.Signal",
-        "org.gnome.Boxes", "com.stremio.Stremio", "org.blender.Blender", "org.localsend.localsend_app",
-        "fr.handbrake.ghb", "org.remmina.Remmina", "org.audacityteam.Audacity", "com.rustdesk.RustDesk",
-        "com.getpostman.Postman", "io.github.aandrew_me.ytdn", "org.shotcut.Shotcut",
-        "com.calibre_ebook.calibre", "tv.plex.PlexDesktop", "org.filezillaproject.Filezilla",
-        "com.github.k4zmu2a.spacecadetpinball", "org.virt_manager.virt-manager", "org.raspberrypi.rpi-imager",
-    ])
+    FLATPAK_APPS: List[str] =           field(default_factory=lambda: [
+              # Communication & Collaboration
+              "com.discordapp.Discord",           # Discord for chat and communities
+              "org.telegram.desktop",             # Telegram Desktop for messaging  [oai_citation_attribution:0‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
+              "org.mozilla.Thunderbird",          # Thunderbird email client  [oai_citation_attribution:1‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
+              "org.signal.Signal",                # Signal for secure messaging
+
+              # Productivity & Office
+              "com.spotify.Client",               # Spotify for music streaming
+              "md.obsidian.Obsidian",             # Obsidian for knowledge management
+              "com.bitwarden.desktop",            # Bitwarden for password management
+              "org.libreoffice.LibreOffice",      # LibreOffice suite for documents  [oai_citation_attribution:2‡tecmint.com](https://www.tecmint.com/flatpak-apps-for-fedora/)
+              "org.vscodium.VSCodium",            # VSCodium as a free code editor  [oai_citation_attribution:3‡news.itsfoss.com](https://news.itsfoss.com/interesting-linux-apps/)
+              "org.gnome.Tweaks",                 # GNOME Tweaks for desktop customization
+
+              # Multimedia & Creativity
+              "org.videolan.VLC",                 # VLC media player
+              "com.obsproject.Studio",            # OBS Studio for streaming and recording
+              "org.blender.Blender",              # Blender for 3D modeling and animation
+              "org.gimp.GIMP",                    # GIMP for image editing
+              "org.shotcut.Shotcut",              # Shotcut for video editing
+              "org.audacityteam.Audacity",        # Audacity for audio editing
+              "org.inkscape.Inkscape",            # Inkscape for vector graphics  [oai_citation_attribution:4‡tecmint.com](https://www.tecmint.com/flatpak-apps-for-fedora/)
+
+              # Gaming & Emulation
+              "com.valvesoftware.Steam",          # Steam for gaming
+              "net.lutris.Lutris",                # Lutris game manager
+              "com.usebottles.bottles",           # Bottles for running Windows apps
+              "io.github.heroicgameslauncher.Heroic",  # Heroic Games Launcher for Epic/GOG titles  [oai_citation_attribution:5‡github.com](https://github.com/boredsquirrel/Recommended-Flatpak-Apps)
+              "org.libretro.RetroArch",           # RetroArch for emulation
+
+              # Utilities & System Tools
+              "com.github.tchx84.Flatseal",       # Flatseal to manage Flatpak permissions
+              "net.davidotek.pupgui2",            # PupGUI2 for Proton management
+              "org.prismlauncher.PrismLauncher",  # PrismLauncher for managing game mods
+              "org.gnome.Boxes",                  # GNOME Boxes for virtual machines
+              "org.remmina.Remmina",              # Remmina for remote desktop connections
+              "com.rustdesk.RustDesk",            # RustDesk for remote support
+              "com.getpostman.Postman",           # Postman for API testing
+              "io.github.aandrew_me.ytdn",        # YouTube downloader tool
+              "com.calibre_ebook.calibre",        # Calibre for ebook management
+              "tv.plex.PlexDesktop",              # Plex Desktop for media organization
+              "org.filezillaproject.Filezilla",   # FileZilla for FTP file transfers
+              "com.github.k4zmu2a.spacecadetpinball",  # SpaceCadet Pinball for fun retro gaming
+              "org.virt_manager.virt-manager",    # Virt-manager for virtualization management
+              "org.raspberrypi.rpi-imager",         # Raspberry Pi Imager for OS installation
+
+              # Additional Popular Choices (New additions)
+              "org.mozilla.firefox",              # Firefox web browser  [oai_citation_attribution:6‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
+              "org.mozilla.Thunderbird",          # (Already added above--but kept here for emphasis in Productivity)
+              "im.riot.Element",                  # Element for Matrix chat  [oai_citation_attribution:7‡forums.linuxmint.com](https://forums.linuxmint.com/viewtopic.php?t=406191)
+          ])
     SSH_CONFIG: Dict[str, str] = field(default_factory=lambda: {
         "PermitRootLogin": "no",
         "PasswordAuthentication": "yes",
