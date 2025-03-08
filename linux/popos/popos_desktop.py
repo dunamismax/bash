@@ -228,8 +228,31 @@ class Config:
             "iproute2",
             "iputils-ping",
             "restic",
+            "zsh",
+            "fzf",
+            "bat",
+            "ripgrep",
+            "ncdu",
+            "docker.io",
+            "docker-compose",
+            "nodejs",
+            "npm",
+            "kubectl",
+            "autoconf",
+            "automake",
+            "libtool",
+            "strace",
+            "ltrace",
+            "valgrind",
+            "tig",
+            "colordiff",
+            "silversearcher-ag",
+            "neofetch",
+            "xclip",
+            "tmate",
         ]
     )
+
     FLATPAK_APPS: List[str] = field(
         default_factory=lambda: [
             "com.discordapp.Discord",
