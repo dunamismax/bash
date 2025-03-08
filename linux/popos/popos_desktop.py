@@ -218,7 +218,6 @@ class Config:
             "cargo",
             "rustc",
             "jq",
-            "yq",
             "iftop",
             "traceroute",
             "mtr",
