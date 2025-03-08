@@ -863,10 +863,23 @@ class PopOSDesktopSetup:
             self.nala_installed = True
             return True
         else:
-            self.logger.error(
-                "Nala package manager is required. Please install Nala before running this script."
+            self.logger.info(
+                "Nala is not installed. Attempting to install using apt..."
             )
-            return False
+            try:
+                await run_command_async(["apt", "install", "nala", "-y"])
+                if await command_exists_async("nala"):
+                    self.logger.info("Nala installed successfully.")
+                    self.nala_installed = True
+                    return True
+                else:
+                    self.logger.error(
+                        "Nala installation failed. Command not found after installation."
+                    )
+                    return False
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"Nala installation failed: {e}")
+                return False
 
     # ----------------------------------------------------------------
     # Phase 2: System Update & Basic Configuration
