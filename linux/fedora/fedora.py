@@ -1363,7 +1363,8 @@ class FedoraDesktopSetup:
         try:
             # Enable and start the tailscaled service in one step.
             await run_command_async(["systemctl", "enable", "--now", "tailscaled"])
-                return True
+            self.logger.info("Tailscale service enabled successfully.")
+            return True
             else:
                 self.logger.warning("Tailscale service may not be running correctly.")
                 return tailscale_installed
