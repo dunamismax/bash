@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Enhanced Virtualization Environment Setup Script
---------------------------------------------------
+Enhanced Virtualization Environment Setup for PopOS
+-----------------------------------------------------
 A fully unattended terminal utility for automatically setting up a complete
-virtualization environment on Ubuntu. This script updates package lists,
+virtualization environment on PopOS. This script updates package lists,
 installs required virtualization packages, manages services, configures
-the default NAT network, fixes storage permissions, sets user groups,
-configures and starts virtual machines, verifies the setup, and installs a
+the default NAT network, fixes storage permissions, configures user groups,
+sets up and starts virtual machines, verifies the setup, and installs a
 systemd service to maintain configuration.
 
 Version: 2.0.0
 """
 
 # ----------------------------------------------------------------
-# Standard Libraries & Dependency Management
+# Dependency Check and Imports
 # ----------------------------------------------------------------
 import atexit
 import datetime
@@ -33,24 +33,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
-# Automatically install missing packages (rich, pyfiglet)
 def install_missing_packages() -> None:
-    """Automatically install required Python packages if missing."""
-    required_packages = ["rich", "pyfiglet"]
-    missing_packages = []
-    for package in required_packages:
+    """Install required packages if missing."""
+    required_packages = ["rich", "pyfiglet", "prompt_toolkit"]
+    missing = []
+    for pkg in required_packages:
         try:
-            __import__(package)
+            __import__(pkg)
         except ImportError:
-            missing_packages.append(package)
-    if missing_packages:
-        print(f"Installing missing packages: {', '.join(missing_packages)}")
+            missing.append(pkg)
+    if missing:
+        print(f"Installing missing packages: {', '.join(missing)}")
         try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install"] + missing_packages,
-                check=True,
-                capture_output=True,
-            )
+            subprocess.check_call([sys.executable, "-m", "pip", "install"] + missing)
             print("Packages installed. Restarting script...")
             os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
@@ -71,13 +66,14 @@ try:
         SpinnerColumn,
         TextColumn,
         BarColumn,
-        TimeRemainingColumn,
         TaskProgressColumn,
+        TimeRemainingColumn,
     )
     from rich.align import Align
     from rich.style import Style
     from rich.traceback import install as install_rich_traceback
     from rich.theme import Theme
+    from prompt_toolkit import prompt as pt_prompt
 except ImportError as e:
     print(f"Error importing libraries: {e}")
     sys.exit(1)
@@ -92,6 +88,7 @@ class AppConfig:
     VERSION: str = "2.0.0"
     APP_NAME: str = "VirtSetup"
     APP_SUBTITLE: str = "Enhanced Virtualization Environment"
+    OS_TARGET: str = "PopOS"
     try:
         HOSTNAME: str = socket.gethostname()
     except Exception:
@@ -100,10 +97,9 @@ class AppConfig:
         TERM_WIDTH: int = shutil.get_terminal_size().columns
     except Exception:
         TERM_WIDTH = 80
-    PROGRESS_WIDTH: int = min(50, TERM_WIDTH - 30)
     DEFAULT_TIMEOUT: int = 300  # seconds for command operations
 
-    # Virtualization settings
+    # Virtualization settings (PopOS is Ubuntu-based)
     VIRTUALIZATION_PACKAGES: List[str] = [
         "qemu-kvm",
         "qemu-utils",
@@ -150,8 +146,18 @@ WantedBy=multi-user.target
 """
 
 
+def check_os() -> bool:
+    """Verify that the operating system is PopOS."""
+    try:
+        with open("/etc/os-release") as f:
+            data = f.read().lower()
+        return "pop" in data or "popos" in data
+    except Exception:
+        return False
+
+
 # ----------------------------------------------------------------
-# Nord-Themed Colors & Console Setup
+# Nord-Themed Colors and Console Setup
 # ----------------------------------------------------------------
 class NordColors:
     POLAR_NIGHT_1 = "#2E3440"
@@ -246,15 +252,14 @@ class TaskResult:
 
 
 # ----------------------------------------------------------------
-# Console Helper Functions (Dynamic ASCII banners, Panels, Messages)
+# UI Helper Functions
 # ----------------------------------------------------------------
 def create_header() -> Panel:
     """
-    Generate a dynamic ASCII art header using Pyfiglet with gradient styling.
-    This header is used at startup and before major processing steps.
+    Generate a dynamic ASCII art header using Pyfiglet.
     """
-    fonts = ["slant", "small", "standard", "digital", "big"]
-    ascii_art: str = ""
+    fonts = ["slant", "big", "digital", "standard", "small"]
+    ascii_art = ""
     for font in fonts:
         try:
             fig = pyfiglet.Figlet(font=font, width=AppConfig.TERM_WIDTH - 10)
@@ -278,7 +283,7 @@ def create_header() -> Panel:
         styled_text += f"[bold {color}]{line}[/]\n"
     border = f"[{NordColors.FROST_3}]{'━' * (AppConfig.TERM_WIDTH - 4)}[/]"
     styled_text = border + "\n" + styled_text + border
-    return Panel(
+    header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
         padding=(1, 2),
@@ -287,6 +292,7 @@ def create_header() -> Panel:
         subtitle=f"[bold {NordColors.SNOW_STORM_1}]{AppConfig.APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
+    return header_panel
 
 
 def create_section_header(title: str) -> Panel:
@@ -301,14 +307,14 @@ def create_section_header(title: str) -> Panel:
 def print_message(
     text: str, style: str = NordColors.FROST_2, prefix: str = "•"
 ) -> None:
-    """Print a formatted message with a prefix using the Rich console."""
+    """Print a formatted message with a prefix."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
 
 
 def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
-    """Display a panel with a message and optional title."""
+    """Display a message panel with an optional title."""
     panel = Panel(
         Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
@@ -318,8 +324,13 @@ def display_panel(
     console.print(panel)
 
 
+def wait_for_key() -> None:
+    """Wait for the user to press Enter before continuing."""
+    pt_prompt("Press Enter to exit...", style="bold " + NordColors.FROST_2)
+
+
 # ----------------------------------------------------------------
-# Command Execution Helper (with robust error handling)
+# Command Execution Helper
 # ----------------------------------------------------------------
 def run_command(
     cmd: List[str],
@@ -330,7 +341,7 @@ def run_command(
     verbose: bool = False,
 ) -> subprocess.CompletedProcess:
     """
-    Execute a shell command with error handling and return the result.
+    Execute a command and return the CompletedProcess object.
     Raises CommandError on failure.
     """
     try:
@@ -360,7 +371,7 @@ def run_command(
 # Signal Handling & Cleanup
 # ----------------------------------------------------------------
 def cleanup() -> None:
-    """Perform cleanup operations before application exit."""
+    """Perform cleanup before exiting."""
     print_message("Cleaning up resources...", NordColors.FROST_3)
 
 
@@ -375,7 +386,6 @@ def signal_handler(sig: int, frame: Any) -> None:
     sys.exit(128 + sig)
 
 
-# Register signal handlers
 for s in [signal.SIGINT, signal.SIGTERM]:
     try:
         signal.signal(s, signal_handler)
@@ -396,9 +406,7 @@ def update_system_packages() -> TaskResult:
             run_command(["apt-get", "update"])
         print_message("Package lists updated successfully", NordColors.GREEN, "✓")
         return TaskResult(
-            name="package_update",
-            success=True,
-            message="Package lists updated successfully",
+            name="package_update", success=True, message="Package lists updated"
         )
     except Exception as e:
         print_message(f"Failed to update package lists: {e}", NordColors.RED, "✗")
@@ -415,7 +423,7 @@ def install_virtualization_packages(packages: List[str]) -> TaskResult:
             name="package_install", success=True, message="No packages specified"
         )
     total = len(packages)
-    failed: List[str] = []
+    failed = []
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -458,9 +466,7 @@ def install_virtualization_packages(packages: List[str]) -> TaskResult:
             details={"failed_packages": failed},
         )
     return TaskResult(
-        name="package_install",
-        success=True,
-        message=f"Successfully installed {total} packages",
+        name="package_install", success=True, message=f"Installed {total} packages"
     )
 
 
@@ -472,7 +478,7 @@ def manage_virtualization_services(services: List[str]) -> TaskResult:
             name="services", success=True, message="No services specified"
         )
     total = len(services) * 2
-    failed: List[str] = []
+    failed = []
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -503,9 +509,7 @@ def manage_virtualization_services(services: List[str]) -> TaskResult:
             details={"failed_services": failed},
         )
     return TaskResult(
-        name="services",
-        success=True,
-        message=f"Successfully managed {len(services)} services",
+        name="services", success=True, message=f"Managed {len(services)} services"
     )
 
 
@@ -550,10 +554,10 @@ def recreate_default_network() -> TaskResult:
             return TaskResult(
                 name="network_recreation",
                 success=True,
-                message="Default network recreated and activated",
+                message="Default network recreated and active",
             )
         print_message(
-            "Default network not running after recreation", NordColors.RED, "✗"
+            "Default network not active after recreation", NordColors.RED, "✗"
         )
         return TaskResult(
             name="network_recreation",
@@ -563,9 +567,7 @@ def recreate_default_network() -> TaskResult:
     except Exception as e:
         print_message(f"Error recreating network: {e}", NordColors.RED, "✗")
         return TaskResult(
-            name="network_recreation",
-            success=False,
-            message=f"Network recreation error: {e}",
+            name="network_recreation", success=False, message=f"Network error: {e}"
         )
 
 
@@ -610,7 +612,7 @@ def configure_default_network() -> TaskResult:
         return TaskResult(
             name="network_configuration",
             success=True,
-            message="Default network properly configured",
+            message="Default network configured",
         )
     except Exception as e:
         print_message(f"Network configuration error: {e}", NordColors.RED, "✗")
@@ -622,8 +624,8 @@ def configure_default_network() -> TaskResult:
 
 
 def get_virtual_machines() -> List[VirtualMachine]:
-    """Retrieve list of virtual machines via virsh."""
-    vms: List[VirtualMachine] = []
+    """Retrieve virtual machine list using virsh."""
+    vms = []
     try:
         with console.status(
             f"[bold {NordColors.FROST_3}]Retrieving VM information...", spinner="dots"
@@ -660,11 +662,9 @@ def set_vm_autostart(vms: List[VirtualMachine]) -> TaskResult:
     console.print(create_section_header("Configuring VM Autostart"))
     if not vms:
         print_message("No VMs found", NordColors.YELLOW)
-        return TaskResult(
-            name="vm_autostart", success=True, message="No VMs found to configure"
-        )
-    failed: List[str] = []
-    success_count: int = 0
+        return TaskResult(name="vm_autostart", success=True, message="No VMs found")
+    failed = []
+    success_count = 0
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -743,8 +743,8 @@ def start_virtual_machines(vms: List[VirtualMachine]) -> TaskResult:
         print_message(
             "Default network not active; VM start may fail", NordColors.RED, "✗"
         )
-    failed: List[str] = []
-    success_count: int = 0
+    failed = []
+    success_count = 0
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
         TextColumn("[progress.description]{task.description}"),
@@ -756,7 +756,7 @@ def start_virtual_machines(vms: List[VirtualMachine]) -> TaskResult:
         task = progress.add_task("Starting VMs", total=len(to_start))
         for vm in to_start:
             progress.update(task, description=f"Starting {vm.name}")
-            success: bool = False
+            success = False
             for attempt in range(1, 4):
                 try:
                     result = run_command(["virsh", "start", vm.name], check=False)
@@ -823,8 +823,8 @@ def fix_storage_permissions(paths: List[str]) -> TaskResult:
         return TaskResult(
             name="storage", success=False, message=f"User/group error: {e}"
         )
-    fixed_paths: List[str] = []
-    failed_paths: List[str] = []
+    fixed_paths = []
+    failed_paths = []
     for path_str in paths:
         path = Path(path_str)
         print_message(f"Processing {path}", NordColors.FROST_3)
@@ -917,9 +917,7 @@ def configure_user_groups() -> TaskResult:
             "SUDO_USER not set; skipping group configuration", NordColors.YELLOW
         )
         return TaskResult(
-            name="user_groups",
-            success=True,
-            message="SUDO_USER not set; skipping configuration",
+            name="user_groups", success=True, message="SUDO_USER not set; skipping"
         )
     try:
         pwd.getpwnam(sudo_user)
@@ -957,7 +955,7 @@ def configure_user_groups() -> TaskResult:
         return TaskResult(
             name="user_groups",
             success=True,
-            message=f"User '{sudo_user}' added to group (logout required)",
+            message=f"User '{sudo_user}' added (logout required)",
         )
     except Exception as e:
         print_message(f"Failed to add user to group: {e}", NordColors.RED, "✗")
@@ -973,7 +971,7 @@ def verify_virtualization_setup() -> TaskResult:
         ("KVM Modules", "lsmod | grep kvm", "kvm"),
         ("Default Network", "virsh net-list", "default"),
     ]
-    results: List[bool] = []
+    results = []
     details: Dict[str, Any] = {}
     with Progress(
         SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
@@ -1119,7 +1117,16 @@ def install_and_enable_service() -> TaskResult:
 # ----------------------------------------------------------------
 def main() -> None:
     console.clear()
-    # Display dynamic header banner at startup
+    # Check OS is PopOS
+    if not check_os():
+        display_panel(
+            "This script is designed to run on PopOS. Exiting.",
+            NordColors.RED,
+            "OS Error",
+        )
+        sys.exit(1)
+
+    # Display header and status
     console.print(create_header())
     console.print(
         Align.center(
@@ -1129,7 +1136,7 @@ def main() -> None:
     )
     console.print()
 
-    # Ensure the script is run as root
+    # Ensure script is run as root
     if os.geteuid() != 0:
         display_panel(
             "This script must be run as root (e.g., using sudo)",
@@ -1138,9 +1145,9 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Overview panel (no user input required)
+    # Overview Panel (no user input required)
     display_panel(
-        "This utility will automatically set up a complete virtualization environment on Ubuntu.\n"
+        "This utility will automatically set up a complete virtualization environment on PopOS.\n"
         "It will install packages, configure networks, fix permissions, and start VMs.\n"
         "The process runs unattended and may take several minutes.",
         NordColors.FROST_2,
@@ -1232,6 +1239,7 @@ def main() -> None:
             NordColors.YELLOW,
             "Setup Complete with Issues",
         )
+    wait_for_key()
 
 
 if __name__ == "__main__":

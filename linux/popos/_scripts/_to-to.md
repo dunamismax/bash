@@ -1,6 +1,6 @@
 # ----------------------------------------------------------------------------
 
-Rewrite (Claude 3.7 Sonnet Thinking)
+Rewrite (o3-mini-high)
 using new prompt / template
 
 ------------------------------------------------------------------------------
@@ -35,7 +35,7 @@ using new prompt / template
     └── universal_downloader.py
     └── update_dns_records.py
     └── update_plex.py
-    └── virtualization_setup.py
+    *└── virtualization_setup.py
     └── vm_manager.py
     └── vscode_wayland_setup.py
     └── zfs_setup.py
