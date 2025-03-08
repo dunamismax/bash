@@ -1344,7 +1344,7 @@ class FedoraDesktopSetup:
                 # Add the Tailscale repository from the official repo file.
                 self.logger.info("Adding Tailscale repository...")
                 await run_command_async([
-                    "dnf", "config-manager", "addrepo", 
+                    "dnf", "config-manager", "addrepo",
                     "--from-repofile=https://pkgs.tailscale.com/stable/fedora/tailscale.repo"
                 ])
                 # Install Tailscale using dnf.
@@ -1363,14 +1363,12 @@ class FedoraDesktopSetup:
         try:
             # Enable and start the tailscaled service in one step.
             await run_command_async(["systemctl", "enable", "--now", "tailscaled"])
-            self.logger.info("Tailscale service enabled successfully.")
-            return True
-            else:
-                self.logger.warning("Tailscale service may not be running correctly.")
-                return tailscale_installed
         except Exception as e:
             self.logger.error(f"Failed to enable/start/connect Tailscale: {e}")
             return tailscale_installed
+        else:
+            self.logger.info("Tailscale service enabled successfully.")
+            return True
 
     # ----------------------------------------------------------------
     # Phase 8: Final Checks
