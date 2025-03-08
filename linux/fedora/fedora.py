@@ -1156,15 +1156,31 @@ class FedoraDesktopSetup:
         await self.print_section_async("Additional Applications & Tools")
         status = True
     
-        # Install all Flatpak apps from the configured list.
-        apps_success, apps_failed = await run_with_progress_async(
-            "Installing Flatpak Apps",
-            self.install_flatpak_and_apps_async,
-            task_name="additional_apps"
-        )
-        if apps_failed and len(apps_failed) > len(self.config.FLATPAK_APPS) * 0.5:
-            self.logger.error(f"Flatpak app installation failures: {', '.join(apps_failed)}")
-            status = False
+        # Ensure Flatpak is installed via dnf.
+await run_with_progress_async(
+    "Installing Flatpak via dnf",
+    lambda: run_command_async(["dnf", "install", "-y", "flatpak"]),
+    task_name="additional_apps"
+)
+
+# Add the Flathub repository if not already added.
+await run_with_progress_async(
+    "Adding Flathub repository",
+    lambda: run_command_async(
+        ["flatpak", "remote-add", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"]
+    ),
+    task_name="additional_apps"
+)
+
+# Install all Flatpak apps from the configured list.
+apps_success, apps_failed = await run_with_progress_async(
+    "Installing Flatpak Apps",
+    self.install_flatpak_and_apps_async,
+    task_name="additional_apps"
+)
+if apps_failed and len(apps_failed) > len(self.config.FLATPAK_APPS) * 0.5:
+    self.logger.error(f"Flatpak app installation failures: {', '.join(apps_failed)}")
+    status = False
     
         # Install VS Code using the provided download link.
         if not await run_with_progress_async(
