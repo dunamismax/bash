@@ -467,37 +467,6 @@ def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
         )
 
 
-async def cleanup_temp_files_async() -> None:
-    logger = logging.getLogger("popos_setup")
-    logger.info("Cleaning up temporary files.")
-    tmp = Path(tempfile.gettempdir())
-    for item in tmp.iterdir():
-        if item.name.startswith("popos_setup_"):
-            try:
-                if item.is_file():
-                    item.unlink()
-                else:
-                    shutil.rmtree(item)
-            except Exception as e:
-                logger.warning(f"Failed to clean up {item}: {e}")
-
-
-def cleanup_temp_files() -> None:
-    try:
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(cleanup_temp_files_async())
-    except Exception as e:
-        logger = logging.getLogger("popos_setup")
-        logger.error(f"Error during temp file cleanup: {e}")
-
-
-atexit.register(cleanup_temp_files)
-
-
 # ----------------------------------------------------------------
 # Download Helper
 # ----------------------------------------------------------------
