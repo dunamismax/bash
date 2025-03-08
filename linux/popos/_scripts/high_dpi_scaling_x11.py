@@ -2,19 +2,11 @@
 """
 HighDPI & AMD Screen Tearing Fixer
 --------------------------------------------------
-This script applies best-practice settings for highDPI scaling and
-fixes screen tearing issues for a 27-inch 4K display running PopOS on X11
-with 150% fractional scaling on AMD GPUs/Integrated Graphics. It ensures
-that system-wide settings (for native and Flatpak apps) are applied and
-that picom is configured for tear-free rendering.
-
-Features:
-  • Installs required Python libraries (paramiko, rich, pyfiglet, prompt_toolkit).
-  • Configures system profile settings for GTK/Qt scaling.
-  • Configures Xresources (or user-level .Xresources) to set Xft DPI.
-  • Applies Flatpak environment overrides for consistent scaling.
-  • Fixes screen tearing on AMD by installing and configuring picom with vsync enabled.
-  • Interactive, menu-driven CLI using Rich, Pyfiglet, and prompt_toolkit.
+System-wide HighDPI Scaling & AMD Tear Fix for PopOS on X11.
+This interactive, menu-driven script applies best-practice settings
+for GTK/Qt scaling, configures Xresources for proper DPI, applies Flatpak
+environment overrides, and fixes screen tearing for AMD GPUs by installing
+and configuring picom with vsync enabled.
 
 Version: 1.1.0
 """
@@ -25,17 +17,22 @@ Version: 1.1.0
 import os
 import sys
 import time
+import socket
+import signal
+import atexit
 import subprocess
 import getpass
 import shutil
-import socket
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
 
 
 def install_dependencies() -> None:
-    """Ensure required Python libraries are installed."""
+    """
+    Install required third-party dependencies using pip.
+    This ensures paramiko, rich, pyfiglet, and prompt_toolkit are available.
+    """
     required_packages = ["paramiko", "rich", "pyfiglet", "prompt_toolkit"]
     try:
         import paramiko, pyfiglet
@@ -43,18 +40,18 @@ def install_dependencies() -> None:
         from prompt_toolkit import prompt as pt_prompt
     except ImportError:
         print("Required libraries not found. Installing dependencies...")
+        user = os.environ.get("SUDO_USER", getpass.getuser())
         if os.geteuid() != 0:
             subprocess.check_call(
                 [sys.executable, "-m", "pip", "install", "--user"] + required_packages
             )
         else:
-            user = os.environ.get("SUDO_USER") or getpass.getuser()
             subprocess.check_call(
                 ["sudo", "-u", user, sys.executable, "-m", "pip", "install", "--user"]
                 + required_packages
             )
-        print("Dependencies installed. Please restart the script.")
-        sys.exit(0)
+        print("Dependencies installed. Restarting script...")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 install_dependencies()
@@ -88,8 +85,8 @@ DEFAULT_USERNAME: str = (
     os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()
 )
 
-# Backup directory for user-level file backups
-BACKUP_DIR = os.path.join(os.path.expanduser("~"), ".hidpi_backup")
+# Backup directory for configuration file backups
+BACKUP_DIR: str = os.path.join(os.path.expanduser("~"), ".hidpi_backup")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
 # HighDPI scaling settings
@@ -99,7 +96,7 @@ QT_AUTO_SCREEN_SCALE_FACTOR: str = "0"
 QT_SCALE_FACTOR: str = "1.5"
 XFT_DPI: str = "144"  # (96 * 1.5)
 
-# System file paths
+# System file paths for configuration
 PROFILE_SCRIPT: str = "/etc/profile.d/90-hidpi.sh"
 XRESOURCES_DIR: str = "/etc/X11/Xresources.d"
 XRESOURCES_FILE: str = os.path.join(XRESOURCES_DIR, "80-hidpi.conf")
@@ -120,6 +117,21 @@ class NordColors:
     YELLOW: str = "#EBCB8B"
     GREEN: str = "#A3BE8C"
     PURPLE: str = "#B48EAD"
+
+
+# ----------------------------------------------------------------
+# Signal Handling and Cleanup
+# ----------------------------------------------------------------
+def signal_handler(sig, frame) -> None:
+    print_warning(f"Interrupted by signal {sig}. Exiting...")
+    sys.exit(128 + sig)
+
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(
+    lambda: console.print("[bold dim]Exiting HighDPI & AMD Screen Tearing Fixer...[/]")
+)
 
 
 # ----------------------------------------------------------------
@@ -151,7 +163,7 @@ def create_header() -> Panel:
         escaped_line = line.replace("[", "\\[").replace("]", "\\]")
         styled_text += f"[bold {color}]{escaped_line}[/]\n"
     border = f"[{NordColors.FROST_3}]{'━' * (adjusted_width - 6)}[/]"
-    styled_text = border + "\n" + styled_text + border
+    styled_text = f"{border}\n{styled_text}{border}"
     header_panel = Panel(
         Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
@@ -194,7 +206,7 @@ def wait_for_key() -> None:
 # Helper Functions for Backup and File Writing
 # ----------------------------------------------------------------
 def backup_file(file_path: str) -> None:
-    """Back up a file if it exists."""
+    """Back up an existing file with a timestamp."""
     if os.path.exists(file_path):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = os.path.join(
@@ -208,12 +220,15 @@ def backup_file(file_path: str) -> None:
 
 
 def write_file(file_path: str, content: str) -> bool:
-    """Write content to a file after backing up any existing file."""
+    """
+    Back up the existing file (if any) and write new content.
+    Returns True if successful.
+    """
     try:
         backup_file(file_path)
         with open(file_path, "w") as f:
             f.write(content)
-        print_success(f"Written settings to {file_path}")
+        print_success(f"Settings written to {file_path}")
         return True
     except Exception as e:
         print_error(f"Error writing to {file_path}: {e}")
@@ -225,8 +240,8 @@ def write_file(file_path: str, content: str) -> bool:
 # ----------------------------------------------------------------
 def apply_system_profile_scaling() -> None:
     """
-    Create or update a system-wide profile script to export HighDPI settings.
-    This file will be placed in /etc/profile.d/90-hidpi.sh.
+    Create/update a system-wide profile script to export HighDPI settings.
+    (Requires root privileges.)
     """
     if os.geteuid() != 0:
         print_error(
@@ -253,24 +268,19 @@ def apply_xresources_scaling() -> None:
     """
     Configure Xft DPI for X11 by writing an Xresources configuration file.
     """
-    target_file = ""
     content = f"Xft.dpi: {XFT_DPI}\n"
-    if os.path.isdir(XRESOURCES_DIR):
-        target_file = XRESOURCES_FILE
-    else:
+    target_file = XRESOURCES_FILE if os.path.isdir(XRESOURCES_DIR) else USER_XRESOURCES
+    if target_file == USER_XRESOURCES:
         print_warning(f"{XRESOURCES_DIR} not found. Falling back to user .Xresources.")
-        target_file = USER_XRESOURCES
-    write_file(target_file, content)
-    print_message(
-        "Reload your Xresources with 'xrdb -merge {}' or log out and back in.".format(
-            target_file
+    if write_file(target_file, content):
+        print_message(
+            f"Reload your Xresources with 'xrdb -merge {target_file}' or log out and back in."
         )
-    )
 
 
 def apply_flatpak_overrides() -> None:
     """
-    Apply Flatpak overrides so that Flatpak apps also receive the proper scaling.
+    Apply Flatpak environment overrides so that Flatpak apps receive proper scaling.
     """
     flatpak_path = shutil.which("flatpak")
     if not flatpak_path:
@@ -303,18 +313,14 @@ def apply_flatpak_overrides() -> None:
 # ----------------------------------------------------------------
 def apply_amd_screen_tearing_fix() -> None:
     """
-    Apply screen tearing fixes for AMD GPUs and integrated graphics by
-    ensuring picom is installed and configured with vsync enabled.
+    Fix screen tearing for AMD GPUs/integrated graphics by ensuring picom is installed
+    and configured with vsync enabled.
     """
-    # Check for picom using Nala (PopOS)
     picom_path = shutil.which("picom")
     if not picom_path:
         print_warning("picom is not installed. It is required for AMD tear fixes.")
         if Confirm.ask(
-            "[bold {}]Would you like to install picom using Nala?[/]".format(
-                NordColors.PURPLE
-            ),
-            default=True,
+            f"[bold {NordColors.PURPLE}]Install picom using Nala?[/]", default=True
         ):
             try:
                 subprocess.check_call(["sudo", "nala", "install", "-y", "picom"])
@@ -328,7 +334,7 @@ def apply_amd_screen_tearing_fix() -> None:
             )
             return
 
-    # Prepare picom configuration file (user-level)
+    # Write picom configuration in the user's config directory
     config_dir = os.path.join(os.path.expanduser("~"), ".config")
     os.makedirs(config_dir, exist_ok=True)
     picom_config = os.path.join(config_dir, "picom.conf")
