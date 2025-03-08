@@ -228,7 +228,6 @@ class Config:
             "iproute2",
             "iputils-ping",
             "restic",
-            "neofetch",
         ]
     )
     FLATPAK_APPS: List[str] = field(
@@ -1967,12 +1966,6 @@ class PopOSDesktopSetup:
             task_name="cleanup_final",
         ):
             status = False
-        if not await run_with_progress_async(
-            "Cleaning up temporary files",
-            self.cleanup_temp_files_async,
-            task_name="cleanup_final",
-        ):
-            status = False
         return status
 
     async def configure_wayland_async(self) -> bool:
@@ -2099,15 +2092,15 @@ class PopOSDesktopSetup:
         hours, remainder = divmod(elapsed, 3600)
         minutes, seconds = divmod(remainder, 60)
         summary = f"""
-✅ Pop!_OS Setup & Hardening completed successfully!
+    ✅ Pop!_OS Setup & Hardening completed successfully!
 
-⏱️ Total runtime: {int(hours)}h {int(minutes)}m {int(seconds)}s
+    ⏱️ Total runtime: {int(hours)}h {int(minutes)}m {int(seconds)}s
 
-Kernel Version: {info.get("kernel", "Unknown")}
-Distribution: {info.get("distribution", "Unknown")}
+    Kernel Version: {info.get("kernel", "Unknown")}
+    Distribution: {info.get("distribution", "Unknown")}
 
-No automatic reboot is scheduled.
-"""
+    No automatic reboot is scheduled.
+    """
         display_panel(summary, style=NordColors.GREEN, title="Success")
         print_status_report()
         self.logger.info("Final system checks completed. No reboot scheduled.")
