@@ -251,7 +251,7 @@ class Config:
     SSH_CONFIG: Dict[str, str] = field(
         default_factory=lambda: {
             "PermitRootLogin": "no",
-            "PasswordAuthentication": "no",
+            "PasswordAuthentication": "yes",
             "X11Forwarding": "no",
             "MaxAuthTries": "3",
             "ClientAliveInterval": "300",
