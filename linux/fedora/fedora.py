@@ -1332,56 +1332,56 @@ class FedoraDesktopSetup:
             return False
 
     async def install_enable_tailscale_async(self) -> bool:
-    self.logger.info("Installing and configuring Tailscale...")
-    tailscale_installed = False
-
-    # Check if Tailscale is already installed.
-    if await command_exists_async("tailscale"):
-        self.logger.info("Tailscale is already installed.")
-        tailscale_installed = True
-    else:
-        try:
-            # Add the Tailscale repository from the official repo file.
-            self.logger.info("Adding Tailscale repository...")
-            await run_command_async([
-                "dnf", "config-manager", "addrepo", 
-                "--from-repofile=https://pkgs.tailscale.com/stable/fedora/tailscale.repo"
-            ])
-            # Install Tailscale using dnf.
-            self.logger.info("Installing Tailscale via dnf...")
-            await run_command_async(["dnf", "install", "-y", "tailscale"])
-            tailscale_installed = await command_exists_async("tailscale")
-            if tailscale_installed:
-                self.logger.info("Tailscale installed successfully.")
-            else:
-                self.logger.error("Tailscale installation failed.")
-                return False
-        except Exception as e:
-            self.logger.error(f"Failed to install Tailscale: {e}")
-            return False
-
-    try:
-        # Enable and start the tailscaled service in one step.
-        await run_command_async(["systemctl", "enable", "--now", "tailscaled"])
-        # Connect the machine to the Tailscale network (this will open your browser for authentication).
-        self.logger.info("Connecting machine to Tailscale network. Please complete authentication in your browser...")
-        await run_command_async(["tailscale", "up"])
-        # Verify that the tailscaled service is active.
-        status = await run_command_async(
-            ["systemctl", "is-active", "tailscaled"],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        if status.stdout.strip() == "active":
-            self.logger.info("Tailscale service is active.")
-            return True
+        self.logger.info("Installing and configuring Tailscale...")
+        tailscale_installed = False
+    
+        # Check if Tailscale is already installed.
+        if await command_exists_async("tailscale"):
+            self.logger.info("Tailscale is already installed.")
+            tailscale_installed = True
         else:
-            self.logger.warning("Tailscale service may not be running correctly.")
+            try:
+                # Add the Tailscale repository from the official repo file.
+                self.logger.info("Adding Tailscale repository...")
+                await run_command_async([
+                    "dnf", "config-manager", "addrepo", 
+                    "--from-repofile=https://pkgs.tailscale.com/stable/fedora/tailscale.repo"
+                ])
+                # Install Tailscale using dnf.
+                self.logger.info("Installing Tailscale via dnf...")
+                await run_command_async(["dnf", "install", "-y", "tailscale"])
+                tailscale_installed = await command_exists_async("tailscale")
+                if tailscale_installed:
+                    self.logger.info("Tailscale installed successfully.")
+                else:
+                    self.logger.error("Tailscale installation failed.")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Failed to install Tailscale: {e}")
+                return False
+    
+        try:
+            # Enable and start the tailscaled service in one step.
+            await run_command_async(["systemctl", "enable", "--now", "tailscaled"])
+            # Connect the machine to the Tailscale network (this will open your browser for authentication).
+            self.logger.info("Connecting machine to Tailscale network. Please complete authentication in your browser...")
+            await run_command_async(["tailscale", "up"])
+            # Verify that the tailscaled service is active.
+            status = await run_command_async(
+                ["systemctl", "is-active", "tailscaled"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if status.stdout.strip() == "active":
+                self.logger.info("Tailscale service is active.")
+                return True
+            else:
+                self.logger.warning("Tailscale service may not be running correctly.")
+                return tailscale_installed
+        except Exception as e:
+            self.logger.error(f"Failed to enable/start/connect Tailscale: {e}")
             return tailscale_installed
-    except Exception as e:
-        self.logger.error(f"Failed to enable/start/connect Tailscale: {e}")
-        return tailscale_installed
 
     # ----------------------------------------------------------------
     # Phase 8: Final Checks
