@@ -8,12 +8,14 @@ using new prompt / template
 ```
 └── 📁_scripts
     *└── _bashrc_cheat_sheet.md
+    *└── _prompt.md
     *└── _template.md
     *└── _to-to.md
-    *└── deploy_scripts.py
-    *└── fail2ban_toolkit.py
+    └── deploy_scripts.py
+    └── fail2ban_toolkit.py
     └── file_toolkit.py
     └── fix_ssh_tool.py
+    └── flyio_livesync.py
     └── git_commander.py
     └── hacker_toolkit.py
     └── hacking_tools.py
@@ -23,11 +25,12 @@ using new prompt / template
     └── network_toolkit.py
     └── nextcloud_setup.py
     └── nextcloud_uninstaller.py
+    └── popos_wayland_setup.py
     └── python_dev_setup.py
     └── raspberry_pi_5_overclocking_utility.py
     └── reset_tailscale.py
     └── secure_disk_eraser.py
-    └── sftp_toolkit.py
+    *└── sftp_toolkit.py
     *└── ssh_machine_selector.py
     └── system_monitor.py
     └── ubuntu_voip_setup.py
