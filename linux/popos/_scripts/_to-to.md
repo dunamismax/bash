@@ -15,19 +15,14 @@ using new prompt / template
     └── fail2ban_toolkit.py
     └── file_toolkit.py
     └── fix_ssh_tool.py
-    └── flyio_livesync.py
-    └── git_commander.py
     └── hacker_toolkit.py
     └── hacking_tools.py
     └── hello_world.py
     └── log_monitor.py
     └── metasploit.py
     └── network_toolkit.py
-    └── nextcloud_setup.py
-    └── nextcloud_uninstaller.py
-    └── popos_wayland_setup.py
+    *└── popos_wayland_setup.py
     └── python_dev_setup.py
-    └── raspberry_pi_5_overclocking_utility.py
     └── reset_tailscale.py
     └── secure_disk_eraser.py
     *└── sftp_toolkit.py
@@ -40,7 +35,6 @@ using new prompt / template
     └── universal_downloader.py
     └── update_dns_records.py
     └── update_plex.py
-    └── upgrade_debian_to_trixie_stable.py
     └── virtualization_setup.py
     └── vm_manager.py
     └── vscode_wayland_setup.py
