@@ -1,0 +1,29 @@
+# ------------------------------------------------------------------------------
+# Redirect www to non-www
+# ------------------------------------------------------------------------------
+www.dunamismax.com {
+    redir https://dunamismax.com{uri} permanent
+}
+
+# ------------------------------------------------------------------------------
+# WebDAV Configuration
+# ------------------------------------------------------------------------------
+webdav.dunamismax.com {
+    root * /home/sawyer/github/obsidian/obsidian_vault
+
+    # Basic authentication
+    basic_auth / {
+        sawyer $2a$14$S23pVq2zqkAYyaXDUNoQG.DZKkxFD7rT7kbJP3Nb8PzO/IrTHFNYW
+    }
+
+    # Use route block for webdav
+    route {
+        file_server browse
+        webdav
+    }
+
+    # TLS configuration
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+}
