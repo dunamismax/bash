@@ -511,6 +511,36 @@ async def check_command_exists(command: str) -> bool:
 
 async def check_service_status(service_name: str) -> Tuple[bool, str]:
     """Check if a systemd service is active."""
+    if service_name.startswith("snap."):
+        # For snap services, use snap services command to check status
+        returncode, stdout, stderr = await run_command_async(
+            ["snap", "services", service_name]
+        )
+        if returncode == 0 and "active" in stdout:
+            return True, "active"
+
+        # Fallback to checking if the service is running regardless of what systemd says
+        if "couchdb" in service_name:
+            # For CouchDB specifically, check if it's responding on the default port
+            port_check, _, _ = await run_command_async(
+                [
+                    "curl",
+                    "-s",
+                    "-o",
+                    "/dev/null",
+                    "-I",
+                    "-w",
+                    "%{http_code}",
+                    "http://localhost:5984/",
+                ]
+            )
+            if port_check == 0 or "200" in stdout:
+                app_logger.info(
+                    "CouchDB is responding on port 5984 even though systemd reports it as inactive"
+                )
+                return True, "responding on port"
+
+    # Default systemctl check
     returncode, stdout, stderr = await run_command_async(
         ["systemctl", "is-active", service_name]
     )
@@ -1015,24 +1045,58 @@ async def run_livesync_init() -> bool:
         # Run progress simulation in background
         progress_task = asyncio.create_task(simulate_progress(progress, task_id, steps))
 
-        # Run the LiveSync initialization script
-        returncode, stdout, stderr = await run_command_async(
-            [
-                "bash",
-                "-c",
-                "curl -s https://raw.githubusercontent.com/vrtmrz/obsidian-livesync/main/utils/couchdb/couchdb-init.sh | bash",
-            ]
-        )
+        # Create a temporary script file that will automatically answer yes to all prompts
+        temp_script_path = "/tmp/livesync_init_auto.sh"
 
-        # Wait for progress visualization to complete
-        await progress_task
+        try:
+            # Download the script
+            returncode, stdout, stderr = await run_command_async(
+                [
+                    "curl",
+                    "-s",
+                    "-o",
+                    temp_script_path,
+                    "https://raw.githubusercontent.com/vrtmrz/obsidian-livesync/main/utils/couchdb/couchdb-init.sh",
+                ]
+            )
 
-        if returncode != 0:
-            print_error(f"Failed to initialize LiveSync: {stderr}")
+            if returncode != 0:
+                await progress_task
+                print_error(f"Failed to download LiveSync script: {stderr}")
+                return False
+
+            # Make it executable
+            await run_command_async(["chmod", "+x", temp_script_path])
+
+            # Run the script with 'yes' to automatically answer all prompts
+            # Using yes | script approach to handle any interactive prompts
+            returncode, stdout, stderr = await run_command_async(
+                [
+                    "bash",
+                    "-c",
+                    f"yes | {temp_script_path}",
+                ]
+            )
+
+            # Wait for progress visualization to complete
+            await progress_task
+
+            if returncode != 0:
+                print_error(f"Failed to initialize LiveSync: {stderr}")
+                return False
+
+            print_success("Obsidian LiveSync has been initialized")
+            return True
+
+        except Exception as e:
+            print_error(f"Error during LiveSync initialization: {e}")
             return False
-
-        print_success("Obsidian LiveSync has been initialized")
-        return True
+        finally:
+            # Clean up the temporary script
+            try:
+                os.remove(temp_script_path)
+            except:
+                pass
 
 
 async def check_couchdb_access(config: CouchDBConfig) -> bool:
