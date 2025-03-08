@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-PopOS Wayland Installer
+PopOS Wayland Installer & Picom Remover
 --------------------------------------------------
-This script installs and configures the Wayland protocols on PopOS,
-enabling Wayland as the default session and applying high‑DPI settings
-(for example, for a 27″ 4K monitor). It also downloads and installs Visual Studio Code
-with a desktop entry configured for Wayland.
+This script disables and removes the Picom compositor (its processes,
+configuration files, and package) and then installs/configures Wayland
+as the default session with uniform High‑DPI scaling for PopOS.
+It is written with an AMD integrated GPU in mind.
 --------------------------------------------------
-Version: 1.0.0
+Version: 2.0.0
 """
 
 # ----------------------------------------------------------------
@@ -62,19 +62,19 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("wayland_installer.log"),
+        logging.FileHandler("popos_wayland_installer.log"),
         logging.StreamHandler(sys.stdout),
     ],
 )
-logger = logging.getLogger("wayland-installer")
+logger = logging.getLogger("popos-wayland-installer")
 
 # ----------------------------------------------------------------
 # Configuration & Constants
 # ----------------------------------------------------------------
-APP_NAME: str = "PopOS Wayland Installer"
-VERSION: str = "1.0.0"
+APP_NAME: str = "PopOS Wayland Installer & Picom Remover"
+VERSION: str = "2.0.0"
 
-# Paths and URLs for VS Code installation (if desired)
+# Paths for VS Code (optional installation)
 VSCODE_DEB_URL: str = (
     "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64"
 )
@@ -111,7 +111,7 @@ class NordColors:
 # ----------------------------------------------------------------
 @dataclass
 class AppConfig:
-    """Configuration for the Wayland installer."""
+    """Configuration for the installer."""
 
     verbose: bool = False
     vscode_deb_url: str = VSCODE_DEB_URL
@@ -121,7 +121,6 @@ class AppConfig:
     gdm_custom_conf: str = GDM_CUSTOM_CONF
     wayland_packages: List[str] = field(
         default_factory=lambda: [
-            "gnome-session-wayland",
             "mutter",
             "gnome-control-center",
             "gnome-shell",
@@ -133,10 +132,9 @@ class AppConfig:
             "xwayland",
             "wayland-protocols",
             "qt6-wayland",
-            "qt5-wayland",
             "libqt5waylandclient5",
             "libqt5waylandcompositor5",
-            "wayland-utils",
+            "mesa-va-drivers",  # For AMD integrated GPU support
         ]
     )
     wayland_env_vars: Dict[str, str] = field(
@@ -275,7 +273,6 @@ def run_command(
     check: bool = True,
     **kwargs,
 ) -> subprocess.CompletedProcess:
-    """Run a command and handle its output."""
     if verbose:
         print_info(f"Running command: {' '.join(cmd)}")
     result = subprocess.run(
@@ -297,7 +294,6 @@ async def run_command_async(
     timeout: int = 600,
     **kwargs,
 ) -> subprocess.CompletedProcess:
-    """Run a command asynchronously."""
     if verbose:
         print_info(f"Running async command: {' '.join(cmd)}")
     process = await asyncio.create_subprocess_exec(
@@ -342,48 +338,101 @@ async def run_command_async(
 
 
 # ----------------------------------------------------------------
-# Installation and Configuration Functions
+# AMD GPU Detection Helper
 # ----------------------------------------------------------------
-async def install_nala(config: AppConfig) -> bool:
-    """Install Nala package manager."""
-    print_section("Installing Nala Package Manager")
+def detect_amd_gpu() -> bool:
+    """Detect if an AMD GPU is present."""
     try:
-        with ProgressManager() as progress:
-            task_id = progress.add_task("Updating apt cache", total=3.0)
-            await run_command_async(
-                ["apt-get", "update"], capture_output=True, verbose=config.verbose
-            )
-            progress.update(task_id, advance=1.0)
-            progress.update(task_id, description="Installing nala")
-            await run_command_async(
-                ["apt-get", "install", "-y", "nala"],
-                capture_output=True,
-                verbose=config.verbose,
-            )
-            progress.update(task_id, advance=1.0)
-            progress.update(task_id, description="Updating nala cache")
-            await run_command_async(
-                ["nala", "update"], capture_output=True, verbose=config.verbose
-            )
-            progress.update(
-                task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
-            )
-        print_success("Nala package manager installed successfully")
-        return True
+        result = subprocess.run(["lspci"], capture_output=True, text=True)
+        if "AMD" in result.stdout:
+            print_info("AMD integrated GPU detected")
+            return True
+        else:
+            print_warning("No AMD GPU detected; proceeding with default configuration")
+            return False
     except Exception as e:
-        print_error(f"Failed to install nala: {e}")
+        print_warning(f"Could not detect GPU: {e}")
         return False
 
 
+# ----------------------------------------------------------------
+# Picom Compositor Removal Functions
+# ----------------------------------------------------------------
+async def disable_picom_compositor(config: AppConfig) -> bool:
+    """Disable any running Picom compositor processes."""
+    print_section("Disabling Picom Compositor")
+    try:
+        await run_command_async(
+            ["pkill", "picom"], capture_output=True, verbose=config.verbose, check=False
+        )
+        print_success("Picom compositor processes terminated (if any were running)")
+        return True
+    except Exception as e:
+        print_error(f"Error disabling Picom compositor: {e}")
+        return False
+
+
+async def remove_picom_config() -> bool:
+    """Remove Picom configuration files from the user directory."""
+    print_section("Removing Picom Configuration Files")
+    config_paths = [
+        Path(os.path.expanduser("~/.config/picom.conf")),
+        Path(os.path.expanduser("~/.config/picom/picom.conf")),
+    ]
+    success = True
+    for cfg in config_paths:
+        if cfg.exists():
+            try:
+                if cfg.is_file():
+                    cfg.unlink()
+                else:
+                    shutil.rmtree(cfg)
+                print_success(f"Removed {cfg}")
+            except Exception as e:
+                print_error(f"Failed to remove {cfg}: {e}")
+                success = False
+        else:
+            print_info(f"{cfg} not found")
+    return success
+
+
+async def uninstall_picom(config: AppConfig) -> bool:
+    """Uninstall Picom using Nala."""
+    print_section("Uninstalling Picom")
+    try:
+        await run_command_async(
+            ["nala", "remove", "-y", "picom"],
+            capture_output=True,
+            verbose=config.verbose,
+        )
+        print_success("Picom uninstalled successfully")
+        return True
+    except Exception as e:
+        print_error(f"Failed to uninstall Picom: {e}")
+        return False
+
+
+async def handle_picom_removal(config: AppConfig) -> bool:
+    """Disable Picom, remove its configuration, and uninstall the package."""
+    res1 = await disable_picom_compositor(config)
+    res2 = await remove_picom_config()
+    res3 = await uninstall_picom(config)
+    return res1 and res2 and res3
+
+
+# ----------------------------------------------------------------
+# Installation and Configuration Functions
+# ----------------------------------------------------------------
 async def apply_system_updates(config: AppConfig) -> bool:
-    """Apply pending system updates."""
     print_section("Applying System Updates")
     try:
         with ProgressManager() as progress:
-            task_id = progress.add_task("Updating system packages", total=1.0)
+            task_id = progress.add_task(
+                "Updating system packages", total=1.0, status=""
+            )
             await run_command_async(["nala", "upgrade", "-y"], verbose=config.verbose)
             progress.update(
-                task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+                task_id, advance=1.0, fields={"status": f"[{NordColors.GREEN}]Complete"}
             )
         print_success("System updates applied successfully")
         return True
@@ -393,17 +442,18 @@ async def apply_system_updates(config: AppConfig) -> bool:
 
 
 async def install_wayland_packages(config: AppConfig) -> bool:
-    """Install required Wayland packages."""
     print_section("Installing Wayland Packages")
     try:
         with ProgressManager() as progress:
-            task_id = progress.add_task("Installing Wayland packages", total=1.0)
+            task_id = progress.add_task(
+                "Installing Wayland packages", total=1.0, status=""
+            )
             await run_command_async(
                 ["nala", "install", "-y"] + config.wayland_packages,
                 verbose=config.verbose,
             )
             progress.update(
-                task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+                task_id, advance=1.0, fields={"status": f"[{NordColors.GREEN}]Complete"}
             )
         print_success("Wayland packages installed successfully")
         return True
@@ -413,12 +463,13 @@ async def install_wayland_packages(config: AppConfig) -> bool:
 
 
 async def configure_gdm_for_wayland(config: AppConfig) -> bool:
-    """Configure GDM to enable Wayland by default."""
     print_section("Configuring GDM for Wayland")
     gdm_conf_path = Path(config.gdm_custom_conf)
     try:
         with ProgressManager() as progress:
-            task_id = progress.add_task("Updating GDM configuration", total=1.0)
+            task_id = progress.add_task(
+                "Updating GDM configuration", total=1.0, status=""
+            )
             if gdm_conf_path.exists():
                 content = gdm_conf_path.read_text()
                 updated = False
@@ -455,21 +506,25 @@ async def configure_gdm_for_wayland(config: AppConfig) -> bool:
                 if updated:
                     gdm_conf_path.write_text(content)
                     progress.update(
-                        task_id, advance=1.0, status=f"[{NordColors.GREEN}]Updated"
+                        task_id,
+                        advance=1.0,
+                        fields={"status": f"[{NordColors.GREEN}]Updated"},
                     )
                     print_success(f"GDM configuration updated at {gdm_conf_path}")
                 else:
                     progress.update(
                         task_id,
                         advance=1.0,
-                        status=f"[{NordColors.GREEN}]Already configured",
+                        fields={"status": f"[{NordColors.GREEN}]Already configured"},
                     )
                     print_info("GDM is already configured for Wayland")
             else:
                 content = "[daemon]\nWaylandEnable=true\nDefaultSession=gnome-wayland.desktop\n"
                 gdm_conf_path.write_text(content)
                 progress.update(
-                    task_id, advance=1.0, status=f"[{NordColors.GREEN}]Created"
+                    task_id,
+                    advance=1.0,
+                    fields={"status": f"[{NordColors.GREEN}]Created"},
                 )
                 print_success(f"Created new GDM configuration at {gdm_conf_path}")
         return True
@@ -479,12 +534,13 @@ async def configure_gdm_for_wayland(config: AppConfig) -> bool:
 
 
 async def configure_wayland_environment(config: AppConfig) -> bool:
-    """Configure Wayland environment variables in /etc/environment."""
     print_section("Configuring Wayland Environment Variables")
     etc_env = Path("/etc/environment")
     try:
         with ProgressManager() as progress:
-            task_id = progress.add_task("Updating environment variables", total=1.0)
+            task_id = progress.add_task(
+                "Updating environment variables", total=1.0, status=""
+            )
             current = etc_env.read_text() if etc_env.is_file() else ""
             vars_current = {}
             for line in current.splitlines():
@@ -504,14 +560,16 @@ async def configure_wayland_environment(config: AppConfig) -> bool:
                 )
                 etc_env.write_text(new_content)
                 progress.update(
-                    task_id, advance=1.0, status=f"[{NordColors.GREEN}]Updated"
+                    task_id,
+                    advance=1.0,
+                    fields={"status": f"[{NordColors.GREEN}]Updated"},
                 )
                 print_success(f"Environment variables updated in {etc_env}")
             else:
                 progress.update(
                     task_id,
                     advance=1.0,
-                    status=f"[{NordColors.GREEN}]Already configured",
+                    fields={"status": f"[{NordColors.GREEN}]Already configured"},
                 )
                 print_info(f"No changes needed in {etc_env}")
         return True
@@ -520,25 +578,61 @@ async def configure_wayland_environment(config: AppConfig) -> bool:
         return False
 
 
+async def configure_high_dpi_settings(config: AppConfig) -> bool:
+    print_section("Configuring High DPI Settings")
+    if not config.high_dpi_enabled:
+        print_info("High DPI settings are disabled in the configuration.")
+        return True
+    try:
+        await run_command_async(
+            [
+                "gsettings",
+                "set",
+                "org.gnome.desktop.interface",
+                "scaling-factor",
+                str(int(config.high_dpi_scale)),
+            ],
+            verbose=config.verbose,
+        )
+        await run_command_async(
+            [
+                "gsettings",
+                "set",
+                "org.gnome.desktop.interface",
+                "text-scaling-factor",
+                str(config.text_scaling_factor),
+            ],
+            verbose=config.verbose,
+        )
+        print_success(
+            f"High DPI settings applied: scaling-factor {int(config.high_dpi_scale)}, text-scaling-factor {config.text_scaling_factor}"
+        )
+        return True
+    except Exception as e:
+        print_error(f"Failed to configure High DPI settings: {e}")
+        return False
+
+
 async def download_vscode(config: AppConfig) -> bool:
-    """Download the VS Code .deb package."""
     print_section("Downloading Visual Studio Code")
     try:
         with ProgressManager() as progress:
-            task_id = progress.add_task("Downloading VS Code", total=1.0)
+            task_id = progress.add_task("Downloading VS Code", total=1.0, status="")
             await run_command_async(
                 ["curl", "-L", config.vscode_deb_url, "-o", config.vscode_deb_path],
                 verbose=config.verbose,
             )
             if os.path.exists(config.vscode_deb_path):
                 progress.update(
-                    task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+                    task_id,
+                    advance=1.0,
+                    fields={"status": f"[{NordColors.GREEN}]Complete"},
                 )
                 print_success(f"VS Code downloaded to {config.vscode_deb_path}")
                 return True
             else:
                 progress.update(
-                    task_id, advance=1.0, status=f"[{NordColors.RED}]Failed"
+                    task_id, advance=1.0, fields={"status": f"[{NordColors.RED}]Failed"}
                 )
                 print_error("Download failed: file not found")
                 return False
@@ -548,14 +642,13 @@ async def download_vscode(config: AppConfig) -> bool:
 
 
 async def install_vscode(config: AppConfig) -> bool:
-    """Install the downloaded VS Code package."""
     print_section("Installing Visual Studio Code")
     if not os.path.exists(config.vscode_deb_path):
         print_error("VS Code package not found. Aborting installation.")
         return False
     try:
         with ProgressManager() as progress:
-            task_id = progress.add_task("Installing VS Code", total=1.0)
+            task_id = progress.add_task("Installing VS Code", total=1.0, status="")
             await run_command_async(
                 ["nala", "install", "-y", config.vscode_deb_path],
                 verbose=config.verbose,
@@ -563,24 +656,30 @@ async def install_vscode(config: AppConfig) -> bool:
             )
             if os.path.exists("/usr/bin/code"):
                 progress.update(
-                    task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+                    task_id,
+                    advance=1.0,
+                    fields={"status": f"[{NordColors.GREEN}]Complete"},
                 )
                 print_success("VS Code installed successfully")
                 return True
             else:
-                progress.update(task_id, description="Fixing dependencies", status="")
+                progress.update(task_id, advance=1.0, fields={"status": ""})
                 await run_command_async(
                     ["nala", "--fix-broken", "install", "-y"], verbose=config.verbose
                 )
                 if os.path.exists("/usr/bin/code"):
                     progress.update(
-                        task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+                        task_id,
+                        advance=1.0,
+                        fields={"status": f"[{NordColors.GREEN}]Complete"},
                     )
                     print_success("Dependencies fixed. VS Code installation complete.")
                     return True
                 else:
                     progress.update(
-                        task_id, advance=1.0, status=f"[{NordColors.RED}]Failed"
+                        task_id,
+                        advance=1.0,
+                        fields={"status": f"[{NordColors.RED}]Failed"},
                     )
                     print_error("VS Code installation failed")
                     return False
@@ -590,8 +689,7 @@ async def install_vscode(config: AppConfig) -> bool:
 
 
 async def create_wayland_desktop_file(config: AppConfig) -> bool:
-    """Create desktop entries for VS Code with Wayland support."""
-    print_section("Configuring Desktop Entry")
+    print_section("Configuring Desktop Entry for VS Code")
     desktop_content = (
         "[Desktop Entry]\n"
         "Name=Visual Studio Code\n"
@@ -607,7 +705,7 @@ async def create_wayland_desktop_file(config: AppConfig) -> bool:
     )
     success = True
     with ProgressManager() as progress:
-        task_id = progress.add_task("Creating desktop entries", total=2.0)
+        task_id = progress.add_task("Creating desktop entries", total=2.0, status="")
         try:
             with open(config.system_desktop_path, "w") as f:
                 f.write(desktop_content)
@@ -618,24 +716,27 @@ async def create_wayland_desktop_file(config: AppConfig) -> bool:
         except Exception as e:
             print_error(f"Failed to create system desktop entry: {e}")
             success = False
-            progress.update(task_id, advance=1.0, status=f"[{NordColors.RED}]Failed")
+            progress.update(
+                task_id, advance=1.0, fields={"status": f"[{NordColors.RED}]Failed"}
+            )
         try:
             os.makedirs(os.path.dirname(config.user_desktop_path), exist_ok=True)
             with open(config.user_desktop_path, "w") as f:
                 f.write(desktop_content)
             print_success(f"User desktop entry created at {config.user_desktop_path}")
             progress.update(
-                task_id, advance=1.0, status=f"[{NordColors.GREEN}]Complete"
+                task_id, advance=1.0, fields={"status": f"[{NordColors.GREEN}]Complete"}
             )
         except Exception as e:
             print_error(f"Failed to create user desktop entry: {e}")
             success = False
-            progress.update(task_id, advance=1.0, status=f"[{NordColors.RED}]Failed")
+            progress.update(
+                task_id, advance=1.0, fields={"status": f"[{NordColors.RED}]Failed"}
+            )
     return success
 
 
 async def verify_installation(config: AppConfig) -> bool:
-    """Verify that the installation and configuration succeeded."""
     print_section("Verifying Installation")
     all_ok = True
     checks = [
@@ -646,7 +747,9 @@ async def verify_installation(config: AppConfig) -> bool:
         ("/etc/environment", "Wayland environment variables"),
     ]
     with ProgressManager() as progress:
-        task_id = progress.add_task("Verifying components", total=len(checks))
+        task_id = progress.add_task(
+            "Verifying components", total=len(checks), status=""
+        )
         for path, desc in checks:
             if os.path.exists(path):
                 print_success(f"{desc} found at {path}")
@@ -684,43 +787,6 @@ async def verify_installation(config: AppConfig) -> bool:
     return all_ok
 
 
-async def configure_high_dpi_settings(config: AppConfig) -> bool:
-    """Configure high DPI scaling settings using gsettings."""
-    print_section("Configuring High DPI Settings")
-    if not config.high_dpi_enabled:
-        print_info("High DPI settings are disabled in the configuration.")
-        return True
-    try:
-        # Set the scaling factor (integer value) and text scaling factor (fractional)
-        await run_command_async(
-            [
-                "gsettings",
-                "set",
-                "org.gnome.desktop.interface",
-                "scaling-factor",
-                str(int(config.high_dpi_scale)),
-            ],
-            verbose=config.verbose,
-        )
-        await run_command_async(
-            [
-                "gsettings",
-                "set",
-                "org.gnome.desktop.interface",
-                "text-scaling-factor",
-                str(config.text_scaling_factor),
-            ],
-            verbose=config.verbose,
-        )
-        print_success(
-            f"High DPI settings applied: scaling-factor {int(config.high_dpi_scale)}, text-scaling-factor {config.text_scaling_factor}"
-        )
-        return True
-    except Exception as e:
-        print_error(f"Failed to configure High DPI settings: {e}")
-        return False
-
-
 # ----------------------------------------------------------------
 # Main Installation Process
 # ----------------------------------------------------------------
@@ -728,15 +794,21 @@ async def main_async() -> None:
     try:
         clear_screen()
         console.print(create_header())
-        print_info("Starting Wayland installation for PopOS")
+        print_info("Starting PopOS Wayland installation and Picom removal")
         config = AppConfig()
         # Must be run as root
         if os.geteuid() != 0:
             print_error("This script must be run as root. Please use sudo.")
             sys.exit(1)
-        if not await install_nala(config):
-            print_error("Failed to install nala. Aborting.")
-            sys.exit(1)
+
+        # Detect AMD GPU for AMD-specific optimizations
+        detect_amd_gpu()
+
+        # Disable and remove Picom compositor and its config
+        if not await handle_picom_removal(config):
+            print_warning(
+                "Picom removal encountered issues. Continuing with installation."
+            )
         await apply_system_updates(config)
         if not await install_wayland_packages(config):
             print_error("Failed to install Wayland packages. Aborting.")
@@ -747,12 +819,11 @@ async def main_async() -> None:
             print_warning(
                 "Failed to update environment variables. Continuing with other steps."
             )
-        # Configure high DPI settings for 4K display
         if not await configure_high_dpi_settings(config):
             print_warning(
                 "High DPI configuration failed. You may need to configure it manually."
             )
-        # VS Code installation (optional)
+        # Optional: VS Code installation
         if not await download_vscode(config):
             print_error("Failed to download VS Code. Skipping VS Code installation.")
         else:

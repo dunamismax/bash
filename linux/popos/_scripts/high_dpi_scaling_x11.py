@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """
-HighDPI & AMD Screen Tearing Fixer
+Pop!_OS HighDPI & AMD Screen Tearing Fixer
 --------------------------------------------------
-System-wide HighDPI Scaling & AMD Tear Fix for PopOS on X11.
-This interactive, menu-driven script applies best-practice settings
-for GTK/Qt scaling, configures Xresources for proper DPI, applies Flatpak
-environment overrides, and fixes screen tearing for AMD GPUs by installing
-and configuring picom with vsync enabled.
+This script applies system-wide HighDPI scaling settings and an AMD tear fix
+for Pop!_OS running GNOME on X11. It sets the appropriate environment variables
+(for GTK/Qt apps), writes the necessary Xresources for DPI configuration, applies
+Flatpak overrides so that Flatpak apps use neutral scaling, and installs/configures
+picom with vsync enabled to address AMD screen tearing.
 
-Version: 1.1.0
+Version: 1.2.0
 """
 
-# ----------------------------------------------------------------
-# Dependency Check and Imports
-# ----------------------------------------------------------------
 import os
 import sys
 import time
@@ -30,9 +27,13 @@ from typing import Optional
 
 def install_dependencies() -> None:
     """
-    Install required third-party dependencies using pip.
-    This ensures paramiko, rich, pyfiglet, and prompt_toolkit are available.
+    Ensure required third-party dependencies (paramiko, rich, pyfiglet,
+    prompt_toolkit) are installed. If missing, they are installed and the script
+    is restarted.
     """
+    if os.environ.get("DEPENDENCIES_INSTALLED"):
+        return
+
     required_packages = ["paramiko", "rich", "pyfiglet", "prompt_toolkit"]
     try:
         import paramiko, pyfiglet
@@ -51,11 +52,13 @@ def install_dependencies() -> None:
                 + required_packages
             )
         print("Dependencies installed. Restarting script...")
+        os.environ["DEPENDENCIES_INSTALLED"] = "1"
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 install_dependencies()
 
+# Now that dependencies are installed, import them.
 import paramiko
 import pyfiglet
 from rich.console import Console
@@ -75,36 +78,45 @@ install_rich_traceback(show_locals=True)
 console: Console = Console()
 
 # ----------------------------------------------------------------
-# Configuration & Constants
+# Configuration & Constants for Pop!_OS (GNOME on X11)
 # ----------------------------------------------------------------
-APP_NAME: str = "HighDPI & AMD Screen Tearing Fixer"
-VERSION: str = "1.1.0"
-APP_SUBTITLE: str = "System-wide HighDPI Scaling & AMD Tear Fix for PopOS"
+APP_NAME: str = "Pop!_OS HighDPI & AMD Screen Tearing Fixer"
+VERSION: str = "1.2.0"
+APP_SUBTITLE: str = "GNOME (X11) HighDPI Scaling & AMD Tear Fix for Pop!_OS"
 HOSTNAME: str = socket.gethostname()
 DEFAULT_USERNAME: str = (
     os.environ.get("SUDO_USER") or os.environ.get("USER") or getpass.getuser()
 )
 
-# Backup directory for configuration file backups
-BACKUP_DIR: str = os.path.join(os.path.expanduser("~"), ".hidpi_backup")
+# Directory for configuration backups
+BACKUP_DIR: str = os.path.join(os.path.expanduser("~"), ".popos_hidpi_backup")
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
-# HighDPI scaling settings
+# -- System (host) scaling settings for native GNOME/APT apps --
+# These values are exported system-wide and applied to GTK/Qt apps.
 GDK_SCALE: str = "1"
-GDK_DPI_SCALE: str = "1.5"
+GDK_DPI_SCALE: str = "1.5"  # ~150% scaling for text
 QT_AUTO_SCREEN_SCALE_FACTOR: str = "0"
 QT_SCALE_FACTOR: str = "1.5"
 XFT_DPI: str = "144"  # (96 * 1.5)
 
-# System file paths for configuration
-PROFILE_SCRIPT: str = "/etc/profile.d/90-hidpi.sh"
+# -- Flatpak-specific scaling overrides --
+# Flatpak apps run in a sandbox where the host DPI from Xresources is not applied.
+# We use neutral (1×) scaling here to avoid double scaling.
+FLATPAK_GDK_SCALE: str = "1"
+FLATPAK_GDK_DPI_SCALE: str = "1"
+FLATPAK_QT_AUTO_SCREEN_SCALE_FACTOR: str = "0"
+FLATPAK_QT_SCALE_FACTOR: str = "1"
+
+# System configuration file paths
+PROFILE_SCRIPT: str = "/etc/profile.d/90-popos-hidpi.sh"
 XRESOURCES_DIR: str = "/etc/X11/Xresources.d"
 XRESOURCES_FILE: str = os.path.join(XRESOURCES_DIR, "80-hidpi.conf")
 USER_XRESOURCES: str = os.path.join(os.path.expanduser("~"), ".Xresources")
 
 
 # ----------------------------------------------------------------
-# Nord-Themed Colors
+# Nord-Themed Colors (for console UI)
 # ----------------------------------------------------------------
 class NordColors:
     POLAR_NIGHT_1: str = "#2E3440"
@@ -117,21 +129,6 @@ class NordColors:
     YELLOW: str = "#EBCB8B"
     GREEN: str = "#A3BE8C"
     PURPLE: str = "#B48EAD"
-
-
-# ----------------------------------------------------------------
-# Signal Handling and Cleanup
-# ----------------------------------------------------------------
-def signal_handler(sig, frame) -> None:
-    print_warning(f"Interrupted by signal {sig}. Exiting...")
-    sys.exit(128 + sig)
-
-
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-atexit.register(
-    lambda: console.print("[bold dim]Exiting HighDPI & AMD Screen Tearing Fixer...[/]")
-)
 
 
 # ----------------------------------------------------------------
@@ -203,10 +200,22 @@ def wait_for_key() -> None:
 
 
 # ----------------------------------------------------------------
+# Signal Handling and Cleanup
+# ----------------------------------------------------------------
+def signal_handler(sig, frame) -> None:
+    print_warning(f"Interrupted by signal {sig}. Exiting...")
+    sys.exit(128 + sig)
+
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(lambda: console.print("[bold dim]Exiting Pop!_OS HighDPI Fixer...[/]"))
+
+
+# ----------------------------------------------------------------
 # Helper Functions for Backup and File Writing
 # ----------------------------------------------------------------
 def backup_file(file_path: str) -> None:
-    """Back up an existing file with a timestamp."""
     if os.path.exists(file_path):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = os.path.join(
@@ -220,10 +229,6 @@ def backup_file(file_path: str) -> None:
 
 
 def write_file(file_path: str, content: str) -> bool:
-    """
-    Back up the existing file (if any) and write new content.
-    Returns True if successful.
-    """
     try:
         backup_file(file_path)
         with open(file_path, "w") as f:
@@ -236,12 +241,12 @@ def write_file(file_path: str, content: str) -> bool:
 
 
 # ----------------------------------------------------------------
-# HighDPI Scaling Configuration Functions
+# HighDPI Scaling Configuration Functions (Pop!_OS / GNOME on X11)
 # ----------------------------------------------------------------
 def apply_system_profile_scaling() -> None:
     """
-    Create/update a system-wide profile script to export HighDPI settings.
-    (Requires root privileges.)
+    Create or update a system-wide profile script to export HighDPI settings.
+    This requires root privileges.
     """
     if os.geteuid() != 0:
         print_error(
@@ -251,7 +256,7 @@ def apply_system_profile_scaling() -> None:
 
     content = (
         "#!/bin/sh\n"
-        "# HighDPI settings for 150% scaling\n"
+        "# HighDPI settings for 150% scaling on Pop!_OS (GNOME on X11)\n"
         f"export GDK_SCALE={GDK_SCALE}\n"
         f"export GDK_DPI_SCALE={GDK_DPI_SCALE}\n"
         f"export QT_AUTO_SCREEN_SCALE_FACTOR={QT_AUTO_SCREEN_SCALE_FACTOR}\n"
@@ -266,7 +271,7 @@ def apply_system_profile_scaling() -> None:
 
 def apply_xresources_scaling() -> None:
     """
-    Configure Xft DPI for X11 by writing an Xresources configuration file.
+    Configure Xft DPI via Xresources for X11.
     """
     content = f"Xft.dpi: {XFT_DPI}\n"
     target_file = XRESOURCES_FILE if os.path.isdir(XRESOURCES_DIR) else USER_XRESOURCES
@@ -274,13 +279,15 @@ def apply_xresources_scaling() -> None:
         print_warning(f"{XRESOURCES_DIR} not found. Falling back to user .Xresources.")
     if write_file(target_file, content):
         print_message(
-            f"Reload your Xresources with 'xrdb -merge {target_file}' or log out and back in."
+            f"Reload Xresources with 'xrdb -merge {target_file}' or log out and back in."
         )
 
 
 def apply_flatpak_overrides() -> None:
     """
-    Apply Flatpak environment overrides so that Flatpak apps receive proper scaling.
+    Apply Flatpak environment overrides so that Flatpak apps
+    use neutral (1×) scaling. This avoids extra scaling on top of the system
+    settings already applied via Xresources and the profile script.
     """
     flatpak_path = shutil.which("flatpak")
     if not flatpak_path:
@@ -288,15 +295,25 @@ def apply_flatpak_overrides() -> None:
         return
 
     commands = [
-        ["flatpak", "override", "--user", "--env=GDK_SCALE=" + GDK_SCALE],
-        ["flatpak", "override", "--user", "--env=GDK_DPI_SCALE=" + GDK_DPI_SCALE],
+        ["flatpak", "override", "--user", "--env=GDK_SCALE=" + FLATPAK_GDK_SCALE],
         [
             "flatpak",
             "override",
             "--user",
-            "--env=QT_AUTO_SCREEN_SCALE_FACTOR=" + QT_AUTO_SCREEN_SCALE_FACTOR,
+            "--env=GDK_DPI_SCALE=" + FLATPAK_GDK_DPI_SCALE,
         ],
-        ["flatpak", "override", "--user", "--env=QT_SCALE_FACTOR=" + QT_SCALE_FACTOR],
+        [
+            "flatpak",
+            "override",
+            "--user",
+            "--env=QT_AUTO_SCREEN_SCALE_FACTOR=" + FLATPAK_QT_AUTO_SCREEN_SCALE_FACTOR,
+        ],
+        [
+            "flatpak",
+            "override",
+            "--user",
+            "--env=QT_SCALE_FACTOR=" + FLATPAK_QT_SCALE_FACTOR,
+        ],
     ]
     for cmd in commands:
         try:
@@ -308,22 +325,18 @@ def apply_flatpak_overrides() -> None:
             )
 
 
-# ----------------------------------------------------------------
-# AMD Screen Tearing Fix Functions
-# ----------------------------------------------------------------
 def apply_amd_screen_tearing_fix() -> None:
     """
-    Fix screen tearing for AMD GPUs/integrated graphics by ensuring picom is installed
-    and configured with vsync enabled.
+    Fix AMD screen tearing on X11 by installing/configuring picom with vsync enabled.
     """
     picom_path = shutil.which("picom")
     if not picom_path:
-        print_warning("picom is not installed. It is required for AMD tear fixes.")
+        print_warning("picom is not installed. It is required for the AMD tear fix.")
         if Confirm.ask(
-            f"[bold {NordColors.PURPLE}]Install picom using Nala?[/]", default=True
+            "[bold " + NordColors.PURPLE + "]Install picom via apt?[/]", default=True
         ):
             try:
-                subprocess.check_call(["sudo", "nala", "install", "-y", "picom"])
+                subprocess.check_call(["sudo", "apt", "install", "-y", "picom"])
                 print_success("picom installed successfully.")
             except subprocess.CalledProcessError as e:
                 print_error(f"Failed to install picom: {e}")
@@ -334,12 +347,11 @@ def apply_amd_screen_tearing_fix() -> None:
             )
             return
 
-    # Write picom configuration in the user's config directory
     config_dir = os.path.join(os.path.expanduser("~"), ".config")
     os.makedirs(config_dir, exist_ok=True)
     picom_config = os.path.join(config_dir, "picom.conf")
     content = (
-        "# picom configuration for AMD tear-free rendering\n"
+        "# picom configuration for AMD tear-free rendering on X11 (Pop!_OS)\n"
         'backend = "glx";\n'
         "vsync = true;\n"
         "unredir-if-possible = true;\n"
@@ -364,7 +376,7 @@ def main_menu() -> None:
         ("4", "Apply AMD screen tearing fix (picom)", apply_amd_screen_tearing_fix),
         (
             "5",
-            "Apply all HighDPI & AMD fixes",
+            "Apply all fixes",
             lambda: [
                 func()
                 for func in (
@@ -394,16 +406,21 @@ def main_menu() -> None:
         console.print(table)
         choice = pt_prompt(
             "Enter your choice: ",
-            history=FileHistory("/tmp/hidpi_command_history"),
+            history=FileHistory("/tmp/popos_hidpi_history"),
             auto_suggest=AutoSuggestFromHistory(),
             style=get_prompt_style(),
         ).strip()
+        executed = False
         for option, _, func in menu_options:
             if choice == option:
+                if option == "0":
+                    sys.exit(0)
                 func()
-                wait_for_key()
+                executed = True
+                if not Confirm.ask("Return to main menu?", default=True):
+                    sys.exit(0)
                 break
-        else:
+        if not executed:
             print_error("Invalid selection, please try again.")
             wait_for_key()
 
