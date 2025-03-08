@@ -334,15 +334,18 @@ class RemotePathCompleter(Completer):
             for filename in files:
                 if not filename.startswith(prefix):
                     continue
+
                 full_path = os.path.join(dir_path, filename)
                 try:
                     attrs = self.sftp.stat(full_path)
-                    is_dir = attrs.st_mode & 0o40000
-                    display = filename + ("/" if is_dir else "")
+                    is_dir = attrs.st_mode & 0o40000  # directory check
+                    # Append a trailing slash to the suggestion if it is a directory.
+                    suggestion = filename + "/" if is_dir else filename
+
                     yield Completion(
-                        filename,
+                        suggestion,  # the inserted text includes the "/"
                         start_position=-len(prefix),
-                        display=display,
+                        display=suggestion,  # display text also shows the slash
                         style="bg:#3B4252 fg:#A3BE8C"
                         if is_dir
                         else "bg:#3B4252 fg:#88C0D0",
@@ -1464,3 +1467,4 @@ if __name__ == "__main__":
         console.print_exception()
         print_error(f"An unexpected error occurred: {e}")
         sys.exit(1)
+```
