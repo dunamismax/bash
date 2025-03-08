@@ -237,7 +237,6 @@ class Config:
             "docker-compose",
             "nodejs",
             "npm",
-            "kubectl",
             "autoconf",
             "automake",
             "libtool",
