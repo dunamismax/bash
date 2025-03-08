@@ -360,10 +360,10 @@ def display_panel(
     message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
     panel = Panel(
-        Text.from_markup(f"[{style}]{message}[/{style}]"),
+        Text.from_markup(f"[{style}]{message}[/]"),
         border_style=f"{style}",
         padding=(1, 2),
-        title=f"[bold {style}]{title}[/{style}]" if title else None,
+        title=f"[bold {style}]{title}[/]" if title else None,
     )
     console.print(panel)
 

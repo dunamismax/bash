@@ -389,7 +389,7 @@ def display_panel(
 ) -> None:
     """Display a styled panel with a message."""
     panel = Panel(
-        Text.from_markup(f"[{style}]{message}[/{style}]"),
+        Text.from_markup(f"[{style}]{message}[/]"),
         border_style=f"{style}",
         padding=(1, 2),
         title=f"[bold {style}]{title}[/{style}]" if title else None,
