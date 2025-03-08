@@ -151,7 +151,7 @@ class Config:
     # Updated package names for Fedora (using dnf and rpm)
     PACKAGES: List[str] = field(default_factory=lambda: [
         "bash", "vim", "nano", "screen", "tmux", "htop", "btop", "tree",
-        "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo", "fastfetch", "code", "brave",
+        "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo", "fastfetch",
         "bash-completion", "python3", "python3-pip", "ca-certificates",
         "dnf-plugins-core", "gnupg2", "net-tools", "nmap", "tcpdump",
         "fail2ban", "gcc", "gcc-c++", "make", "cmake", "ninja-build", "meson", "gettext",
