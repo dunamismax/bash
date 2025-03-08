@@ -8,7 +8,7 @@ This fully automated utility performs:
   • System update & basic configuration (timezone, packages)
   • Repository & shell setup (cloning GitHub repos, updating shell configs)
   • Security hardening (SSH, sudoers, firewall, Fail2ban)
-  • Essential service installations (Docker, Plex, Fastfetch, Brave, VS Code)
+  • Essential service installations (Plex, Fastfetch, Brave, VS Code)
   • User customization & script deployment
   • Maintenance tasks (cron job, log rotation, configuration backups)
   • Certificates & performance tuning (SSL renewals, sysctl tweaks)
@@ -1291,10 +1291,6 @@ class PopOSDesktopSetup:
             "Installing Fastfetch", self.install_fastfetch_async, task_name="services"
         ):
             status = False
-        if not await run_with_progress_async(
-            "Installing Docker", self.install_docker_async, task_name="services"
-        ):
-            status = False
         return status
 
     async def install_plex_async(self) -> bool:
@@ -1417,65 +1413,6 @@ class PopOSDesktopSetup:
             self.logger.warning(f"Failed to create Fastfetch config directory: {e}")
         self.logger.info("Fastfetch installed successfully.")
         return True
-
-    async def install_docker_async(self) -> bool:
-        try:
-            if await command_exists_async("docker"):
-                self.logger.info("Docker is already installed.")
-                if await command_exists_async("docker-compose"):
-                    self.logger.info("Docker Compose is already installed.")
-                    return True
-            self.logger.info("Adding Docker's GPG key...")
-            key_file = Path("/etc/apt/keyrings/docker.gpg")
-            key_file.parent.mkdir(parents=True, exist_ok=True)
-            await run_command_async(
-                [
-                    "curl",
-                    "-fsSL",
-                    "https://download.docker.com/linux/ubuntu/gpg",
-                    "-o",
-                    "/tmp/docker.key",
-                ]
-            )
-            await run_command_async(
-                ["gpg", "--dearmor", "-o", str(key_file), "/tmp/docker.key"]
-            )
-            self.logger.info("Adding Docker repository...")
-            source_file = Path("/etc/apt/sources.list.d/docker.list")
-            result = await run_command_async(
-                ["lsb_release", "-cs"], capture_output=True, text=True
-            )
-            codename = result.stdout.strip()
-            source_content = f"deb [arch=amd64 signed-by={key_file}] https://download.docker.com/linux/ubuntu {codename} stable\n"
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
-                None, lambda: source_file.write_text(source_content)
-            )
-            self.logger.info(
-                "Updating package lists with Docker repository using nala..."
-            )
-            await run_command_async(["nala", "update"])
-            self.logger.info("Installing Docker packages...")
-            docker_packages = [
-                "docker-ce",
-                "docker-ce-cli",
-                "containerd.io",
-                "docker-buildx-plugin",
-                "docker-compose-plugin",
-            ]
-            await run_command_async(["nala", "install", "-y"] + docker_packages)
-            if not await command_exists_async("docker"):
-                self.logger.error("Docker installation failed.")
-                return False
-            self.logger.info(f"Adding {self.config.USERNAME} to docker group...")
-            await run_command_async(["usermod", "-aG", "docker", self.config.USERNAME])
-            await run_command_async(["systemctl", "enable", "docker"])
-            await run_command_async(["systemctl", "start", "docker"])
-            self.logger.info("Docker installed and configured successfully.")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to install Docker: {e}")
-            return False
 
     # ----------------------------------------------------------------
     # Phase 6: User Customization & Script Deployment
