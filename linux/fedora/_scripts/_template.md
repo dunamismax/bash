@@ -1065,4 +1065,4 @@ if __name__ == “__main__”:
     except Exception as e:
         console.print_exception()
         print_error(f”An unexpected error occurred: {e}”)
-        sys.exit(1)
+         sys.exit(1)
