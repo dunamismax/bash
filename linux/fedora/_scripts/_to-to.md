@@ -7,26 +7,29 @@ using new prompt / template
 
 ```
 └── 📁_scripts
-    *└── _bashrc_cheat_sheet.md
-    *└── _prompt.md
-    *└── _template.md
-    *└── _to-to.md
+    └── _bashrc_cheat_sheet.md
+    └── _prompt.md
+    └── _template.md
+    └── _to-to.md
     └── deploy_scripts.py
     └── fail2ban_toolkit.py
+    └── fedora_package_installer.py
+    └── ffmpeg_converter_toolkit.py
     └── file_toolkit.py
     └── fix_ssh_tool.py
     └── hacker_toolkit.py
     └── hacking_tools.py
     └── hello_world.py
+    └── high_dpi_scaling_x11.py
     └── log_monitor.py
     └── metasploit.py
     └── network_toolkit.py
-    *└── popos_wayland_setup.py
+    └── popos_wayland_setup.py
     └── python_dev_setup.py
     └── reset_tailscale.py
     └── secure_disk_eraser.py
-    *└── sftp_toolkit.py
-    *└── ssh_machine_selector.py
+    └── sftp_toolkit.py
+    └── ssh_machine_selector.py
     └── system_monitor.py
     └── ubuntu_voip_setup.py
     └── unified_backup_restore_deployment.py
@@ -35,7 +38,7 @@ using new prompt / template
     └── universal_downloader.py
     └── update_dns_records.py
     └── update_plex.py
-    *└── virtualization_setup.py
+    └── virtualization_setup.py
     └── vm_manager.py
     └── vscode_wayland_setup.py
     └── zfs_setup.py

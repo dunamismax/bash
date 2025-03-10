@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
-
 """
-Script Deployer - A file deployment and permission utility.
+Fedora Script Deployer
+—————————————————
+An automated file deployment utility that copies scripts from a source
+directory to a destination directory and manages permissions appropriately.
 
-This utility copies scripts from a source directory to a destination directory,
-manages permissions, and sets ownership appropriately. It provides rich terminal
-output with detailed progress information and deployment statistics.
+Features:
+  • Fully automated deployment without user prompts
+  • Fast file copying with MD5 hash comparison to avoid unnecessary updates
+  • Rich terminal output with detailed progress information
+  • Proper permission management for Fedora environment
+  • Comprehensive deployment statistics and reporting
+
+This script is designed specifically for Fedora Linux.
+Version: 1.0.0
 """
 
-import asyncio
+# -—————————————————————
+# Dependency Check and Imports
+# -—————————————————————
 import atexit
+import asyncio
 import hashlib
 import os
 import pwd
+import sys
 import shutil
 import signal
-import stat
-import sys
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, asdict
@@ -25,13 +36,52 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TypeVar, cast, Callable
 
-# Third-party libraries
+
+def install_dependencies():
+    """Install required dependencies using DNF and pip for Fedora."""
+    required_packages = ["paramiko", "rich", "pyfiglet", "prompt_toolkit"]
+    user = os.environ.get("SUDO_USER", os.environ.get("USER"))
+
+    print("Checking and installing required dependencies...")
+
+    # Try to install system dependencies with DNF if running as root
+    if os.geteuid() == 0:
+        try:
+            print("Installing python3-pip via DNF...")
+            subprocess.check_call(["dnf", "install", "-y", "python3-pip"])
+        except subprocess.CalledProcessError:
+            print(
+                "Failed to install python3-pip with DNF. Continuing with existing pip..."
+            )
+
+    # Install Python dependencies with pip
+    try:
+        if os.geteuid() == 0 and user:
+            # Install for the actual user when run with sudo
+            subprocess.check_call(
+                ["sudo", "-u", user, sys.executable, "-m", "pip", "install", "--user"]
+                + required_packages
+            )
+        else:
+            # Regular user install
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "--user"] + required_packages
+            )
+        print("Dependencies installed successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install Python dependencies: {e}")
+        print("Please install the required packages manually:")
+        print("pip install paramiko rich pyfiglet prompt_toolkit")
+        sys.exit(1)
+
+
 try:
     import pyfiglet
-    from rich import box
-    from rich.align import Align
     from rich.console import Console
+    from rich.text import Text
+    from rich.table import Table
     from rich.panel import Panel
+    from rich.prompt import Prompt, Confirm
     from rich.progress import (
         Progress,
         SpinnerColumn,
@@ -39,56 +89,52 @@ try:
         BarColumn,
         TaskProgressColumn,
         TimeRemainingColumn,
+        DownloadColumn,
     )
-    from rich.prompt import Prompt, Confirm
-    from rich.table import Table
-    from rich.text import Text
+    from rich.align import Align
+    from rich.style import Style
     from rich.traceback import install as install_rich_traceback
     from rich.theme import Theme
-    from rich.style import Style
-except ImportError as e:
-    print(f"Error importing required libraries: {e}")
-    print("Please install them using: pip install rich pyfiglet")
-    sys.exit(1)
+except ImportError:
+    print("Required libraries not found. Installing dependencies...")
+    install_dependencies()
+    print("Restarting script with dependencies installed...")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # Enable rich traceback for better debugging
 install_rich_traceback(show_locals=True)
 
 
-# Type variables for generic functions
-T = TypeVar("T")
-
-
-# =========================================================================
-# Configuration and Constants
-# =========================================================================
-
-
+# -—————————————————————
+# Configuration & Constants
+# -—————————————————————
 @dataclass
 class AppConfig:
     """Application configuration settings."""
 
-    VERSION: str = "2.1.0"
-    APP_NAME: str = "Script Deployer"
-    APP_SUBTITLE: str = "File Deployment & Permission Utility"
+    # App information
+    VERSION: str = "1.0.0"
+    APP_NAME: str = "Fedora Script Deployer"
+    APP_SUBTITLE: str = "File Deployment Utility for Fedora"
 
-    SOURCE_DIR: str = "/home/sawyer/github/bash/linux/ubuntu/_scripts"
+    # Directory paths
+    SOURCE_DIR: str = "/home/sawyer/github/bash/linux/fedora/_scripts"
     DEST_DIR: str = "/home/sawyer/bin"
     OWNER_USER: str = "sawyer"
 
+    # Permission settings
     OWNER_UID: Optional[int] = None
     OWNER_GID: Optional[int] = None
+    FILE_PERMISSIONS: int = 0o644  # Read/write for owner, read for group/others
+    DIR_PERMISSIONS: int = 0o755  # RWX for owner, RX for group/others
 
-    FILE_PERMISSIONS: int = 0o700
-    DIR_PERMISSIONS: int = 0o700
-    EXECUTABLE_EXTENSIONS: List[str] = field(default_factory=lambda: [".py", ".sh"])
-
-    TERM_WIDTH: int = 80
-    PROGRESS_WIDTH: int = 50
+    # Performance settings
+    MAX_WORKERS: int = 4
     DEFAULT_TIMEOUT: int = 30
 
-    # Number of worker threads for file operations
-    MAX_WORKERS: int = 4
+    # UI settings
+    TERM_WIDTH: int = 80
+    PROGRESS_WIDTH: int = 50
 
     def __post_init__(self) -> None:
         """Initialize derived settings after dataclass instantiation."""
@@ -109,28 +155,21 @@ class AppConfig:
             pass  # Keep as None if user not found
 
 
-@dataclass
+# -—————————————————————
+# Nord-Themed Colors
+# -—————————————————————
 class NordColors:
-    """Nord color theme palette."""
-
-    # Dark base colors (Polar Night)
     POLAR_NIGHT_1: str = "#2E3440"
     POLAR_NIGHT_2: str = "#3B4252"
     POLAR_NIGHT_3: str = "#434C5E"
     POLAR_NIGHT_4: str = "#4C566A"
-
-    # Light base colors (Snow Storm)
     SNOW_STORM_1: str = "#D8DEE9"
     SNOW_STORM_2: str = "#E5E9F0"
     SNOW_STORM_3: str = "#ECEFF4"
-
-    # Accent colors (Frost)
     FROST_1: str = "#8FBCBB"
     FROST_2: str = "#88C0D0"
     FROST_3: str = "#81A1C1"
     FROST_4: str = "#5E81AC"
-
-    # Other colors
     RED: str = "#BF616A"
     ORANGE: str = "#D08770"
     YELLOW: str = "#EBCB8B"
@@ -144,11 +183,9 @@ class NordColors:
         return frosts[:steps]
 
 
-# =========================================================================
+# -—————————————————————
 # Custom Exception Classes
-# =========================================================================
-
-
+# -—————————————————————
 class DeploymentError(Exception):
     """Base exception for all deployment-related errors."""
 
@@ -173,11 +210,9 @@ class FileOperationError(DeploymentError):
     pass
 
 
-# =========================================================================
-# Enums and Data Models
-# =========================================================================
-
-
+# -—————————————————————
+# Data Structures
+# -—————————————————————
 class FileStatus(str, Enum):
     """Enum representing the possible status of a file during deployment."""
 
@@ -193,7 +228,6 @@ class FileInfo:
 
     filename: str
     status: FileStatus
-    is_executable: bool = False
     permission_changed: bool = False
     source_path: str = ""
     dest_path: str = ""
@@ -208,7 +242,6 @@ class DeploymentResult:
     updated_files: int = 0
     unchanged_files: int = 0
     failed_files: int = 0
-    executable_files: int = 0
     permission_changes: int = 0
     files: List[FileInfo] = field(default_factory=list)
     start_time: float = field(default_factory=time.time)
@@ -217,7 +250,12 @@ class DeploymentResult:
     @property
     def total_files(self) -> int:
         """Return the total number of files processed."""
-        return self.new_files + self.updated_files + self.unchanged_files
+        return (
+            self.new_files
+            + self.updated_files
+            + self.unchanged_files
+            + self.failed_files
+        )
 
     @property
     def elapsed_time(self) -> float:
@@ -241,15 +279,9 @@ class DeploymentResult:
         elif file_info.status == FileStatus.FAILED:
             self.failed_files += 1
 
-        if file_info.is_executable:
-            self.executable_files += 1
         if file_info.permission_changed:
             self.permission_changes += 1
 
-
-# =========================================================================
-# UI Components
-# =========================================================================
 
 # Create console with custom theme
 console = Console(
@@ -265,46 +297,48 @@ console = Console(
 )
 
 
+# -—————————————————————
+# UI Helper Functions
+# -—————————————————————
 def create_header() -> Panel:
     """Create a stylish header panel with the app name."""
-    fonts = ["slant", "small", "standard", "digital", "big"]
+    config = AppConfig()
+    term_width = shutil.get_terminal_size().columns
+    adjusted_width = min(term_width - 4, 80)
+    fonts = ["slant", "big", "digital", "standard", "small"]
     ascii_art = ""
 
-    # Try different fonts until one works
     for font in fonts:
         try:
-            fig = pyfiglet.Figlet(font=font, width=60)
-            ascii_art = fig.renderText(AppConfig.APP_NAME)
-            if ascii_art and ascii_art.strip():
+            fig = pyfiglet.Figlet(font=font, width=adjusted_width)
+            ascii_art = fig.renderText(config.APP_NAME)
+            if ascii_art.strip():
                 break
         except Exception:
             continue
 
-    # Fallback if no font works
-    if not ascii_art or not ascii_art.strip():
-        ascii_art = f"  {AppConfig.APP_NAME}  "
-
-    # Style the ASCII art with a gradient
-    ascii_lines = [line for line in ascii_art.split("\n") if line.strip()]
+    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
     colors = NordColors.get_frost_gradient(min(len(ascii_lines), 4))
 
-    styled_text = Text()
+    styled_text = ""
     for i, line in enumerate(ascii_lines):
         color = colors[i % len(colors)]
-        styled_text.append(Text(line, style=f"bold {color}"))
-        if i < len(ascii_lines) - 1:
-            styled_text.append("\n")
+        escaped_line = line.replace("[", "\\[").replace("]", "\\]")
+        styled_text += f"[bold {color}]{escaped_line}[/]\n"
 
-    # Return the final panel
-    return Panel(
-        Align.center(styled_text),
+    border = f"[{NordColors.FROST_3}]{'━' * (adjusted_width - 6)}[/]"
+    styled_text = border + "\n" + styled_text + border
+
+    header_panel = Panel(
+        Text.from_markup(styled_text),
         border_style=Style(color=NordColors.FROST_1),
         padding=(1, 2),
-        title=f"[bold {NordColors.SNOW_STORM_2}]v{AppConfig.VERSION}[/]",
+        title=f"[bold {NordColors.SNOW_STORM_2}]v{config.VERSION}[/]",
         title_align="right",
-        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{AppConfig.APP_SUBTITLE}[/]",
+        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{config.APP_SUBTITLE}[/]",
         subtitle_align="center",
     )
+    return header_panel
 
 
 def print_message(
@@ -312,11 +346,6 @@ def print_message(
 ) -> None:
     """Print a styled message with a prefix."""
     console.print(f"[{style}]{prefix} {text}[/{style}]")
-
-
-def print_step(message: str) -> None:
-    """Print a step message with an arrow prefix."""
-    print_message(message, NordColors.FROST_3, "➜")
 
 
 def print_success(message: str) -> None:
@@ -334,12 +363,17 @@ def print_error(message: str) -> None:
     print_message(message, NordColors.RED, "✗")
 
 
+def print_step(message: str) -> None:
+    """Print a step message with an arrow prefix."""
+    print_message(message, NordColors.FROST_2, "→")
+
+
 def display_panel(
-    message: str, style: str = NordColors.FROST_2, title: str = ""
+    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
 ) -> None:
     """Display a styled panel with a message."""
     panel = Panel(
-        Text.from_markup(f"[bold {style}]{message}[/]"),
+        Text.from_markup(f"[{style}]{message}[/]"),
         border_style=Style(color=style),
         padding=(1, 2),
         title=f"[bold {style}]{title}[/]" if title else None,
@@ -356,11 +390,34 @@ def create_section_header(title: str) -> Panel:
     )
 
 
-# =========================================================================
+# -—————————————————————
+# Signal Handling and Cleanup
+# -—————————————————————
+def cleanup() -> None:
+    """Clean up resources before exit."""
+    print_message("Cleaning up resources...", NordColors.FROST_3)
+
+
+def signal_handler(sig: int, frame: Any) -> None:
+    """Handle signals for graceful shutdown."""
+    try:
+        sig_name = signal.Signals(sig).name
+        print_warning(f"Process interrupted by {sig_name}")
+    except Exception:
+        print_warning(f"Process interrupted by signal {sig}")
+    cleanup()
+    sys.exit(128 + sig)
+
+
+# Register signal handlers
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+atexit.register(cleanup)
+
+
+# -—————————————————————
 # Core Functionality
-# =========================================================================
-
-
+# -—————————————————————
 async def get_file_hash(file_path: str) -> str:
     """
     Calculate the MD5 hash of a file asynchronously.
@@ -370,13 +427,9 @@ async def get_file_hash(file_path: str) -> str:
 
     Returns:
         MD5 hash of the file
-
-    Raises:
-        FileOperationError: If the hash calculation fails
     """
     loop = asyncio.get_running_loop()
     try:
-        # Run the hash calculation in a thread pool to avoid blocking
         return await loop.run_in_executor(None, _calculate_hash, file_path)
     except Exception as e:
         raise FileOperationError(f"Failed to calculate hash for {file_path}: {e}")
@@ -400,13 +453,9 @@ async def list_all_files(directory: str) -> List[str]:
 
     Returns:
         List of relative file paths
-
-    Raises:
-        FileOperationError: If the directory listing fails
     """
     loop = asyncio.get_running_loop()
     try:
-        # Run the directory walk in a thread pool
         return await loop.run_in_executor(None, _walk_directory, directory)
     except Exception as e:
         raise FileOperationError(f"Failed to list files in {directory}: {e}")
@@ -423,12 +472,6 @@ def _walk_directory(directory: str) -> List[str]:
     return sorted(file_paths)  # Sort for consistent processing order
 
 
-def is_executable_file(filename: str, config: AppConfig) -> bool:
-    """Check if a file should be made executable based on its extension."""
-    _, ext = os.path.splitext(filename)
-    return ext.lower() in config.EXECUTABLE_EXTENSIONS
-
-
 async def set_owner(path: str, config: AppConfig) -> bool:
     """
     Set the owner of a file or directory asynchronously.
@@ -439,9 +482,6 @@ async def set_owner(path: str, config: AppConfig) -> bool:
 
     Returns:
         True if ownership was changed, False otherwise
-
-    Raises:
-        PermissionOperationError: If setting the owner fails
     """
     if config.OWNER_UID is None or config.OWNER_GID is None:
         return False
@@ -491,35 +531,9 @@ async def set_permissions(
         )
         await loop.run_in_executor(None, lambda: os.chmod(path, permissions))
 
-        return True
+        return owner_changed or True
     except Exception as e:
         print_warning(f"Failed to set permissions on {path}: {e}")
-        return False
-
-
-async def make_executable(file_path: str, config: AppConfig) -> bool:
-    """
-    Make a file executable asynchronously.
-
-    Args:
-        file_path: Path to the file
-        config: Application configuration
-
-    Returns:
-        True if the file was made executable, False otherwise
-    """
-    loop = asyncio.get_running_loop()
-    try:
-        # Set owner first
-        await set_owner(file_path, config)
-
-        # Set executable bit
-        permissions = config.FILE_PERMISSIONS | stat.S_IXUSR
-        await loop.run_in_executor(None, lambda: os.chmod(file_path, permissions))
-
-        return True
-    except Exception as e:
-        print_warning(f"Failed to set executable permissions on {file_path}: {e}")
         return False
 
 
@@ -577,7 +591,6 @@ async def process_file(
     source_path = os.path.join(config.SOURCE_DIR, rel_path)
     dest_path = os.path.join(config.DEST_DIR, rel_path)
     filename = os.path.basename(source_path)
-    is_exec = is_executable_file(filename, config)
     perm_changed = False
 
     # Update progress if provided
@@ -612,8 +625,6 @@ async def process_file(
 
             # Set permissions
             perm_changed = await set_permissions(dest_path, config)
-            if is_exec:
-                await make_executable(dest_path, config)
 
         except Exception as e:
             print_warning(f"Failed to copy file {filename}: {e}")
@@ -627,8 +638,6 @@ async def process_file(
     else:
         # For unchanged files, just verify permissions
         perm_changed = await set_permissions(dest_path, config)
-        if is_exec and not os.access(dest_path, os.X_OK):
-            await make_executable(dest_path, config)
 
     # Advance progress if provided
     if progress and task_id is not None:
@@ -637,7 +646,6 @@ async def process_file(
     return FileInfo(
         filename=rel_path,
         status=status,
-        is_executable=is_exec,
         permission_changed=perm_changed,
         source_path=source_path,
         dest_path=dest_path,
@@ -708,11 +716,9 @@ async def deploy_files(config: AppConfig) -> DeploymentResult:
     return result
 
 
-# =========================================================================
+# -—————————————————————
 # Reporting Functions
-# =========================================================================
-
-
+# -—————————————————————
 def display_deployment_details(config: AppConfig) -> None:
     """Display detailed information about the deployment configuration."""
     current_user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
@@ -728,7 +734,6 @@ def display_deployment_details(config: AppConfig) -> None:
 Source: [bold]{config.SOURCE_DIR}[/]
 Target: [bold]{config.DEST_DIR}[/]
 Owner: [bold]{config.OWNER_USER}[/] (UID: {config.OWNER_UID or "Unknown"})
-Executable Extensions: [bold]{", ".join(config.EXECUTABLE_EXTENSIONS)}[/]
 Permissions: [bold]Files: {oct(config.FILE_PERMISSIONS)[2:]}, Dirs: {oct(config.DIR_PERMISSIONS)[2:]}[/]
 Running as: [bold]{current_user}[/] ({"root" if is_root else "non-root"})
 {permission_warning}
@@ -767,7 +772,6 @@ def create_stats_table(result: DeploymentResult) -> Table:
     table.add_row("Unchanged Files", str(result.unchanged_files))
     table.add_row("Failed Files", str(result.failed_files))
     table.add_row("Total Files", str(result.total_files))
-    table.add_row("Executable Files", str(result.executable_files))
     table.add_row("Permission Changes", str(result.permission_changes))
     table.add_row("Elapsed Time", f"{result.elapsed_time:.2f} seconds")
 
@@ -812,12 +816,7 @@ def create_file_details_table(result: DeploymentResult, max_files: int = 20) -> 
             status_text = Text("● UNCHANGED", style=NordColors.SNOW_STORM_1)
 
         # Create permissions text
-        permissions = []
-        if file_info.is_executable:
-            permissions.append("executable")
-        if file_info.permission_changed:
-            permissions.append("ownership")
-        permission_text = ", ".join(permissions) if permissions else "standard"
+        permission_text = "changed" if file_info.permission_changed else "standard"
 
         # Add row to table
         table.add_row(file_info.filename, status_text, permission_text)
@@ -829,11 +828,9 @@ def create_file_details_table(result: DeploymentResult, max_files: int = 20) -> 
     return table
 
 
-# =========================================================================
-# Application Flow
-# =========================================================================
-
-
+# -—————————————————————
+# Main Application Flow
+# -—————————————————————
 async def run_deployment() -> None:
     """Run the deployment process."""
     # Create configuration
@@ -872,8 +869,8 @@ async def run_deployment() -> None:
             console.print()
             display_panel(
                 f"Successfully deployed {result.new_files + result.updated_files} files.\n"
-                f"Made {result.executable_files} files executable and changed permissions on {result.permission_changes} files/dirs.\n"
-                f"User '{config.OWNER_USER}' now has full permissions on all deployed files.",
+                f"Changed permissions on {result.permission_changes} files/dirs.\n"
+                f"User '{config.OWNER_USER}' now has appropriate permissions on all deployed files.",
                 style=NordColors.GREEN,
                 title="Deployment Successful",
             )
@@ -892,76 +889,9 @@ async def run_deployment() -> None:
         sys.exit(1)
 
 
-# =========================================================================
-# Signal Handling and Cleanup
-# =========================================================================
-
-
-async def async_cleanup() -> None:
-    """Perform async cleanup operations."""
-    print_message("Cleaning up resources...", NordColors.FROST_3)
-
-    # Cancel all remaining tasks except our own
-    current_task = asyncio.current_task()
-    for task in asyncio.all_tasks():
-        if task is not current_task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-
-def cleanup() -> None:
-    """Synchronous cleanup handler registered with atexit."""
-    print_message("Cleaning up...", NordColors.FROST_3)
-
-
-async def signal_handler_async(sig: int, frame: Any) -> None:
-    """Async signal handler."""
-    sig_name = str(sig)
-    if hasattr(signal, "Signals"):
-        try:
-            sig_name = signal.Signals(sig).name
-        except ValueError:
-            pass
-
-    print_message(f"Process interrupted by signal {sig_name}", NordColors.YELLOW, "⚠")
-    await async_cleanup()
-
-    # Get the running loop and stop it
-    loop = asyncio.get_running_loop()
-    loop.stop()
-
-
-def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    """Set up signal handlers for graceful shutdown."""
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(
-            sig, lambda s=sig: asyncio.create_task(signal_handler_async(s, None))
-        )
-
-
-# =========================================================================
-# Main Entry Point
-# =========================================================================
-
-
-async def main_async() -> None:
-    """Main async entry point."""
-    try:
-        await run_deployment()
-    except KeyboardInterrupt:
-        print_warning("Operation cancelled by user.")
-        await async_cleanup()
-        sys.exit(1)
-    except Exception as e:
-        print_error(f"Unexpected error: {e}")
-        console.print_exception()
-        await async_cleanup()
-        sys.exit(1)
-
-
+# -—————————————————————
+# Entry Point
+# -—————————————————————
 def main() -> None:
     """Main entry point of the application."""
     try:
@@ -969,14 +899,8 @@ def main() -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # Set up signal handling
-        setup_signal_handlers(loop)
-
-        # Register cleanup on exit
-        atexit.register(cleanup)
-
-        # Run the main async function
-        loop.run_until_complete(main_async())
+        # Run the deployment
+        loop.run_until_complete(run_deployment())
     except KeyboardInterrupt:
         print_warning("Operation cancelled by user.")
     except Exception as e:
@@ -985,6 +909,7 @@ def main() -> None:
     finally:
         try:
             # Get all tasks and cancel them
+            loop = asyncio.get_event_loop()
             tasks = asyncio.all_tasks(loop)
             for task in tasks:
                 task.cancel()
