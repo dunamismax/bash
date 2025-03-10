@@ -150,21 +150,46 @@ class Config:
 
     # Essential system packages to be installed via dnf (RPM-based)
     PACKAGES: List[str] = field(default_factory=lambda: [
-        "bash", "vim", "nano", "screen", "tmux",
-        "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances",
+        # Shells and editors
+        "bash", "vim", "nano", "screen", "tmux", "neovim", "emacs", "micro",
+        # System monitoring
+        "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances", "sysstat", "atop", "powertop", "nmon", "dstat", "bpytop",
+        # Network and security
         "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo",
-        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban",
-        "python3", "python3-pip", "ca-certificates", "dnf-plugins-core", "gnupg2",
+        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban", "wireshark", "masscan", "netcat", "arp-scan", "hydra", "clamav", "lynis",
+        # Core utilities
+        "python3", "python3-pip", "ca-certificates", "dnf-plugins-core", "gnupg2", "gnupg", "pinentry", "seahorse", "keepassxc",
+        # Development tools
         "gcc", "gcc-c++", "make", "cmake", "ninja-build", "meson", "gettext", "pkgconf",
         "python3-devel", "openssl-devel", "libffi-devel", "zlib-devel", "readline-devel",
         "bzip2-devel", "tk-devel", "xz", "ncurses-devel", "gdbm-devel", "nss-devel",
         "libxml2-devel", "xmlsec1-openssl-devel", "clang", "llvm", "golang", "gdb",
-        "cargo", "rust", "jq",
-        "traceroute", "mtr", "bind-utils", "iproute", "iputils", "restic",
-        "zsh", "fzf", "bat", "ripgrep", "ncdu",
-        "docker", "docker-compose", "nodejs", "npm", "autoconf", "automake", "libtool",
+        "cargo", "rust", "jq", "yq", "yamllint", "shellcheck", "patch", "diffstat", "flex", "bison", "ctags", "cscope", "perf",
+        # Network utilities
+        "traceroute", "mtr", "bind-utils", "iproute", "iputils", "restic", "whois", "dnsmasq", "openvpn", "wireguard-tools", "nftables", "ipcalc",
+        # Enhanced shells and utilities
+        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "exa", "lsd", "mcfly", "autojump", "direnv", "zoxide", "progress", "pv", "tmux-powerline",
+        # Container and development
+        "docker", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "yarn", "autoconf", "automake", "libtool",
+        # Debugging and development utilities
         "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher",
-        "xclip", "tmate", "iperf3"
+        "xclip", "tmate", "iperf3", "httpie", "ngrep", "gron", "entr", "lsof", "socat", "psmisc",
+        # Multimedia tools
+        "ffmpeg", "imagemagick", "media-player-info", "audacity", "vlc", "obs-studio",
+        # Database clients
+        "mariadb", "postgresql", "sqlite", "redis", "mongo-tools", "pgadmin4",
+        # Virtualization
+        "virt-manager", "qemu-kvm", "libvirt", "virtualbox", "vagrant",
+        # IDEs and advanced editors
+        "code", "sublime-text", "jetbrains-idea-community", "pycharm-community", "visual-studio-code", "android-studio",
+        # File compression and archiving
+        "p7zip", "p7zip-plugins", "unrar", "unzip", "zip", "tar", "pigz", "lbzip2", "lz4",
+        # Terminal multiplexers and prettifiers
+        "byobu", "terminator", "kitty", "alacritty", "tilix", "ranger", "mc", "vifm", "nnn",
+        # Office and productivity
+        "libreoffice", "gimp", "inkscape", "dia", "calibre", "pandoc", "texlive",
+        # System backup and restore
+        "timeshift", "backintime", "duplicity", "borgbackup", "rclone", "syncthing"
     ])
 
     # Recommended Flatpak applications for everyday use, organized by category.
