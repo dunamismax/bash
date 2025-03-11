@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Enhanced Virtualization Environment Setup for PopOS
------------------------------------------------------
+Enhanced Virtualization Environment Setup for Fedora
+------------------------------------------------------
 A fully unattended terminal utility for automatically setting up a complete
-virtualization environment on PopOS. This script updates package lists,
+virtualization environment on Fedora. This script updates package caches,
 installs required virtualization packages, manages services, configures
 the default NAT network, fixes storage permissions, configures user groups,
 sets up and starts virtual machines, verifies the setup, and installs a
@@ -88,7 +88,7 @@ class AppConfig:
     VERSION: str = "2.0.0"
     APP_NAME: str = "VirtSetup"
     APP_SUBTITLE: str = "Enhanced Virtualization Environment"
-    OS_TARGET: str = "PopOS"
+    OS_TARGET: str = "Fedora"
     try:
         HOSTNAME: str = socket.gethostname()
     except Exception:
@@ -99,15 +99,13 @@ class AppConfig:
         TERM_WIDTH = 80
     DEFAULT_TIMEOUT: int = 300  # seconds for command operations
 
-    # Virtualization settings (PopOS is Ubuntu-based)
+    # Virtualization settings for Fedora
     VIRTUALIZATION_PACKAGES: List[str] = [
         "qemu-kvm",
-        "qemu-utils",
-        "libvirt-daemon-system",
-        "libvirt-clients",
+        "libvirt",
+        "virt-install",
         "virt-manager",
         "bridge-utils",
-        "cpu-checker",
         "ovmf",
         "virtinst",
         "libguestfs-tools",
@@ -115,8 +113,9 @@ class AppConfig:
     ]
     VIRTUALIZATION_SERVICES: List[str] = ["libvirtd", "virtlogd"]
     VM_STORAGE_PATHS: List[str] = ["/var/lib/libvirt/images", "/var/lib/libvirt/boot"]
+    # On Fedora the VM images are typically accessed by the 'qemu' group
     VM_OWNER: str = "root"
-    VM_GROUP: str = "libvirt-qemu"
+    VM_GROUP: str = "qemu"
     VM_DIR_MODE: int = 0o2770
     VM_FILE_MODE: int = 0o0660
     LIBVIRT_USER_GROUP: str = "libvirt"
@@ -147,11 +146,11 @@ WantedBy=multi-user.target
 
 
 def check_os() -> bool:
-    """Verify that the operating system is PopOS."""
+    """Verify that the operating system is Fedora."""
     try:
         with open("/etc/os-release") as f:
             data = f.read().lower()
-        return "pop" in data or "popos" in data
+        return "fedora" in data
     except Exception:
         return False
 
@@ -398,18 +397,18 @@ atexit.register(cleanup)
 # Virtualization Setup Functions
 # ----------------------------------------------------------------
 def update_system_packages() -> TaskResult:
-    console.print(create_section_header("Updating Package Lists"))
+    console.print(create_section_header("Updating Package Cache"))
     try:
         with console.status(
-            f"[bold {NordColors.FROST_3}]Updating package lists...", spinner="dots"
+            f"[bold {NordColors.FROST_3}]Updating package cache...", spinner="dots"
         ):
-            run_command(["apt-get", "update"])
-        print_message("Package lists updated successfully", NordColors.GREEN, "✓")
+            run_command(["dnf", "makecache"])
+        print_message("Package cache updated successfully", NordColors.GREEN, "✓")
         return TaskResult(
-            name="package_update", success=True, message="Package lists updated"
+            name="package_update", success=True, message="Package cache updated"
         )
     except Exception as e:
-        print_message(f"Failed to update package lists: {e}", NordColors.RED, "✗")
+        print_message(f"Failed to update package cache: {e}", NordColors.RED, "✗")
         return TaskResult(
             name="package_update", success=False, message=f"Update failed: {e}"
         )
@@ -437,14 +436,14 @@ def install_virtualization_packages(packages: List[str]) -> TaskResult:
             progress.update(task, description=f"Installing {pkg}")
             try:
                 proc = subprocess.Popen(
-                    ["apt-get", "install", "-y", pkg],
+                    ["dnf", "install", "-y", pkg],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
                 )
                 for line in iter(proc.stdout.readline, ""):
-                    if any(x in line for x in ["Unpacking", "Setting up"]):
+                    if any(x in line for x in ["Installing", "Complete"]):
                         console.print(
                             "  " + line.strip(), style=NordColors.SNOW_STORM_1
                         )
@@ -1117,10 +1116,10 @@ def install_and_enable_service() -> TaskResult:
 # ----------------------------------------------------------------
 def main() -> None:
     console.clear()
-    # Check OS is PopOS
+    # Check OS is Fedora
     if not check_os():
         display_panel(
-            "This script is designed to run on PopOS. Exiting.",
+            "This script is designed to run on Fedora. Exiting.",
             NordColors.RED,
             "OS Error",
         )
@@ -1147,7 +1146,7 @@ def main() -> None:
 
     # Overview Panel (no user input required)
     display_panel(
-        "This utility will automatically set up a complete virtualization environment on PopOS.\n"
+        "This utility will automatically set up a complete virtualization environment on Fedora.\n"
         "It will install packages, configure networks, fix permissions, and start VMs.\n"
         "The process runs unattended and may take several minutes.",
         NordColors.FROST_2,

@@ -7,8 +7,8 @@ using new prompt / template
 
 ```
 └── 📁_scripts
-    *└── _template.md
-    *└── _to-to.md
+    └── _template.md
+    └── _to-to.md
     └── deploy_scripts.py
     └── fail2ban_toolkit.py
     └── fedora_package_installer.py
@@ -36,7 +36,7 @@ using new prompt / template
     └── universal_downloader.py
     └── update_dns_records.py
     └── update_plex.py
-    └── virtualization_setup.py
+    *└── virtualization_setup.py
     └── vm_manager.py
     └── vscode_wayland_setup.py
     └── zfs_setup.py
@@ -241,3 +241,4 @@ Below is an essential cheat sheet for using Nala. It distills the key commands a
   - `--lists` — Also remove package lists (from `/var/lib/apt/lists`).
   - `--fetch` — Remove the `nala-sources.list` file created by `nala fetch`.
   - Additional options: `--debug`, `-v, --verbose`, `-h, --help`.
+
