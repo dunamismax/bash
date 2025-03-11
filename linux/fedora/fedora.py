@@ -168,7 +168,7 @@ class Config:
         # Network utilities
         "traceroute", "mtr", "bind-utils", "iproute", "iputils", "restic", "whois", "dnsmasq", "openvpn", "wireguard-tools", "nftables", "ipcalc",
         # Enhanced shells and utilities
-        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "exa", "lsd", "mcfly", "autojump", "direnv", "zoxide", "progress", "pv", "tmux-powerline",
+        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "exa", "lsd", "autojump", "direnv", "zoxide", "progress", "pv", "tmux-powerline",
         # Container and development
         "docker", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "yarn", "autoconf", "automake", "libtool",
         # Debugging and development utilities
