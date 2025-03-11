@@ -1,41 +1,46 @@
-# Please review the following guidelines thoroughly. This reference serves as the comprehensive template for all future Python scripts you generate on my behalf. All scripts must strictly adhere to the structure, style, and best practices demonstrated below
+# Please review the following guidelines thoroughly. This reference serves as the comprehensive template for all future Python scripts you generate on my behalf. All scripts must strictly adhere to the structure, style, and best practices demonstrated below, optimized for macOS environments.
 
 Core Libraries & Features:
+- Rich: Use Rich for stylish CLI output, dynamic panels, formatted tables, and especially for progress tracking with spinners and ETAs.
+- Pyfiglet: Incorporate Pyfiglet to generate dynamic ASCII banners at startup.
+- Prompt Toolkit: Utilize prompt_toolkit for interactive command-line input with auto-completion, history, and suggestions.
+- Additional Libraries: Include any other necessary libraries to meet the task requirements, ensuring that they are installed automatically if missing.
 
-Rich: Use Rich for stylish CLI output, dynamic panels, formatted tables, and especially for progress tracking with spinners and ETAs.
-Pyfiglet: Incorporate Pyfiglet to generate dynamic ASCII banners at startup.
-Prompt Toolkit: Utilize prompt_toolkit for interactive command-line input with auto-completion, history, and suggestions.
-Paramiko: Employ Paramiko for secure SSH/SFTP operations.
-Additional Libraries: Include any other necessary libraries to meet the task requirements, ensuring that they are installed automatically if missing.
 Dependency Management:
+- At the start of every script, check for and install all required third-party Python dependencies.
+- This installation routine should:
+  - Use Homebrew for package management commands on macOS.
+  - Install missing Python packages using pip with a clear mechanism for non-root and sudo contexts.
+  - Handle macOS-specific package and path configurations.
 
-At the start of every script, check for and install all required third-party Python dependencies. This installation routine should:
-Use Nala (instead of Apt) for package management commands on PopOS.
-Be tailored to Fedora Linux as well, using DNF for package management.
-Install missing Python packages using pip with a clear mechanism for non-root and sudo contexts.
 Platform Targeting:
+- Scripts should be written primarily for macOS environments, leveraging Homebrew for package-related operations.
+- Include macOS-specific system checks and optimizations.
+- Utilize macOS-native features when appropriate (Spotlight, AppleScript, etc.).
 
-Scripts should be written primarily for Fedora environments, leveraging DNF for package related operations.
 User Interface & Experience:
+- Create polished, interactive, menu-driven CLI interfaces with dynamic ASCII banners.
+- Use Rich spinners with progress tracking, displaying time estimates (ETAs) and elapsed time for long-running operations.
+- Ensure that all interactive prompts utilize prompt_toolkit's auto-completion and history features to enhance usability.
+- Support macOS dark/light mode detection for appropriate UI theming.
 
-Create polished, interactive, menu-driven CLI interfaces with dynamic ASCII banners.
-Use Rich spinners with progress tracking, displaying time estimates (ETAs) and elapsed time for long-running operations.
-Ensure that all interactive prompts utilize prompt_toolkit’s auto-completion and history features to enhance usability.
 Robustness & Best Practices:
+- Implement comprehensive error handling, including graceful cleanup and signal handling (e.g., for SIGINT and SIGTERM).
+- Follow modular design principles with clear separation of concerns (configuration, UI, connection management, operations, etc.).
+- Include inline documentation, module docstrings, and descriptive comments to improve code readability and maintainability.
+- Maintain consistency in code style and structure as demonstrated in the reference script.
+- Account for macOS file system peculiarities, including permission handling and hidden files.
 
-Implement comprehensive error handling, including graceful cleanup and signal handling (e.g., for SIGINT and SIGTERM).
-Follow modular design principles with clear separation of concerns (configuration, UI, connection management, operations, etc.).
-Include inline documentation, module docstrings, and descriptive comments to improve code readability and maintainability.
-Maintain consistency in code style and structure as demonstrated in the reference script.
 Operational Flow:
+- Start with dependency checks and installations using Homebrew and pip.
+- Set up the environment, including any necessary configuration files and directories (respecting macOS conventions).
+- Display a dynamic header/banner using Pyfiglet and Rich.
+- Present a clear, interactive menu with comprehensive options and status indicators.
+- Incorporate progress spinners and time tracking for each operation.
+- Ensure proper cleanup of resources and connections on exit.
+- Respect macOS application sandboxing and security requirements.
 
-Start with dependency checks and installations.
-Set up the environment, including any necessary configuration files and directories.
-Display a dynamic header/banner using Pyfiglet and Rich.
-Present a clear, interactive menu with comprehensive options and status indicators.
-Incorporate progress spinners and time tracking for each operation.
-Ensure proper cleanup of resources and connections on exit.
-Please confirm that you have fully reviewed and understand this template and that all future scripts you generate will follow these guidelines.
+Please confirm that you have fully reviewed and understand this template and that all future scripts you generate will follow these guidelines, optimized specifically for macOS environments.
 
 ```python
 #!/usr/bin/env python3
