@@ -177,11 +177,9 @@ class Config:
         # Multimedia tools
         "ffmpeg", "imagemagick", "media-player-info", "audacity", "vlc", "obs-studio",
         # Database clients
-        "mariadb", "postgresql", "sqlite", "redis", "mongo-tools", "pgadmin4",
+        "mariadb", "postgresql", "sqlite", "redis", "pgadmin4",
         # Virtualization
-        "virt-manager", "qemu-kvm", "libvirt", "virtualbox", "vagrant",
-        # IDEs and advanced editors
-        "code", "sublime-text", "jetbrains-idea-community", "pycharm-community", "visual-studio-code", "android-studio",
+        "virt-manager", "qemu-kvm", "libvirt", "vagrant",
         # File compression and archiving
         "p7zip", "p7zip-plugins", "unrar", "unzip", "zip", "tar", "pigz", "lbzip2", "lz4",
         # Terminal multiplexers and prettifiers
