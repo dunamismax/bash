@@ -175,7 +175,7 @@ class Config:
         "strace", "ltrace", "valgrind", "tig", "colordiff", "the_silver_searcher",
         "xclip", "tmate", "iperf3", "httpie", "ngrep", "gron", "entr", "lsof", "socat", "psmisc",
         # Multimedia tools
-        "ffmpeg", "imagemagick", "media-player-info", "audacity", "vlc", "obs-studio",
+        "ffmpeg", "media-player-info", "audacity", "vlc", "obs-studio",
         # Database clients
         "mariadb", "postgresql", "sqlite", "redis", "pgadmin4",
         # Virtualization
