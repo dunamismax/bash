@@ -439,10 +439,14 @@ create_ssh_key() {
 # ------------------------------------------------------------------------------
 export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> "$HOME/.bash_sessions.log"'
 
-# 21. Override python command to use sudo with the pyenv Python interpreter
+# 21. Override python and pip commands to use sudo with the pyenv Python interpreter
 # ------------------------------------------------------------------------------
 python() {
     sudo -E "$(pyenv which python)" "$@"
+}
+
+pip() {
+    -E "$(pyenv which pip)" "$@"
 }
 
 ###############################################################################
