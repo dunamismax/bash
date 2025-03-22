@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
 import asyncio
-import atexit
 import datetime
 import filecmp
 import gzip
-import json
 import logging
 import os
-import platform
 import shutil
 import signal
 import subprocess
