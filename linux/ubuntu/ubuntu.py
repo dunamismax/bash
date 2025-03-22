@@ -132,7 +132,7 @@ class Config:
         "traceroute", "mtr", "bind9-utils", "iproute2", "iputils-ping", "restic", "whois", "dnsmasq", "openvpn",
         "wireguard-tools", "nftables", "ipcalc",
         # Enhanced shells and utilities
-        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "exa", "autojump", "direnv", "pv", "tmux-plugin-manager",
+        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "autojump", "direnv", "pv", "tmux-plugin-manager",
         # Container and development
         "docker.io", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "yarn", "autoconf", "automake",
         "libtool",
