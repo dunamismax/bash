@@ -114,7 +114,7 @@ class Config:
         # Shells and editors
         "bash", "vim", "nano", "screen", "tmux", "neovim", "emacs", "micro",
         # System monitoring
-        "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances", "sysstat", "atop", "powertop", "nmon", "dstat",
+        "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances", "sysstat", "atop", "powertop", "nmon",
         # Network and security
         "git", "openssh-server", "ufw", "curl", "wget", "rsync", "sudo",
         "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban", "masscan", "arp-scan", "hydra",
@@ -124,7 +124,7 @@ class Config:
         # Development tools
         "gcc", "g++", "make", "cmake", "ninja-build", "meson", "gettext", "pkg-config",
         "python3-dev", "libssl-dev", "libffi-dev", "zlib1g-dev", "libreadline-dev",
-        "libbz2-dev", "tk-dev", "xz-utils", "libncurses5-dev", "libgdbm-dev", "libnss3-dev",
+        "libbz2-dev", "tk-dev", "xz-utils", "libgdbm-dev", "libnss3-dev",
         "libxml2-dev", "xmlsec1", "clang", "llvm", "golang", "gdb",
         "cargo", "rustc", "jq", "yq", "yamllint", "shellcheck", "patch", "diffstat", "flex", "bison", "universal-ctags",
         "cscope", "linux-tools-common",
@@ -134,7 +134,7 @@ class Config:
         # Enhanced shells and utilities
         "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "autojump", "direnv", "pv", "tmux-plugin-manager",
         # Container and development
-        "docker.io", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "yarn", "autoconf", "automake",
+        "docker.io", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "autoconf", "automake",
         "libtool",
         # Debugging and development utilities
         "strace", "ltrace", "valgrind", "tig", "colordiff", "silversearcher-ag",
