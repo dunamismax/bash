@@ -66,37 +66,33 @@ class Config:
 
     PACKAGES: List[str] = field(default_factory=lambda: [
         # Shells and editors
-        "bash", "vim", "nano", "screen", "tmux", "neovim",
+        "bash", "vim", "nano", "tmux",
         # System monitoring
-        "htop", "tree", "iftop", "mtr", "iotop", "glances", "sysstat", "atop", "powertop",
+        "tree", "mtr", "iotop", "sysstat", "powertop",
         # Network and security
         "git", "openssh-server", "firewalld", "curl", "wget", "rsync", "sudo",
-        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban", "netcat", "clamav", "lynis",
+        "bash-completion", "net-tools", "nmap", "tcpdump",
         # Core utilities
         "python3", "python3-pip", "ca-certificates", "dnf-plugins-core", "gnupg2",
         # Development tools
         "gcc", "gcc-c++", "make", "cmake", "python3-devel", "openssl-devel",
         "libffi-devel", "zlib-devel", "readline-devel", "bzip2-devel", "ncurses-devel",
         # Network utilities
-        "traceroute", "mtr", "bind-utils", "iproute", "iputils", "restic", "whois",
-        "dnsmasq", "openvpn", "wireguard-tools", "nftables", "ipcalc",
-        # Enhanced shells and utilities
-        "zsh", "fzf", "ripgrep", "ncdu", "autojump", "progress", "pv",
+        "traceroute", "mtr", "bind-utils", "iproute", "iputils", "whois",
+        "dnsmasq", "wireguard-tools", "nftables", "ipcalc",
         # Container and development
         "podman", "buildah", "nodejs", "npm", "autoconf", "automake", "libtool",
         # Debugging and development utilities
-        "strace", "ltrace", "valgrind", "tig", "colordiff",
-        "tmate", "iperf3", "httpie", "ngrep", "lsof", "socat", "psmisc",
+        "strace", "ltrace", "valgrind",
+        "lsof", "socat", "psmisc",
         # Database clients
-        "mariadb", "postgresql", "sqlite", "redis",
+        "mariadb", "postgresql", "sqlite",
         # Virtualization
         "qemu-kvm", "libvirt",
         # File compression and archiving
-        "p7zip", "p7zip-plugins", "unzip", "zip", "tar", "pigz", "lbzip2", "lz4",
+        "unzip", "zip", "tar", "pigz", "lz4",
         # Terminal multiplexers and utilities
-        "byobu", "ranger", "mc",
-        # System backup and restore
-        "borgbackup", "rclone", "syncthing"
+        "mc",
     ])
 
     SSH_CONFIG: Dict[str, str] = field(default_factory=lambda: {
