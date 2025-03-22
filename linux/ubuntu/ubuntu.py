@@ -97,7 +97,6 @@ SETUP_STATUS: Dict[str, Dict[str, str]] = {
     "maintenance": {"status": "pending", "message": ""},
     "certs_perf": {"status": "pending", "message": ""},
     "permissions_storage": {"status": "pending", "message": ""},
-    "auto_updates": {"status": "pending", "message": ""},
     "cleanup_final": {"status": "pending", "message": ""},
     "final": {"status": "pending", "message": ""},
 }
@@ -118,10 +117,10 @@ class Config:
         "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances", "sysstat", "atop", "powertop", "nmon", "dstat",
         # Network and security
         "git", "openssh-server", "ufw", "curl", "wget", "rsync", "sudo",
-        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban", "masscan", "arp-scan", "hydra",
+        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban", "masscan", "netcat", "arp-scan", "hydra",
         "clamav", "lynis",
         # Core utilities
-        "python3", "python3-pip", "ca-certificates", "gnupg2", "gnupg",
+        "python3", "python3-pip", "ca-certificates", "gnupg2", "gnupg", "pinentry",
         # Development tools
         "gcc", "g++", "make", "cmake", "ninja-build", "meson", "gettext", "pkg-config",
         "python3-dev", "libssl-dev", "libffi-dev", "zlib1g-dev", "libreadline-dev",
@@ -133,7 +132,7 @@ class Config:
         "traceroute", "mtr", "bind9-utils", "iproute2", "iputils-ping", "restic", "whois", "dnsmasq", "openvpn",
         "wireguard-tools", "nftables", "ipcalc",
         # Enhanced shells and utilities
-        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "autojump", "direnv", "pv", "tmux-plugin-manager",
+        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "exa", "autojump", "direnv", "pv", "tmux-plugin-manager",
         # Container and development
         "docker.io", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "yarn", "autoconf", "automake",
         "libtool",
@@ -995,54 +994,6 @@ class UbuntuServerSetup:
             self.logger.warning("setfacl not found; skipping ACL configuration.")
         return True
 
-    async def phase_auto_updates(self) -> bool:
-        await self.print_section_async("Automatic Updates Setup")
-        status = True
-        if not await run_with_progress_async("Setting up unattended upgrades", self.setup_unattended_upgrades_async,
-                                             task_name="auto_updates"):
-            status = False
-        return status
-
-    async def setup_unattended_upgrades_async(self) -> bool:
-        try:
-            await run_command_async(["nala", "install", "-y", "unattended-upgrades"])
-            config_file = Path("/etc/apt/apt.conf.d/20auto-upgrades")
-            content = (
-                'APT::Periodic::Update-Package-Lists "1";\n'
-                'APT::Periodic::Unattended-Upgrade "1";\n'
-                'APT::Periodic::Download-Upgradeable-Packages "1";\n'
-                'APT::Periodic::AutocleanInterval "7";\n'
-            )
-
-            if config_file.exists():
-                await self.backup_file_async(config_file)
-
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: config_file.write_text(content))
-
-            unattended_file = Path("/etc/apt/apt.conf.d/50unattended-upgrades")
-            if unattended_file.exists():
-                await self.backup_file_async(unattended_file)
-                unattended_content = await loop.run_in_executor(None, lambda: unattended_file.read_text())
-                if "Unattended-Upgrade::Automatic-Reboot" in unattended_content:
-                    updated_content = []
-                    for line in unattended_content.splitlines():
-                        if "Unattended-Upgrade::Automatic-Reboot" in line and line.strip().startswith("//"):
-                            updated_content.append('Unattended-Upgrade::Automatic-Reboot "false";')
-                        else:
-                            updated_content.append(line)
-                    await loop.run_in_executor(None, lambda: unattended_file.write_text("\n".join(updated_content)))
-                    self.logger.info("Configured unattended upgrades without automatic reboots.")
-
-            await run_command_async(["systemctl", "enable", "unattended-upgrades"])
-            await run_command_async(["systemctl", "restart", "unattended-upgrades"])
-
-            self.logger.info("Unattended upgrades configured successfully.")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to configure unattended upgrades: {e}")
-            return False
-
     async def phase_cleanup_final(self) -> bool:
         await self.print_section_async("Cleanup & Final Configurations")
         status = True
@@ -1183,7 +1134,6 @@ async def main_async() -> None:
         await setup.phase_security_hardening()
         await setup.phase_user_customization()
         await setup.phase_permissions_storage()
-        await setup.phase_auto_updates()
         await setup.phase_cleanup_final()
         await setup.phase_final_checks()
     except KeyboardInterrupt:
