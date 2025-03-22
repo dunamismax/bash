@@ -58,7 +58,7 @@ T = TypeVar("T")
 @dataclass
 class Config:
     LOG_FILE: str = "/var/log/el_setup.log"
-    USERNAME: str = "admin"
+    USERNAME: str = "sawyer"
     USER_HOME: Path = field(default_factory=lambda: Path("/home/sawyer"))
 
     PACKAGES: List[str] = field(default_factory=lambda: [
