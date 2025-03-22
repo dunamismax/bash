@@ -132,7 +132,7 @@ class Config:
         "traceroute", "mtr", "bind9-utils", "iproute2", "iputils-ping", "restic", "whois", "dnsmasq", "openvpn",
         "wireguard-tools", "nftables", "ipcalc",
         # Enhanced shells and utilities
-        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "autojump", "direnv", "pv", "tmux-plugin-manager",
+        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "exa", "autojump", "direnv", "pv", "tmux-plugin-manager",
         # Container and development
         "docker.io", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "yarn", "autoconf", "automake",
         "libtool",
@@ -657,6 +657,8 @@ class UbuntuServerSetup:
     async def install_packages_async(self) -> Tuple[List[str], List[str]]:
         self.logger.info("Checking for required packages...")
         missing, success, failed = [], [], []
+
+        # First check which packages are already installed
         for pkg in self.config.PACKAGES:
             try:
                 result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
@@ -668,33 +670,60 @@ class UbuntuServerSetup:
             except Exception:
                 missing.append(pkg)
 
-        if missing:
-            self.logger.info(f"Installing missing packages: {' '.join(missing)}")
+        if not missing:
+            self.logger.info("All required packages are installed.")
+            return success, failed
+
+        # Install packages in smaller batches to avoid dependency issues
+        self.logger.info(f"Found {len(missing)} packages to install")
+
+        # Define batch size - smaller batches are safer but slower
+        batch_size = 5
+
+        # Create batches of packages
+        batches = [missing[i:i + batch_size] for i in range(0, len(missing), batch_size)]
+        self.logger.info(f"Installing packages in {len(batches)} batches of up to {batch_size} packages each")
+
+        for i, batch in enumerate(batches):
+            self.logger.info(f"Installing batch {i + 1}/{len(batches)}: {' '.join(batch)}")
             try:
-                await run_command_async(["nala", "install", "-y"] + missing)
-                self.logger.info("Missing packages installed successfully.")
-                for pkg in missing:
+                await run_command_async(["nala", "install", "-y"] + batch)
+                # Verify installation succeeded
+                for pkg in batch:
                     try:
-                        result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
-                        if result.returncode == 0:
+                        verify_result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
+                        if verify_result.returncode == 0:
+                            self.logger.info(f"Successfully installed: {pkg}")
                             success.append(pkg)
                         else:
+                            self.logger.warning(f"Failed to install: {pkg}")
                             failed.append(pkg)
-                    except Exception:
+                    except Exception as e:
+                        self.logger.warning(f"Error verifying installation of {pkg}: {e}")
                         failed.append(pkg)
             except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to install packages: {e}")
-                for pkg in missing:
+                self.logger.error(f"Failed to install batch: {e}")
+                for pkg in batch:
+                    # Try installing individual packages within the failed batch
+                    self.logger.info(f"Attempting to install {pkg} individually")
                     try:
-                        result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
-                        if result.returncode == 0:
+                        await run_command_async(["nala", "install", "-y", pkg])
+                        verify_result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
+                        if verify_result.returncode == 0:
+                            self.logger.info(f"Successfully installed: {pkg}")
                             success.append(pkg)
                         else:
+                            self.logger.warning(f"Failed to install: {pkg}")
                             failed.append(pkg)
-                    except Exception:
+                    except Exception as pkg_e:
+                        self.logger.warning(f"Could not install {pkg}: {pkg_e}")
                         failed.append(pkg)
-        else:
-            self.logger.info("All required packages are installed.")
+
+        # Log summary
+        self.logger.info(f"Package installation summary: {len(success)} succeeded, {len(failed)} failed")
+        if failed:
+            self.logger.warning(f"Failed to install: {', '.join(failed)}")
+
         return success, failed
 
     async def phase_repo_shell_setup(self) -> bool:
