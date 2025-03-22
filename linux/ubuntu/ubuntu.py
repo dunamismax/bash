@@ -118,10 +118,10 @@ class Config:
         "htop", "btop", "tree", "iftop", "mtr", "iotop", "glances", "sysstat", "atop", "powertop", "nmon", "dstat",
         # Network and security
         "git", "openssh-server", "ufw", "curl", "wget", "rsync", "sudo",
-        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban", "masscan", "netcat", "arp-scan", "hydra",
+        "bash-completion", "net-tools", "nmap", "tcpdump", "fail2ban", "masscan", "arp-scan", "hydra",
         "clamav", "lynis",
         # Core utilities
-        "python3", "python3-pip", "ca-certificates", "gnupg2", "gnupg", "pinentry",
+        "python3", "python3-pip", "ca-certificates", "gnupg2", "gnupg",
         # Development tools
         "gcc", "g++", "make", "cmake", "ninja-build", "meson", "gettext", "pkg-config",
         "python3-dev", "libssl-dev", "libffi-dev", "zlib1g-dev", "libreadline-dev",
@@ -133,7 +133,7 @@ class Config:
         "traceroute", "mtr", "bind9-utils", "iproute2", "iputils-ping", "restic", "whois", "dnsmasq", "openvpn",
         "wireguard-tools", "nftables", "ipcalc",
         # Enhanced shells and utilities
-        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "exa", "autojump", "direnv", "pv", "tmux-plugin-manager",
+        "zsh", "fzf", "bat", "ripgrep", "ncdu", "fd-find", "autojump", "direnv", "pv", "tmux-plugin-manager",
         # Container and development
         "docker.io", "docker-compose", "podman", "buildah", "skopeo", "nodejs", "npm", "yarn", "autoconf", "automake",
         "libtool",
