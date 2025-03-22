@@ -59,7 +59,7 @@ T = TypeVar("T")
 class Config:
     LOG_FILE: str = "/var/log/el_setup.log"
     USERNAME: str = "admin"
-    USER_HOME: Path = field(default_factory=lambda: Path("/home/admin"))
+    USER_HOME: Path = field(default_factory=lambda: Path("/home/sawyer"))
 
     PACKAGES: List[str] = field(default_factory=lambda: [
         # Shells and editors
