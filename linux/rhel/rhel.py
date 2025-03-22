@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
 import asyncio
-import atexit
 import datetime
 import filecmp
 import gzip
-import json
 import logging
 import os
-import platform
 import shutil
 import signal
 import subprocess
@@ -38,7 +35,7 @@ except ImportError:
 
 console = Console()
 OPERATION_TIMEOUT = 300  # default timeout in seconds
-APP_NAME = "RHEL/AlmaLinux Setup & Hardening"
+APP_NAME = "Enterprise Linux Setup & Hardening"
 VERSION = "1.0.0"
 
 SETUP_STATUS = {
@@ -60,7 +57,7 @@ T = TypeVar("T")
 
 @dataclass
 class Config:
-    LOG_FILE: str = "/var/log/rhel_setup.log"
+    LOG_FILE: str = "/var/log/el_setup.log"
     USERNAME: str = "admin"
     USER_HOME: Path = field(default_factory=lambda: Path("/home/admin"))
 
@@ -113,7 +110,7 @@ class Config:
 def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
     log_file = Path(log_file)
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("rhel_setup")
+    logger = logging.getLogger("el_setup")
     logger.setLevel(logging.DEBUG)
     for h in logger.handlers[:]:
         logger.removeHandler(h)
@@ -134,7 +131,7 @@ def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
 
 async def signal_handler_async(signum: int, frame: Any) -> None:
     sig = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
-    logger = logging.getLogger("rhel_setup")
+    logger = logging.getLogger("el_setup")
     logger.error(f"Script interrupted by {sig}. Initiating cleanup.")
     try:
         if "setup_instance" in globals():
@@ -161,7 +158,7 @@ def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
 
 async def download_file_async(url: str, dest: Union[str, Path], timeout: int = 300) -> None:
     dest = Path(dest)
-    logger = logging.getLogger("rhel_setup")
+    logger = logging.getLogger("el_setup")
     if dest.exists():
         logger.info(f"File {dest} already exists; skipping download.")
         return
@@ -247,7 +244,7 @@ async def run_command_async(
         check: bool = True,
         timeout: Optional[int] = OPERATION_TIMEOUT,
 ) -> subprocess.CompletedProcess:
-    logger = logging.getLogger("rhel_setup")
+    logger = logging.getLogger("el_setup")
     logger.debug(f"Running command: {' '.join(cmd)}")
     stdout = asyncio.subprocess.PIPE if capture_output else None
     stderr = asyncio.subprocess.PIPE if capture_output else None
@@ -280,7 +277,7 @@ async def command_exists_async(cmd: str) -> bool:
         return False
 
 
-class RHELAlmaLinuxSetup:
+class EnterpriseLinuxSetup:
     def __init__(self, config: Config = Config()):
         self.config = config
         self.logger = setup_logger(self.config.LOG_FILE)
@@ -390,17 +387,24 @@ class RHELAlmaLinuxSetup:
             if os.path.exists("/etc/redhat-release"):
                 with open("/etc/redhat-release", "r") as f:
                     release = f.read().strip()
-                self.logger.info(f"Detected RedHat-based system: {release}")
+                if "Rocky Linux" in release:
+                    self.logger.info(f"Detected Rocky Linux: {release}")
+                elif "AlmaLinux" in release:
+                    self.logger.info(f"Detected AlmaLinux: {release}")
+                elif "Red Hat Enterprise Linux" in release:
+                    self.logger.info(f"Detected Red Hat Enterprise Linux: {release}")
+                else:
+                    self.logger.info(f"Detected RedHat-based system: {release}")
             else:
-                self.logger.warning("This may not be a RHEL/AlmaLinux system. Some features may not work.")
+                self.logger.warning("This may not be a RHEL-compatible system. Some features may not work.")
         except Exception as e:
-            self.logger.warning(f"Could not verify RHEL/AlmaLinux: {e}")
+            self.logger.warning(f"Could not verify distribution: {e}")
 
     async def save_config_snapshot_async(self) -> Optional[str]:
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         backup_dir = Path("/var/backups")
         backup_dir.mkdir(exist_ok=True)
-        snapshot_file = backup_dir / f"rhel_config_snapshot_{timestamp}.tar.gz"
+        snapshot_file = backup_dir / f"el_config_snapshot_{timestamp}.tar.gz"
         try:
             loop = asyncio.get_running_loop()
             files_added = []
@@ -554,12 +558,22 @@ class RHELAlmaLinuxSetup:
     async def copy_shell_configs_async(self) -> bool:
         source_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "rhel" / "dotfiles"
         if not source_dir.is_dir():
-            self.logger.warning(f"RHEL-specific dotfiles not found in {source_dir}.")
-            source_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "fedora" / "dotfiles"
-            if not source_dir.is_dir():
-                self.logger.error(f"Fallback dotfiles not found in {source_dir}.")
-                return False
-            self.logger.info(f"Using Fedora dotfiles as fallback from {source_dir}.")
+            rocky_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "rocky" / "dotfiles"
+            if rocky_dir.is_dir():
+                source_dir = rocky_dir
+                self.logger.info(f"Using Rocky Linux dotfiles from {source_dir}.")
+            else:
+                alma_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "alma" / "dotfiles"
+                if alma_dir.is_dir():
+                    source_dir = alma_dir
+                    self.logger.info(f"Using AlmaLinux dotfiles from {source_dir}.")
+                else:
+                    fallback_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "fedora" / "dotfiles"
+                    if not fallback_dir.is_dir():
+                        self.logger.error(f"No suitable dotfiles found.")
+                        return False
+                    source_dir = fallback_dir
+                    self.logger.info(f"Using Fedora dotfiles as fallback from {source_dir}.")
 
         destination_dirs = [self.config.USER_HOME, Path("/root")]
         overall = True
@@ -775,11 +789,22 @@ class RHELAlmaLinuxSetup:
     async def deploy_user_scripts_async(self) -> bool:
         src = self.config.USER_HOME / "github" / "bash" / "linux" / "rhel" / "_scripts"
         if not src.is_dir():
-            src = self.config.USER_HOME / "github" / "bash" / "linux" / "fedora" / "_scripts"
-            if not src.is_dir():
-                self.logger.error(f"Script source directory {src} does not exist.")
-                return False
-            self.logger.info(f"Using Fedora scripts as fallback from {src}.")
+            rocky_src = self.config.USER_HOME / "github" / "bash" / "linux" / "rocky" / "_scripts"
+            if rocky_src.is_dir():
+                src = rocky_src
+                self.logger.info(f"Using Rocky Linux scripts from {src}.")
+            else:
+                alma_src = self.config.USER_HOME / "github" / "bash" / "linux" / "alma" / "_scripts"
+                if alma_src.is_dir():
+                    src = alma_src
+                    self.logger.info(f"Using AlmaLinux scripts from {src}.")
+                else:
+                    fedora_src = self.config.USER_HOME / "github" / "bash" / "linux" / "fedora" / "_scripts"
+                    if not fedora_src.is_dir():
+                        self.logger.error(f"Script source directory not found.")
+                        return False
+                    src = fedora_src
+                    self.logger.info(f"Using Fedora scripts as fallback from {src}.")
 
         target = self.config.USER_HOME / "bin"
         target.mkdir(exist_ok=True)
@@ -873,6 +898,15 @@ class RHELAlmaLinuxSetup:
             info["distribution"] = distro
         except Exception as e:
             self.logger.warning(f"Failed to get distribution info: {e}")
+            try:
+                os_release = await run_command_async(["cat", "/etc/os-release"], capture_output=True, text=True)
+                pretty_name = next((line.split('=')[1].strip().strip('"') for line in os_release.stdout.splitlines()
+                                    if line.startswith('PRETTY_NAME=')), "Unknown")
+                self.logger.info(f"Distribution from os-release: {pretty_name}")
+                info["distribution"] = pretty_name
+            except Exception as e2:
+                self.logger.warning(f"Failed to get distribution from os-release: {e2}")
+                info["distribution"] = "Unknown"
         try:
             uptime = await run_command_async(["uptime", "-p"], capture_output=True, text=True)
             self.logger.info(f"System uptime: {uptime.stdout.strip()}")
@@ -898,7 +932,7 @@ class RHELAlmaLinuxSetup:
 
 async def main_async() -> None:
     try:
-        setup = RHELAlmaLinuxSetup()
+        setup = EnterpriseLinuxSetup()
         global setup_instance
         setup_instance = setup
         await setup.check_root_async()
