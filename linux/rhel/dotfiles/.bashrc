@@ -1,5 +1,5 @@
 ###############################################################################
-# ~/.bashrc – Enhanced Fedora Bash Configuration with Nord Theme
+# ~/.bashrc – Enhanced RHEL Bash Configuration with Nord Theme
 ###############################################################################
 
 # 0. Exit if not running in an interactive shell
@@ -8,7 +8,7 @@
 # 1. Environment Variables, PATH, and Shell Options
 # ------------------------------------------------------------------------------
 # Prepend essential directories to PATH
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$HOME/go/bin:$PATH"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
 # Enable useful Bash options (ignoring errors for unsupported options)
 shopt -s checkwinsize histappend cmdhist autocd cdspell dirspell globstar nocaseglob extglob histverify 2>/dev/null || true
@@ -18,10 +18,6 @@ export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
-
-# Wayland settings (if using Wayland)
-export QT_QPA_PLATFORM=wayland
-export XDG_SESSION_TYPE=wayland
 
 # Set default editor and pager (prefer nvim > vim > nano)
 if command -v nvim >/dev/null 2>&1; then
@@ -84,14 +80,26 @@ PROMPT_COMMAND='history -a'
 
 # 4. System Information & Greeting
 # ------------------------------------------------------------------------------
-if command -v fastfetch >/dev/null 2>&1; then
-    echo -e "\n"
-    fastfetch
-    echo -e "\n"
-elif command -v neofetch >/dev/null 2>&1; then
-    echo -e "\n"
-    neofetch
-    echo -e "\n"
+# Use a lightweight ASCII header for server environments
+print_header() {
+    local distro
+    if [ -f /etc/redhat-release ]; then
+        distro=$(cat /etc/redhat-release)
+    else
+        distro="Unknown RHEL-based system"
+    fi
+
+    echo -e "\n${NORD8}┌──────────────────────────────────────────────────────┐${RESET}"
+    echo -e "${NORD8}│${RESET} Hostname: ${NORD7}$(hostname)${RESET}"
+    echo -e "${NORD8}│${RESET} OS:       ${NORD7}${distro}${RESET}"
+    echo -e "${NORD8}│${RESET} Kernel:   ${NORD7}$(uname -r)${RESET}"
+    echo -e "${NORD8}│${RESET} Uptime:   ${NORD7}$(uptime -p | sed 's/^up //')${RESET}"
+    echo -e "${NORD8}└──────────────────────────────────────────────────────┘${RESET}\n"
+}
+
+# Only run system info on login shells to avoid slowing down new terminal instances
+if shopt -q login_shell 2>/dev/null || [ "${SHLVL:-0}" -le 1 ]; then
+    print_header
 fi
 
 # 5. Development Environment Setup
@@ -120,7 +128,7 @@ if command -v lesspipe >/dev/null 2>&1; then
     eval "$(SHELL=/bin/sh lesspipe)"
 fi
 
-# 7. Prompt Customization – (PS1 remains as originally set)
+# 7. Prompt Customization (kept the same as requested)
 # ------------------------------------------------------------------------------
 export PS1="[${NORD7}\u${RESET}@${NORD7}\h${RESET}] [${NORD9}\w${RESET}] ${NORD10}> ${NORD6} "
 
@@ -183,8 +191,64 @@ alias gf='git fetch'
 alias glog='git log --oneline --graph --decorate'
 alias gsw='git switch'
 
-# 12. Miscellaneous Aliases for Common Tasks
+# 12. RHEL-Specific Aliases and Utilities
 # ------------------------------------------------------------------------------
+# Package management
+if command -v dnf >/dev/null 2>&1; then
+    alias update='sudo dnf update -y'
+    alias install='sudo dnf install -y'
+    alias search='sudo dnf search'
+    alias remove='sudo dnf remove'
+    alias clean='sudo dnf clean all'
+    alias autoremove='sudo dnf autoremove -y'
+    alias repolist='sudo dnf repolist'
+    alias dnf-history='sudo dnf history'
+elif command -v yum >/dev/null 2>&1; then
+    alias update='sudo yum update -y'
+    alias install='sudo yum install -y'
+    alias search='sudo yum search'
+    alias remove='sudo yum remove'
+    alias clean='sudo yum clean all'
+    alias autoremove='sudo yum autoremove -y'
+    alias repolist='sudo yum repolist'
+    alias yum-history='sudo yum history'
+fi
+
+# SELinux shortcuts
+alias selinux-status='sestatus'
+alias selinux-enforce='sudo setenforce 1'
+alias selinux-permissive='sudo setenforce 0'
+alias selinux-list-booleans='sudo getsebool -a'
+alias selinux-list-ports='sudo semanage port -l'
+alias selinux-allow-port='sudo semanage port -a -t'
+alias selinux-audit2allow='sudo audit2allow -a'
+alias selinux-apply-policy='sudo audit2allow -a -M mypol && sudo semodule -i mypol.pp'
+
+# Service management
+alias services='systemctl list-units --type=service'
+alias enabled-services='systemctl list-unit-files --state=enabled'
+alias journal='journalctl -xe'
+alias journal-boot='journalctl -b'
+alias journal-errors='journalctl -p err..emerg'
+alias journal-follow='journalctl -f'
+alias service-status='systemctl status'
+alias service-start='sudo systemctl start'
+alias service-stop='sudo systemctl stop'
+alias service-restart='sudo systemctl restart'
+alias service-enable='sudo systemctl enable'
+alias service-disable='sudo systemctl disable'
+
+# Firewall management
+alias firewall-status='sudo firewall-cmd --state'
+alias firewall-list='sudo firewall-cmd --list-all'
+alias firewall-list-ports='sudo firewall-cmd --list-ports'
+alias firewall-list-services='sudo firewall-cmd --list-services'
+alias firewall-add-port='sudo firewall-cmd --add-port'
+alias firewall-add-service='sudo firewall-cmd --add-service'
+alias firewall-reload='sudo firewall-cmd --reload'
+alias firewall-permanent='sudo firewall-cmd --permanent'
+
+# Miscellaneous Aliases for Common Tasks
 alias h='history'
 alias j='jobs -l'
 alias path='echo -e ${PATH//:/\\n}'
@@ -207,8 +271,23 @@ alias webserver='python3 -m http.server'
 alias ports-in-use='sudo netstat -tulanp'
 alias speedtest='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python3 -'
 
-# Docker Shortcuts (if docker is installed)
-if command -v docker >/dev/null 2>&1; then
+# Podman Shortcuts (preferred over Docker in RHEL 8+)
+if command -v podman >/dev/null 2>&1; then
+    alias d='podman'
+    alias dc='podman-compose'
+    alias dps='podman ps'
+    alias di='podman images'
+    alias drm='podman rm'
+    alias drmi='podman rmi'
+    alias dexec='podman exec -it'
+    alias dlogs='podman logs'
+    alias dstop='podman stop'
+    alias dstart='podman start'
+    alias dc-up='podman-compose up -d'
+    alias dc-down='podman-compose down'
+    alias dc-logs='podman-compose logs -f'
+# Fallback to Docker if Podman isn't available
+elif command -v docker >/dev/null 2>&1; then
     alias d='docker'
     alias dc='docker-compose'
     alias dps='docker ps'
@@ -285,9 +364,8 @@ mktempdir() {
 }
 serve()     { local port="${1:-8000}"; echo "Serving HTTP on port ${port}..."; python3 -m http.server "$port"; }
 
-# New utility functions
+# File sharing via transfer.sh
 transfer() {
-    # Easy file sharing via transfer.sh
     if [ $# -eq 0 ]; then
         echo "No arguments specified."
         return 1
@@ -326,6 +404,60 @@ countdown() {
         : $((secs--))
     done
     printf "\rCountdown finished!         \n"
+}
+
+# RHEL-specific functions
+check_updates() {
+    echo "Checking for system updates..."
+    if command -v dnf >/dev/null 2>&1; then
+        sudo dnf check-update
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum check-update
+    else
+        echo "No package manager found."
+    fi
+}
+
+update_system() {
+    echo "Updating system packages..."
+    if command -v dnf >/dev/null 2>&1; then
+        sudo dnf update -y
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum update -y
+    else
+        echo "No package manager found."
+    fi
+    echo "System update complete."
+}
+
+# SELinux specific helper functions
+selinux_troubleshoot() {
+    echo "Analyzing SELinux issues..."
+    sudo ausearch -m avc -ts today
+    echo -e "\nTo create a policy module to allow this access, run:"
+    echo "sudo ausearch -m avc -ts today | sudo audit2allow -M mymodule"
+    echo "sudo semodule -i mymodule.pp"
+}
+
+selinux_set_context() {
+    if [ -z "$2" ]; then
+        echo "Usage: selinux_set_context [file/directory] [context]"
+        echo "Example: selinux_set_context /var/www/html httpd_sys_content_t"
+        return 1
+    fi
+
+    sudo chcon -R -t "$2" "$1"
+    echo "Context $2 applied to $1"
+}
+
+selinux_reset_context() {
+    if [ -z "$1" ]; then
+        echo "Usage: selinux_reset_context [file/directory]"
+        return 1
+    fi
+
+    sudo restorecon -Rv "$1"
+    echo "SELinux context restored for $1"
 }
 
 # Directory bookmarks
@@ -383,7 +515,7 @@ if [ -d "$HOME/.bashrc.d" ]; then
     done
 fi
 
-# 17. Source Additional Environment Settings
+# 17. Server-Specific Environment Settings
 # ------------------------------------------------------------------------------
 [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
 
@@ -399,8 +531,10 @@ cleanup_system() {
     echo "Cleaning up system..."
     if command -v dnf >/dev/null 2>&1; then
         sudo dnf clean all && sudo dnf autoremove -y
+    elif command -v yum >/dev/null 2>&1; then
+        sudo yum clean all && sudo yum autoremove -y
     else
-        echo "No dnf package manager found."
+        echo "No supported package manager found."
     fi
     sudo journalctl --vacuum-time=7d
     echo "Done cleaning up system."
@@ -413,6 +547,29 @@ mem_usage() {
 find_large_files() {
     local size="${1:-+100M}"
     find / -type f -size "$size" -exec ls -lh {} \; 2>/dev/null | sort -k5,5hr | head -n 20
+}
+
+# Quick system status overview
+system_status() {
+    echo -e "${NORD8}System Status Overview${RESET}"
+    echo -e "${NORD7}----------------------------------${RESET}"
+    echo -e "${NORD9}Hostname:${RESET} $(hostname)"
+    echo -e "${NORD9}Uptime:${RESET} $(uptime -p)"
+    echo -e "${NORD9}Load:${RESET} $(uptime | awk '{print $(NF-2)" "$(NF-1)" "$(NF-0)}' | sed 's/,//g')"
+    echo -e "${NORD9}Memory:${RESET}"
+    free -h | grep -v + | sed 's/^/  /'
+    echo -e "${NORD9}Storage:${RESET}"
+    df -h -t xfs -t ext4 | grep -v tmpfs | sed 's/^/  /'
+    echo -e "${NORD9}Network:${RESET}"
+    ip -br address show | grep -v "^lo" | sed 's/^/  /'
+
+    # Check services (if systemctl is available)
+    if command -v systemctl >/dev/null 2>&1; then
+        echo -e "${NORD9}Services Status:${RESET}"
+        systemctl list-units --failed --no-pager --plain | head -n 10 | sed 's/^/  /'
+    fi
+
+    echo -e "${NORD7}----------------------------------${RESET}"
 }
 
 # 19. SSH Key Management
@@ -429,25 +586,19 @@ list_ssh_keys() {
 create_ssh_key() {
     local name="${1:-id_rsa}"
     local email="${2:-${USER}@${HOSTNAME}}"
-    ssh-keygen -t rsa -b 4096 -C "$email" -f "$HOME/.ssh/$name"
+    ssh-keygen -t ed25519 -a 100 -C "$email" -f "$HOME/.ssh/$name"
     echo "Created new SSH key: $HOME/.ssh/$name"
     echo "Public key:"
     cat "$HOME/.ssh/$name.pub"
 }
 
-# 20. Final PROMPT_COMMAND Consolidation (Session Logging)
+# 20. Final PROMPT_COMMAND Consolidation (Session Logging with hostname and user)
 # ------------------------------------------------------------------------------
-export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> "$HOME/.bash_sessions.log"'
+if [ ! -d "$HOME/.logs" ]; then
+    mkdir -p "$HOME/.logs"
+fi
 
-# 21. Override python and pip commands to use sudo with the pyenv Python interpreter
-# ------------------------------------------------------------------------------
-python() {
-    sudo -E "$(pyenv which python)" "$@"
-}
-
-pip() {
-    -E "$(pyenv which pip)" "$@"
-}
+export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n$(history 1 | cut -c8-)" >> "$HOME/.logs/bash-history-$(date +%Y%m).log"'
 
 ###############################################################################
 # End of ~/.bashrc
