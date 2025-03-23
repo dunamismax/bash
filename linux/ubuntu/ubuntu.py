@@ -150,7 +150,7 @@ class Config:
         "puppet-agent", "ansible", "cfengine3",
 
         # Web servers and proxies
-        "nginx", "apache2-utils", "haproxy", "squid", "varnish", "caddy",
+        "nginx", "apache2-utils", "haproxy", "squid", "varnish",
         "lighttpd", "tinyproxy",
     ])
 
