@@ -80,8 +80,8 @@ class Config:
 
         # System monitoring and performance analysis
         "tree", "mtr", "iotop", "sysstat", "powertop", "htop", "atop", "glances",
-        "ncdu", "dstat", "nmon", "vmstat", "iftop", "nethogs", "bmon", "bpytop",
-        "btop", "stress-ng", "iperf3",
+        "ncdu", "dstat", "nmon", "iftop", "nethogs", "bmon", "bpytop",
+        "btop", "stress-ng",
 
         # Network and security
         "git", "openssh-server", "ufw", "fail2ban", "curl", "wget", "rsync", "sudo",
@@ -95,9 +95,9 @@ class Config:
         "apt-file", "apt-utils", "debian-goodies", "locales", "systemd-timesyncd",
 
         # Modern shell utilities
-        "ripgrep", "fd-find", "bat", "exa", "fzf", "tldr", "jq", "ncurses-term",
+        "ripgrep", "fd-find", "bat", "fzf", "tldr", "jq", "ncurses-term",
         "grc", "ranger", "thefuck", "neofetch", "htop", "glances", "byobu",
-        "zoxide", "direnv", "micro", "hexyl", "sd", "xsv", "duf", "tokei",
+        "zoxide", "direnv", "micro", "hexyl", "sd", "duf",
 
         # Development tools
         "gcc", "g++", "make", "cmake", "python3-dev", "libssl-dev", "shellcheck",
@@ -109,12 +109,12 @@ class Config:
         "traceroute", "mtr", "dnsutils", "iproute2", "iputils-ping", "whois",
         "dnsmasq", "wireguard", "nftables", "ipcalc", "netcat-openbsd", "socat",
         "bridge-utils", "nload", "oping", "arping", "httpie", "speedtest-cli",
-        "aria2", "dnsmasq", "mosh", "tcpflow", "tcpreplay", "tshark", "wireshark-cli",
+        "aria2", "dnsmasq", "mosh", "tcpflow", "tcpreplay", "tshark",
         "vnstat", "iptraf-ng", "mitmproxy", "lldpd",
 
         # Container and development
         "podman", "buildah", "skopeo", "nodejs", "npm", "autoconf", "automake", "libtool",
-        "docker.io", "docker-compose", "lxc", "ansible", "cloud-init", "terraform",
+        "docker.io", "docker-compose", "lxc", "ansible", "cloud-init",
 
         # Debugging and development utilities
         "strace", "ltrace", "valgrind", "gdb", "lsof", "socat", "psmisc", "pv",
@@ -122,8 +122,8 @@ class Config:
         "smartmontools", "nvme-cli",
 
         # Database clients
-        "mariadb-client", "postgresql-client", "sqlite3", "redis-tools", "mongodb-clients",
-        "mysql-client", "cassandra-tools",
+        "mariadb-client", "postgresql-client", "sqlite3", "redis-tools",
+        "mysql-client",
 
         # Virtualization
         "qemu-kvm", "libvirt-daemon-system", "virt-manager", "virt-viewer", "virt-top",
@@ -131,7 +131,7 @@ class Config:
 
         # File compression and archiving
         "unzip", "zip", "tar", "pigz", "lz4", "xz-utils", "bzip2", "p7zip-full",
-        "zstd", "gzip", "cpio", "pax", "rzip", "arj", "unrar", "rar", "lzop",
+        "zstd", "gzip", "cpio", "pax", "rzip", "arj", "unrar", "lzop",
 
         # Terminal multiplexers and utilities
         "mc", "ranger", "tmux", "byobu", "multitail", "ccze", "colordiff",
@@ -147,7 +147,7 @@ class Config:
 
         # Monitoring and configuration management
         "prometheus-node-exporter", "collectd-core", "nagios-plugins-basic",
-        "puppet-agent", "salt-minion", "ansible", "chef", "cfengine3",
+        "puppet-agent", "ansible", "cfengine3",
 
         # Web servers and proxies
         "nginx", "apache2-utils", "haproxy", "squid", "varnish", "caddy",
