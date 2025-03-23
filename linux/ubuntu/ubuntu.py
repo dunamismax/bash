@@ -76,33 +76,82 @@ class Config:
 
     PACKAGES: List[str] = field(default_factory=lambda: [
         # Shells and editors
-        "bash", "vim", "nano", "tmux",
-        # System monitoring
-        "tree", "mtr", "iotop", "sysstat", "powertop",
+        "bash", "vim", "vim-nox", "nano", "tmux", "screen", "zsh", "emacs-nox",
+
+        # System monitoring and performance analysis
+        "tree", "mtr", "iotop", "sysstat", "powertop", "htop", "atop", "glances",
+        "ncdu", "dstat", "nmon", "vmstat", "iftop", "nethogs", "bmon", "bpytop",
+        "btop", "stress-ng", "iperf3",
+
         # Network and security
-        "git", "openssh-server", "ufw", "curl", "wget", "rsync", "sudo",
-        "bash-completion", "net-tools", "nmap", "tcpdump",
+        "git", "openssh-server", "ufw", "fail2ban", "curl", "wget", "rsync", "sudo",
+        "bash-completion", "net-tools", "nmap", "tcpdump", "iptables", "whois",
+        "nftables", "openssl", "lynis", "sshfs", "openvpn", "wireguard", "ethtool",
+        "ca-certificates", "gnupg2", "gpg", "certbot", "acl", "apparmor-utils",
+
         # Core utilities
-        "python3", "python3-pip", "ca-certificates", "gnupg2",
+        "python3", "python3-pip", "python3-venv", "cron", "at", "parallel", "moreutils",
+        "util-linux", "kbd", "debsums", "nala", "dnsutils", "apt-transport-https",
+        "apt-file", "apt-utils", "debian-goodies", "locales", "systemd-timesyncd",
+
+        # Modern shell utilities
+        "ripgrep", "fd-find", "bat", "exa", "fzf", "tldr", "jq", "ncurses-term",
+        "grc", "ranger", "thefuck", "neofetch", "htop", "glances", "byobu",
+        "zoxide", "direnv", "micro", "hexyl", "sd", "xsv", "duf", "tokei",
+
         # Development tools
-        "gcc", "g++", "make", "cmake", "python3-dev", "libssl-dev",
+        "gcc", "g++", "make", "cmake", "python3-dev", "libssl-dev", "shellcheck",
         "libffi-dev", "zlib1g-dev", "libreadline-dev", "libbz2-dev", "libncurses-dev",
+        "build-essential", "pkg-config", "manpages-dev", "git-extras", "clang",
+        "llvm", "golang", "rust-all", "cargo", "gdb", "strace", "ltrace",
+
         # Network utilities
         "traceroute", "mtr", "dnsutils", "iproute2", "iputils-ping", "whois",
-        "dnsmasq", "wireguard", "nftables", "ipcalc",
+        "dnsmasq", "wireguard", "nftables", "ipcalc", "netcat-openbsd", "socat",
+        "bridge-utils", "nload", "oping", "arping", "httpie", "speedtest-cli",
+        "aria2", "dnsmasq", "mosh", "tcpflow", "tcpreplay", "tshark", "wireshark-cli",
+        "vnstat", "iptraf-ng", "mitmproxy", "lldpd",
+
         # Container and development
-        "podman", "buildah", "nodejs", "npm", "autoconf", "automake", "libtool",
+        "podman", "buildah", "skopeo", "nodejs", "npm", "autoconf", "automake", "libtool",
+        "docker.io", "docker-compose", "lxc", "ansible", "cloud-init", "terraform",
+
         # Debugging and development utilities
-        "strace", "ltrace", "valgrind",
-        "lsof", "socat", "psmisc",
+        "strace", "ltrace", "valgrind", "gdb", "lsof", "socat", "psmisc", "pv",
+        "lshw", "hwinfo", "dmidecode", "sysfsutils", "inxi", "logrotate", "logwatch",
+        "smartmontools", "nvme-cli",
+
         # Database clients
-        "mariadb-client", "postgresql-client", "sqlite3",
+        "mariadb-client", "postgresql-client", "sqlite3", "redis-tools", "mongodb-clients",
+        "mysql-client", "cassandra-tools",
+
         # Virtualization
-        "qemu-kvm", "libvirt-daemon-system",
+        "qemu-kvm", "libvirt-daemon-system", "virt-manager", "virt-viewer", "virt-top",
+        "bridge-utils", "virtinst", "libosinfo-bin", "libguestfs-tools",
+
         # File compression and archiving
-        "unzip", "zip", "tar", "pigz", "lz4",
+        "unzip", "zip", "tar", "pigz", "lz4", "xz-utils", "bzip2", "p7zip-full",
+        "zstd", "gzip", "cpio", "pax", "rzip", "arj", "unrar", "rar", "lzop",
+
         # Terminal multiplexers and utilities
-        "mc",
+        "mc", "ranger", "tmux", "byobu", "multitail", "ccze", "colordiff",
+        "progress", "pv", "rlwrap", "reptyr", "expect", "dialog",
+
+        # Text processing
+        "jq", "yq", "csvkit", "gawk", "dos2unix", "wdiff", "colordiff", "diffutils",
+        "pandoc", "highlight", "groff", "xmlstarlet", "html-xml-utils", "xsltproc",
+
+        # Backup and sync
+        "restic", "duplicity", "borgbackup", "rclone", "rsnapshot", "rdiff-backup",
+        "syncthing", "unison", "backintime-common", "timeshift",
+
+        # Monitoring and configuration management
+        "prometheus-node-exporter", "collectd-core", "nagios-plugins-basic",
+        "puppet-agent", "salt-minion", "ansible", "chef", "cfengine3",
+
+        # Web servers and proxies
+        "nginx", "apache2-utils", "haproxy", "squid", "varnish", "caddy",
+        "lighttpd", "tinyproxy",
     ])
 
     SSH_CONFIG: Dict[str, str] = field(default_factory=lambda: {
