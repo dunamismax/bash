@@ -534,46 +534,149 @@ class UbuntuServerSetup:
             return False
 
     async def install_packages_async(self) -> Tuple[List[str], List[str]]:
+        """
+        Install packages in batches to avoid dependency resolution errors.
+        Returns:
+            Tuple of (successful installs, failed installs)
+        """
         self.logger.info("Checking for required packages...")
         missing, success, failed = [], [], []
+
+        # Check which packages are already installed
         for pkg in self.config.PACKAGES:
             try:
                 result = await run_command_async(["dpkg", "-l", pkg], check=False, capture_output=True)
-                if result.returncode == 0:
+                if result.returncode == 0 and b"ii" in result.stdout:
                     self.logger.debug(f"Package already installed: {pkg}")
                     success.append(pkg)
                 else:
                     missing.append(pkg)
             except Exception:
                 missing.append(pkg)
-        if missing:
-            self.logger.info(f"Installing missing packages: {' '.join(missing)}")
+
+        if not missing:
+            self.logger.info("All required packages are already installed.")
+            return success, failed
+
+        # Create batches of packages to install (10 at a time)
+        batch_size = 10
+        batches = [missing[i:i + batch_size] for i in range(0, len(missing), batch_size)]
+        self.logger.info(
+            f"Installing {len(missing)} packages in {len(batches)} batches of up to {batch_size} packages each.")
+
+        # Process each batch
+        for batch_num, batch in enumerate(batches, 1):
+            self.logger.info(f"Processing batch {batch_num}/{len(batches)}: {' '.join(batch)}")
+
+            # First, try to install the entire batch
             try:
-                await run_command_async(["nala", "install", "-y"] + missing)
-                self.logger.info("Missing packages installed successfully.")
-                for pkg in missing:
+                await run_command_async(["nala", "install", "-y"] + batch)
+                self.logger.info(f"Batch {batch_num} installed successfully.")
+
+                # Verify installation
+                for pkg in batch:
                     try:
                         result = await run_command_async(["dpkg", "-l", pkg], check=False, capture_output=True)
-                        if result.returncode == 0:
+                        if result.returncode == 0 and b"ii" in result.stdout:
                             success.append(pkg)
                         else:
+                            self.logger.warning(
+                                f"Package {pkg} not properly installed despite successful batch install.")
                             failed.append(pkg)
                     except Exception:
                         failed.append(pkg)
+
             except subprocess.CalledProcessError as e:
-                self.logger.error(f"Failed to install packages: {e}")
-                for pkg in missing:
-                    try:
-                        result = await run_command_async(["dpkg", "-l", pkg], check=False, capture_output=True)
-                        if result.returncode == 0:
-                            success.append(pkg)
-                        else:
-                            failed.append(pkg)
-                    except Exception:
+                self.logger.warning(f"Batch {batch_num} installation failed: {e}")
+
+                # If batch install fails, try installing packages one by one
+                for pkg in batch:
+                    await self._install_package_with_retry(pkg, success, failed)
+
+        # Final attempt for any failed packages using apt instead of nala
+        remaining_failed = list(failed)
+        failed.clear()
+
+        if remaining_failed:
+            self.logger.info(f"Attempting to install {len(remaining_failed)} failed packages using apt...")
+
+            for pkg in remaining_failed:
+                try:
+                    self.logger.info(f"Trying to install {pkg} with apt...")
+                    await run_command_async(["apt", "install", "-y", pkg])
+
+                    # Verify installation
+                    result = await run_command_async(["dpkg", "-l", pkg], check=False, capture_output=True)
+                    if result.returncode == 0 and b"ii" in result.stdout:
+                        self.logger.info(f"Successfully installed {pkg} with apt.")
+                        success.append(pkg)
+                    else:
+                        self.logger.warning(f"Failed to install {pkg} with apt.")
                         failed.append(pkg)
-        else:
-            self.logger.info("All required packages are installed.")
+                except Exception as e:
+                    self.logger.warning(f"Failed to install {pkg} with apt: {e}")
+                    failed.append(pkg)
+
+        # Log summary
+        if failed:
+            self.logger.warning(f"Failed to install {len(failed)} packages: {', '.join(failed)}")
+
+        self.logger.info(f"Successfully installed {len(success)} packages.")
         return success, failed
+
+    async def _install_package_with_retry(self, pkg: str, success: List[str], failed: List[str]) -> None:
+        """
+        Try to install a single package with multiple retry attempts and different strategies.
+
+        Args:
+            pkg: Package to install
+            success: List to append successful installations to
+            failed: List to append failed installations to
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Check if package is already installed
+                result = await run_command_async(["dpkg", "-l", pkg], check=False, capture_output=True)
+                if result.returncode == 0 and b"ii" in result.stdout:
+                    self.logger.info(f"Package {pkg} is already installed.")
+                    success.append(pkg)
+                    return
+
+                # Try to install with different strategies based on attempt number
+                self.logger.info(f"Installing {pkg} (attempt {attempt + 1}/{max_retries})...")
+
+                if attempt == 0:
+                    # First attempt - normal install
+                    await run_command_async(["nala", "install", "-y", pkg])
+                elif attempt == 1:
+                    # Second attempt - try with --fix-broken
+                    await run_command_async(["nala", "install", "-y", "--fix-broken", pkg])
+                else:
+                    # Last attempt - try apt instead of nala
+                    await run_command_async(["apt", "install", "-y", pkg])
+
+                # Verify installation
+                result = await run_command_async(["dpkg", "-l", pkg], check=False, capture_output=True)
+                if result.returncode == 0 and b"ii" in result.stdout:
+                    self.logger.info(f"Successfully installed {pkg}.")
+                    success.append(pkg)
+                    return
+                else:
+                    self.logger.warning(f"Installation command succeeded but {pkg} not properly installed.")
+
+            except Exception as e:
+                self.logger.warning(f"Attempt {attempt + 1}/{max_retries} to install {pkg} failed: {e}")
+
+                # Try to fix broken packages before the next attempt
+                try:
+                    await run_command_async(["apt", "--fix-broken", "install", "-y"], check=False)
+                except Exception:
+                    pass
+
+        # If we get here, all attempts failed
+        self.logger.error(f"Failed to install {pkg} after {max_retries} attempts.")
+        failed.append(pkg)
 
     async def phase_repo_shell_setup(self) -> bool:
         await self.print_section_async("Repository & Shell Setup")
