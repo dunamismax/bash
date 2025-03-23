@@ -1,5 +1,5 @@
 ###############################################################################
-# ~/.bashrc – Enhanced Fedora Bash Configuration with Nord Theme
+# ~/.bashrc – Enhanced Ubuntu Server Bash Configuration with Nord Theme
 ###############################################################################
 
 # 0. Exit if not running in an interactive shell
@@ -19,7 +19,7 @@ export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-# Wayland settings (if using Wayland)
+# Wayland settings (if using desktop environment)
 export QT_QPA_PLATFORM=wayland
 export XDG_SESSION_TYPE=wayland
 
@@ -397,10 +397,12 @@ check_load() {
 
 cleanup_system() {
     echo "Cleaning up system..."
-    if command -v dnf >/dev/null 2>&1; then
-        sudo dnf clean all && sudo dnf autoremove -y
+    if command -v nala >/dev/null 2>&1; then
+        sudo nala clean && sudo nala autoremove -y
+    elif command -v apt >/dev/null 2>&1; then
+        sudo apt clean && sudo apt autoremove -y
     else
-        echo "No dnf package manager found."
+        echo "No apt/nala package manager found."
     fi
     sudo journalctl --vacuum-time=7d
     echo "Done cleaning up system."
@@ -446,7 +448,7 @@ python() {
 }
 
 pip() {
-    -E "$(pyenv which pip)" "$@"
+    sudo -E "$(pyenv which pip)" "$@"
 }
 
 ###############################################################################
