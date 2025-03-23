@@ -19,10 +19,6 @@ export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-# Wayland settings (if using desktop environment)
-export QT_QPA_PLATFORM=wayland
-export XDG_SESSION_TYPE=wayland
-
 # Set default editor and pager (prefer nvim > vim > nano)
 if command -v nvim >/dev/null 2>&1; then
     export EDITOR="nvim"
@@ -96,7 +92,7 @@ fi
 
 # 5. Development Environment Setup
 # ------------------------------------------------------------------------------
-# Pyenv setup (if installed)
+# Pyenv setup
 if [ -d "$HOME/.pyenv" ]; then
     export PYENV_ROOT="$HOME/.pyenv"
     export PATH="$PYENV_ROOT/bin:$PATH"
@@ -207,26 +203,6 @@ alias webserver='python3 -m http.server'
 alias ports-in-use='sudo netstat -tulanp'
 alias speedtest='curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python3 -'
 
-# Docker Shortcuts (if docker is installed)
-if command -v docker >/dev/null 2>&1; then
-    alias d='docker'
-    alias dc='docker-compose'
-    alias dps='docker ps'
-    alias di='docker images'
-    alias drm='docker rm'
-    alias drmi='docker rmi'
-    alias dexec='docker exec -it'
-    alias dlogs='docker logs'
-    alias dstop='docker stop'
-    alias dstart='docker start'
-    alias dc-up='docker-compose up -d'
-    alias dc-down='docker-compose down'
-    alias dc-logs='docker-compose logs -f'
-fi
-
-# User alias (update tool paths to use $HOME)
-alias sftp="python $HOME/bin/sftp_toolkit.py"
-
 # 13. Functions and Utility Scripts
 # ------------------------------------------------------------------------------
 # Virtual Environment Setup: creates (if needed) and activates a venv,
@@ -328,31 +304,6 @@ countdown() {
     printf "\rCountdown finished!         \n"
 }
 
-# Directory bookmarks
-export MARKPATH="$HOME/.marks"
-[ -d "$MARKPATH" ] || mkdir -p "$MARKPATH"
-jump() {
-    cd -P "$MARKPATH/$1" 2>/dev/null || echo "No such mark: $1"
-}
-mark() {
-    mkdir -p "$MARKPATH"
-    ln -s "$(pwd)" "$MARKPATH/$1"
-}
-unmark() {
-    rm -i "$MARKPATH/$1"
-}
-marks() {
-    ls -la "$MARKPATH" | sed 's/  / /g' | cut -d' ' -f9- | grep -v '^$' | sort
-}
-_completemarks() {
-    local curw=${COMP_WORDS[COMP_CWORD]}
-    local wordlist
-    wordlist=$(find "$MARKPATH" -type l -printf "%f\n")
-    COMPREPLY=($(compgen -W "${wordlist}" -- "$curw"))
-    return 0
-}
-complete -F _completemarks jump unmark
-
 # 14. Bash Completion
 # ------------------------------------------------------------------------------
 if ! shopt -oq posix; then
@@ -363,16 +314,7 @@ if ! shopt -oq posix; then
     fi
 fi
 
-# 15. SSH Machine Selector Alias (replaces default ssh command)
-# ------------------------------------------------------------------------------
-if [ -f "$HOME/bin/ssh_machine_selector.py" ]; then
-    alias ssh="$HOME/bin/ssh_machine_selector.py"
-    [ -x "$HOME/bin/ssh_machine_selector.py" ] || chmod +x "$HOME/bin/ssh_machine_selector.py"
-    alias ssh-orig='command ssh'
-    export SSH_MACHINE_SELECTOR="$HOME/bin/ssh_machine_selector.py"
-fi
-
-# 16. Local Customizations
+# 15. Local Customizations
 # ------------------------------------------------------------------------------
 [ -f "$HOME/.bashrc.local" ] && source "$HOME/.bashrc.local"
 
@@ -383,11 +325,11 @@ if [ -d "$HOME/.bashrc.d" ]; then
     done
 fi
 
-# 17. Source Additional Environment Settings
+# 16. Source Additional Environment Settings
 # ------------------------------------------------------------------------------
 [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
 
-# 18. Performance Monitoring & System Maintenance
+# 17. Performance Monitoring & System Maintenance
 # ------------------------------------------------------------------------------
 check_load() {
     local load
@@ -417,31 +359,11 @@ find_large_files() {
     find / -type f -size "$size" -exec ls -lh {} \; 2>/dev/null | sort -k5,5hr | head -n 20
 }
 
-# 19. SSH Key Management
-# ------------------------------------------------------------------------------
-list_ssh_keys() {
-    echo "SSH Keys in ~/.ssh:"
-    for key in "$HOME/.ssh"/*.pub; do
-        [ -f "$key" ] || continue
-        echo -n "$(basename "$key" .pub): "
-        ssh-keygen -l -f "${key%.pub}" 2>/dev/null || echo "Invalid key"
-    done
-}
-
-create_ssh_key() {
-    local name="${1:-id_rsa}"
-    local email="${2:-${USER}@${HOSTNAME}}"
-    ssh-keygen -t rsa -b 4096 -C "$email" -f "$HOME/.ssh/$name"
-    echo "Created new SSH key: $HOME/.ssh/$name"
-    echo "Public key:"
-    cat "$HOME/.ssh/$name.pub"
-}
-
-# 20. Final PROMPT_COMMAND Consolidation (Session Logging)
+# 18. Final PROMPT_COMMAND Consolidation (Session Logging)
 # ------------------------------------------------------------------------------
 export PROMPT_COMMAND='history -a; echo -e "\n[$(date)] ${USER}@${HOSTNAME}:${PWD}\n" >> "$HOME/.bash_sessions.log"'
 
-# 21. Override python and pip commands to use sudo with the pyenv Python interpreter
+# 19. Override python and pip commands to use sudo with the pyenv Python interpreter
 # ------------------------------------------------------------------------------
 python() {
     sudo -E "$(pyenv which python)" "$@"
