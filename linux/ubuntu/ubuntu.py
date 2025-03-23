@@ -192,9 +192,13 @@ def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
 
 
 async def signal_handler_async(signum: int, frame: Any) -> None:
-    sig = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
-    logger = logging.getLogger("ubuntu_setup")
-    logger.error(f"Script interrupted by {sig}. Initiating cleanup.")
+    try:
+        sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+        logger = logging.getLogger("ubuntu_setup")
+        logger.error(f"Script interrupted by {sig_name}. Initiating cleanup.")
+    except Exception as e:
+        logger.error(f"Error during signal handling: {e}")
+
     try:
         if "setup_instance" in globals():
             await globals()["setup_instance"].cleanup_async()
@@ -212,10 +216,9 @@ async def signal_handler_async(signum: int, frame: Any) -> None:
         logger.error(f"Error stopping event loop: {e}")
     sys.exit(130 if signum == signal.SIGINT else 143 if signum == signal.SIGTERM else 128 + signum)
 
-
 def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        loop.add_signal_handler(sig, lambda sig=sig: asyncio.create_task(signal_handler_async(sig, None)))
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        loop.add_signal_handler(signum, lambda sig=signum: asyncio.create_task(signal_handler_async(sig, None)))
 
 
 async def download_file_async(url: str, dest: Union[str, Path], timeout: int = 300) -> None:
