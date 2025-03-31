@@ -9,23 +9,14 @@ using new prompt / template
 └── 📁_scripts
     *└── _template.md
     *└── _to-to.md
-    └── deploy_scripts.py
-    └── fail2ban_toolkit.py
-    └── fedora_package_installer.py
+    *└── deploy_scripts.py
     └── ffmpeg_converter_toolkit.py
     └── file_toolkit.py
-    └── firewalld_configurator.py
-    └── fix_ssh_tool.py
     └── hacker_toolkit.py
     └── hacking_tools.py
-    └── hello_world.py
-    └── high_dpi_scaling_x11.py
-    └── log_monitor.py
     └── metasploit.py
     └── network_toolkit.py
-    └── popos_wayland_setup.py
     └── python_dev_setup.py
-    └── reset_tailscale.py
     └── secure_disk_eraser.py
     └── sftp_toolkit.py
     └── ssh_machine_selector.py
@@ -33,13 +24,8 @@ using new prompt / template
     └── ubuntu_voip_setup.py
     └── unified_backup_restore_deployment.py
     └── unified_backup.py
-    └── unified_restore_to_home.py
     └── universal_downloader.py
     └── update_dns_records.py
-    └── update_plex.py
-    └── vm_manager.py
-    └── vscode_wayland_setup.py
-    *└── zfs_setup.py
 ```
 
 ---------------------------------------------------------------------------------------------

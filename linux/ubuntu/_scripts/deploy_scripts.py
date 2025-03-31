@@ -1,219 +1,92 @@
 #!/usr/bin/env python3
-"""
-Fedora Script Deployer
-—————————————————
-An automated file deployment utility that copies scripts from a source
-directory to a destination directory and manages permissions appropriately.
 
-Features:
-  • Fully automated deployment without user prompts
-  • Fast file copying with MD5 hash comparison to avoid unnecessary updates
-  • Rich terminal output with detailed progress information
-  • Proper permission management for Fedora environment
-  • Comprehensive deployment statistics and reporting
-
-This script is designed specifically for Fedora Linux.
-Version: 1.0.0
-"""
-
-# -—————————————————————
-# Dependency Check and Imports
-# -—————————————————————
-import atexit
 import asyncio
-import hashlib
+import datetime
+import filecmp
+import gzip
+import hashlib  # Added for hashing
+import logging
 import os
-import pwd
-import sys
+import pwd  # Added for UID/GID lookup
 import shutil
 import signal
 import subprocess
+import sys
+import tarfile
+import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
-from enum import Enum, auto
+from enum import Enum, auto  # Added for FileStatus
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union, TypeVar, cast, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar
 
-
-def install_dependencies():
-    """Install required dependencies using DNF and pip for Fedora."""
-    required_packages = ["paramiko", "rich", "pyfiglet", "prompt_toolkit"]
-    user = os.environ.get("SUDO_USER", os.environ.get("USER"))
-
-    print("Checking and installing required dependencies...")
-
-    # Try to install system dependencies with DNF if running as root
-    if os.geteuid() == 0:
-        try:
-            print("Installing python3-pip via DNF...")
-            subprocess.check_call(["dnf", "install", "-y", "python3-pip"])
-        except subprocess.CalledProcessError:
-            print(
-                "Failed to install python3-pip with DNF. Continuing with existing pip..."
-            )
-
-    # Install Python dependencies with pip
+# --- Dependency Checks (from template) ---
+# First, check if Nala is installed, and if not, install it
+try:
+    subprocess.check_call(
+        ["which", "nala"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    print("Nala is already installed.")
+except subprocess.CalledProcessError:
+    print("Nala not found. Installing Nala...")
     try:
-        if os.geteuid() == 0 and user:
-            # Install for the actual user when run with sudo
-            subprocess.check_call(
-                ["sudo", "-u", user, sys.executable, "-m", "pip", "install", "--user"]
-                + required_packages
-            )
-        else:
-            # Regular user install
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "--user"] + required_packages
-            )
-        print("Dependencies installed successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install Python dependencies: {e}")
-        print("Please install the required packages manually:")
-        print("pip install paramiko rich pyfiglet prompt_toolkit")
-        sys.exit(1)
+        # Use apt-get for initial Nala install as apt might be more reliable initially
+        subprocess.check_call(["apt-get", "update", "-y"])
+        subprocess.check_call(["apt-get", "install", "nala", "-y"])
+        print("Nala installed successfully.")
+    except Exception as e:
+        print(f"Error installing Nala: {e}")
+        print("Continuing with apt instead of Nala.")
+        # Define nala_cmd as apt if nala install fails
+        nala_cmd = "apt"
+
+# Define nala_cmd based on successful check/install
+try:
+    subprocess.check_call(
+        ["which", "nala"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    nala_cmd = "nala"
+except subprocess.CalledProcessError:
+    nala_cmd = "apt"
 
 
 try:
-    import pyfiglet
+    import rich.console
+    import rich.logging
+    import rich.table  # Added for potential summary table
     from rich.console import Console
-    from rich.text import Text
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.prompt import Prompt, Confirm
-    from rich.progress import (
-        Progress,
-        SpinnerColumn,
-        TextColumn,
-        BarColumn,
-        TaskProgressColumn,
-        TimeRemainingColumn,
-        DownloadColumn,
-    )
-    from rich.align import Align
-    from rich.style import Style
-    from rich.traceback import install as install_rich_traceback
-    from rich.theme import Theme
+    from rich.logging import RichHandler
+    from rich.panel import Panel  # Keep Panel for potential summary
+    from rich.text import Text  # Keep Text for potential summary
 except ImportError:
-    print("Required libraries not found. Installing dependencies...")
-    install_dependencies()
-    print("Restarting script with dependencies installed...")
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+    print("Required library 'rich' not found. Installing dependencies...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "rich"])
+        print("Dependencies installed successfully. Restarting script...")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        print(f"Error installing dependencies: {e}")
+        print("Please install the required packages manually: pip install rich")
+        sys.exit(1)
 
-# Enable rich traceback for better debugging
-install_rich_traceback(show_locals=True)
+# --- Constants and Globals (from template) ---
+console = Console()
+OPERATION_TIMEOUT = 300  # default timeout in seconds
+APP_NAME = "Ubuntu Script Deployer"  # Modified App Name
+VERSION = "1.0.0"  # Modified Version
 
+# --- Status Tracking (from template, adjusted) ---
+SETUP_STATUS = {
+    "preflight": {"status": "pending", "message": ""},
+    "deploy_scripts": {"status": "pending", "message": ""},  # Focus of this script
+    "final": {"status": "pending", "message": ""},
+}
 
-# -—————————————————————
-# Configuration & Constants
-# -—————————————————————
-@dataclass
-class AppConfig:
-    """Application configuration settings."""
-
-    # App information
-    VERSION: str = "1.0.0"
-    APP_NAME: str = "Fedora Script Deployer"
-    APP_SUBTITLE: str = "File Deployment Utility for Fedora"
-
-    # Directory paths
-    SOURCE_DIR: str = "/home/sawyer/github/bash/linux/fedora/_scripts"
-    DEST_DIR: str = "/home/sawyer/bin"
-    OWNER_USER: str = "sawyer"
-
-    # Permission settings
-    OWNER_UID: Optional[int] = None
-    OWNER_GID: Optional[int] = None
-    FILE_PERMISSIONS: int = 0o644  # Read/write for owner, read for group/others
-    DIR_PERMISSIONS: int = 0o755  # RWX for owner, RX for group/others
-
-    # Performance settings
-    MAX_WORKERS: int = 4
-    DEFAULT_TIMEOUT: int = 30
-
-    # UI settings
-    TERM_WIDTH: int = 80
-    PROGRESS_WIDTH: int = 50
-
-    def __post_init__(self) -> None:
-        """Initialize derived settings after dataclass instantiation."""
-        # Get terminal width
-        try:
-            self.TERM_WIDTH = shutil.get_terminal_size().columns
-        except Exception:
-            pass  # Keep default value
-
-        self.PROGRESS_WIDTH = min(50, self.TERM_WIDTH - 30)
-
-        # Resolve user ID and group ID
-        try:
-            pwd_entry = pwd.getpwnam(self.OWNER_USER)
-            self.OWNER_UID = pwd_entry.pw_uid
-            self.OWNER_GID = pwd_entry.pw_gid
-        except KeyError:
-            pass  # Keep as None if user not found
+T = TypeVar("T")
 
 
-# -—————————————————————
-# Nord-Themed Colors
-# -—————————————————————
-class NordColors:
-    POLAR_NIGHT_1: str = "#2E3440"
-    POLAR_NIGHT_2: str = "#3B4252"
-    POLAR_NIGHT_3: str = "#434C5E"
-    POLAR_NIGHT_4: str = "#4C566A"
-    SNOW_STORM_1: str = "#D8DEE9"
-    SNOW_STORM_2: str = "#E5E9F0"
-    SNOW_STORM_3: str = "#ECEFF4"
-    FROST_1: str = "#8FBCBB"
-    FROST_2: str = "#88C0D0"
-    FROST_3: str = "#81A1C1"
-    FROST_4: str = "#5E81AC"
-    RED: str = "#BF616A"
-    ORANGE: str = "#D08770"
-    YELLOW: str = "#EBCB8B"
-    GREEN: str = "#A3BE8C"
-    PURPLE: str = "#B48EAD"
-
-    @classmethod
-    def get_frost_gradient(cls, steps: int = 4) -> List[str]:
-        """Return a list of frost colors for gradients."""
-        frosts = [cls.FROST_1, cls.FROST_2, cls.FROST_3, cls.FROST_4]
-        return frosts[:steps]
-
-
-# -—————————————————————
-# Custom Exception Classes
-# -—————————————————————
-class DeploymentError(Exception):
-    """Base exception for all deployment-related errors."""
-
-    pass
-
-
-class PathVerificationError(DeploymentError):
-    """Exception raised for errors related to path verification."""
-
-    pass
-
-
-class PermissionOperationError(DeploymentError):
-    """Exception raised for errors related to permission operations."""
-
-    pass
-
-
-class FileOperationError(DeploymentError):
-    """Exception raised for errors related to file operations."""
-
-    pass
-
-
-# -—————————————————————
-# Data Structures
-# -—————————————————————
-class FileStatus(str, Enum):
+# --- File Deployment Specific Enums and Dataclasses ---
+class FileStatus(Enum):
     """Enum representing the possible status of a file during deployment."""
 
     NEW = "new"
@@ -226,11 +99,11 @@ class FileStatus(str, Enum):
 class FileInfo:
     """Information about a deployed file."""
 
-    filename: str
+    relative_path: str  # Renamed from filename for clarity
     status: FileStatus
     permission_changed: bool = False
-    source_path: str = ""
-    dest_path: str = ""
+    source_path: Path = field(default_factory=Path)
+    dest_path: Path = field(default_factory=Path)
     error_message: str = ""
 
 
@@ -249,7 +122,6 @@ class DeploymentResult:
 
     @property
     def total_files(self) -> int:
-        """Return the total number of files processed."""
         return (
             self.new_files
             + self.updated_files
@@ -259,17 +131,13 @@ class DeploymentResult:
 
     @property
     def elapsed_time(self) -> float:
-        """Return the elapsed time of the deployment."""
         return (self.end_time or time.time()) - self.start_time
 
     def complete(self) -> None:
-        """Mark the deployment as complete."""
         self.end_time = time.time()
 
     def add_file(self, file_info: FileInfo) -> None:
-        """Add a file to the deployment result."""
         self.files.append(file_info)
-
         if file_info.status == FileStatus.NEW:
             self.new_files += 1
         elif file_info.status == FileStatus.UPDATED:
@@ -278,653 +146,1003 @@ class DeploymentResult:
             self.unchanged_files += 1
         elif file_info.status == FileStatus.FAILED:
             self.failed_files += 1
-
         if file_info.permission_changed:
             self.permission_changes += 1
 
 
-# Create console with custom theme
-console = Console(
-    theme=Theme(
-        {
-            "info": f"bold {NordColors.FROST_2}",
-            "warning": f"bold {NordColors.YELLOW}",
-            "error": f"bold {NordColors.RED}",
-            "success": f"bold {NordColors.GREEN}",
-            "filename": f"italic {NordColors.FROST_1}",
-        }
+# --- Configuration Dataclass (from template, adapted) ---
+@dataclass
+class Config:
+    LOG_FILE: Path = field(
+        default_factory=lambda: Path("/var/log/ubuntu_script_deployer.log")
+    )  # Modified Log File Name
+    USERNAME: str = (
+        "sawyer"  # !! IMPORTANT: Still hardcoded, consider parameterizing !!
     )
-)
+    USER_HOME: Path = field(default_factory=lambda: Path(f"/home/{Config.USERNAME}"))
 
+    # --- Script Deployment Specific Config ---
+    # Updated Source Dir Logic: Prioritize Ubuntu, fallback to Debian/Fedora if needed.
+    # This logic is now handled within the deploy phase itself.
+    # SOURCE_DIR will be determined dynamically based on availability.
+    DEST_DIR: Path = field(default_factory=lambda: Config.USER_HOME / "bin")
+    OWNER_UID: Optional[int] = None
+    OWNER_GID: Optional[int] = None
+    FILE_PERMISSIONS: int = 0o755  # Scripts should typically be executable
+    DIR_PERMISSIONS: int = 0o755  # Dirs usually match file executable status here
 
-# -—————————————————————
-# UI Helper Functions
-# -—————————————————————
-def create_header() -> Panel:
-    """Create a stylish header panel with the app name."""
-    config = AppConfig()
-    term_width = shutil.get_terminal_size().columns
-    adjusted_width = min(term_width - 4, 80)
-    fonts = ["slant", "big", "digital", "standard", "small"]
-    ascii_art = ""
+    # --- Performance Settings (optional, can be added if needed) ---
+    # MAX_WORKERS: int = 4
 
-    for font in fonts:
+    # --- Other Template Fields (kept for structure) ---
+    PACKAGES: List[str] = field(
+        default_factory=list
+    )  # Not used in this specific script
+    SSH_CONFIG: Dict[str, str] = field(default_factory=dict)  # Not used
+    FIREWALL_PORTS: List[str] = field(default_factory=list)  # Not used
+
+    def __post_init__(self) -> None:
+        """Initialize derived settings."""
+        # Resolve user ID and group ID for the target user
         try:
-            fig = pyfiglet.Figlet(font=font, width=adjusted_width)
-            ascii_art = fig.renderText(config.APP_NAME)
-            if ascii_art.strip():
-                break
-        except Exception:
-            continue
+            pwd_entry = pwd.getpwnam(self.USERNAME)
+            self.OWNER_UID = pwd_entry.pw_uid
+            self.OWNER_GID = pwd_entry.pw_gid
+            # Update USER_HOME based on potentially dynamic USERNAME if parameterization is added
+            self.USER_HOME = Path(pwd_entry.pw_dir)
+            # Update DEST_DIR based on actual home directory
+            self.DEST_DIR = self.USER_HOME / "bin"
+        except KeyError:
+            # Log this issue later in the preflight check
+            pass
+        # Update LOG_FILE parent based on potential USER_HOME change
+        # Decide where logs should *really* go. /var/log is standard for system services.
+        # If this is a user tool, maybe ~/.local/share/ubuntu_script_deployer/logs ?
+        # For now, stick to /var/log, requires root.
+        pass  # Keep /var/log for now
 
-    ascii_lines = [line for line in ascii_art.splitlines() if line.strip()]
-    colors = NordColors.get_frost_gradient(min(len(ascii_lines), 4))
-
-    styled_text = ""
-    for i, line in enumerate(ascii_lines):
-        color = colors[i % len(colors)]
-        escaped_line = line.replace("[", "\\[").replace("]", "\\]")
-        styled_text += f"[bold {color}]{escaped_line}[/]\n"
-
-    border = f"[{NordColors.FROST_3}]{'━' * (adjusted_width - 6)}[/]"
-    styled_text = border + "\n" + styled_text + border
-
-    header_panel = Panel(
-        Text.from_markup(styled_text),
-        border_style=Style(color=NordColors.FROST_1),
-        padding=(1, 2),
-        title=f"[bold {NordColors.SNOW_STORM_2}]v{config.VERSION}[/]",
-        title_align="right",
-        subtitle=f"[bold {NordColors.SNOW_STORM_1}]{config.APP_SUBTITLE}[/]",
-        subtitle_align="center",
-    )
-    return header_panel
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
-def print_message(
-    text: str, style: str = NordColors.FROST_2, prefix: str = "•"
-) -> None:
-    """Print a styled message with a prefix."""
-    console.print(f"[{style}]{prefix} {text}[/{style}]")
-
-
-def print_success(message: str) -> None:
-    """Print a success message with a checkmark prefix."""
-    print_message(message, NordColors.GREEN, "✓")
-
-
-def print_warning(message: str) -> None:
-    """Print a warning message with a warning prefix."""
-    print_message(message, NordColors.YELLOW, "⚠")
-
-
-def print_error(message: str) -> None:
-    """Print an error message with an X prefix."""
-    print_message(message, NordColors.RED, "✗")
-
-
-def print_step(message: str) -> None:
-    """Print a step message with an arrow prefix."""
-    print_message(message, NordColors.FROST_2, "→")
-
-
-def display_panel(
-    message: str, style: str = NordColors.FROST_2, title: Optional[str] = None
-) -> None:
-    """Display a styled panel with a message."""
-    panel = Panel(
-        Text.from_markup(f"[{style}]{message}[/]"),
-        border_style=Style(color=style),
-        padding=(1, 2),
-        title=f"[bold {style}]{title}[/]" if title else None,
-    )
-    console.print(panel)
-
-
-def create_section_header(title: str) -> Panel:
-    """Create a section header panel."""
-    return Panel(
-        Text(title, style=f"bold {NordColors.FROST_1}"),
-        border_style=Style(color=NordColors.FROST_3),
-        padding=(0, 2),
-    )
-
-
-# -—————————————————————
-# Signal Handling and Cleanup
-# -—————————————————————
-def cleanup() -> None:
-    """Clean up resources before exit."""
-    print_message("Cleaning up resources...", NordColors.FROST_3)
-
-
-def signal_handler(sig: int, frame: Any) -> None:
-    """Handle signals for graceful shutdown."""
+# --- Logger Setup (from template) ---
+def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
+    log_file = Path(log_file)
     try:
-        sig_name = signal.Signals(sig).name
-        print_warning(f"Process interrupted by {sig_name}")
-    except Exception:
-        print_warning(f"Process interrupted by signal {sig}")
-    cleanup()
-    sys.exit(128 + sig)
-
-
-# Register signal handlers
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-atexit.register(cleanup)
-
-
-# -—————————————————————
-# Core Functionality
-# -—————————————————————
-async def get_file_hash(file_path: str) -> str:
-    """
-    Calculate the MD5 hash of a file asynchronously.
-
-    Args:
-        file_path: Path to the file
-
-    Returns:
-        MD5 hash of the file
-    """
-    loop = asyncio.get_running_loop()
-    try:
-        return await loop.run_in_executor(None, _calculate_hash, file_path)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        # Try setting permissions early, requires root for /var/log
+        if os.geteuid() == 0:
+            os.chmod(log_file.parent, 0o755)  # Ensure parent is accessible if created
+    except PermissionError:
+        # Handle case where log dir creation fails due to permissions
+        alt_log_dir = Path.home() / ".local/share/ubuntu_script_deployer/logs"
+        alt_log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = alt_log_dir / log_file.name
+        print(f"Warning: No permission for {log_file.parent}. Logging to {alt_log_dir}")
     except Exception as e:
-        raise FileOperationError(f"Failed to calculate hash for {file_path}: {e}")
+        print(f"Warning: Could not create/access log directory {log_file.parent}: {e}")
+        # Fallback further? Maybe log to console only? For now, let it fail if alt dir fails too.
 
+    logger = logging.getLogger("ubuntu_script_deployer")  # Modified logger name
+    logger.setLevel(logging.DEBUG)
 
-def _calculate_hash(file_path: str) -> str:
-    """Synchronous helper for file hash calculation."""
-    md5_hash = hashlib.md5()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            md5_hash.update(chunk)
-    return md5_hash.hexdigest()
+    # Remove existing handlers to prevent duplicate logs if re-initialized
+    for h in logger.handlers[:]:
+        logger.removeHandler(h)
 
+    # Console Handler (INFO level)
+    console_handler = RichHandler(
+        console=console, rich_tracebacks=True, show_path=False
+    )
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
 
-async def list_all_files(directory: str) -> List[str]:
-    """
-    List all files in a directory and its subdirectories asynchronously.
-
-    Args:
-        directory: Path to the directory
-
-    Returns:
-        List of relative file paths
-    """
-    loop = asyncio.get_running_loop()
+    # File Handler (DEBUG level)
     try:
-        return await loop.run_in_executor(None, _walk_directory, directory)
-    except Exception as e:
-        raise FileOperationError(f"Failed to list files in {directory}: {e}")
-
-
-def _walk_directory(directory: str) -> List[str]:
-    """Synchronous helper for directory walking."""
-    file_paths = []
-    for root, _, files in os.walk(directory):
-        for f in files:
-            full_path = os.path.join(root, f)
-            rel_path = os.path.relpath(full_path, directory)
-            file_paths.append(rel_path)
-    return sorted(file_paths)  # Sort for consistent processing order
-
-
-async def set_owner(path: str, config: AppConfig) -> bool:
-    """
-    Set the owner of a file or directory asynchronously.
-
-    Args:
-        path: Path to the file or directory
-        config: Application configuration
-
-    Returns:
-        True if ownership was changed, False otherwise
-    """
-    if config.OWNER_UID is None or config.OWNER_GID is None:
-        return False
-
-    loop = asyncio.get_running_loop()
-    try:
-        # Check current ownership
-        stat_info = await loop.run_in_executor(None, os.stat, path)
-        if (
-            stat_info.st_uid == config.OWNER_UID
-            and stat_info.st_gid == config.OWNER_GID
-        ):
-            return False  # No change needed
-
-        # Set new ownership
-        await loop.run_in_executor(
-            None, lambda: os.chown(path, config.OWNER_UID, config.OWNER_GID)
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
         )
-        return True
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        # Set log file permissions (best effort)
+        try:
+            os.chmod(str(log_file), 0o600)  # Read/Write for owner only
+        except Exception as e:
+            logger.warning(f"Could not set permissions on log file {log_file}: {e}")
     except Exception as e:
-        print_warning(f"Failed to set ownership on {path}: {e}")
-        return False
+        logger.error(f"Failed to set up file logging to {log_file}: {e}")
+        print(
+            f"Error: Failed to initialize file logging to {log_file}. Check permissions."
+        )
+
+    return logger
 
 
-async def set_permissions(
-    path: str, config: AppConfig, is_directory: bool = False
-) -> bool:
-    """
-    Set permissions on a file or directory asynchronously.
-
-    Args:
-        path: Path to the file or directory
-        config: Application configuration
-        is_directory: True if the path is a directory
-
-    Returns:
-        True if permissions were set successfully, False otherwise
-    """
-    loop = asyncio.get_running_loop()
+# --- Async Utilities (from template) ---
+async def run_command_async(
+    cmd: List[str],
+    capture_output: bool = False,
+    text: bool = False,
+    check: bool = True,
+    timeout: Optional[int] = OPERATION_TIMEOUT,
+    cwd: Optional[Union[str, Path]] = None,  # Added cwd parameter
+) -> subprocess.CompletedProcess:
+    logger = logging.getLogger("ubuntu_script_deployer")
+    logger.debug(f"Running command: {' '.join(cmd)} (cwd: {cwd or os.getcwd()})")
+    stdout_pipe = asyncio.subprocess.PIPE if capture_output else None
+    stderr_pipe = asyncio.subprocess.PIPE if capture_output else None
     try:
-        # Set owner first
-        owner_changed = await set_owner(path, config)
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=stdout_pipe,
+            stderr=stderr_pipe,
+            cwd=str(cwd) if cwd else None,  # Pass cwd to subprocess
+        )
+        stdout_data, stderr_data = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
+        stdout_res = (
+            stdout_data.decode("utf-8", errors="ignore")
+            if text and stdout_data is not None
+            else stdout_data
+        )
+        stderr_res = (
+            stderr_data.decode("utf-8", errors="ignore")
+            if text and stderr_data is not None
+            else stderr_data
+        )
 
-        # Set permissions
-        permissions = (
+        result = subprocess.CompletedProcess(
+            args=cmd,
+            returncode=proc.returncode,
+            stdout=stdout_res if capture_output else None,
+            stderr=stderr_res if capture_output else None,
+        )
+        if check and proc.returncode != 0:
+            # Log stderr if available
+            err_msg = (
+                f"Command '{' '.join(cmd)}' failed with return code {proc.returncode}."
+            )
+            if stderr_res:
+                err_msg += f"\nStderr:\n{stderr_res.strip()}"
+            logger.error(err_msg)
+            raise subprocess.CalledProcessError(
+                proc.returncode, cmd, output=stdout_res, stderr=stderr_res
+            )
+        # Log successful command output at DEBUG level if captured
+        if capture_output and stdout_res:
+            logger.debug(f"Command output for '{' '.join(cmd)}':\n{stdout_res.strip()}")
+
+        return result
+    except asyncio.TimeoutError:
+        logger.error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        # Attempt to kill the process
+        try:
+            proc.kill()
+            await proc.wait()  # Wait for kill to complete
+        except ProcessLookupError:
+            pass  # Process already finished
+        except Exception as kill_e:
+            logger.warning(
+                f"Failed to kill timed-out process for command '{' '.join(cmd)}': {kill_e}"
+            )
+        raise TimeoutError(
+            f"Command '{' '.join(cmd)}' timed out after {timeout} seconds."
+        )
+    except FileNotFoundError:
+        logger.error(
+            f"Command not found: {cmd[0]}. Ensure it is installed and in PATH."
+        )
+        raise
+    except Exception as e:
+        logger.error(f"Error running command {' '.join(cmd)}: {e}")
+        raise  # Re-raise the exception after logging
+
+
+async def run_with_progress_async(
+    description: str,
+    func: Callable[..., Any],
+    *args: Any,
+    task_name: Optional[str] = None,
+    **kwargs: Any,
+) -> Any:
+    """Runs a function (sync or async) with logging and status updates."""
+    logger = logging.getLogger("ubuntu_script_deployer")
+    if task_name:
+        SETUP_STATUS[task_name] = {
+            "status": "in_progress",
+            "message": f"{description}...",
+        }
+    logger.info(f"Starting: {description}...")
+    start = time.monotonic()  # Use monotonic clock for duration
+    try:
+        if asyncio.iscoroutinefunction(func):
+            result = await func(*args, **kwargs)
+        else:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+        elapsed = time.monotonic() - start
+        success_msg = f"✓ {description} completed in {elapsed:.2f}s"
+        logger.info(success_msg)
+        if task_name:
+            SETUP_STATUS[task_name] = {"status": "success", "message": success_msg}
+        return result
+    except Exception as e:
+        elapsed = time.monotonic() - start
+        # Log traceback for unexpected errors
+        # logger.exception(f"Error during '{description}'", exc_info=e) # Provides full traceback to log file
+        fail_msg = f"✗ {description} failed after {elapsed:.2f}s: {e}"
+        logger.error(fail_msg)
+        if task_name:
+            SETUP_STATUS[task_name] = {"status": "failed", "message": fail_msg}
+        raise  # Re-raise the exception so the caller knows it failed
+
+
+# --- File Hashing and Listing (adapted from Fedora script) ---
+async def get_file_hash_async(file_path: Path) -> str:
+    """Calculates the MD5 hash of a file asynchronously."""
+    loop = asyncio.get_running_loop()
+    logger = logging.getLogger("ubuntu_script_deployer")
+    logger.debug(f"Calculating MD5 hash for: {file_path}")
+    try:
+        # Use run_in_executor for the blocking file read operation
+        file_hash = await loop.run_in_executor(None, _calculate_md5_sync, file_path)
+        logger.debug(f"MD5 hash for {file_path}: {file_hash}")
+        return file_hash
+    except FileNotFoundError:
+        logger.error(f"File not found while hashing: {file_path}")
+        raise
+    except Exception as e:
+        logger.error(f"Failed to calculate hash for {file_path}: {e}")
+        raise  # Re-raise to indicate failure
+
+
+def _calculate_md5_sync(file_path: Path) -> str:
+    """Synchronous helper for MD5 calculation."""
+    md5_hash = hashlib.md5()
+    try:
+        with open(file_path, "rb") as f:
+            # Read in chunks to handle large files
+            for chunk in iter(lambda: f.read(8192), b""):
+                md5_hash.update(chunk)
+        return md5_hash.hexdigest()
+    except OSError as e:
+        # Log specific OS error
+        logging.getLogger("ubuntu_script_deployer").error(
+            f"OS error reading {file_path} for hashing: {e}"
+        )
+        raise
+    except Exception as e:
+        # Catch any other unexpected errors during hashing
+        logging.getLogger("ubuntu_script_deployer").error(
+            f"Unexpected error hashing {file_path}: {e}"
+        )
+        raise
+
+
+async def list_all_files_async(directory: Path) -> List[Path]:
+    """Lists all files relative to the base directory asynchronously."""
+    loop = asyncio.get_running_loop()
+    logger = logging.getLogger("ubuntu_script_deployer")
+    logger.debug(f"Listing all files in directory: {directory}")
+    if not directory.is_dir():
+        logger.error(
+            f"Source directory for listing files does not exist or is not a directory: {directory}"
+        )
+        return []
+    try:
+        # Use run_in_executor for the potentially blocking os.walk
+        relative_files = await loop.run_in_executor(
+            None, _walk_directory_sync, directory
+        )
+        logger.debug(f"Found {len(relative_files)} files in {directory}")
+        return relative_files
+    except Exception as e:
+        logger.error(f"Failed to list files in {directory}: {e}")
+        raise  # Re-raise to indicate failure
+
+
+def _walk_directory_sync(directory: Path) -> List[Path]:
+    """Synchronous helper for directory walking, returns relative Path objects."""
+    relative_file_paths = []
+    try:
+        for root, _, files in os.walk(directory):
+            root_path = Path(root)
+            for f in files:
+                full_path = root_path / f
+                # Calculate relative path from the base directory
+                try:
+                    rel_path = full_path.relative_to(directory)
+                    relative_file_paths.append(rel_path)
+                except ValueError:
+                    # This might happen if symlinks point outside the directory, log it
+                    logging.getLogger("ubuntu_script_deployer").warning(
+                        f"Could not determine relative path for {full_path} within {directory}. Skipping."
+                    )
+
+        # Sort for consistent processing order
+        relative_file_paths.sort()
+        return relative_file_paths
+    except Exception as e:
+        logging.getLogger("ubuntu_script_deployer").error(
+            f"Error walking directory {directory}: {e}"
+        )
+        raise
+
+
+# --- Signal Handling (from template) ---
+async def signal_handler_async(signum: int, frame: Any) -> None:
+    """Handles termination signals gracefully."""
+    logger = logging.getLogger("ubuntu_script_deployer")
+    try:
+        sig_name = signal.Signals(signum).name
+        logger.warning(f"Script interrupted by {sig_name}. Initiating cleanup...")
+    except (ValueError, AttributeError):
+        logger.warning(f"Script interrupted by signal {signum}. Initiating cleanup...")
+
+    # Add any specific cleanup tasks here if needed (e.g., removing temp files)
+    # Example:
+    # if 'deployer_instance' in globals():
+    #     await globals()['deployer_instance'].cleanup_temp_files_async()
+
+    # Cancel running asyncio tasks
+    try:
+        loop = asyncio.get_running_loop()
+        tasks = [
+            task
+            for task in asyncio.all_tasks(loop)
+            if task is not asyncio.current_task()
+        ]
+        if tasks:
+            logger.debug(f"Cancelling {len(tasks)} outstanding tasks...")
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.debug("Tasks cancelled.")
+        # Important: Stop the loop to allow main() to exit cleanly in some scenarios
+        loop.stop()
+    except RuntimeError:
+        logger.debug("No running event loop or loop already stopped.")
+    except Exception as e:
+        logger.error(f"Error during task cancellation/cleanup: {e}")
+
+    # Exit with appropriate code
+    exit_code = 128 + signum
+    logger.info(f"Exiting with code {exit_code}.")
+    sys.exit(exit_code)
+
+
+def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
+    """Sets up asynchronous signal handlers."""
+    logger = logging.getLogger("ubuntu_script_deployer")
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(
+                signum,
+                lambda sig=signum: asyncio.create_task(signal_handler_async(sig, None)),
+            )
+            logger.debug(f"Signal handler set up for {signal.Signals(signum).name}")
+        except (ValueError, AttributeError):
+            logger.debug(f"Signal handler set up for signal {signum}")
+        except Exception as e:
+            logger.error(f"Failed to set signal handler for signal {signum}: {e}")
+
+
+# --- Main Deployment Class ---
+class UbuntuScriptDeployer:
+    def __init__(self, config: Config = Config()):
+        self.config = config
+        # Initialize logger early
+        self.logger = setup_logger(self.config.LOG_FILE)
+        # Check config post-init results
+        if self.config.OWNER_UID is None or self.config.OWNER_GID is None:
+            self.logger.warning(
+                f"Could not determine UID/GID for user '{self.config.USERNAME}'. "
+                f"Ownership setting will be skipped. Ensure user exists."
+            )
+        self.start_time = time.monotonic()
+        self.deployment_result = DeploymentResult()  # Initialize result tracker
+
+    async def print_section_async(self, title: str) -> None:
+        """Logs a formatted section header."""
+        self.logger.info(f"--- {title} ---")
+
+    async def check_root_async(self) -> None:
+        """Checks for root privileges."""
+        if os.geteuid() != 0:
+            self.logger.error(
+                "Script must be run as root to set correct ownership "
+                f"for target user '{self.config.USERNAME}' in '{self.config.DEST_DIR}' "
+                f"and log to '{self.config.LOG_FILE.parent}'."
+            )
+            # Check if we are trying to deploy to the *current* user's dir without root
+            try:
+                current_user = pwd.getpwuid(os.getuid()).pw_name
+                if (
+                    current_user == self.config.USERNAME
+                    and self.config.DEST_DIR.is_relative_to(Path.home())
+                ):
+                    self.logger.info(
+                        "Running as target user and deploying to home directory. Root not strictly required but recommended for system-wide logging."
+                    )
+                    # Allow continuation if running as the target user for their own dir
+                    return
+            except Exception:
+                pass  # Ignore errors in this non-critical check
+
+            sys.exit(1)  # Exit if not root and not the special case above
+        self.logger.info("Root privileges confirmed.")
+
+    async def phase_preflight(self) -> bool:
+        """Performs pre-flight checks."""
+        await self.print_section_async("Pre-flight Checks")
+        try:
+            await run_with_progress_async(
+                "Checking for root privileges",
+                self.check_root_async,
+                task_name="preflight",
+            )
+            await run_with_progress_async(
+                "Verifying target user existence",
+                self.check_user_async,
+                task_name="preflight",
+            )
+            await run_with_progress_async(
+                "Verifying destination directory",
+                self._verify_destination_async,
+                task_name="preflight",
+            )
+            return True
+        except Exception as e:
+            self.logger.error(f"Pre-flight phase failed: {e}")
+            SETUP_STATUS["preflight"] = {"status": "failed", "message": f"Failed: {e}"}
+            return False
+
+    async def check_user_async(self) -> None:
+        """Verify the target user exists."""
+        if self.config.OWNER_UID is None:
+            raise ValueError(
+                f"Target user '{self.config.USERNAME}' not found on the system."
+            )
+        self.logger.info(
+            f"Target user '{self.config.USERNAME}' (UID: {self.config.OWNER_UID}) found."
+        )
+
+    async def _determine_source_dir_async(self) -> Optional[Path]:
+        """Determine the correct source directory based on availability."""
+        base_github_dir = self.config.USER_HOME / "github" / "bash" / "linux"
+        potential_sources = [
+            base_github_dir / "ubuntu" / "_scripts",
+            base_github_dir / "debian" / "_scripts",
+            base_github_dir / "fedora" / "_scripts",  # Original fallback
+        ]
+
+        for source_dir in potential_sources:
+            # Check existence asynchronously (though disk checks are fast, consistency)
+            loop = asyncio.get_running_loop()
+            exists = await loop.run_in_executor(None, source_dir.is_dir)
+            if exists:
+                self.logger.info(f"Using source directory: {source_dir}")
+                return source_dir
+
+        self.logger.error(
+            f"No suitable source script directory found under {base_github_dir}. Checked: {potential_sources}"
+        )
+        return None
+
+    async def _verify_destination_async(self) -> None:
+        """Verify destination directory exists and has correct base permissions."""
+        dest = self.config.DEST_DIR
+        self.logger.info(f"Verifying destination directory: {dest}")
+        loop = asyncio.get_running_loop()
+        try:
+            # Check if it exists
+            exists = await loop.run_in_executor(None, dest.exists)
+            if not exists:
+                self.logger.info(
+                    f"Destination directory does not exist. Creating: {dest}"
+                )
+                await loop.run_in_executor(
+                    None, lambda: dest.mkdir(parents=True, exist_ok=True)
+                )
+                # Set initial owner/group/permissions on the newly created directory
+                await self._set_owner_group_perms_async(dest, is_directory=True)
+            elif not await loop.run_in_executor(None, dest.is_dir):
+                raise FileExistsError(
+                    f"Destination path exists but is not a directory: {dest}"
+                )
+            else:
+                # If it exists, ensure base permissions are okay
+                self.logger.debug(
+                    f"Destination directory exists. Verifying permissions..."
+                )
+                await self._set_owner_group_perms_async(dest, is_directory=True)
+
+            self.logger.info(f"Destination directory verified: {dest}")
+        except PermissionError as e:
+            self.logger.error(
+                f"Permission error verifying/creating destination {dest}: {e}. Ensure script has necessary rights."
+            )
+            raise
+        except Exception as e:
+            self.logger.error(
+                f"Failed to verify/create destination directory {dest}: {e}"
+            )
+            raise
+
+    async def _set_owner_group_perms_async(
+        self, path: Path, is_directory: bool
+    ) -> bool:
+        """Sets owner, group, and permissions asynchronously. Returns True if changed."""
+        logger = self.logger
+        config = self.config
+        loop = asyncio.get_running_loop()
+        path_changed = False
+
+        if config.OWNER_UID is None or config.OWNER_GID is None:
+            logger.warning(
+                f"Skipping owner/group set for {path} (UID/GID unknown for {config.USERNAME})"
+            )
+            return False  # No change attempted
+
+        target_perms = (
             config.DIR_PERMISSIONS if is_directory else config.FILE_PERMISSIONS
         )
-        await loop.run_in_executor(None, lambda: os.chmod(path, permissions))
 
-        return owner_changed or True
-    except Exception as e:
-        print_warning(f"Failed to set permissions on {path}: {e}")
-        return False
-
-
-async def verify_paths(config: AppConfig) -> bool:
-    """
-    Verify that source and destination directories exist and are valid.
-
-    Args:
-        config: Application configuration
-
-    Returns:
-        True if paths are valid, False otherwise
-    """
-    # Check source directory
-    if not os.path.exists(config.SOURCE_DIR) or not os.path.isdir(config.SOURCE_DIR):
-        print_error(f"Source directory invalid: {config.SOURCE_DIR}")
-        return False
-
-    # Check/create destination directory
-    if not os.path.exists(config.DEST_DIR):
         try:
-            os.makedirs(config.DEST_DIR, exist_ok=True)
-            print_step(f"Created destination directory: {config.DEST_DIR}")
-            await set_permissions(config.DEST_DIR, config, is_directory=True)
+            # Get current stats
+            current_stat = await loop.run_in_executor(None, path.stat)
+
+            # --- 1. Set Owner/Group ---
+            if (
+                current_stat.st_uid != config.OWNER_UID
+                or current_stat.st_gid != config.OWNER_GID
+            ):
+                logger.debug(
+                    f"Changing ownership of {path} to {config.OWNER_UID}:{config.OWNER_GID}"
+                )
+                try:
+                    await loop.run_in_executor(
+                        None, lambda: os.chown(path, config.OWNER_UID, config.OWNER_GID)
+                    )
+                    path_changed = True
+                    logger.debug(f"Successfully changed ownership for {path}")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to set ownership on {path} to {config.OWNER_UID}:{config.OWNER_GID}: {e}"
+                    )
+                    # Don't raise here, maybe permissions can still be set
+
+            # --- 2. Set Permissions ---
+            current_perms = current_stat.st_mode & 0o777  # Extract permission bits
+            if current_perms != target_perms:
+                logger.debug(
+                    f"Changing permissions of {path} from {oct(current_perms)} to {oct(target_perms)}"
+                )
+                try:
+                    await loop.run_in_executor(None, lambda: path.chmod(target_perms))
+                    path_changed = True
+                    logger.debug(f"Successfully changed permissions for {path}")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to set permissions on {path} to {oct(target_perms)}: {e}"
+                    )
+                    # Don't raise, log the warning
+
+            return path_changed  # Return True if owner OR perms changed
+
+        except FileNotFoundError:
+            logger.error(f"Cannot set permissions: File not found at {path}")
+            raise  # This shouldn't happen if called after creation/copy
         except Exception as e:
-            print_error(f"Failed to create destination directory: {e}")
-            return False
-    elif not os.path.isdir(config.DEST_DIR):
-        print_error(f"Destination path is not a directory: {config.DEST_DIR}")
-        return False
+            logger.error(
+                f"Unexpected error setting permissions/ownership for {path}: {e}"
+            )
+            # Don't raise, but log the error
+            return False  # Indicate failure or no change
 
-    # Set permissions on destination directory
-    await set_permissions(config.DEST_DIR, config, is_directory=True)
-    return True
+    async def _process_single_file_async(
+        self, relative_path: Path, source_base: Path
+    ) -> FileInfo:
+        """Processes a single file: copy, hash check, permissions."""
+        source_path = source_base / relative_path
+        dest_path = self.config.DEST_DIR / relative_path
+        file_info = FileInfo(
+            relative_path=str(relative_path),
+            source_path=source_path,
+            dest_path=dest_path,
+            status=FileStatus.FAILED,
+        )  # Default to failed
+        perm_changed = False
+        loop = asyncio.get_running_loop()
+        logger = self.logger
 
+        logger.debug(f"Processing file: {relative_path}")
 
-async def process_file(
-    rel_path: str,
-    config: AppConfig,
-    progress: Optional[Progress] = None,
-    task_id: Optional[int] = None,
-) -> FileInfo:
-    """
-    Process a single file during deployment.
-
-    Args:
-        rel_path: Relative path of the file
-        config: Application configuration
-        progress: Progress bar instance
-        task_id: ID of the task in the progress bar
-
-    Returns:
-        FileInfo object with the result of the operation
-    """
-    source_path = os.path.join(config.SOURCE_DIR, rel_path)
-    dest_path = os.path.join(config.DEST_DIR, rel_path)
-    filename = os.path.basename(source_path)
-    perm_changed = False
-
-    # Update progress if provided
-    if progress and task_id is not None:
-        progress.update(task_id, description=f"Processing {filename}")
-
-    # Create destination directory if needed
-    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-
-    # Determine file status
-    if not os.path.exists(dest_path):
-        status = FileStatus.NEW
-    else:
         try:
-            source_hash = await get_file_hash(source_path)
-            dest_hash = await get_file_hash(dest_path)
-            status = (
-                FileStatus.UPDATED if source_hash != dest_hash else FileStatus.UNCHANGED
+            # Ensure parent directory exists in destination
+            dest_parent = dest_path.parent
+            if not await loop.run_in_executor(None, dest_parent.is_dir):
+                logger.debug(f"Creating parent directory: {dest_parent}")
+                await loop.run_in_executor(
+                    None, lambda: dest_parent.mkdir(parents=True, exist_ok=True)
+                )
+                # Set permissions on newly created parent directory
+                await self._set_owner_group_perms_async(dest_parent, is_directory=True)
+
+            # Determine file status (New, Updated, Unchanged)
+            dest_exists = await loop.run_in_executor(None, dest_path.is_file)
+
+            if not dest_exists:
+                file_info.status = FileStatus.NEW
+                logger.info(f"Deploying NEW file: {relative_path}")
+            else:
+                # Compare hashes
+                try:
+                    source_hash = await get_file_hash_async(source_path)
+                    dest_hash = await get_file_hash_async(dest_path)
+                    if source_hash != dest_hash:
+                        file_info.status = FileStatus.UPDATED
+                        logger.info(
+                            f"Deploying UPDATED file: {relative_path} (hash mismatch)"
+                        )
+                    else:
+                        file_info.status = FileStatus.UNCHANGED
+                        logger.debug(f"File UNCHANGED: {relative_path} (hash match)")
+                except Exception as hash_e:
+                    # If hashing fails (e.g., permission error on dest), assume update needed
+                    logger.warning(
+                        f"Hash comparison failed for {relative_path}: {hash_e}. Assuming update required."
+                    )
+                    file_info.status = FileStatus.UPDATED
+
+            # Perform copy if New or Updated
+            if file_info.status in (FileStatus.NEW, FileStatus.UPDATED):
+                try:
+                    await loop.run_in_executor(
+                        None, lambda: shutil.copy2(source_path, dest_path)
+                    )
+                    logger.debug(f"Copied {source_path} to {dest_path}")
+                except Exception as copy_e:
+                    logger.error(f"Failed to copy {relative_path}: {copy_e}")
+                    file_info.status = FileStatus.FAILED
+                    file_info.error_message = str(copy_e)
+                    return file_info  # Don't try to set permissions if copy failed
+
+            # Set/Verify Permissions and Ownership (runs for New, Updated, and Unchanged)
+            try:
+                # Pass False for is_directory
+                perm_changed = await self._set_owner_group_perms_async(
+                    dest_path, is_directory=False
+                )
+                file_info.permission_changed = perm_changed
+                if file_info.status == FileStatus.UNCHANGED and perm_changed:
+                    logger.info(
+                        f"Permissions UPDATED for unchanged file: {relative_path}"
+                    )
+
+            except Exception as perm_e:
+                # Log error but don't necessarily mark file as failed if copy succeeded
+                logger.warning(
+                    f"Failed to set final permissions for {relative_path}: {perm_e}"
+                )
+                file_info.error_message = (
+                    file_info.error_message + f"; Perms failed: {perm_e}"
+                )
+                # Optionally downgrade status if perms fail? Depends on strictness.
+                # file_info.status = FileStatus.FAILED
+
+        except Exception as e:
+            logger.error(
+                f"Critical error processing file {relative_path}: {e}", exc_info=True
+            )
+            file_info.status = FileStatus.FAILED
+            file_info.error_message = str(e)
+
+        return file_info
+
+    async def phase_deploy_scripts(self) -> bool:
+        """Copies scripts from source to destination, sets permissions."""
+        await self.print_section_async("Script Deployment")
+
+        # --- 1. Determine Source Directory ---
+        source_dir = await self._determine_source_dir_async()
+        if not source_dir:
+            SETUP_STATUS["deploy_scripts"] = {
+                "status": "failed",
+                "message": "Source directory not found",
+            }
+            return False  # Cannot proceed without source
+
+        # --- 2. List Source Files ---
+        try:
+            relative_files_to_deploy = await run_with_progress_async(
+                f"Listing files in {source_dir}",
+                list_all_files_async,
+                source_dir,
+                task_name="deploy_scripts",  # Update status during listing
             )
         except Exception as e:
-            print_warning(f"Error comparing file {filename}: {e}")
-            status = FileStatus.UPDATED
+            self.logger.error(f"Failed to list source files: {e}")
+            return False  # Cannot proceed
 
-    # Process the file based on its status
-    if status in (FileStatus.NEW, FileStatus.UPDATED):
-        try:
-            # Use run_in_executor for file operations
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
-                None, lambda: shutil.copy2(source_path, dest_path)
+        if not relative_files_to_deploy:
+            self.logger.info(
+                "No script files found in source directory. Nothing to deploy."
             )
+            SETUP_STATUS["deploy_scripts"] = {
+                "status": "success",
+                "message": "No scripts found to deploy.",
+            }
+            return True
 
-            # Set permissions
-            perm_changed = await set_permissions(dest_path, config)
-
-        except Exception as e:
-            print_warning(f"Failed to copy file {filename}: {e}")
-            return FileInfo(
-                filename=rel_path,
-                status=FileStatus.FAILED,
-                source_path=source_path,
-                dest_path=dest_path,
-                error_message=str(e),
-            )
-    else:
-        # For unchanged files, just verify permissions
-        perm_changed = await set_permissions(dest_path, config)
-
-    # Advance progress if provided
-    if progress and task_id is not None:
-        progress.advance(task_id)
-
-    return FileInfo(
-        filename=rel_path,
-        status=status,
-        permission_changed=perm_changed,
-        source_path=source_path,
-        dest_path=dest_path,
-    )
-
-
-async def deploy_files(config: AppConfig) -> DeploymentResult:
-    """
-    Deploy files from source to destination.
-
-    Args:
-        config: Application configuration
-
-    Returns:
-        DeploymentResult object with deployment statistics
-    """
-    result = DeploymentResult()
-
-    try:
-        # List all files in the source directory
-        source_files = await list_all_files(config.SOURCE_DIR)
-        if not source_files:
-            print_warning("No files found in source directory")
-            result.complete()
-            return result
-    except FileOperationError as e:
-        print_error(str(e))
-        result.complete()
-        return result
-
-    # Create progress bar
-    with Progress(
-        SpinnerColumn(style=f"bold {NordColors.FROST_1}"),
-        TextColumn(f"[bold {NordColors.FROST_2}]{{task.description}}"),
-        BarColumn(
-            bar_width=config.PROGRESS_WIDTH,
-            style=NordColors.FROST_4,
-            complete_style=NordColors.FROST_2,
-        ),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        # Add task to progress bar
-        task = progress.add_task("Deploying files", total=len(source_files))
-
-        # Process files with limited concurrency
+        # --- 3. Process Files Concurrently ---
+        self.logger.info(
+            f"Found {len(relative_files_to_deploy)} files. Starting deployment..."
+        )
+        self.deployment_result = DeploymentResult()  # Reset results for this run
         tasks = []
-        semaphore = asyncio.Semaphore(config.MAX_WORKERS)
+        # Limit concurrency? Use asyncio.Semaphore if needed, e.g., semaphore = asyncio.Semaphore(10)
+        for rel_path in relative_files_to_deploy:
+            # task = asyncio.create_task(self._process_single_file_async(rel_path, source_dir))
+            # tasks.append(task)
+            # Example with semaphore:
+            # async def run_with_sem(rp, sd):
+            #      async with semaphore:
+            #           return await self._process_single_file_async(rp, sd)
+            # tasks.append(asyncio.create_task(run_with_sem(rel_path, source_dir)))
 
-        async def process_with_semaphore(file_path: str) -> FileInfo:
-            """Process a file with the semaphore to limit concurrency."""
-            async with semaphore:
-                return await process_file(file_path, config, progress, task)
+            # Simpler sequential processing for debugging or fewer files:
+            # file_result = await self._process_single_file_async(rel_path, source_dir)
+            # self.deployment_result.add_file(file_result)
 
-        # Create tasks for all files
-        for file_path in source_files:
-            tasks.append(asyncio.create_task(process_with_semaphore(file_path)))
+            # Concurrent processing:
+            tasks.append(
+                asyncio.create_task(
+                    self._process_single_file_async(rel_path, source_dir)
+                )
+            )
 
-        # Wait for all tasks to complete
-        file_results = await asyncio.gather(*tasks)
+        # Wait for all file processing tasks to complete
+        try:
+            file_results = await asyncio.gather(
+                *tasks
+            )  # Add timeout? e.g., asyncio.wait_for(asyncio.gather(*tasks), timeout=600)
+        except asyncio.TimeoutError:
+            self.logger.error("Deployment timed out while processing files.")
+            SETUP_STATUS["deploy_scripts"] = {
+                "status": "failed",
+                "message": "Timeout during file processing.",
+            }
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error during file processing gather: {e}")
+            SETUP_STATUS["deploy_scripts"] = {
+                "status": "failed",
+                "message": f"Error: {e}",
+            }
+            return False
 
-        # Add results to deployment result
+        # --- 4. Collate Results ---
         for file_info in file_results:
-            result.add_file(file_info)
+            self.deployment_result.add_file(file_info)
+        self.deployment_result.complete()
 
-    result.complete()
-    return result
-
-
-# -—————————————————————
-# Reporting Functions
-# -—————————————————————
-def display_deployment_details(config: AppConfig) -> None:
-    """Display detailed information about the deployment configuration."""
-    current_user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
-    is_root = (os.geteuid() == 0) if hasattr(os, "geteuid") else False
-
-    # Create warning about permissions if needed
-    permission_warning = ""
-    if not is_root and config.OWNER_USER != current_user:
-        permission_warning = f"\n[bold {NordColors.YELLOW}]Warning: Not running as root. Permission changes may fail.[/]"
-
-    # Build panel content
-    panel_content = f"""
-Source: [bold]{config.SOURCE_DIR}[/]
-Target: [bold]{config.DEST_DIR}[/]
-Owner: [bold]{config.OWNER_USER}[/] (UID: {config.OWNER_UID or "Unknown"})
-Permissions: [bold]Files: {oct(config.FILE_PERMISSIONS)[2:]}, Dirs: {oct(config.DIR_PERMISSIONS)[2:]}[/]
-Running as: [bold]{current_user}[/] ({"root" if is_root else "non-root"})
-{permission_warning}
-"""
-
-    # Display the panel
-    console.print(
-        Panel(
-            Text.from_markup(panel_content),
-            title=f"[bold {NordColors.FROST_2}]Deployment Details[/]",
-            border_style=NordColors.FROST_3,
-            padding=(1, 2),
-            expand=True,
+        # --- 5. Log Summary ---
+        summary_msg = (
+            f"Deployment finished in {self.deployment_result.elapsed_time:.2f}s. "
+            f"Total: {self.deployment_result.total_files}, "
+            f"New: {self.deployment_result.new_files}, "
+            f"Updated: {self.deployment_result.updated_files}, "
+            f"Unchanged: {self.deployment_result.unchanged_files}, "
+            f"Failed: {self.deployment_result.failed_files}. "
+            f"Permissions checked/set on ~{self.deployment_result.permission_changes} items."  # Approx due to dirs
         )
-    )
-
-
-def create_stats_table(result: DeploymentResult) -> Table:
-    """Create a table showing deployment statistics."""
-    table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        border_style=NordColors.FROST_3,
-        expand=True,
-        title=f"[bold {NordColors.SNOW_STORM_2}]Deployment Statistics[/]",
-        title_justify="center",
-    )
-
-    # Add columns
-    table.add_column("Metric", style=f"bold {NordColors.FROST_2}")
-    table.add_column("Value", style=NordColors.SNOW_STORM_1)
-
-    # Add rows with statistics
-    table.add_row("New Files", str(result.new_files))
-    table.add_row("Updated Files", str(result.updated_files))
-    table.add_row("Unchanged Files", str(result.unchanged_files))
-    table.add_row("Failed Files", str(result.failed_files))
-    table.add_row("Total Files", str(result.total_files))
-    table.add_row("Permission Changes", str(result.permission_changes))
-    table.add_row("Elapsed Time", f"{result.elapsed_time:.2f} seconds")
-
-    return table
-
-
-def create_file_details_table(result: DeploymentResult, max_files: int = 20) -> Table:
-    """Create a table showing details of modified files."""
-    # Filter for modified files
-    modified_files = [
-        f for f in result.files if f.status in (FileStatus.NEW, FileStatus.UPDATED)
-    ]
-
-    # Create table
-    table = Table(
-        show_header=True,
-        header_style=f"bold {NordColors.FROST_1}",
-        border_style=NordColors.FROST_3,
-        expand=True,
-        title=f"[bold {NordColors.SNOW_STORM_2}]Modified Files[/]",
-        title_justify="center",
-    )
-
-    # Add columns
-    table.add_column("Filename", style=f"bold {NordColors.FROST_2}")
-    table.add_column("Status", justify="center")
-    table.add_column("Permissions", justify="center")
-
-    # Limit the number of files displayed
-    display_files = modified_files[:max_files]
-
-    # Add rows for each file
-    for file_info in display_files:
-        # Create status text with appropriate styling
-        if file_info.status == FileStatus.NEW:
-            status_text = Text("✓ NEW", style=f"bold {NordColors.GREEN}")
-        elif file_info.status == FileStatus.UPDATED:
-            status_text = Text("↺ UPDATED", style=f"bold {NordColors.FROST_2}")
-        elif file_info.status == FileStatus.FAILED:
-            status_text = Text("✗ FAILED", style=f"bold {NordColors.RED}")
+        if self.deployment_result.failed_files > 0:
+            self.logger.error(summary_msg)
+            SETUP_STATUS["deploy_scripts"] = {
+                "status": "failed",
+                "message": summary_msg,
+            }
+            # Log failed files details
+            for f in self.deployment_result.files:
+                if f.status == FileStatus.FAILED:
+                    self.logger.warning(
+                        f"  - Failed: {f.relative_path} (Error: {f.error_message})"
+                    )
+            return False
         else:
-            status_text = Text("● UNCHANGED", style=NordColors.SNOW_STORM_1)
+            self.logger.info(summary_msg)
+            SETUP_STATUS["deploy_scripts"] = {
+                "status": "success",
+                "message": summary_msg,
+            }
+            return True
 
-        # Create permissions text
-        permission_text = "changed" if file_info.permission_changed else "standard"
+    async def phase_final_summary(self) -> bool:
+        """Prints a final summary of the operation."""
+        await self.print_section_async("Final Summary")
+        elapsed = time.monotonic() - self.start_time
+        hours, rem = divmod(elapsed, 3600)
+        mins, secs = divmod(rem, 60)
+        completion_time = f"{int(hours)}h {int(mins)}m {int(secs)}s"
 
-        # Add row to table
-        table.add_row(file_info.filename, status_text, permission_text)
-
-    # Add a row for additional files if there are more than max_files
-    if len(modified_files) > max_files:
-        table.add_row(f"... and {len(modified_files) - max_files} more files", "", "")
-
-    return table
-
-
-# -—————————————————————
-# Main Application Flow
-# -—————————————————————
-async def run_deployment() -> None:
-    """Run the deployment process."""
-    # Create configuration
-    config = AppConfig()
-
-    # Display header and start message
-    console.print(create_header())
-    print_step(f"Starting deployment at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    console.print()
-
-    # Display deployment details
-    display_deployment_details(config)
-
-    # Verify paths
-    console.print(create_section_header("Path Verification"))
-    if not await verify_paths(config):
-        display_panel(
-            "Deployment failed due to path verification errors.",
-            style=NordColors.RED,
-            title="Error",
+        # Build summary using Rich Panel and Text for better formatting
+        summary_text = Text()
+        summary_text.append(
+            f"Script Deployer completed in {completion_time}\n\n", style="bold"
         )
-        sys.exit(1)
-    print_success("Source and destination directories verified")
-    console.print()
 
-    # Deploy files
-    console.print(create_section_header("File Deployment"))
+        # Overall status
+        failed_phases = [
+            k for k, v in SETUP_STATUS.items() if v.get("status") == "failed"
+        ]
+        if failed_phases:
+            summary_text.append("Status: Failed\n", style="bold red")
+            summary_text.append("Failed Phases:\n", style="red")
+            for phase in failed_phases:
+                summary_text.append(
+                    f"  - {phase}: {SETUP_STATUS[phase].get('message', 'Unknown error')}\n",
+                    style="red",
+                )
+        else:
+            summary_text.append("Status: Success\n", style="bold green")
+
+        # Deployment details (if deployment ran)
+        if self.deployment_result.total_files > 0:
+            res = self.deployment_result
+            summary_text.append("\nDeployment Results:\n", style="bold")
+            summary_text.append(
+                f"  - Source: {getattr(self, '_last_source_dir', 'N/A')}\n"
+            )  # Need to store source dir used
+            summary_text.append(f"  - Destination: {self.config.DEST_DIR}\n")
+            summary_text.append(f"  - Total Files Processed: {res.total_files}\n")
+            summary_text.append(
+                f"  - New: {res.new_files}\n",
+                style="green" if res.new_files > 0 else "",
+            )
+            summary_text.append(
+                f"  - Updated: {res.updated_files}\n",
+                style="yellow" if res.updated_files > 0 else "",
+            )
+            summary_text.append(f"  - Unchanged: {res.unchanged_files}\n")
+            if res.failed_files > 0:
+                summary_text.append(
+                    f"  - Failed: {res.failed_files}\n", style="bold red"
+                )
+
+        # Log the summary panel to console and file
+        panel = Panel(
+            summary_text, title="[bold]Deployment Report[/bold]", border_style="blue"
+        )
+        console.print(panel)  # Print directly to console for visibility
+        self.logger.info(
+            "Final Summary:\n" + summary_text.plain
+        )  # Log plain text version
+
+        return not bool(failed_phases)
+
+
+# --- Main Execution Logic (from template) ---
+async def main_async() -> None:
+    deployer = None  # Initialize deployer to None
     try:
-        result = await deploy_files(config)
-        console.print(create_stats_table(result))
-        console.print()
+        # Instantiate the main class
+        config = Config()
+        deployer = UbuntuScriptDeployer(config)
+        global deployer_instance  # Make it accessible to signal handler if needed
+        deployer_instance = deployer
 
-        # Show detailed report
-        if result.new_files or result.updated_files:
-            console.print(create_file_details_table(result))
-            console.print()
-            display_panel(
-                f"Successfully deployed {result.new_files + result.updated_files} files.\n"
-                f"Changed permissions on {result.permission_changes} files/dirs.\n"
-                f"User '{config.OWNER_USER}' now has appropriate permissions on all deployed files.",
-                style=NordColors.GREEN,
-                title="Deployment Successful",
-            )
+        deployer.logger.info(f"Starting {APP_NAME} v{VERSION}")
+
+        # Execute phases
+        if not await deployer.phase_preflight():
+            sys.exit(1)
+
+        # --- This is the core phase for this script ---
+        await deployer.phase_deploy_scripts()
+        # ---------------------------------------------
+
+        # Final summary phase
+        await deployer.phase_final_summary()
+
+        # Check overall status
+        failed_phases = [
+            k for k, v in SETUP_STATUS.items() if v.get("status") == "failed"
+        ]
+        if failed_phases:
+            deployer.logger.error("One or more phases failed. Check logs for details.")
+            sys.exit(1)
         else:
-            display_panel(
-                f"No files needed updating. All files are already up to date.\n"
-                f"Verified permissions on {result.permission_changes} files/dirs.",
-                style=NordColors.FROST_3,
-                title="Deployment Complete",
-            )
+            deployer.logger.info("All phases completed successfully.")
+
+    except KeyboardInterrupt:
+        # This is usually handled by the signal handler, but catch it here as a fallback
+        print("\nOperation cancelled by user (KeyboardInterrupt).")
+        if deployer:
+            deployer.logger.warning("Operation cancelled by user (KeyboardInterrupt).")
+            # Optionally call a specific cleanup method if needed
+        sys.exit(130)  # Standard exit code for Ctrl+C
     except Exception as e:
-        display_panel(
-            f"Deployment failed: {str(e)}", style=NordColors.RED, title="Error"
+        # Catchall for unexpected errors during execution
+        console.print(
+            f"\n[bold red]FATAL ERROR:[/bold red] An unexpected error occurred."
         )
-        console.print_exception()
+        # Use rich traceback printing to console for immediate feedback
+        console.print_exception(show_locals=True)
+        if deployer:
+            deployer.logger.critical(
+                f"FATAL ERROR: {e}", exc_info=True
+            )  # Log with traceback
+        else:
+            # If deployer failed to initialize, log to a basic logger or print
+            logging.getLogger("ubuntu_script_deployer").critical(
+                f"FATAL ERROR during initialization: {e}", exc_info=True
+            )
         sys.exit(1)
 
 
-# -—————————————————————
-# Entry Point
-# -—————————————————————
 def main() -> None:
-    """Main entry point of the application."""
+    loop = None
     try:
-        # Create and set up the event loop
+        # Set up the event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # Run the deployment
-        loop.run_until_complete(run_deployment())
-    except KeyboardInterrupt:
-        print_warning("Operation cancelled by user.")
+        # Set up signal handlers for graceful shutdown
+        setup_signal_handlers(loop)
+
+        # Run the main asynchronous function
+        loop.run_until_complete(main_async())
+
     except Exception as e:
-        print_error(f"Unexpected error: {e}")
-        console.print_exception()
+        # Catch errors during loop setup or final execution stages
+        print(f"\nCritical error in main execution: {e}")
+        # Print traceback if possible
+        import traceback
+
+        traceback.print_exc()
     finally:
-        try:
-            # Get all tasks and cancel them
-            loop = asyncio.get_event_loop()
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
+        # Cleanup asyncio loop and tasks
+        if loop:
+            try:
+                # Cancel all running tasks cleanly
+                tasks = asyncio.all_tasks(loop)
+                if tasks:
+                    # Give tasks a moment to finish cancellation
+                    # print("Cancelling pending tasks...")
+                    for task in tasks:
+                        task.cancel()
+                    # Wait for tasks to finish cancelling
+                    loop.run_until_complete(
+                        asyncio.gather(*tasks, return_exceptions=True)
+                    )
 
-            # Allow cancelled tasks to complete
-            if tasks:
-                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                # Shutdown async generators
+                # print("Shutting down async generators...")
+                loop.run_until_complete(loop.shutdown_asyncgens())
 
-            # Close the loop
-            loop.close()
-        except Exception as e:
-            print_error(f"Error during shutdown: {e}")
+            except Exception as cleanup_err:
+                print(f"Error during asyncio cleanup: {cleanup_err}")
+            finally:
+                if loop.is_running():
+                    # print("Stopping event loop...")
+                    loop.stop()  # Ensure loop stops if still running
+                if not loop.is_closed():
+                    # print("Closing event loop...")
+                    loop.close()
+                    # print("Event loop closed.")
 
-        print_message("Application terminated.", NordColors.FROST_3)
+        print(f"{APP_NAME} finished.")
 
 
 if __name__ == "__main__":
+    # Ensure the script is run with appropriate privileges early on
+    # Note: The detailed check is inside phase_preflight, this is a basic guard
+    # if os.geteuid() != 0:
+    #      print("Error: This script needs to be run as root (or sudo) to manage permissions correctly.")
+    #      sys.exit(1)
+
     main()
