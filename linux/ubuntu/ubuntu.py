@@ -86,7 +86,6 @@ class Config:
             "tmux",
             "screen",
             "zsh",
-            "emacs-nox",
             # System monitoring and performance analysis
             "tree",
             "mtr",
