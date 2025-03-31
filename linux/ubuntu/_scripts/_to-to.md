@@ -1,6 +1,6 @@
 # ----------------------------------------------------------------------------
 
-rewrite (Claude 3.7 Sonnet)
+rewrite (Gemini 2.5 Pro)
 using new prompt / template
 
 ------------------------------------------------------------------------------
@@ -8,12 +8,13 @@ using new prompt / template
 ```
 └── 📁_scripts
     └── _template.md
-    └── _to-to.md
+    *└── _to-to.md
     └── deploy_scripts.py
     └── fail2ban_toolkit.py
     └── fedora_package_installer.py
     └── ffmpeg_converter_toolkit.py
     └── file_toolkit.py
+    └── firewalld_configurator.py
     └── fix_ssh_tool.py
     └── hacker_toolkit.py
     └── hacking_tools.py
@@ -36,10 +37,9 @@ using new prompt / template
     └── universal_downloader.py
     └── update_dns_records.py
     └── update_plex.py
-    *└── virtualization_setup.py
     └── vm_manager.py
     └── vscode_wayland_setup.py
-    └── zfs_setup.py
+    *└── zfs_setup.py
 ```
 
 ---------------------------------------------------------------------------------------------
