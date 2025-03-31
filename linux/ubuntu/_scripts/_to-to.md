@@ -7,7 +7,7 @@ using new prompt / template
 
 ```
 └── 📁_scripts
-    └── _template.md
+    *└── _template.md
     *└── _to-to.md
     └── deploy_scripts.py
     └── fail2ban_toolkit.py
