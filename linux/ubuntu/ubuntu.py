@@ -19,7 +19,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TypeVar
 
 # First, check if Nala is installed, and if not, install it
 try:
-    subprocess.check_call(["which", "nala"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.check_call(
+        ["which", "nala"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
     print("Nala is already installed.")
 except subprocess.CalledProcessError:
     print("Nala not found. Installing Nala...")
@@ -74,94 +76,289 @@ class Config:
     USERNAME: str = "sawyer"
     USER_HOME: Path = field(default_factory=lambda: Path("/home/sawyer"))
 
-    PACKAGES: List[str] = field(default_factory=lambda: [
-        # Shells and editors
-        "bash", "vim", "vim-nox", "nano", "tmux", "screen", "zsh", "emacs-nox",
+    PACKAGES: List[str] = field(
+        default_factory=lambda: [
+            # Shells and editors
+            "bash",
+            "vim",
+            "vim-nox",
+            "nano",
+            "tmux",
+            "screen",
+            "zsh",
+            "emacs-nox",
+            # System monitoring and performance analysis
+            "tree",
+            "mtr",
+            "iotop",
+            "sysstat",
+            "powertop",
+            "htop",
+            "atop",
+            "glances",
+            "ncdu",
+            "dstat",
+            "nmon",
+            "iftop",
+            "nethogs",
+            "bmon",
+            "bpytop",
+            "btop",
+            "stress-ng",
+            # Network and security
+            "git",
+            "openssh-server",
+            "ufw",
+            "fail2ban",
+            "curl",
+            "wget",
+            "rsync",
+            "sudo",
+            "bash-completion",
+            "net-tools",
+            "nmap",
+            "tcpdump",
+            "iptables",
+            "whois",
+            "nftables",
+            "openssl",
+            "lynis",
+            "sshfs",
+            "openvpn",
+            "wireguard",
+            "ethtool",
+            "ca-certificates",
+            "gnupg2",
+            "gpg",
+            "certbot",
+            "acl",
+            "apparmor-utils",
+            # Core utilities
+            "python3",
+            "python3-pip",
+            "python3-venv",
+            "cron",
+            "at",
+            "parallel",
+            "moreutils",
+            "util-linux",
+            "kbd",
+            "debsums",
+            "nala",
+            "dnsutils",
+            "apt-transport-https",
+            "apt-file",
+            "apt-utils",
+            "debian-goodies",
+            "locales",
+            "systemd-timesyncd",
+            # Modern shell utilities
+            "ripgrep",
+            "fd-find",
+            "bat",
+            "fzf",
+            "tldr",
+            "jq",
+            "ncurses-term",
+            "grc",
+            "ranger",
+            "thefuck",
+            "neofetch",
+            "htop",
+            "glances",
+            "byobu",
+            "zoxide",
+            "direnv",
+            "micro",
+            "hexyl",
+            "sd",
+            "duf",
+            # Development tools
+            "gcc",
+            "g++",
+            "make",
+            "cmake",
+            "python3-dev",
+            "libssl-dev",
+            "shellcheck",
+            "libffi-dev",
+            "zlib1g-dev",
+            "libreadline-dev",
+            "libbz2-dev",
+            "libncurses-dev",
+            "build-essential",
+            "pkg-config",
+            "manpages-dev",
+            "git-extras",
+            "clang",
+            "llvm",
+            "golang",
+            "rust-all",
+            "cargo",
+            "gdb",
+            "strace",
+            "ltrace",
+            # Network utilities
+            "traceroute",
+            "mtr",
+            "dnsutils",
+            "iproute2",
+            "iputils-ping",
+            "whois",
+            "dnsmasq",
+            "wireguard",
+            "nftables",
+            "ipcalc",
+            "netcat-openbsd",
+            "socat",
+            "bridge-utils",
+            "nload",
+            "oping",
+            "arping",
+            "httpie",
+            "speedtest-cli",
+            "aria2",
+            "dnsmasq",
+            "mosh",
+            "tcpflow",
+            "tcpreplay",
+            "tshark",
+            "vnstat",
+            "iptraf-ng",
+            "mitmproxy",
+            "lldpd",
+            # Container and development
+            "podman",
+            "buildah",
+            "skopeo",
+            "nodejs",
+            "npm",
+            "autoconf",
+            "automake",
+            "libtool",
+            "docker.io",
+            "docker-compose",
+            "lxc",
+            "ansible",
+            "cloud-init",
+            # Debugging and development utilities
+            "strace",
+            "ltrace",
+            "valgrind",
+            "gdb",
+            "lsof",
+            "socat",
+            "psmisc",
+            "pv",
+            "lshw",
+            "hwinfo",
+            "dmidecode",
+            "sysfsutils",
+            "inxi",
+            "logrotate",
+            "logwatch",
+            "smartmontools",
+            "nvme-cli",
+            # Database clients
+            "mariadb-client",
+            "postgresql-client",
+            "sqlite3",
+            "redis-tools",
+            "mysql-client",
+            # Virtualization
+            "qemu-kvm",
+            "libvirt-daemon-system",
+            "virt-manager",
+            "virt-viewer",
+            "virt-top",
+            "bridge-utils",
+            "virtinst",
+            "libosinfo-bin",
+            "libguestfs-tools",
+            # File compression and archiving
+            "unzip",
+            "zip",
+            "tar",
+            "pigz",
+            "lz4",
+            "xz-utils",
+            "bzip2",
+            "p7zip-full",
+            "zstd",
+            "gzip",
+            "cpio",
+            "pax",
+            "rzip",
+            "arj",
+            "unrar",
+            "lzop",
+            # Terminal multiplexers and utilities
+            "mc",
+            "ranger",
+            "tmux",
+            "byobu",
+            "multitail",
+            "ccze",
+            "colordiff",
+            "progress",
+            "pv",
+            "rlwrap",
+            "reptyr",
+            "expect",
+            "dialog",
+            # Text processing
+            "jq",
+            "yq",
+            "csvkit",
+            "gawk",
+            "dos2unix",
+            "wdiff",
+            "colordiff",
+            "diffutils",
+            "pandoc",
+            "highlight",
+            "groff",
+            "xmlstarlet",
+            "html-xml-utils",
+            "xsltproc",
+            # Backup and sync
+            "restic",
+            "duplicity",
+            "borgbackup",
+            "rclone",
+            "rsnapshot",
+            "rdiff-backup",
+            "syncthing",
+            "unison",
+            "backintime-common",
+            "timeshift",
+            # Monitoring and configuration management
+            "prometheus-node-exporter",
+            "collectd-core",
+            "nagios-plugins-basic",
+            "puppet-agent",
+            "ansible",
+            "cfengine3",
+            # Web servers and proxies
+            "nginx",
+            "apache2-utils",
+            "haproxy",
+            "squid",
+            "lighttpd",
+            "tinyproxy",
+        ]
+    )
 
-        # System monitoring and performance analysis
-        "tree", "mtr", "iotop", "sysstat", "powertop", "htop", "atop", "glances",
-        "ncdu", "dstat", "nmon", "iftop", "nethogs", "bmon", "bpytop",
-        "btop", "stress-ng",
-
-        # Network and security
-        "git", "openssh-server", "ufw", "fail2ban", "curl", "wget", "rsync", "sudo",
-        "bash-completion", "net-tools", "nmap", "tcpdump", "iptables", "whois",
-        "nftables", "openssl", "lynis", "sshfs", "openvpn", "wireguard", "ethtool",
-        "ca-certificates", "gnupg2", "gpg", "certbot", "acl", "apparmor-utils",
-
-        # Core utilities
-        "python3", "python3-pip", "python3-venv", "cron", "at", "parallel", "moreutils",
-        "util-linux", "kbd", "debsums", "nala", "dnsutils", "apt-transport-https",
-        "apt-file", "apt-utils", "debian-goodies", "locales", "systemd-timesyncd",
-
-        # Modern shell utilities
-        "ripgrep", "fd-find", "bat", "fzf", "tldr", "jq", "ncurses-term",
-        "grc", "ranger", "thefuck", "neofetch", "htop", "glances", "byobu",
-        "zoxide", "direnv", "micro", "hexyl", "sd", "duf",
-
-        # Development tools
-        "gcc", "g++", "make", "cmake", "python3-dev", "libssl-dev", "shellcheck",
-        "libffi-dev", "zlib1g-dev", "libreadline-dev", "libbz2-dev", "libncurses-dev",
-        "build-essential", "pkg-config", "manpages-dev", "git-extras", "clang",
-        "llvm", "golang", "rust-all", "cargo", "gdb", "strace", "ltrace",
-
-        # Network utilities
-        "traceroute", "mtr", "dnsutils", "iproute2", "iputils-ping", "whois",
-        "dnsmasq", "wireguard", "nftables", "ipcalc", "netcat-openbsd", "socat",
-        "bridge-utils", "nload", "oping", "arping", "httpie", "speedtest-cli",
-        "aria2", "dnsmasq", "mosh", "tcpflow", "tcpreplay", "tshark",
-        "vnstat", "iptraf-ng", "mitmproxy", "lldpd",
-
-        # Container and development
-        "podman", "buildah", "skopeo", "nodejs", "npm", "autoconf", "automake", "libtool",
-        "docker.io", "docker-compose", "lxc", "ansible", "cloud-init",
-
-        # Debugging and development utilities
-        "strace", "ltrace", "valgrind", "gdb", "lsof", "socat", "psmisc", "pv",
-        "lshw", "hwinfo", "dmidecode", "sysfsutils", "inxi", "logrotate", "logwatch",
-        "smartmontools", "nvme-cli",
-
-        # Database clients
-        "mariadb-client", "postgresql-client", "sqlite3", "redis-tools",
-        "mysql-client",
-
-        # Virtualization
-        "qemu-kvm", "libvirt-daemon-system", "virt-manager", "virt-viewer", "virt-top",
-        "bridge-utils", "virtinst", "libosinfo-bin", "libguestfs-tools",
-
-        # File compression and archiving
-        "unzip", "zip", "tar", "pigz", "lz4", "xz-utils", "bzip2", "p7zip-full",
-        "zstd", "gzip", "cpio", "pax", "rzip", "arj", "unrar", "lzop",
-
-        # Terminal multiplexers and utilities
-        "mc", "ranger", "tmux", "byobu", "multitail", "ccze", "colordiff",
-        "progress", "pv", "rlwrap", "reptyr", "expect", "dialog",
-
-        # Text processing
-        "jq", "yq", "csvkit", "gawk", "dos2unix", "wdiff", "colordiff", "diffutils",
-        "pandoc", "highlight", "groff", "xmlstarlet", "html-xml-utils", "xsltproc",
-
-        # Backup and sync
-        "restic", "duplicity", "borgbackup", "rclone", "rsnapshot", "rdiff-backup",
-        "syncthing", "unison", "backintime-common", "timeshift",
-
-        # Monitoring and configuration management
-        "prometheus-node-exporter", "collectd-core", "nagios-plugins-basic",
-        "puppet-agent", "ansible", "cfengine3",
-
-        # Web servers and proxies
-        "nginx", "apache2-utils", "haproxy", "squid",
-        "lighttpd", "tinyproxy",
-    ])
-
-    SSH_CONFIG: Dict[str, str] = field(default_factory=lambda: {
-        "PermitRootLogin": "no",
-        "PasswordAuthentication": "yes",
-        "X11Forwarding": "no",
-        "MaxAuthTries": "3",
-        "ClientAliveInterval": "300",
-        "ClientAliveCountMax": "3",
-    })
+    SSH_CONFIG: Dict[str, str] = field(
+        default_factory=lambda: {
+            "PermitRootLogin": "no",
+            "PasswordAuthentication": "yes",
+            "X11Forwarding": "no",
+            "MaxAuthTries": "3",
+            "ClientAliveInterval": "300",
+            "ClientAliveCountMax": "3",
+        }
+    )
 
     FIREWALL_PORTS: List[str] = field(default_factory=lambda: ["22", "80", "443"])
 
@@ -181,7 +378,9 @@ def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
     logger.addHandler(console_handler)
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+    formatter = logging.Formatter(
+        "[%(asctime)s] [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S"
+    )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     try:
@@ -193,7 +392,11 @@ def setup_logger(log_file: Union[str, Path]) -> logging.Logger:
 
 async def signal_handler_async(signum: int, frame: Any) -> None:
     try:
-        sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else f"signal {signum}"
+        sig_name = (
+            signal.Signals(signum).name
+            if hasattr(signal, "Signals")
+            else f"signal {signum}"
+        )
         logger = logging.getLogger("ubuntu_setup")
         logger.error(f"Script interrupted by {sig_name}. Initiating cleanup.")
     except Exception as e:
@@ -206,7 +409,11 @@ async def signal_handler_async(signum: int, frame: Any) -> None:
         logger.error(f"Error during cleanup after signal: {e}")
     try:
         loop = asyncio.get_running_loop()
-        tasks = [task for task in asyncio.all_tasks(loop) if task is not asyncio.current_task()]
+        tasks = [
+            task
+            for task in asyncio.all_tasks(loop)
+            if task is not asyncio.current_task()
+        ]
         for task in tasks:
             task.cancel()
         if tasks:
@@ -214,14 +421,26 @@ async def signal_handler_async(signum: int, frame: Any) -> None:
         loop.stop()
     except Exception as e:
         logger.error(f"Error stopping event loop: {e}")
-    sys.exit(130 if signum == signal.SIGINT else 143 if signum == signal.SIGTERM else 128 + signum)
+    sys.exit(
+        130
+        if signum == signal.SIGINT
+        else 143
+        if signum == signal.SIGTERM
+        else 128 + signum
+    )
+
 
 def setup_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
     for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        loop.add_signal_handler(signum, lambda sig=signum: asyncio.create_task(signal_handler_async(sig, None)))
+        loop.add_signal_handler(
+            signum,
+            lambda sig=signum: asyncio.create_task(signal_handler_async(sig, None)),
+        )
 
 
-async def download_file_async(url: str, dest: Union[str, Path], timeout: int = 300) -> None:
+async def download_file_async(
+    url: str, dest: Union[str, Path], timeout: int = 300
+) -> None:
     dest = Path(dest)
     logger = logging.getLogger("ubuntu_setup")
     if dest.exists():
@@ -232,22 +451,34 @@ async def download_file_async(url: str, dest: Union[str, Path], timeout: int = 3
     try:
         if shutil.which("wget"):
             proc = await asyncio.create_subprocess_exec(
-                "wget", "-q", "--show-progress", url, "-O", str(dest),
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                "wget",
+                "-q",
+                "--show-progress",
+                url,
+                "-O",
+                str(dest),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
             await asyncio.wait_for(proc.communicate(), timeout=timeout)
             if proc.returncode != 0:
                 raise Exception(f"wget failed with return code {proc.returncode}")
         elif shutil.which("curl"):
             proc = await asyncio.create_subprocess_exec(
-                "curl", "-L", "-o", str(dest), url,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                "curl",
+                "-L",
+                "-o",
+                str(dest),
+                url,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
             await asyncio.wait_for(proc.communicate(), timeout=timeout)
             if proc.returncode != 0:
                 raise Exception(f"curl failed with return code {proc.returncode}")
         else:
             import urllib.request
+
             await loop.run_in_executor(None, urllib.request.urlretrieve, url, dest)
         logger.info(f"Download complete: {dest}")
     except asyncio.TimeoutError:
@@ -263,11 +494,11 @@ async def download_file_async(url: str, dest: Union[str, Path], timeout: int = 3
 
 
 async def run_with_progress_async(
-        description: str,
-        func: Callable[..., Any],
-        *args: Any,
-        task_name: Optional[str] = None,
-        **kwargs: Any,
+    description: str,
+    func: Callable[..., Any],
+    *args: Any,
+    task_name: Optional[str] = None,
+    **kwargs: Any,
 ) -> Any:
     if task_name:
         SETUP_STATUS[task_name] = {
@@ -303,11 +534,11 @@ async def run_with_progress_async(
 
 
 async def run_command_async(
-        cmd: List[str],
-        capture_output: bool = False,
-        text: bool = False,
-        check: bool = True,
-        timeout: Optional[int] = OPERATION_TIMEOUT,
+    cmd: List[str],
+    capture_output: bool = False,
+    text: bool = False,
+    check: bool = True,
+    timeout: Optional[int] = OPERATION_TIMEOUT,
 ) -> subprocess.CompletedProcess:
     logger = logging.getLogger("ubuntu_setup")
     logger.debug(f"Running command: {' '.join(cmd)}")
@@ -315,7 +546,9 @@ async def run_command_async(
     stderr = asyncio.subprocess.PIPE if capture_output else None
     try:
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=stdout, stderr=stderr)
-        stdout_data, stderr_data = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        stdout_data, stderr_data = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
+        )
         if text and stdout_data is not None:
             stdout_data = stdout_data.decode("utf-8")
         if text and stderr_data is not None:
@@ -327,7 +560,9 @@ async def run_command_async(
             stderr=stderr_data if capture_output else None,
         )
         if check and proc.returncode != 0:
-            raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout_data, stderr=stderr_data)
+            raise subprocess.CalledProcessError(
+                proc.returncode, cmd, output=stdout_data, stderr=stderr_data
+            )
         return result
     except asyncio.TimeoutError:
         logger.error(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
@@ -398,7 +633,9 @@ class UbuntuServerSetup:
             timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             rotated = f"{log_path}.{timestamp}.gz"
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: self._compress_log(log_path, rotated))
+            await loop.run_in_executor(
+                None, lambda: self._compress_log(log_path, rotated)
+            )
             self.logger.info(f"Log rotated to {rotated}")
             return True
         except Exception as e:
@@ -412,8 +649,11 @@ class UbuntuServerSetup:
 
     async def has_internet_connection_async(self) -> bool:
         try:
-            await run_command_async(["ping", "-c", "1", "-W", "5", "8.8.8.8"],
-                                    capture_output=True, check=False)
+            await run_command_async(
+                ["ping", "-c", "1", "-W", "5", "8.8.8.8"],
+                capture_output=True,
+                check=False,
+            )
             return True
         except Exception:
             return False
@@ -421,13 +661,26 @@ class UbuntuServerSetup:
     async def phase_preflight(self) -> bool:
         await self.print_section_async("Pre-flight Checks & Backups")
         try:
-            await run_with_progress_async("Checking for root privileges", self.check_root_async, task_name="preflight")
-            await run_with_progress_async("Checking network connectivity", self.check_network_async,
-                                          task_name="preflight")
-            await run_with_progress_async("Verifying Ubuntu distribution", self.check_ubuntu_async,
-                                          task_name="preflight")
-            await run_with_progress_async("Saving configuration snapshot", self.save_config_snapshot_async,
-                                          task_name="preflight")
+            await run_with_progress_async(
+                "Checking for root privileges",
+                self.check_root_async,
+                task_name="preflight",
+            )
+            await run_with_progress_async(
+                "Checking network connectivity",
+                self.check_network_async,
+                task_name="preflight",
+            )
+            await run_with_progress_async(
+                "Verifying Ubuntu distribution",
+                self.check_ubuntu_async,
+                task_name="preflight",
+            )
+            await run_with_progress_async(
+                "Saving configuration snapshot",
+                self.save_config_snapshot_async,
+                task_name="preflight",
+            )
             return True
         except Exception as e:
             self.logger.error(f"Pre-flight phase failed: {e}")
@@ -454,15 +707,25 @@ class UbuntuServerSetup:
                     os_release = f.read()
                 if "Ubuntu" in os_release:
                     try:
-                        pretty_name = next((line.split('=')[1].strip().strip('"') for line in os_release.splitlines()
-                                          if line.startswith('PRETTY_NAME=')), "Ubuntu")
+                        pretty_name = next(
+                            (
+                                line.split("=")[1].strip().strip('"')
+                                for line in os_release.splitlines()
+                                if line.startswith("PRETTY_NAME=")
+                            ),
+                            "Ubuntu",
+                        )
                         self.logger.info(f"Detected Ubuntu: {pretty_name}")
                     except Exception:
                         self.logger.info("Detected Ubuntu")
                 else:
-                    self.logger.warning("This may not be an Ubuntu system. Some features may not work.")
+                    self.logger.warning(
+                        "This may not be an Ubuntu system. Some features may not work."
+                    )
             else:
-                self.logger.warning("This may not be an Ubuntu system. Some features may not work.")
+                self.logger.warning(
+                    "This may not be an Ubuntu system. Some features may not work."
+                )
         except Exception as e:
             self.logger.warning(f"Could not verify distribution: {e}")
 
@@ -479,8 +742,11 @@ class UbuntuServerSetup:
                 nonlocal files_added
                 with tarfile.open(snapshot_file, "w:gz") as tar:
                     for config_path in [
-                        "/etc/apt/sources.list.d", "/etc/fstab", "/etc/default/grub",
-                        "/etc/hosts", "/etc/ssh/sshd_config"
+                        "/etc/apt/sources.list.d",
+                        "/etc/fstab",
+                        "/etc/default/grub",
+                        "/etc/hosts",
+                        "/etc/ssh/sshd_config",
                     ]:
                         path = Path(config_path)
                         if path.exists():
@@ -503,16 +769,27 @@ class UbuntuServerSetup:
     async def phase_system_update(self) -> bool:
         await self.print_section_async("System Update & Basic Configuration")
         status = True
-        if not await run_with_progress_async("Updating package repositories", self.update_repos_async,
-                                             task_name="system_update"):
+        if not await run_with_progress_async(
+            "Updating package repositories",
+            self.update_repos_async,
+            task_name="system_update",
+        ):
             status = False
-        if not await run_with_progress_async("Upgrading system packages", self.upgrade_system_async,
-                                             task_name="system_update"):
+        if not await run_with_progress_async(
+            "Upgrading system packages",
+            self.upgrade_system_async,
+            task_name="system_update",
+        ):
             status = False
-        success, failed = await run_with_progress_async("Installing required packages", self.install_packages_async,
-                                                        task_name="system_update")
+        success, failed = await run_with_progress_async(
+            "Installing required packages",
+            self.install_packages_async,
+            task_name="system_update",
+        )
         if failed and len(failed) > len(self.config.PACKAGES) * 0.1:
-            self.logger.error(f"Failed to install too many packages: {', '.join(failed)}")
+            self.logger.error(
+                f"Failed to install too many packages: {', '.join(failed)}"
+            )
             status = False
         return status
 
@@ -552,8 +829,13 @@ class UbuntuServerSetup:
         # Check which packages are already installed
         for pkg in self.config.PACKAGES:
             try:
-                result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
-                if result.returncode == 0 and b"Status: install ok installed" in result.stdout:
+                result = await run_command_async(
+                    ["dpkg", "-s", pkg], check=False, capture_output=True
+                )
+                if (
+                    result.returncode == 0
+                    and b"Status: install ok installed" in result.stdout
+                ):
                     self.logger.debug(f"Package already installed: {pkg}")
                     success.append(pkg)
                 else:
@@ -565,15 +847,20 @@ class UbuntuServerSetup:
             self.logger.info("All required packages are already installed.")
             return success, failed
 
-        # Create smaller batches (2 packages at a time)
-        batch_size = 2
-        batches = [missing[i:i + batch_size] for i in range(0, len(missing), batch_size)]
+        # Create smaller batches (5 packages at a time)
+        batch_size = 5
+        batches = [
+            missing[i : i + batch_size] for i in range(0, len(missing), batch_size)
+        ]
         self.logger.info(
-            f"Installing {len(missing)} packages in {len(batches)} batches of up to {batch_size} packages each")
+            f"Installing {len(missing)} packages in {len(batches)} batches of up to {batch_size} packages each"
+        )
 
         # Process each batch
         for batch_num, batch in enumerate(batches, 1):
-            self.logger.info(f"Processing batch {batch_num}/{len(batches)}: {' '.join(batch)}")
+            self.logger.info(
+                f"Processing batch {batch_num}/{len(batches)}: {' '.join(batch)}"
+            )
 
             # Run cleanup every 5 batches
             if batch_num % 5 == 0:
@@ -582,10 +869,17 @@ class UbuntuServerSetup:
             # Try to install the batch with nala
             try:
                 self.logger.info(f"Installing batch with nala: {' '.join(batch)}")
-                await run_command_async(["nala", "install", "-y", "--no-install-recommends"] + batch)
+                await run_command_async(
+                    ["nala", "install", "-y", "--no-install-recommends"] + batch
+                )
                 for pkg in batch:
-                    result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
-                    if result.returncode == 0 and b"Status: install ok installed" in result.stdout:
+                    result = await run_command_async(
+                        ["dpkg", "-s", pkg], check=False, capture_output=True
+                    )
+                    if (
+                        result.returncode == 0
+                        and b"Status: install ok installed" in result.stdout
+                    ):
                         success.append(pkg)
                         self.logger.info(f"Successfully installed {pkg}")
                     else:
@@ -609,7 +903,9 @@ class UbuntuServerSetup:
         # Log summary
         self.logger.info(f"Successfully installed {len(success)} packages.")
         if failed:
-            self.logger.warning(f"Failed to install {len(failed)} packages: {', '.join(failed)}")
+            self.logger.warning(
+                f"Failed to install {len(failed)} packages: {', '.join(failed)}"
+            )
 
         return success, failed
 
@@ -621,7 +917,9 @@ class UbuntuServerSetup:
         self.logger.info("Running package system cleanup and preparation...")
         try:
             # Fix broken packages
-            await run_command_async(["nala", "install", "--fix-broken", "-y"], check=False)
+            await run_command_async(
+                ["nala", "install", "--fix-broken", "-y"], check=False
+            )
 
             # Configure any pending packages
             await run_command_async(["dpkg", "--configure", "-a"], check=False)
@@ -647,7 +945,9 @@ class UbuntuServerSetup:
             True if installation was successful, False otherwise
         """
         # Check if already installed first
-        result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
+        result = await run_command_async(
+            ["dpkg", "-s", pkg], check=False, capture_output=True
+        )
         if result.returncode == 0 and b"Status: install ok installed" in result.stdout:
             self.logger.info(f"Package {pkg} is already installed")
             return True
@@ -657,25 +957,43 @@ class UbuntuServerSetup:
             ["nala", "install", "-y", "--no-install-recommends", pkg],
             ["nala", "install", "-y", "--fix-broken", pkg],
             ["apt-get", "install", "-y", "--no-install-recommends", pkg],
-            ["apt-get", "install", "-y", "--no-install-recommends", "--fix-missing", pkg]
+            [
+                "apt-get",
+                "install",
+                "-y",
+                "--no-install-recommends",
+                "--fix-missing",
+                pkg,
+            ],
         ]
 
         for method in methods:
             try:
-                self.logger.info(f"Trying to install {pkg} with command: {' '.join(method)}")
+                self.logger.info(
+                    f"Trying to install {pkg} with command: {' '.join(method)}"
+                )
                 await run_command_async(method)
 
                 # Verify installation
-                result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
-                if result.returncode == 0 and b"Status: install ok installed" in result.stdout:
+                result = await run_command_async(
+                    ["dpkg", "-s", pkg], check=False, capture_output=True
+                )
+                if (
+                    result.returncode == 0
+                    and b"Status: install ok installed" in result.stdout
+                ):
                     self.logger.info(f"Successfully installed {pkg} with {method[0]}")
                     return True
 
                 # Fix dependencies if needed
                 if "nala" in method[0]:
-                    await run_command_async(["nala", "install", "--fix-broken", "-y"], check=False)
+                    await run_command_async(
+                        ["nala", "install", "--fix-broken", "-y"], check=False
+                    )
                 else:
-                    await run_command_async(["apt-get", "--fix-broken", "install", "-y"], check=False)
+                    await run_command_async(
+                        ["apt-get", "--fix-broken", "install", "-y"], check=False
+                    )
 
             except Exception as e:
                 self.logger.warning(f"Failed to install {pkg} with {method[0]}: {e}")
@@ -683,32 +1001,50 @@ class UbuntuServerSetup:
                 # Try to fix broken packages after each failed attempt
                 try:
                     if "nala" in method[0]:
-                        await run_command_async(["nala", "install", "--fix-broken", "-y"], check=False)
+                        await run_command_async(
+                            ["nala", "install", "--fix-broken", "-y"], check=False
+                        )
                     else:
-                        await run_command_async(["apt-get", "--fix-broken", "install", "-y"], check=False)
+                        await run_command_async(
+                            ["apt-get", "--fix-broken", "install", "-y"], check=False
+                        )
                 except Exception:
                     pass
 
         # Last resort: try to download the deb and install manually
         try:
-            self.logger.info(f"Attempting to install {pkg} with apt-get download and dpkg")
+            self.logger.info(
+                f"Attempting to install {pkg} with apt-get download and dpkg"
+            )
 
             # Create a temporary directory
             temp_dir = tempfile.mkdtemp(prefix="pkg_install_")
             try:
                 # Download the package
-                await run_command_async(["apt-get", "download", pkg], check=False, cwd=temp_dir)
+                await run_command_async(
+                    ["apt-get", "download", pkg], check=False, cwd=temp_dir
+                )
 
                 # Find the downloaded deb file
                 deb_files = list(Path(temp_dir).glob("*.deb"))
                 if deb_files:
                     # Install with dpkg
-                    await run_command_async(["dpkg", "-i", "--force-depends", str(deb_files[0])], check=False)
-                    await run_command_async(["nala", "install", "--fix-broken", "-y"], check=False)
+                    await run_command_async(
+                        ["dpkg", "-i", "--force-depends", str(deb_files[0])],
+                        check=False,
+                    )
+                    await run_command_async(
+                        ["nala", "install", "--fix-broken", "-y"], check=False
+                    )
 
                     # Verify installation
-                    result = await run_command_async(["dpkg", "-s", pkg], check=False, capture_output=True)
-                    if result.returncode == 0 and b"Status: install ok installed" in result.stdout:
+                    result = await run_command_async(
+                        ["dpkg", "-s", pkg], check=False, capture_output=True
+                    )
+                    if (
+                        result.returncode == 0
+                        and b"Status: install ok installed" in result.stdout
+                    ):
                         self.logger.info(f"Successfully installed {pkg} with dpkg")
                         return True
             finally:
@@ -723,14 +1059,23 @@ class UbuntuServerSetup:
     async def phase_repo_shell_setup(self) -> bool:
         await self.print_section_async("Repository & Shell Setup")
         status = True
-        if not await run_with_progress_async("Setting up GitHub repositories", self.setup_repos_async,
-                                             task_name="repo_shell"):
+        if not await run_with_progress_async(
+            "Setting up GitHub repositories",
+            self.setup_repos_async,
+            task_name="repo_shell",
+        ):
             status = False
-        if not await run_with_progress_async("Copying shell configurations", self.copy_shell_configs_async,
-                                             task_name="repo_shell"):
+        if not await run_with_progress_async(
+            "Copying shell configurations",
+            self.copy_shell_configs_async,
+            task_name="repo_shell",
+        ):
             status = False
-        if not await run_with_progress_async("Setting default shell to bash", self.set_bash_shell_async,
-                                             task_name="repo_shell"):
+        if not await run_with_progress_async(
+            "Setting default shell to bash",
+            self.set_bash_shell_async,
+            task_name="repo_shell",
+        ):
             status = False
         return status
 
@@ -752,31 +1097,62 @@ class UbuntuServerSetup:
                 self.logger.info(f"Cloning repository '{repo}'...")
                 try:
                     await run_command_async(
-                        ["git", "clone", f"https://github.com/dunamismax/{repo}.git", str(repo_dir)])
+                        [
+                            "git",
+                            "clone",
+                            f"https://github.com/dunamismax/{repo}.git",
+                            str(repo_dir),
+                        ]
+                    )
                 except subprocess.CalledProcessError:
                     self.logger.warning(f"Failed to clone repository '{repo}'.")
                     all_success = False
         try:
-            await run_command_async(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(gh_dir)])
+            await run_command_async(
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(gh_dir),
+                ]
+            )
         except subprocess.CalledProcessError:
             self.logger.warning(f"Failed to set ownership of {gh_dir}.")
             all_success = False
         return all_success
 
     async def copy_shell_configs_async(self) -> bool:
-        source_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "ubuntu" / "dotfiles"
+        source_dir = (
+            self.config.USER_HOME / "github" / "bash" / "linux" / "ubuntu" / "dotfiles"
+        )
         if not source_dir.is_dir():
-            debian_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "debian" / "dotfiles"
+            debian_dir = (
+                self.config.USER_HOME
+                / "github"
+                / "bash"
+                / "linux"
+                / "debian"
+                / "dotfiles"
+            )
             if debian_dir.is_dir():
                 source_dir = debian_dir
                 self.logger.info(f"Using Debian dotfiles from {source_dir}.")
             else:
-                fallback_dir = self.config.USER_HOME / "github" / "bash" / "linux" / "fedora" / "dotfiles"
+                fallback_dir = (
+                    self.config.USER_HOME
+                    / "github"
+                    / "bash"
+                    / "linux"
+                    / "fedora"
+                    / "dotfiles"
+                )
                 if not fallback_dir.is_dir():
                     self.logger.error(f"No suitable dotfiles found.")
                     return False
                 source_dir = fallback_dir
-                self.logger.info(f"Using Fedora dotfiles as fallback from {source_dir}.")
+                self.logger.info(
+                    f"Using Fedora dotfiles as fallback from {source_dir}."
+                )
 
         destination_dirs = [self.config.USER_HOME, Path("/root")]
         overall = True
@@ -788,15 +1164,23 @@ class UbuntuServerSetup:
             for dest_dir in destination_dirs:
                 dest = dest_dir / file_name
                 loop = asyncio.get_running_loop()
-                files_identical = dest.is_file() and await loop.run_in_executor(None, lambda: filecmp.cmp(src, dest))
+                files_identical = dest.is_file() and await loop.run_in_executor(
+                    None, lambda: filecmp.cmp(src, dest)
+                )
                 if dest.is_file() and files_identical:
                     self.logger.info(f"File {dest} is already up-to-date.")
                 else:
                     try:
                         if dest.is_file():
                             await self.backup_file_async(dest)
-                        await loop.run_in_executor(None, lambda: shutil.copy2(src, dest))
-                        owner = f"{self.config.USERNAME}:{self.config.USERNAME}" if dest_dir == self.config.USER_HOME else "root:root"
+                        await loop.run_in_executor(
+                            None, lambda: shutil.copy2(src, dest)
+                        )
+                        owner = (
+                            f"{self.config.USERNAME}:{self.config.USERNAME}"
+                            if dest_dir == self.config.USER_HOME
+                            else "root:root"
+                        )
                         await run_command_async(["chown", owner, str(dest)])
                         self.logger.info(f"Copied {src} to {dest}.")
                     except Exception as e:
@@ -818,40 +1202,56 @@ class UbuntuServerSetup:
             if shells_file.exists():
                 content = await loop.run_in_executor(None, shells_file.read_text)
                 if "/bin/bash" not in content:
-                    await loop.run_in_executor(None, lambda: shells_file.open("a").write("/bin/bash\n"))
+                    await loop.run_in_executor(
+                        None, lambda: shells_file.open("a").write("/bin/bash\n")
+                    )
                     self.logger.info("Added /bin/bash to /etc/shells.")
             else:
-                await loop.run_in_executor(None, lambda: shells_file.write_text("/bin/bash\n"))
+                await loop.run_in_executor(
+                    None, lambda: shells_file.write_text("/bin/bash\n")
+                )
                 self.logger.info("Created /etc/shells with /bin/bash.")
         except Exception as e:
             self.logger.warning(f"Failed to update /etc/shells: {e}")
             return False
         try:
             await run_command_async(["chsh", "-s", "/bin/bash", self.config.USERNAME])
-            self.logger.info(f"Default shell for {self.config.USERNAME} set to /bin/bash.")
+            self.logger.info(
+                f"Default shell for {self.config.USERNAME} set to /bin/bash."
+            )
             return True
         except subprocess.CalledProcessError:
-            self.logger.warning(f"Failed to set default shell for {self.config.USERNAME}.")
+            self.logger.warning(
+                f"Failed to set default shell for {self.config.USERNAME}."
+            )
             return False
 
     async def phase_security_hardening(self) -> bool:
         await self.print_section_async("Security Hardening")
         status = True
-        if not await run_with_progress_async("Configuring SSH", self.configure_ssh_async, task_name="security"):
+        if not await run_with_progress_async(
+            "Configuring SSH", self.configure_ssh_async, task_name="security"
+        ):
             status = False
-        if not await run_with_progress_async("Configuring firewall", self.configure_firewall_async,
-                                             task_name="security"):
+        if not await run_with_progress_async(
+            "Configuring firewall", self.configure_firewall_async, task_name="security"
+        ):
             status = False
-        if not await run_with_progress_async("Configuring Fail2ban", self.configure_fail2ban_async,
-                                             task_name="security"):
+        if not await run_with_progress_async(
+            "Configuring Fail2ban", self.configure_fail2ban_async, task_name="security"
+        ):
             status = False
-        if not await run_with_progress_async("Configuring AppArmor", self.configure_apparmor_async, task_name="security"):
+        if not await run_with_progress_async(
+            "Configuring AppArmor", self.configure_apparmor_async, task_name="security"
+        ):
             status = False
         return status
 
     async def configure_ssh_async(self) -> bool:
         try:
-            result = await run_command_async(["dpkg", "-l", "openssh-server"], check=False, capture_output=True)
+            result = await run_command_async(
+                ["dpkg", "-l", "openssh-server"], check=False, capture_output=True
+            )
             if result.returncode != 0:
                 self.logger.info("openssh-server not installed. Installing...")
                 try:
@@ -874,7 +1274,9 @@ class UbuntuServerSetup:
         await self.backup_file_async(sshd_config)
         try:
             loop = asyncio.get_running_loop()
-            lines = await loop.run_in_executor(None, lambda: sshd_config.read_text().splitlines())
+            lines = await loop.run_in_executor(
+                None, lambda: sshd_config.read_text().splitlines()
+            )
             for key, val in self.config.SSH_CONFIG.items():
                 found = False
                 for i, line in enumerate(lines):
@@ -884,7 +1286,9 @@ class UbuntuServerSetup:
                         break
                 if not found:
                     lines.append(f"{key} {val}")
-            await loop.run_in_executor(None, lambda: sshd_config.write_text("\n".join(lines) + "\n"))
+            await loop.run_in_executor(
+                None, lambda: sshd_config.write_text("\n".join(lines) + "\n")
+            )
             await run_command_async(["systemctl", "restart", "ssh"])
             self.logger.info("SSH configuration updated and service restarted.")
             return True
@@ -919,7 +1323,9 @@ class UbuntuServerSetup:
     async def configure_fail2ban_async(self) -> bool:
         # Install fail2ban if not already installed
         try:
-            result = await run_command_async(["dpkg", "-l", "fail2ban"], check=False, capture_output=True)
+            result = await run_command_async(
+                ["dpkg", "-l", "fail2ban"], check=False, capture_output=True
+            )
             if result.returncode != 0:
                 self.logger.info("fail2ban not installed. Installing...")
                 try:
@@ -930,7 +1336,7 @@ class UbuntuServerSetup:
         except Exception:
             self.logger.error("Failed to check for fail2ban installation.")
             return False
-        
+
         jail_local = Path("/etc/fail2ban/jail.local")
         jail_local.parent.mkdir(parents=True, exist_ok=True)
         config_content = (
@@ -950,7 +1356,9 @@ class UbuntuServerSetup:
             if jail_local.is_file():
                 await self.backup_file_async(jail_local)
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: jail_local.write_text(config_content))
+            await loop.run_in_executor(
+                None, lambda: jail_local.write_text(config_content)
+            )
             self.logger.info("Fail2ban configuration written.")
             await run_command_async(["systemctl", "enable", "fail2ban"])
             await run_command_async(["systemctl", "restart", "fail2ban"])
@@ -965,11 +1373,15 @@ class UbuntuServerSetup:
             self.logger.info("Checking AppArmor status...")
             # Install AppArmor if not already installed
             try:
-                result = await run_command_async(["dpkg", "-l", "apparmor"], check=False, capture_output=True)
+                result = await run_command_async(
+                    ["dpkg", "-l", "apparmor"], check=False, capture_output=True
+                )
                 if result.returncode != 0:
                     self.logger.info("AppArmor not installed. Installing...")
                     try:
-                        await run_command_async(["nala", "install", "-y", "apparmor", "apparmor-utils"])
+                        await run_command_async(
+                            ["nala", "install", "-y", "apparmor", "apparmor-utils"]
+                        )
                     except subprocess.CalledProcessError:
                         self.logger.error("Failed to install AppArmor.")
                         return False
@@ -978,7 +1390,9 @@ class UbuntuServerSetup:
                 return False
 
             # Check AppArmor status
-            result = await run_command_async(["aa-status"], capture_output=True, text=True, check=False)
+            result = await run_command_async(
+                ["aa-status"], capture_output=True, text=True, check=False
+            )
             apparmor_status = result.stdout.strip()
             self.logger.info(f"Current AppArmor status: {apparmor_status}")
 
@@ -993,20 +1407,39 @@ class UbuntuServerSetup:
     async def phase_user_customization(self) -> bool:
         await self.print_section_async("User Customization & Script Deployment")
         status = True
-        if not await run_with_progress_async("Deploying user scripts", self.deploy_user_scripts_async,
-                                             task_name="user_custom"):
+        if not await run_with_progress_async(
+            "Deploying user scripts",
+            self.deploy_user_scripts_async,
+            task_name="user_custom",
+        ):
             status = False
         return status
 
     async def deploy_user_scripts_async(self) -> bool:
-        src = self.config.USER_HOME / "github" / "bash" / "linux" / "ubuntu" / "_scripts"
+        src = (
+            self.config.USER_HOME / "github" / "bash" / "linux" / "ubuntu" / "_scripts"
+        )
         if not src.is_dir():
-            debian_src = self.config.USER_HOME / "github" / "bash" / "linux" / "debian" / "_scripts"
+            debian_src = (
+                self.config.USER_HOME
+                / "github"
+                / "bash"
+                / "linux"
+                / "debian"
+                / "_scripts"
+            )
             if debian_src.is_dir():
                 src = debian_src
                 self.logger.info(f"Using Debian scripts from {src}.")
             else:
-                fedora_src = self.config.USER_HOME / "github" / "bash" / "linux" / "fedora" / "_scripts"
+                fedora_src = (
+                    self.config.USER_HOME
+                    / "github"
+                    / "bash"
+                    / "linux"
+                    / "fedora"
+                    / "_scripts"
+                )
                 if not fedora_src.is_dir():
                     self.logger.error(f"Script source directory not found.")
                     return False
@@ -1016,9 +1449,20 @@ class UbuntuServerSetup:
         target = self.config.USER_HOME / "bin"
         target.mkdir(exist_ok=True)
         try:
-            await run_command_async(["rsync", "-ah", "--delete", f"{src}/", f"{target}/"])
-            await run_command_async(["find", str(target), "-type", "f", "-exec", "chmod", "755", "{}", ";"])
-            await run_command_async(["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(target)])
+            await run_command_async(
+                ["rsync", "-ah", "--delete", f"{src}/", f"{target}/"]
+            )
+            await run_command_async(
+                ["find", str(target), "-type", "f", "-exec", "chmod", "755", "{}", ";"]
+            )
+            await run_command_async(
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(target),
+                ]
+            )
             self.logger.info("User scripts deployed successfully.")
             return True
         except subprocess.CalledProcessError as e:
@@ -1028,29 +1472,59 @@ class UbuntuServerSetup:
     async def phase_permissions(self) -> bool:
         await self.print_section_async("Permissions Setup")
         status = True
-        if not await run_with_progress_async("Configuring home directory permissions", self.home_permissions_async,
-                                             task_name="permissions"):
+        if not await run_with_progress_async(
+            "Configuring home directory permissions",
+            self.home_permissions_async,
+            task_name="permissions",
+        ):
             status = False
         return status
 
     async def home_permissions_async(self) -> bool:
         try:
             await run_command_async(
-                ["chown", "-R", f"{self.config.USERNAME}:{self.config.USERNAME}", str(self.config.USER_HOME)])
-            self.logger.info(f"Ownership of {self.config.USER_HOME} set to {self.config.USERNAME}.")
+                [
+                    "chown",
+                    "-R",
+                    f"{self.config.USERNAME}:{self.config.USERNAME}",
+                    str(self.config.USER_HOME),
+                ]
+            )
+            self.logger.info(
+                f"Ownership of {self.config.USER_HOME} set to {self.config.USERNAME}."
+            )
         except subprocess.CalledProcessError:
             self.logger.error(f"Failed to change ownership of {self.config.USER_HOME}.")
             return False
         try:
             await run_command_async(
-                ["find", str(self.config.USER_HOME), "-type", "d", "-exec", "chmod", "g+s", "{}", ";"])
+                [
+                    "find",
+                    str(self.config.USER_HOME),
+                    "-type",
+                    "d",
+                    "-exec",
+                    "chmod",
+                    "g+s",
+                    "{}",
+                    ";",
+                ]
+            )
             self.logger.info("Setgid bit applied on home directories.")
         except subprocess.CalledProcessError:
             self.logger.warning("Failed to set setgid bit.")
         if await command_exists_async("setfacl"):
             try:
                 await run_command_async(
-                    ["setfacl", "-R", "-d", "-m", f"u:{self.config.USERNAME}:rwx", str(self.config.USER_HOME)])
+                    [
+                        "setfacl",
+                        "-R",
+                        "-d",
+                        "-m",
+                        f"u:{self.config.USERNAME}:rwx",
+                        str(self.config.USER_HOME),
+                    ]
+                )
                 self.logger.info("Default ACLs applied on home directory.")
             except subprocess.CalledProcessError:
                 self.logger.warning("Failed to apply default ACLs.")
@@ -1093,7 +1567,9 @@ class UbuntuServerSetup:
     async def final_checks_async(self) -> Dict[str, str]:
         info = {}
         try:
-            kernel = await run_command_async(["uname", "-r"], capture_output=True, text=True)
+            kernel = await run_command_async(
+                ["uname", "-r"], capture_output=True, text=True
+            )
             self.logger.info(f"Kernel version: {kernel.stdout.strip()}")
             info["kernel"] = kernel.stdout.strip()
         except Exception as e:
@@ -1103,37 +1579,53 @@ class UbuntuServerSetup:
             with open("/etc/os-release", "r") as f:
                 for line in f:
                     if line.startswith("PRETTY_NAME="):
-                        pretty_name = line.split('=')[1].strip().strip('"')
+                        pretty_name = line.split("=")[1].strip().strip('"')
                         break
             self.logger.info(f"Distribution: {pretty_name}")
             info["distribution"] = pretty_name
         except Exception as e:
             self.logger.warning(f"Failed to get distribution info: {e}")
             try:
-                os_release = await run_command_async(["cat", "/etc/os-release"], capture_output=True, text=True)
-                pretty_name = next((line.split('=')[1].strip().strip('"') for line in os_release.stdout.splitlines()
-                                    if line.startswith('PRETTY_NAME=')), "Unknown")
+                os_release = await run_command_async(
+                    ["cat", "/etc/os-release"], capture_output=True, text=True
+                )
+                pretty_name = next(
+                    (
+                        line.split("=")[1].strip().strip('"')
+                        for line in os_release.stdout.splitlines()
+                        if line.startswith("PRETTY_NAME=")
+                    ),
+                    "Unknown",
+                )
                 self.logger.info(f"Distribution from os-release: {pretty_name}")
                 info["distribution"] = pretty_name
             except Exception as e2:
                 self.logger.warning(f"Failed to get distribution from os-release: {e2}")
                 info["distribution"] = "Unknown"
         try:
-            uptime = await run_command_async(["uptime", "-p"], capture_output=True, text=True)
+            uptime = await run_command_async(
+                ["uptime", "-p"], capture_output=True, text=True
+            )
             self.logger.info(f"System uptime: {uptime.stdout.strip()}")
             info["uptime"] = uptime.stdout.strip()
         except Exception as e:
             self.logger.warning(f"Failed to get uptime: {e}")
         try:
-            df_output = await run_command_async(["df", "-h", "/"], capture_output=True, text=True)
+            df_output = await run_command_async(
+                ["df", "-h", "/"], capture_output=True, text=True
+            )
             df_line = df_output.stdout.splitlines()[1]
             self.logger.info(f"Disk usage (root): {df_line}")
             info["disk_usage"] = df_line
         except Exception as e:
             self.logger.warning(f"Failed to get disk usage: {e}")
         try:
-            free_output = await run_command_async(["free", "-h"], capture_output=True, text=True)
-            mem_line = next((l for l in free_output.stdout.splitlines() if l.startswith("Mem:")), "")
+            free_output = await run_command_async(
+                ["free", "-h"], capture_output=True, text=True
+            )
+            mem_line = next(
+                (l for l in free_output.stdout.splitlines() if l.startswith("Mem:")), ""
+            )
             self.logger.info(f"Memory usage: {mem_line}")
             info["memory"] = mem_line
         except Exception as e:
